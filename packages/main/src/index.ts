@@ -838,7 +838,7 @@ registerAppUtilityIpcHandlers({
   getLocale: () => appLocale,
   setLocale: (nextLocale: string) => {
     appLocale = resolveLocale(nextLocale, 'en');
-    mainWindow?.setTitle(getMainI18n().t('app.title'));
+    mainWindow?.setTitle(`${!app.isPackaged ? '[D] ' : ''}${getMainI18n().t('app.title')}`);
     return appLocale;
   },
   getPendingLaunchWorkingDirectory: () => pendingLaunchWorkingDirectory,
