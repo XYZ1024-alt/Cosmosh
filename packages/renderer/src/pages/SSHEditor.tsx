@@ -952,19 +952,19 @@ const SSHEditor: React.FC = () => {
                   {t('ssh.sectionBasicConnection')}
                 </div>
 
-                <FormField>
-                  <FormLabel htmlFor="ssh-editor-host">{t('ssh.columnHost')}</FormLabel>
-                  <FormControl>
-                    <Input
-                      id="ssh-editor-host"
-                      value={formState.host}
-                      placeholder={t('ssh.hostPlaceholder')}
-                      onChange={(event) => onChangeForm('host', event.target.value)}
-                    />
-                  </FormControl>
-                </FormField>
+                <div className="grid grid-cols-[5fr_2fr] gap-3">
+                  <FormField>
+                    <FormLabel htmlFor="ssh-editor-host">{t('ssh.columnHost')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        id="ssh-editor-host"
+                        value={formState.host}
+                        placeholder={t('ssh.hostPlaceholder')}
+                        onChange={(event) => onChangeForm('host', event.target.value)}
+                      />
+                    </FormControl>
+                  </FormField>
 
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                   <FormField>
                     <FormLabel htmlFor="ssh-editor-port">{t('ssh.columnPort')}</FormLabel>
                     <FormControl>
@@ -977,7 +977,15 @@ const SSHEditor: React.FC = () => {
                       />
                     </FormControl>
                   </FormField>
+                </div>
+              </section>
 
+              <section className="grid gap-3">
+                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                  {t('ssh.sectionAuthentication')}
+                </div>
+
+                <div className="grid grid-cols-[5fr_2fr] gap-3">
                   <FormField>
                     <FormLabel htmlFor="ssh-editor-username">{t('ssh.columnUser')}</FormLabel>
                     <FormControl>
@@ -991,58 +999,24 @@ const SSHEditor: React.FC = () => {
                   </FormField>
 
                   <FormField>
-                    <FormLabel htmlFor="ssh-editor-folder">{t('ssh.columnFolder')}</FormLabel>
+                    <FormLabel htmlFor="ssh-editor-auth-type">{t('ssh.columnAuth')}</FormLabel>
                     <FormControl>
                       <Select
-                        value={formState.folderId || NO_FOLDER_SELECT_VALUE}
-                        onValueChange={(value) =>
-                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value)
-                        }
+                        value={formState.authType}
+                        onValueChange={(value) => onChangeForm('authType', value as SshAuthType)}
                       >
-                        <SelectTrigger id="ssh-editor-folder">
-                          <SelectValue placeholder={t('ssh.noFolder')} />
+                        <SelectTrigger id="ssh-editor-auth-type">
+                          <SelectValue placeholder={t('ssh.authTypePlaceholder')} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('ssh.noFolder')}</SelectItem>
-                          {folders.map((folder) => (
-                            <SelectItem
-                              key={folder.id}
-                              value={folder.id}
-                              icon={Folder}
-                            >
-                              {folder.name}
-                            </SelectItem>
-                          ))}
+                          <SelectItem value="password">{t('ssh.authTypePassword')}</SelectItem>
+                          <SelectItem value="key">{t('ssh.authTypeKey')}</SelectItem>
+                          <SelectItem value="both">{t('ssh.authTypeBoth')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </FormControl>
                   </FormField>
                 </div>
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionAuthentication')}
-                </div>
-
-                <FormField>
-                  <FormLabel htmlFor="ssh-editor-auth-type">{t('ssh.columnAuth')}</FormLabel>
-                  <FormControl>
-                    <Select
-                      value={formState.authType}
-                      onValueChange={(value) => onChangeForm('authType', value as SshAuthType)}
-                    >
-                      <SelectTrigger id="ssh-editor-auth-type">
-                        <SelectValue placeholder={t('ssh.authTypePlaceholder')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="password">{t('ssh.authTypePassword')}</SelectItem>
-                        <SelectItem value="key">{t('ssh.authTypeKey')}</SelectItem>
-                        <SelectItem value="both">{t('ssh.authTypeBoth')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                </FormField>
 
                 {requiresPassword ? (
                   <FormField>
@@ -1129,21 +1103,51 @@ const SSHEditor: React.FC = () => {
                   {t('ssh.sectionSettings')}
                 </div>
 
-                <FormField>
-                  <FormLabel>{t('ssh.tagsLegend')}</FormLabel>
-                  <FormControl>
-                    <TagInput
-                      tags={tags}
-                      selectedTagIds={formState.tagIds}
-                      menuTitle={t('ssh.tagsLegend')}
-                      inputPlaceholder={t('ssh.tagNamePlaceholder')}
-                      emptyText={t('ssh.emptyTags')}
-                      disabled={isSubmitting}
-                      onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
-                      onCreateTag={onCreateTag}
-                    />
-                  </FormControl>
-                </FormField>
+                <div className="grid grid-cols-[1fr_1fr] gap-3">
+                  <FormField>
+                    <FormLabel htmlFor="ssh-editor-folder">{t('ssh.columnFolder')}</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={formState.folderId || NO_FOLDER_SELECT_VALUE}
+                        onValueChange={(value) =>
+                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value)
+                        }
+                      >
+                        <SelectTrigger id="ssh-editor-folder">
+                          <SelectValue placeholder={t('ssh.noFolder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('ssh.noFolder')}</SelectItem>
+                          {folders.map((folder) => (
+                            <SelectItem
+                              key={folder.id}
+                              value={folder.id}
+                              icon={Folder}
+                            >
+                              {folder.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                  </FormField>
+
+                  <FormField>
+                    <FormLabel>{t('ssh.tagsLegend')}</FormLabel>
+                    <FormControl>
+                      <TagInput
+                        tags={tags}
+                        selectedTagIds={formState.tagIds}
+                        menuTitle={t('ssh.tagsLegend')}
+                        inputPlaceholder={t('ssh.tagNamePlaceholder')}
+                        emptyText={t('ssh.emptyTags')}
+                        disabled={isSubmitting}
+                        onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
+                        onCreateTag={onCreateTag}
+                      />
+                    </FormControl>
+                  </FormField>
+                </div>
 
                 <FormField>
                   <FormLabel htmlFor="ssh-editor-note">{t('ssh.noteLabel')}</FormLabel>

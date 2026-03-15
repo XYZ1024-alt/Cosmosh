@@ -102,7 +102,7 @@ const SelectTrigger = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger
     ref={ref}
-    className={classNames(menuStyles.control, 'min-w-[180px] justify-between', className)}
+    className={classNames(menuStyles.control, 'w-full justify-between', className)}
     {...props}
   >
     {children}
