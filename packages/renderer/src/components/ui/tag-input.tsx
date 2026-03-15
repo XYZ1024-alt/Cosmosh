@@ -201,13 +201,13 @@ export const TagInput: React.FC<TagInputProps> = ({
         {selectedTags.map((tag) => (
           <span
             key={tag.id}
-            className="-ms-1 me-1 inline-flex items-center gap-1 rounded-[10px] border border-home-divider bg-form-control-hover px-2 py-0.5 text-xs text-form-text"
+            className="-ms-1 me-1 inline-flex h-[22px] items-center gap-1 rounded-md border border-home-divider bg-form-control-hover px-2 py-0.5 pe-0.5 text-xs text-form-text"
           >
             <span>{tag.name}</span>
             <button
               type="button"
               disabled={disabled}
-              className="inline-flex h-4 w-4 items-center justify-center rounded-[6px] outline-none hover:bg-form-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-1px] focus-visible:outline-outline disabled:opacity-50"
+              className="inline-flex h-4 w-4 items-center justify-center rounded-[7px] outline-none hover:bg-form-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-1px] focus-visible:outline-outline disabled:opacity-50"
               aria-label={`Remove ${tag.name}`}
               onClick={() => toggleTag(tag.id, false)}
             >
@@ -220,7 +220,7 @@ export const TagInput: React.FC<TagInputProps> = ({
           value={draftName}
           placeholder={inputPlaceholder}
           disabled={disabled || isCommitting}
-          className="placeholder:text-form-text-muted/80 -ms-1 min-w-[120px] flex-1 bg-transparent text-sm text-form-text outline-none focus:outline-none focus:ring-0"
+          className="placeholder:text-form-text-muted/80 -ms-1 min-w-[120px] flex-1 bg-transparent ps-1 text-sm text-form-text outline-none focus:outline-none focus:ring-0"
           onFocus={() => setIsMenuOpen(true)}
           onChange={(event) => setDraftName(event.target.value)}
           onKeyDown={(event) => {
