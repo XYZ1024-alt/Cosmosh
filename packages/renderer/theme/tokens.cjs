@@ -10,6 +10,10 @@ const base = {
     xl: '18px',
   },
   colors: {
+    text: {
+      DEFAULT: '#ffffff',
+      muted: '#a7b0bd',
+    },
     bg: {
       DEFAULT: '#000000',
       subtle: '#191919d9',

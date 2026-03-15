@@ -321,7 +321,7 @@ export const TagInput: React.FC<TagInputProps> = ({
                 );
               })
             ) : (
-              <div className="text-menu-text-muted px-2.5 py-1.5 text-sm">{emptyText}</div>
+              <div className="px-2.5 py-1.5 text-sm text-text-muted">{emptyText}</div>
             )}
           </div>
         </div>

@@ -425,7 +425,7 @@ const App: React.FC = () => {
   return (
     <AppToastProvider>
       <InputContextMenuProvider>
-        <div className="text-text flex h-screen w-screen flex-col overflow-hidden bg-bg">
+        <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
           {/* Header */}
           <div
             className="flex-shrink-0"
