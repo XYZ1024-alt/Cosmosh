@@ -458,7 +458,7 @@ export const Tabs: React.FC<TabsProps> = ({
               aria-label="Scroll tabs left"
               aria-hidden={!canScrollLeft}
               className={classNames(
-                'absolute left-0 z-10 h-full bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
+                'absolute left-0 z-10 h-full rounded-l-lg bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
                 { 'pointer-events-none opacity-0': !canScrollLeft, 'opacity-100': canScrollLeft },
               )}
               // @ts-expect-error React.CSSProperties
@@ -473,7 +473,7 @@ export const Tabs: React.FC<TabsProps> = ({
               aria-label="Scroll tabs right"
               aria-hidden={!canScrollRight}
               className={classNames(
-                'absolute right-0 z-10 h-full bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
+                'absolute right-0 z-10 h-full rounded-r-lg bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
                 { 'pointer-events-none opacity-0': !canScrollRight, 'opacity-100': canScrollRight },
               )}
               // @ts-expect-error React.CSSProperties
