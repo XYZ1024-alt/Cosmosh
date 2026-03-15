@@ -623,6 +623,8 @@
       "ssh": "SSH",
       "sshEditor": "编辑服务器"
     },
+    "scrollLeft": "向左滚动",
+    "scrollRight": "向右移动",
     "switcherEmpty": "未找到匹配的标签页",
     "switcherPlaceholder": "切换标签页"
   }

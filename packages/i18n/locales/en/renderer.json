@@ -623,6 +623,8 @@
       "ssh": "SSH",
       "sshEditor": "Edit Server"
     },
+    "scrollLeft": "Scroll left",
+    "scrollRight": "Scroll right",
     "switcherEmpty": "No matching tabs",
     "switcherPlaceholder": "Switch tabs"
   }

@@ -455,7 +455,7 @@ export const Tabs: React.FC<TabsProps> = ({
           <div className="relative h-full overflow-hidden rounded-lg">
             <button
               type="button"
-              aria-label="Scroll tabs left"
+              aria-label={t('tabs.scrollLeft')}
               aria-hidden={!canScrollLeft}
               className={classNames(
                 'absolute left-0 z-10 h-full rounded-l-lg bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
@@ -470,7 +470,7 @@ export const Tabs: React.FC<TabsProps> = ({
             </button>
             <button
               type="button"
-              aria-label="Scroll tabs right"
+              aria-label={t('tabs.scrollRight')}
               aria-hidden={!canScrollRight}
               className={classNames(
                 'absolute right-0 z-10 h-full rounded-r-lg bg-bg px-1 transition-opacity duration-100 ease-in-out hover:bg-header-tab-hover',
