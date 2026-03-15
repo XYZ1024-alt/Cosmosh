@@ -22,6 +22,8 @@ const SettingsEditor = React.lazy(() => import('./pages/SettingsEditor'));
 const SSH = React.lazy(() => import('./pages/SSH'));
 const SSHEditor = React.lazy(() => import('./pages/SSHEditor'));
 
+let hasCheckedInitialPendingLaunchWorkingDirectory = false;
+
 const pageLoadingFallback = (
   <div
     className="h-full w-full"
@@ -289,6 +291,12 @@ const App: React.FC = () => {
     await handleOpenDefaultLocalTerminal();
   }, [handleOpenDefaultLocalTerminal, handleOpenLocalTerminalList, terminalContextLaunchBehavior]);
 
+  const launchWorkingDirectoryHandlerRef = React.useRef<() => Promise<void>>(async () => undefined);
+
+  React.useEffect(() => {
+    launchWorkingDirectoryHandlerRef.current = handleLaunchWorkingDirectory;
+  }, [handleLaunchWorkingDirectory]);
+
   React.useEffect(() => {
     const electronBridge = window.electron;
     if (!electronBridge) {
@@ -296,21 +304,30 @@ const App: React.FC = () => {
     }
 
     const unsubscribe = electronBridge.onLaunchWorkingDirectory(() => {
-      void handleLaunchWorkingDirectory();
+      void launchWorkingDirectoryHandlerRef.current();
     });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  React.useEffect(() => {
+    const electronBridge = window.electron;
+    if (!electronBridge || hasCheckedInitialPendingLaunchWorkingDirectory) {
+      return;
+    }
+
+    hasCheckedInitialPendingLaunchWorkingDirectory = true;
 
     void electronBridge.getPendingLaunchWorkingDirectory().then((cwd) => {
       if (!cwd) {
         return;
       }
 
-      void handleLaunchWorkingDirectory();
+      void launchWorkingDirectoryHandlerRef.current();
     });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [handleLaunchWorkingDirectory]);
+  }, []);
 
   const tabContent = React.useMemo(() => {
     return (
