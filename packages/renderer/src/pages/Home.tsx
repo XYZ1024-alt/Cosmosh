@@ -1260,7 +1260,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
             <div className="space-y-4 pb-2">
               {activeFolderId === LOCAL_TERMINAL_FOLDER_ID ? (
                 <section>
-                  <div className="grid max-w-[880px] grid-cols-3 gap-x-7 gap-y-3">
+                  <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
                     {filteredLocalTerminalProfiles.map((profile, index) => (
                       <ContextMenu key={profile.id}>
                         <ContextMenuTrigger className="block">
@@ -1311,7 +1311,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                     {group.title ? (
                       <div className="px-2 pb-2.5 text-[13px] font-medium text-home-text-subtle">{group.title}</div>
                     ) : null}
-                    <div className="grid max-w-[880px] grid-cols-3 gap-x-7 gap-y-3">
+                    <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
                       {group.items.map((server) => {
                         const serverEntryKey = `${group.key}:${server.id}`;
                         const serverEntryIndex = serverGridIndexMap.get(serverEntryKey) ?? 0;

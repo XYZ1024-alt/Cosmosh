@@ -87,11 +87,11 @@ const EntityCard = React.forwardRef<HTMLDivElement, EntityCardProps>(
           )}
         </span>
         <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
-          <span className={classNames('block truncate text-sm font-semibold leading-tight text-header-text')}>
+          <span className={classNames('block w-full truncate text-sm font-semibold leading-tight text-header-text')}>
             {title}
           </span>
           {subtitle ? (
-            <span className={classNames('block truncate text-xs text-home-text-subtle')}>{subtitle}</span>
+            <span className={classNames('block w-full truncate text-xs text-home-text-subtle')}>{subtitle}</span>
           ) : null}
         </span>
         {action ? <span className="shrink-0">{action}</span> : null}
