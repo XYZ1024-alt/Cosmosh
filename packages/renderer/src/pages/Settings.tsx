@@ -725,7 +725,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
             </Menubar>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto pb-2">
+          <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
             <div className="">
               {SETTINGS_CATEGORY_IDS.map((categoryId) => {
                 const category = SETTINGS_CATEGORIES[categoryId];
@@ -751,7 +751,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
 
         <main className="flex min-w-0 flex-1 flex-col pl-2">
           <div className="shrink-0 bg-bg pb-2">
-            <div className="flex items-start justify-between gap-4 pb-1">
+            <div className="mx-auto flex max-w-4xl items-start justify-between gap-4 pb-1">
               <div className="grid gap-1">
                 <h1 className="text-home-text ps-2 text-[24px] font-semibold">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
@@ -777,86 +777,88 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto">
-            {isLoading ? <div className="px-2 text-sm text-home-text-subtle">{t('settings.loading')}</div> : null}
+          <div className="scrollbar-gutter-stable -me-2 min-h-0 flex-1 overflow-auto">
+            <div className="mx-auto max-w-4xl flex-1">
+              {isLoading ? <div className="px-2 text-sm text-home-text-subtle">{t('settings.loading')}</div> : null}
 
-            {!isLoading && activeCategoryId === 'about' && !isSearchMode ? (
-              <SettingsAboutSection
-                appVersionInfo={appVersionInfo}
-                onOpenFailed={(i18nKey) => {
-                  notifyWarning(t(i18nKey));
-                }}
-              />
-            ) : null}
-
-            {!isLoading && activeCategoryId !== 'about' && sections.length === 0 ? (
-              <div className="px-2 text-sm text-home-text-subtle">{t('settings.noMatches')}</div>
-            ) : null}
-
-            {!isLoading && (activeCategoryId !== 'about' || isSearchMode) && sections.length > 0 ? (
-              <div className="grid gap-5 pb-4">
-                {sections.map((section) => (
-                  <section
-                    key={section.title}
-                    className="grid gap-3"
-                  >
-                    <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
-                    {section.items.map((item) => (
-                      <FormField
-                        key={item.path}
-                        className="group/setting"
-                      >
-                        <div className="flex items-center">
-                          <Label>{t(item.nameI18nKey)}</Label>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                aria-label={t('settings.itemActions.openMenu')}
-                                className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
-                              >
-                                <SettingsIcon className="h-3.5 w-3.5" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent>
-                              <DropdownMenuItem
-                                icon={RotateCcw}
-                                onSelect={() => resetSettingToDefault(item)}
-                              >
-                                {t('settings.itemActions.resetToDefault')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                icon={Settings2}
-                                onSelect={() => onOpenSettingInEditor?.(item.key)}
-                              >
-                                {t('settings.itemActions.editInSettingsEditor')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                        {renderControl(item)}
-                        <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
-                      </FormField>
-                    ))}
-                  </section>
-                ))}
-              </div>
-            ) : null}
-
-            {!isLoading && activeCategoryId === 'advanced' && !isSearchMode ? (
-              <div className="flex justify-end pb-4 pr-1">
-                <button
-                  type="button"
-                  className="text-home-text text-sm underline hover:text-home-text-subtle"
-                  onClick={() => {
-                    setIsDatabaseSecurityDialogOpen(true);
-                    void loadDatabaseSecurityInfo();
+              {!isLoading && activeCategoryId === 'about' && !isSearchMode ? (
+                <SettingsAboutSection
+                  appVersionInfo={appVersionInfo}
+                  onOpenFailed={(i18nKey) => {
+                    notifyWarning(t(i18nKey));
                   }}
-                >
-                  {t('settings.databaseSecurity.openDialog')}
-                </button>
-              </div>
-            ) : null}
+                />
+              ) : null}
+
+              {!isLoading && activeCategoryId !== 'about' && sections.length === 0 ? (
+                <div className="px-2 text-sm text-home-text-subtle">{t('settings.noMatches')}</div>
+              ) : null}
+
+              {!isLoading && (activeCategoryId !== 'about' || isSearchMode) && sections.length > 0 ? (
+                <div className="grid gap-5 pb-4">
+                  {sections.map((section) => (
+                    <section
+                      key={section.title}
+                      className="grid gap-3"
+                    >
+                      <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
+                      {section.items.map((item) => (
+                        <FormField
+                          key={item.path}
+                          className="group/setting"
+                        >
+                          <div className="flex items-center">
+                            <Label>{t(item.nameI18nKey)}</Label>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={t('settings.itemActions.openMenu')}
+                                  className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
+                                >
+                                  <SettingsIcon className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem
+                                  icon={RotateCcw}
+                                  onSelect={() => resetSettingToDefault(item)}
+                                >
+                                  {t('settings.itemActions.resetToDefault')}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  icon={Settings2}
+                                  onSelect={() => onOpenSettingInEditor?.(item.key)}
+                                >
+                                  {t('settings.itemActions.editInSettingsEditor')}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          {renderControl(item)}
+                          <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
+                        </FormField>
+                      ))}
+                    </section>
+                  ))}
+                </div>
+              ) : null}
+
+              {!isLoading && activeCategoryId === 'advanced' && !isSearchMode ? (
+                <div className="flex justify-end pb-4 pr-1">
+                  <button
+                    type="button"
+                    className="text-home-text text-sm underline hover:text-home-text-subtle"
+                    onClick={() => {
+                      setIsDatabaseSecurityDialogOpen(true);
+                      void loadDatabaseSecurityInfo();
+                    }}
+                  >
+                    {t('settings.databaseSecurity.openDialog')}
+                  </button>
+                </div>
+              ) : null}
+            </div>
           </div>
         </main>
       </div>

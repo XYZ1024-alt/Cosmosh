@@ -294,6 +294,7 @@
     --shadow-selection-bar: rgba(148, 163, 184, 0.24);
   }
 }
+
 /* theme-tokens:end */
 
 :root {
@@ -388,4 +389,22 @@ body {
 .menu-menubar-root .menu-menubar-field:not(:hover):not(:focus):not(:focus-within) {
   background: transparent;
   backdrop-filter: none;
+}
+
+.scrollbar-gutter-stable {
+  scrollbar-gutter: stable;
+}
+
+.scrollbar-gutter-stable-both-edges {
+  scrollbar-gutter: stable both-edges;
+}
+
+.gutter-box-x {
+  scrollbar-gutter: stable;
+  margin-bottom: calc(-1 * var(--color-scrollbar-width));
+}
+
+.gutter-box-y {
+  scrollbar-gutter: stable;
+  margin-inline-end: calc(-1 * var(--color-scrollbar-width));
 }

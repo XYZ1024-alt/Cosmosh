@@ -823,7 +823,7 @@ const SSHEditor: React.FC = () => {
             </Menubar>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto pb-2">
+          <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
             {isLoading ? <div className="px-2 text-sm text-home-text-subtle">{t('home.loading')}</div> : null}
 
             {!isLoading && displayGroups.length === 0 && activeServerId !== null ? (
@@ -899,8 +899,8 @@ const SSHEditor: React.FC = () => {
 
         <main className="flex min-w-0 flex-1 flex-col pl-2">
           <div className="shrink-0 bg-bg pb-2">
-            <div className="-ms-2 flex items-center justify-between gap-4 pb-1 ps-2">
-              <Menubar>
+            <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2">
+              <Menubar className="-ms-2">
                 <Input
                   value={formState.name}
                   placeholder={t('ssh.serverNamePlaceholder')}
@@ -941,10 +941,10 @@ const SSHEditor: React.FC = () => {
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-auto">
+          <div className="scrollbar-gutter-stable -me-2 min-h-0 flex-1 overflow-auto">
             <Form
               id="ssh-editor-form"
-              className="grid gap-4 pb-4"
+              className="mx-auto grid max-w-4xl gap-4 pb-4"
               onSubmit={(event) => void onSubmit(event)}
             >
               <section className="grid gap-3">
