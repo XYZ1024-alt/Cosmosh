@@ -21,6 +21,87 @@ const clampIndex = (value: number, itemCount: number): number => {
   return Math.min(Math.max(value, 0), itemCount - 1);
 };
 
+/**
+ * Resolves the closest neighbor on a responsive CSS grid using actual element positions.
+ */
+const resolveGeometricNeighborIndex = (
+  currentIndex: number,
+  key: string,
+  itemRefs: Array<HTMLDivElement | null>,
+): number | null => {
+  const currentNode = itemRefs[currentIndex];
+  if (!currentNode) {
+    return null;
+  }
+
+  const currentRect = currentNode.getBoundingClientRect();
+  const currentCenterX = currentRect.left + currentRect.width / 2;
+  const currentCenterY = currentRect.top + currentRect.height / 2;
+  const rowTolerance = Math.max(4, currentRect.height * 0.5);
+
+  let bestIndex: number | null = null;
+  let bestPrimaryDistance = Number.POSITIVE_INFINITY;
+  let bestSecondaryDistance = Number.POSITIVE_INFINITY;
+
+  itemRefs.forEach((node, index) => {
+    if (!node || index === currentIndex) {
+      return;
+    }
+
+    const rect = node.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    let primaryDistance = Number.POSITIVE_INFINITY;
+    let secondaryDistance = Number.POSITIVE_INFINITY;
+
+    if (key === 'ArrowRight') {
+      const isSameRow = Math.abs(rect.top - currentRect.top) <= rowTolerance;
+      if (!isSameRow || centerX <= currentCenterX) {
+        return;
+      }
+
+      primaryDistance = centerX - currentCenterX;
+      secondaryDistance = Math.abs(centerY - currentCenterY);
+    } else if (key === 'ArrowLeft') {
+      const isSameRow = Math.abs(rect.top - currentRect.top) <= rowTolerance;
+      if (!isSameRow || centerX >= currentCenterX) {
+        return;
+      }
+
+      primaryDistance = currentCenterX - centerX;
+      secondaryDistance = Math.abs(centerY - currentCenterY);
+    } else if (key === 'ArrowDown') {
+      if (centerY <= currentCenterY) {
+        return;
+      }
+
+      primaryDistance = centerY - currentCenterY;
+      secondaryDistance = Math.abs(centerX - currentCenterX);
+    } else if (key === 'ArrowUp') {
+      if (centerY >= currentCenterY) {
+        return;
+      }
+
+      primaryDistance = currentCenterY - centerY;
+      secondaryDistance = Math.abs(centerX - currentCenterX);
+    } else {
+      return;
+    }
+
+    if (
+      primaryDistance < bestPrimaryDistance ||
+      (primaryDistance === bestPrimaryDistance && secondaryDistance < bestSecondaryDistance)
+    ) {
+      bestIndex = index;
+      bestPrimaryDistance = primaryDistance;
+      bestSecondaryDistance = secondaryDistance;
+    }
+  });
+
+  return bestIndex;
+};
+
 export const useDirectionalNavigation = ({
   itemCount,
   columns = 1,
@@ -51,6 +132,11 @@ export const useDirectionalNavigation = ({
     (currentIndex: number, key: string): number => {
       if (itemCount <= 0) {
         return 0;
+      }
+
+      const geometricNeighborIndex = resolveGeometricNeighborIndex(currentIndex, key, itemRefs.current);
+      if (geometricNeighborIndex !== null) {
+        return geometricNeighborIndex;
       }
 
       const normalizedColumns = Math.max(columns, 1);
