@@ -63,6 +63,7 @@ const generated = [
   '@media (prefers-color-scheme: light) {',
   indentLines(formatBlock(":root[data-theme='auto']", lightVars), 2),
   '}',
+  '',
   END_MARKER,
 ].join('\n');
 
