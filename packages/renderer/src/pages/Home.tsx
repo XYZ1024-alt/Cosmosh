@@ -657,6 +657,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
     initialIndex: 0,
   });
 
+  const localTerminalGridNavigation = useDirectionalNavigation({
+    itemCount: filteredLocalTerminalProfiles.length,
+    columns: 3,
+    initialIndex: 0,
+  });
+
   const groupModeIcon = React.useMemo(() => {
     if (groupMode === 'tag') {
       return Tags;
@@ -1265,7 +1271,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                       <ContextMenu key={profile.id}>
                         <ContextMenuTrigger className="block">
                           <EntityCard
-                            {...serverGridNavigation.getItemProps(index)}
+                            {...localTerminalGridNavigation.getItemProps(index)}
                             layout="grid"
                             title={profile.name}
                             subtitle={profile.command}
