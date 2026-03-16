@@ -168,7 +168,6 @@ const base = {
       bad: '#f87171',
     },
     scrollbar: {
-      width: '8px',
       track: '#00000000',
       thumb: { DEFAULT: '#2f2f2f', hover: '#3a3a3a' },
     },

@@ -92,7 +92,6 @@
   --color-status-good: #4ade80;
   --color-status-warn: #facc15;
   --color-status-bad: #f87171;
-  --color-scrollbar-width: 8px;
   --color-scrollbar-track: #00000000;
   --color-scrollbar-thumb: #2f2f2f;
   --color-scrollbar-thumb-hover: #3a3a3a;
@@ -294,7 +293,6 @@
     --shadow-selection-bar: rgba(148, 163, 184, 0.24);
   }
 }
-
 /* theme-tokens:end */
 
 :root {
@@ -319,6 +317,10 @@
   :root[data-theme='auto'] {
     color-scheme: dark;
   }
+}
+
+:root {
+  --scrollbar-width: 8px;
 }
 
 * {
@@ -357,18 +359,18 @@ body {
 }
 
 ::-webkit-scrollbar {
-  width: var(--color-scrollbar-width);
-  height: var(--color-scrollbar-width);
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-width);
 }
 
 ::-webkit-scrollbar-track {
   background: var(--color-scrollbar-track);
-  border-radius: var(--color-scrollbar-width);
+  border-radius: var(--scrollbar-width);
 }
 
 ::-webkit-scrollbar-thumb {
   background: var(--color-scrollbar-thumb);
-  border-radius: var(--color-scrollbar-width);
+  border-radius: var(--scrollbar-width);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -401,10 +403,10 @@ body {
 
 .gutter-box-x {
   scrollbar-gutter: stable;
-  margin-bottom: calc(-1 * var(--color-scrollbar-width));
+  margin-bottom: calc(-1 * var(--scrollbar-width));
 }
 
 .gutter-box-y {
   scrollbar-gutter: stable;
-  margin-inline-end: calc(-1 * var(--color-scrollbar-width));
+  margin-inline-end: calc(-1 * var(--scrollbar-width));
 }
