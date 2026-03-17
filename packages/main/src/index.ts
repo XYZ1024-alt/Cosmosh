@@ -529,12 +529,14 @@ const startBackendService = async (): Promise<void> => {
   }
 
   backendStartupPromise = (async () => {
-    const port = await findAvailablePort();
-    const token = randomBytes(32).toString('hex');
     const databasePath = getDatabasePath();
     const databaseUrl = toPrismaSqliteUrl(databasePath);
-    const databaseEncryptionKey = await getDatabaseEncryptionKey();
-    const secretKey = await resolveBackendSecretKey();
+    const token = randomBytes(32).toString('hex');
+    const [port, databaseEncryptionKey, secretKey] = await Promise.all([
+      findAvailablePort(),
+      getDatabaseEncryptionKey(),
+      resolveBackendSecretKey(),
+    ]);
     const isDev = !app.isPackaged;
     const workspaceRoot = resolveWorkspaceRoot();
     const packagedBackendEntryPath = path.join(
