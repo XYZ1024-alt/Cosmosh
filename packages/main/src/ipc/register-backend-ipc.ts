@@ -36,6 +36,8 @@ import { ipcMain } from 'electron';
 export type RegisterBackendIpcHandlersOptions = {
   /** Returns active app locale used for backend request headers. */
   getLocale: () => string;
+  /** Ensures backend process startup is complete before making transport calls. */
+  ensureBackendReady: () => Promise<void>;
   /** Returns backend connection config (port + internal token). */
   requireBackendConfig: () => { port: number; token: string };
   /**
@@ -61,6 +63,7 @@ const requestBackendDeleteSuccess = async (
   path: string,
 ): Promise<{ success: boolean }> => {
   try {
+    await options.ensureBackendReady();
     const { port, token } = options.requireBackendConfig();
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {
       method: 'DELETE',

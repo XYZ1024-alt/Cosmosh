@@ -25,7 +25,9 @@ flowchart LR
 
 ### Main Process (`packages/main/src/index.ts`)
 
-- Starts backend process and waits for `/health` before opening UI.
+- Starts backend process and BrowserWindow in parallel during app bootstrap.
+- Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
+- Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
 - In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
 - Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
@@ -191,16 +193,18 @@ sequenceDiagram
   participant UI as Renderer Window
 
   MAIN->>BE: start backend runtime
+  MAIN->>UI: create BrowserWindow in parallel
   MAIN->>BE: poll /health
   BE-->>MAIN: not ready
   MAIN->>MAIN: retry with bounded wait
   BE-->>MAIN: healthy
-  MAIN->>UI: create BrowserWindow
+  UI->>MAIN: first backend IPC request
+  MAIN->>BE: await startup promise if needed
 ```
 
 Handling principle:
-
-- UI should open only after backend health is confirmed.
+- UI should become visible as early as possible while backend continues warming in parallel.
+- First backend-bound IPC request must still observe backend ready-state before forwarding.
 - Startup failure paths should be explicit and observable.
 
 ### 8.2 WS Attach Token Mismatch

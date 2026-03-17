@@ -25,7 +25,9 @@ flowchart LR
 
 ### Main 进程 (`packages/main/src/index.ts`)
 
-- 启动后端进程，并在 `/health` 就绪后再打开 UI。
+- 应用启动阶段并行拉起后端进程与 BrowserWindow。
+- 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
+- Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
 - 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
 - Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
@@ -191,16 +193,19 @@ sequenceDiagram
   participant UI as Renderer Window
 
   MAIN->>BE: start backend runtime
+  MAIN->>UI: create BrowserWindow in parallel
   MAIN->>BE: poll /health
   BE-->>MAIN: not ready
   MAIN->>MAIN: retry with bounded wait
   BE-->>MAIN: healthy
-  MAIN->>UI: create BrowserWindow
+  UI->>MAIN: first backend IPC request
+  MAIN->>BE: await startup promise if needed
 ```
 
 处理原则：
 
-- 仅在 backend 健康检查通过后再打开 UI。
+- UI 优先尽早可见，backend 在后台并行预热。
+- 首个依赖 backend 的 IPC 在转发前必须确保 backend 已就绪。
 - 启动失败路径应清晰可观测。
 
 ### 8.2 WS Attach Token 不匹配

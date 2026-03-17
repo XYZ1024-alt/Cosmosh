@@ -28,6 +28,7 @@ let mainWindow: BrowserWindow | null = null;
 let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let backendPort: number | null = null;
 let backendToken: string | null = null;
+let backendStartupPromise: Promise<void> | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 
@@ -522,108 +523,121 @@ const startBackendService = async (): Promise<void> => {
     return;
   }
 
-  const port = await findAvailablePort();
-  const token = randomBytes(32).toString('hex');
-  const databasePath = getDatabasePath();
-  const databaseUrl = toPrismaSqliteUrl(databasePath);
-  const databaseEncryptionKey = await getDatabaseEncryptionKey();
-  const secretKey = await resolveBackendSecretKey();
-  const isDev = !app.isPackaged;
-  const workspaceRoot = resolveWorkspaceRoot();
-  const packagedBackendEntryPath = path.join(
-    process.resourcesPath,
-    'node_modules',
-    '@cosmosh',
-    'backend',
-    'dist',
-    'index.js',
-  );
-  const backendEnv: NodeJS.ProcessEnv = {
-    ...process.env,
-    COSMOSH_RUNTIME_MODE: 'electron-main',
-    COSMOSH_API_PORT: String(port),
-    COSMOSH_INTERNAL_TOKEN: token,
-    COSMOSH_SECRET_KEY: secretKey,
-    COSMOSH_DB_PATH: databasePath,
-    COSMOSH_DB_ENCRYPTION_KEY: databaseEncryptionKey,
-    COSMOSH_USER_DATA_PATH: app.getPath('userData'),
-    COSMOSH_APP_ENV: isDev ? 'development' : 'production',
-    DATABASE_URL: databaseUrl,
-  };
-
-  let command: string;
-  let args: string[];
-  let shell = false;
-  let backendProcessCwd = workspaceRoot;
-
-  if (isDev) {
-    const hasExistingDatabase = await fileExists(databasePath);
-
-    if (!hasExistingDatabase) {
-      console.log('[backend:init] Preparing development database schema...');
-      await runCommand('pnpm --filter @cosmosh/backend run db:push', {
-        cwd: workspaceRoot,
-        env: backendEnv,
-        logPrefix: '[backend:init]',
-        shell: true,
-      });
-      console.log('[backend:init] Development database schema is ready.');
-    } else {
-      console.log(
-        '[backend:init] Development database exists. Skipping prisma db:push to avoid encrypted DB mismatch.',
-      );
-    }
-
-    command = 'pnpm --filter @cosmosh/backend run dev:runtime';
-    args = [];
-    shell = true;
-  } else {
-    await fs.access(packagedBackendEntryPath);
-    command = process.execPath;
-    args = [packagedBackendEntryPath];
-    backendProcessCwd = process.resourcesPath;
-    backendEnv.ELECTRON_RUN_AS_NODE = '1';
-    backendEnv.NODE_ENV = 'production';
+  if (backendStartupPromise) {
+    await backendStartupPromise;
+    return;
   }
 
-  const spawnedBackendProcess = spawn(command, args, {
-    cwd: backendProcessCwd,
-    stdio: ['pipe', 'pipe', 'pipe'],
-    env: backendEnv,
-    shell,
-    windowsHide: true,
-  });
+  backendStartupPromise = (async () => {
+    const port = await findAvailablePort();
+    const token = randomBytes(32).toString('hex');
+    const databasePath = getDatabasePath();
+    const databaseUrl = toPrismaSqliteUrl(databasePath);
+    const databaseEncryptionKey = await getDatabaseEncryptionKey();
+    const secretKey = await resolveBackendSecretKey();
+    const isDev = !app.isPackaged;
+    const workspaceRoot = resolveWorkspaceRoot();
+    const packagedBackendEntryPath = path.join(
+      process.resourcesPath,
+      'node_modules',
+      '@cosmosh',
+      'backend',
+      'dist',
+      'index.js',
+    );
+    const backendEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      COSMOSH_RUNTIME_MODE: 'electron-main',
+      COSMOSH_API_PORT: String(port),
+      COSMOSH_INTERNAL_TOKEN: token,
+      COSMOSH_SECRET_KEY: secretKey,
+      COSMOSH_DB_PATH: databasePath,
+      COSMOSH_DB_ENCRYPTION_KEY: databaseEncryptionKey,
+      COSMOSH_USER_DATA_PATH: app.getPath('userData'),
+      COSMOSH_APP_ENV: isDev ? 'development' : 'production',
+      DATABASE_URL: databaseUrl,
+    };
 
-  backendProcess = spawnedBackendProcess;
-  console.log(
-    `[backend] Backend process started. Awaiting health check on http://127.0.0.1:${port}${API_PATHS.health}`,
-  );
+    let command: string;
+    let args: string[];
+    let shell = false;
+    let backendProcessCwd = workspaceRoot;
 
-  spawnedBackendProcess.stdout.on('data', (chunk: Buffer) => {
-    console.log(`[backend] ${chunk.toString().trim()}`);
-  });
+    if (isDev) {
+      const hasExistingDatabase = await fileExists(databasePath);
 
-  spawnedBackendProcess.stderr.on('data', (chunk: Buffer) => {
-    console.error(`[backend] ${chunk.toString().trim()}`);
-  });
+      if (!hasExistingDatabase) {
+        console.log('[backend:init] Preparing development database schema...');
+        await runCommand('pnpm --filter @cosmosh/backend run db:push', {
+          cwd: workspaceRoot,
+          env: backendEnv,
+          logPrefix: '[backend:init]',
+          shell: true,
+        });
+        console.log('[backend:init] Development database schema is ready.');
+      } else {
+        console.log(
+          '[backend:init] Development database exists. Skipping prisma db:push to avoid encrypted DB mismatch.',
+        );
+      }
 
-  spawnedBackendProcess.once('exit', (code, signal) => {
-    console.warn(`Backend process exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
-    backendProcess = null;
-    backendPort = null;
-    backendToken = null;
-  });
+      command = 'pnpm --filter @cosmosh/backend run dev:runtime';
+      args = [];
+      shell = true;
+    } else {
+      await fs.access(packagedBackendEntryPath);
+      command = process.execPath;
+      args = [packagedBackendEntryPath];
+      backendProcessCwd = process.resourcesPath;
+      backendEnv.ELECTRON_RUN_AS_NODE = '1';
+      backendEnv.NODE_ENV = 'production';
+    }
 
-  const healthCheckStartedAt = Date.now();
-  await waitForBackendReady(
-    port,
-    () => spawnedBackendProcess.exitCode === null && !spawnedBackendProcess.killed,
-    resolveBackendHealthCheckTimeoutMs(isDev),
-  );
-  console.log(`[backend] Health check passed in ${Date.now() - healthCheckStartedAt}ms.`);
-  backendPort = port;
-  backendToken = token;
-  console.log(`Backend service is ready on http://127.0.0.1:${port}`);
+    const spawnedBackendProcess = spawn(command, args, {
+      cwd: backendProcessCwd,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: backendEnv,
+      shell,
+      windowsHide: true,
+    });
+
+    backendProcess = spawnedBackendProcess;
+    console.log(
+      `[backend] Backend process started. Awaiting health check on http://127.0.0.1:${port}${API_PATHS.health}`,
+    );
+
+    spawnedBackendProcess.stdout.on('data', (chunk: Buffer) => {
+      console.log(`[backend] ${chunk.toString().trim()}`);
+    });
+
+    spawnedBackendProcess.stderr.on('data', (chunk: Buffer) => {
+      console.error(`[backend] ${chunk.toString().trim()}`);
+    });
+
+    spawnedBackendProcess.once('exit', (code, signal) => {
+      console.warn(`Backend process exited (code=${code ?? 'null'}, signal=${signal ?? 'null'})`);
+      backendProcess = null;
+      backendPort = null;
+      backendToken = null;
+    });
+
+    const healthCheckStartedAt = Date.now();
+    await waitForBackendReady(
+      port,
+      () => spawnedBackendProcess.exitCode === null && !spawnedBackendProcess.killed,
+      resolveBackendHealthCheckTimeoutMs(isDev),
+    );
+    console.log(`[backend] Health check passed in ${Date.now() - healthCheckStartedAt}ms.`);
+    backendPort = port;
+    backendToken = token;
+    console.log(`Backend service is ready on http://127.0.0.1:${port}`);
+  })();
+
+  try {
+    await backendStartupPromise;
+  } finally {
+    backendStartupPromise = null;
+  }
 };
 
 const stopBackendService = (): void => {
@@ -635,6 +649,7 @@ const stopBackendService = (): void => {
   backendProcess = null;
   backendPort = null;
   backendToken = null;
+  backendStartupPromise = null;
 };
 
 /**
@@ -675,6 +690,8 @@ const requestBackend = async <TSuccess>(
     body?: unknown;
   },
 ): Promise<TSuccess | ApiErrorResponse> => {
+  await startBackendService();
+
   const createBackendTransportError = (message: string): ApiErrorResponse => {
     return createApiError({
       code: API_CODES.commonInternalServerError,
@@ -807,8 +824,9 @@ if (!hasSingleInstanceLock) {
         });
       }
 
-      await startBackendService();
+      const backendStartupTask = startBackendService();
       await createWindow();
+      await backendStartupTask;
     } catch (error) {
       console.error('Failed to start Cosmosh application.', error);
       showStartupFailureDialog(error);
@@ -850,6 +868,7 @@ registerAppUtilityIpcHandlers({
 
 registerBackendIpcHandlers({
   getLocale: () => appLocale,
+  ensureBackendReady: startBackendService,
   requireBackendConfig,
   requestBackend,
   consumePendingLaunchWorkingDirectory,
