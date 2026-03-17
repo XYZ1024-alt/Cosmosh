@@ -54,7 +54,14 @@ import { Label } from '../components/ui/label';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { PasswordField } from '../components/ui/password-field';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { TagInput } from '../components/ui/tag-input';
 import { Textarea } from '../components/ui/textarea';
@@ -106,6 +113,7 @@ type ServerCredentialCache = {
 };
 
 const NO_FOLDER_SELECT_VALUE = '__none__';
+const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
 
 const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFormState => {
   return {
@@ -122,6 +130,38 @@ const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFor
     tagIds: [],
     strictHostKey: true,
   };
+};
+
+/**
+ * Merges a refreshed server snapshot into the current editor state without discarding locally edited fields.
+ *
+ * @param currentFormState The form state currently shown in the editor.
+ * @param nextFormState The latest state derived from backend data.
+ * @param dirtyFields The field keys edited locally since the current entity was loaded.
+ * @returns A merged form state that preserves unsaved local edits.
+ */
+const mergeFormStatePreservingDirtyFields = (
+  currentFormState: ServerEditorFormState,
+  nextFormState: ServerEditorFormState,
+  dirtyFields: ReadonlySet<keyof ServerEditorFormState>,
+): ServerEditorFormState => {
+  if (dirtyFields.size === 0) {
+    return nextFormState;
+  }
+
+  const mergedFormState: ServerEditorFormState = { ...currentFormState };
+  const mutableFormState = mergedFormState as Record<
+    keyof ServerEditorFormState,
+    ServerEditorFormState[keyof ServerEditorFormState]
+  >;
+
+  (Object.keys(nextFormState) as Array<keyof ServerEditorFormState>).forEach((fieldKey) => {
+    if (!dirtyFields.has(fieldKey)) {
+      mutableFormState[fieldKey] = nextFormState[fieldKey];
+    }
+  });
+
+  return mergedFormState;
 };
 
 const parsePort = (value: string): number | null => {
@@ -191,8 +231,12 @@ const SSHEditor: React.FC = () => {
   const [isDeletingServer, setIsDeletingServer] = React.useState<boolean>(false);
   const [deleteServerDraft, setDeleteServerDraft] = React.useState<{ id: string; name: string } | null>(null);
   const activeServerIdRef = React.useRef<string | null>(null);
+  const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
+  const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
   const preferCreateModeRef = React.useRef<boolean>(false);
+  const pendingSelectedFolderIdRef = React.useRef<string | null>(null);
+  const shouldSelectCreatedFolderRef = React.useRef<boolean>(false);
 
   const requiresPassword = formState.authType === 'password' || formState.authType === 'both';
   const requiresPrivateKey = formState.authType === 'key' || formState.authType === 'both';
@@ -209,6 +253,27 @@ const SSHEditor: React.FC = () => {
     activeServerIdRef.current = activeServerId;
   }, [activeServerId]);
 
+  React.useEffect(() => {
+    formStateRef.current = formState;
+  }, [formState]);
+
+  React.useEffect(() => {
+    const pendingSelectedFolderId = pendingSelectedFolderIdRef.current;
+    if (!pendingSelectedFolderId || !folders.some((folder) => folder.id === pendingSelectedFolderId)) {
+      return;
+    }
+
+    pendingSelectedFolderIdRef.current = null;
+    dirtyFieldKeysRef.current.add('folderId');
+    setFormState((previous) =>
+      previous.folderId === pendingSelectedFolderId ? previous : { ...previous, folderId: pendingSelectedFolderId },
+    );
+  }, [folders]);
+
+  const resetDirtyFieldKeys = React.useCallback(() => {
+    dirtyFieldKeysRef.current = new Set();
+  }, []);
+
   const reloadData = React.useCallback(async () => {
     setIsLoading(true);
 
@@ -222,6 +287,9 @@ const SSHEditor: React.FC = () => {
       const nextServers = serversResponse.data.items;
       const nextTags = tagsResponse.data.items;
       const nextDefaultServerNoteTemplate = defaultServerNoteTemplate;
+      const currentActiveServerId = activeServerIdRef.current;
+      const currentFormState = formStateRef.current;
+      const dirtyFieldKeys = dirtyFieldKeysRef.current;
 
       setFolders(nextFolders);
       setServers(nextServers);
@@ -233,19 +301,28 @@ const SSHEditor: React.FC = () => {
 
       if (preferCreateModeRef.current) {
         setActiveServerId(null);
-        setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        if (currentActiveServerId === null) {
+          setFormState(currentFormState);
+        } else {
+          resetDirtyFieldKeys();
+          setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        }
         return;
       }
 
       if (nextServers.length === 0) {
         preferCreateModeRef.current = true;
         setActiveServerId(null);
-        setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        if (currentActiveServerId === null) {
+          setFormState(currentFormState);
+        } else {
+          resetDirtyFieldKeys();
+          setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        }
         return;
       }
 
       const preferredServerId = getActiveSshServerId();
-      const currentActiveServerId = activeServerIdRef.current;
       const currentId =
         currentActiveServerId && nextServers.some((server) => server.id === currentActiveServerId)
           ? currentActiveServerId
@@ -254,19 +331,29 @@ const SSHEditor: React.FC = () => {
             : nextServers[0].id;
       const targetServer = nextServers.find((server) => server.id === currentId) ?? nextServers[0];
       const cachedCredentials = credentialsCacheRef.current[targetServer.id];
+      const nextFormState = {
+        ...mapServerToFormState(targetServer),
+        ...(cachedCredentials ?? {}),
+      };
+      const shouldPreserveLocalChanges = currentActiveServerId === targetServer.id && dirtyFieldKeys.size > 0;
 
       preferCreateModeRef.current = false;
       setActiveServerId(targetServer.id);
-      setFormState({
-        ...mapServerToFormState(targetServer),
-        ...(cachedCredentials ?? {}),
-      });
+      setFormState(
+        shouldPreserveLocalChanges
+          ? mergeFormStatePreservingDirtyFields(currentFormState, nextFormState, dirtyFieldKeys)
+          : nextFormState,
+      );
+
+      if (!shouldPreserveLocalChanges) {
+        resetDirtyFieldKeys();
+      }
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('ssh.editorLoadFailed'));
     } finally {
       setIsLoading(false);
     }
-  }, [defaultServerNoteTemplate, notifyError]);
+  }, [defaultServerNoteTemplate, notifyError, resetDirtyFieldKeys]);
 
   React.useEffect(() => {
     void reloadData();
@@ -278,10 +365,11 @@ const SSHEditor: React.FC = () => {
     }
 
     let cancelled = false;
+    const requestedServerId = activeServerId;
 
     const loadCredentials = async () => {
       try {
-        const response = await getSshServerCredentials(activeServerId);
+        const response = await getSshServerCredentials(requestedServerId);
         if (cancelled) {
           return;
         }
@@ -293,10 +381,15 @@ const SSHEditor: React.FC = () => {
           privateKeyPassphrase: response.data.privateKeyPassphrase ?? '',
         };
 
-        credentialsCacheRef.current[activeServerId] = nextCredentials;
+        credentialsCacheRef.current[requestedServerId] = nextCredentials;
         setFormState((previous) => ({
-          ...previous,
-          ...nextCredentials,
+          ...(activeServerIdRef.current === requestedServerId
+            ? mergeFormStatePreservingDirtyFields(
+                previous,
+                { ...previous, ...nextCredentials },
+                dirtyFieldKeysRef.current,
+              )
+            : previous),
         }));
       } catch {
         if (!cancelled) {
@@ -490,6 +583,7 @@ const SSHEditor: React.FC = () => {
       }
 
       preferCreateModeRef.current = false;
+      resetDirtyFieldKeys();
       setActiveSshServerId(serverId);
       setActiveServerId(serverId);
       setFormState({
@@ -497,11 +591,12 @@ const SSHEditor: React.FC = () => {
         ...(credentialsCacheRef.current[serverId] ?? {}),
       });
     },
-    [servers],
+    [resetDirtyFieldKeys, servers],
   );
 
   const onChangeForm = React.useCallback(
     <K extends keyof ServerEditorFormState>(key: K, value: ServerEditorFormState[K]) => {
+      dirtyFieldKeysRef.current.add(key);
       setFormState((previous) => ({
         ...previous,
         [key]: value,
@@ -570,14 +665,25 @@ const SSHEditor: React.FC = () => {
 
   const onAddServer = React.useCallback(() => {
     preferCreateModeRef.current = true;
+    resetDirtyFieldKeys();
     setActiveSshServerId('');
     setActiveServerId(null);
     setFormState(createInitialFormState(defaultServerNoteTemplate));
-  }, [defaultServerNoteTemplate]);
+  }, [defaultServerNoteTemplate, resetDirtyFieldKeys]);
 
-  const onCreateFolder = React.useCallback(() => {
+  const onCreateFolder = React.useCallback((options?: { selectOnCreate?: boolean }) => {
+    shouldSelectCreatedFolderRef.current = options?.selectOnCreate ?? false;
     setNewFolderName('');
     setIsCreateFolderDialogOpen(true);
+  }, []);
+
+  const onCreateFolderDialogOpenChange = React.useCallback((open: boolean) => {
+    if (!open) {
+      shouldSelectCreatedFolderRef.current = false;
+      setNewFolderName('');
+    }
+
+    setIsCreateFolderDialogOpen(open);
   }, []);
 
   const submitCreateFolder = React.useCallback(async () => {
@@ -589,16 +695,26 @@ const SSHEditor: React.FC = () => {
 
     setIsFolderSubmitting(true);
     try {
-      await createFolder(folderName);
+      const createdFolder = await createFolder(folderName);
+      if (shouldSelectCreatedFolderRef.current) {
+        pendingSelectedFolderIdRef.current = createdFolder.id;
+      }
+
+      setFolders((previous) => [...previous, createdFolder]);
+
+      if (shouldSelectCreatedFolderRef.current) {
+        onChangeForm('folderId', createdFolder.id);
+      }
+
       setIsCreateFolderDialogOpen(false);
       setNewFolderName('');
-      await reloadData();
+      shouldSelectCreatedFolderRef.current = false;
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.folderCreateFailed'));
     } finally {
       setIsFolderSubmitting(false);
     }
-  }, [newFolderName, notifyError, notifyWarning, reloadData]);
+  }, [newFolderName, notifyError, notifyWarning, onChangeForm]);
 
   const openDeleteServerDialog = React.useCallback(
     (serverId: string) => {
@@ -689,6 +805,7 @@ const SSHEditor: React.FC = () => {
             tagIds: formState.tagIds,
             note: formState.note.trim() || undefined,
           });
+          resetDirtyFieldKeys();
           setActiveSshServerId(activeServerId);
           successMessage = t('ssh.serverUpdatedSuccessfully');
         } else {
@@ -707,6 +824,7 @@ const SSHEditor: React.FC = () => {
           });
 
           const createdServerId = created.data.item.id;
+          resetDirtyFieldKeys();
           setActiveSshServerId(createdServerId);
           preferCreateModeRef.current = false;
         }
@@ -726,6 +844,7 @@ const SSHEditor: React.FC = () => {
       notifySuccess,
       notifyWarning,
       reloadData,
+      resetDirtyFieldKeys,
       requiresPassword,
       requiresPrivateKey,
       servers,
@@ -814,7 +933,7 @@ const SSHEditor: React.FC = () => {
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     icon={FolderPlus}
-                    onSelect={onCreateFolder}
+                    onSelect={() => onCreateFolder()}
                   >
                     {t('home.quickAddFolder')}
                   </DropdownMenuItem>
@@ -1109,9 +1228,14 @@ const SSHEditor: React.FC = () => {
                     <FormControl>
                       <Select
                         value={formState.folderId || NO_FOLDER_SELECT_VALUE}
-                        onValueChange={(value) =>
-                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value)
-                        }
+                        onValueChange={(value) => {
+                          if (value === CREATE_FOLDER_SELECT_VALUE) {
+                            onCreateFolder({ selectOnCreate: true });
+                            return;
+                          }
+
+                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value);
+                        }}
                       >
                         <SelectTrigger id="ssh-editor-folder">
                           <SelectValue placeholder={t('ssh.noFolder')} />
@@ -1127,6 +1251,13 @@ const SSHEditor: React.FC = () => {
                               {folder.name}
                             </SelectItem>
                           ))}
+                          <SelectSeparator />
+                          <SelectItem
+                            value={CREATE_FOLDER_SELECT_VALUE}
+                            icon={FolderPlus}
+                          >
+                            {t('home.quickAddFolder')}
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </FormControl>
@@ -1169,7 +1300,7 @@ const SSHEditor: React.FC = () => {
 
       <Dialog
         open={isCreateFolderDialogOpen}
-        onOpenChange={setIsCreateFolderDialogOpen}
+        onOpenChange={onCreateFolderDialogOpenChange}
       >
         <DialogContent>
           <DialogHeader>
@@ -1184,7 +1315,7 @@ const SSHEditor: React.FC = () => {
           <DialogFooter>
             <Button
               variant="ghost"
-              onClick={() => setIsCreateFolderDialogOpen(false)}
+              onClick={() => onCreateFolderDialogOpenChange(false)}
             >
               {t('home.actionCancel')}
             </Button>
