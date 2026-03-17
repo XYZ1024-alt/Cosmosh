@@ -459,6 +459,7 @@ const App: React.FC = () => {
               onCloseRightTabs={closeRightTabs}
               onCloseOtherTabs={closeOtherTabs}
               onReorderTabs={reorderTabs}
+              onOpenSSHEditorTab={() => addTab('ssh-editor')}
               onOpenSettingsTab={(options) =>
                 addTab('settings', {
                   state: {

@@ -1,6 +1,6 @@
 import * as RadixAvatar from '@radix-ui/react-avatar';
 import classNames from 'classnames';
-import { Bug, Info, RefreshCcw, Settings } from 'lucide-react';
+import { Bug, Info, RefreshCcw, Server, Settings } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -26,6 +26,7 @@ const Header: React.FC<{
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
   onReorderTabs?: (nextTabs: TabItem[]) => void;
+  onOpenSSHEditorTab?: () => void;
   onOpenSettingsTab?: (options?: { categoryId?: 'about' }) => void;
   onOpenSettingsEditorTab?: () => void;
   onOpenDebugTab?: () => void;
@@ -39,6 +40,7 @@ const Header: React.FC<{
   onCloseRightTabs,
   onCloseOtherTabs,
   onReorderTabs,
+  onOpenSSHEditorTab,
   onOpenSettingsTab,
   onOpenSettingsEditorTab,
   onOpenDebugTab,
@@ -193,6 +195,15 @@ const Header: React.FC<{
                 <div className="truncate text-xs text-header-text-muted">{t('header.guestEmail')}</div>
               </div>
             </div>
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            icon={Server}
+            onSelect={() => {
+              void onOpenSSHEditorTab?.();
+            }}
+          >
+            {t('tabs.page.sshEditor')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
