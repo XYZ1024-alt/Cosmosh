@@ -72,7 +72,7 @@ const EntityCard = React.forwardRef<HTMLDivElement, EntityCardProps>(
       <>
         <span
           className={classNames(
-            'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-[8px]',
+            'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-sm-2',
           )}
         >
           {imageUrl ? (
@@ -104,7 +104,7 @@ const EntityCard = React.forwardRef<HTMLDivElement, EntityCardProps>(
         role="button"
         tabIndex={tabIndex ?? 0}
         className={classNames(
-          'group w-full rounded-[15px] px-2 py-2 text-left outline-none transition-colors [-webkit-app-region:no-drag]',
+          'group w-full rounded-lg-2 px-2 py-2 text-left outline-none transition-colors [-webkit-app-region:no-drag]',
           onClick ? 'cursor-pointer' : 'cursor-default',
           'inline-flex min-h-[46px] items-center gap-2.5',
           selected

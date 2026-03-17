@@ -7,10 +7,16 @@
 :root {
   --font-sans: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --radius-xs: 2px;
+  --radius-xs-2: 4px;
   --radius-sm: 6px;
+  --radius-sm-2: 8px;
   --radius-md: 10px;
+  --radius-md-2: 12px;
   --radius-lg: 14px;
+  --radius-lg-2: 16px;
   --radius-xl: 18px;
+  --radius-xl-2: 20px;
   --color-text: #ffffff;
   --color-text-muted: #a7b0bd;
   --color-bg: #000000;

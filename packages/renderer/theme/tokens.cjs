@@ -4,10 +4,16 @@ const base = {
     mono: '"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
   },
   radius: {
+    xs: '2px',
+    'xs-2': '4px',
     sm: '6px',
+    'sm-2': '8px',
     md: '10px',
+    'md-2': '12px',
     lg: '14px',
+    'lg-2': '16px',
     xl: '18px',
+    'xl-2': '20px',
   },
   colors: {
     text: {
