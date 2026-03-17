@@ -11,6 +11,11 @@ const shouldUseStrictMode = !import.meta.env.DEV || import.meta.env.VITE_ENABLE_
 
 document.documentElement.dataset.theme = 'dark';
 
+/**
+ * Bootstraps locale/settings state before first render using fast local cache.
+ *
+ * @returns Nothing.
+ */
 const bootstrap = async (): Promise<void> => {
   await initializeLocale();
   await initializeSettingsStore();

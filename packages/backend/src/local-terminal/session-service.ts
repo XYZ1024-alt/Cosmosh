@@ -31,6 +31,11 @@ import {
 } from '../terminal/shared.js';
 
 const execFileAsync = promisify(execFile);
+const WINDOWS_PROFILE_DISCOVERY_TIMEOUT_MS = 1200;
+const LOCAL_PROFILE_CACHE_TTL_MS = 60_000;
+
+let windowsProfilesCache: { expiresAt: number; profiles: LocalTerminalProfile[] } | null = null;
+let unixProfilesCache: { expiresAt: number; profiles: LocalTerminalProfile[] } | null = null;
 /**
  * Describes an available local shell profile that can be launched as PTY session.
  */
@@ -162,33 +167,65 @@ const resolveWindowsProfiles = async (): Promise<LocalTerminalProfile[]> => {
     { id: 'wsl', name: 'WSL', command: 'wsl.exe', args: [] },
   ];
 
-  const profiles: LocalTerminalProfile[] = [];
+  const now = Date.now();
+  if (windowsProfilesCache && windowsProfilesCache.expiresAt > now) {
+    return windowsProfilesCache.profiles;
+  }
 
-  for (const candidate of candidates) {
+  const profileProbes = candidates.map(async (candidate): Promise<LocalTerminalProfile | null> => {
     try {
-      const { stdout } = await execFileAsync('where', [candidate.command]);
+      const stdout = await new Promise<string>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('where lookup timeout'));
+        }, WINDOWS_PROFILE_DISCOVERY_TIMEOUT_MS);
+
+        void execFileAsync('where', [candidate.command])
+          .then((result) => {
+            clearTimeout(timeoutId);
+            resolve(result.stdout);
+          })
+          .catch((error) => {
+            clearTimeout(timeoutId);
+            reject(error);
+          });
+      });
+
       const firstMatch = stdout
         .split(/\r?\n/)
         .map((line) => line.trim())
         .find((line) => line.length > 0);
 
       if (!firstMatch) {
-        continue;
+        return null;
       }
 
-      profiles.push({
+      return {
         ...candidate,
         executablePath: firstMatch,
-      });
+      };
     } catch {
-      // Skip unavailable terminal profile.
+      return null;
     }
-  }
+  });
+
+  const profiles = (await Promise.all(profileProbes)).filter((profile): profile is LocalTerminalProfile => {
+    return profile !== null;
+  });
+
+  windowsProfilesCache = {
+    expiresAt: now + LOCAL_PROFILE_CACHE_TTL_MS,
+    profiles,
+  };
 
   return profiles;
 };
 
 const resolveUnixProfiles = async (): Promise<LocalTerminalProfile[]> => {
+  const now = Date.now();
+  if (unixProfilesCache && unixProfilesCache.expiresAt > now) {
+    return unixProfilesCache.profiles;
+  }
+
   let content: string;
 
   try {
@@ -236,6 +273,11 @@ const resolveUnixProfiles = async (): Promise<LocalTerminalProfile[]> => {
       args: ['-i'],
     });
   }
+
+  unixProfilesCache = {
+    expiresAt: now + LOCAL_PROFILE_CACHE_TTL_MS,
+    profiles,
+  };
 
   return profiles;
 };

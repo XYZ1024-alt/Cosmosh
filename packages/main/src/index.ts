@@ -826,8 +826,9 @@ if (!hasSingleInstanceLock) {
         });
       }
 
+      const windowStartupTask = createWindow();
       const backendStartupTask = startBackendService();
-      await createWindow();
+      await windowStartupTask;
       await backendStartupTask;
     } catch (error) {
       console.error('Failed to start Cosmosh application.', error);

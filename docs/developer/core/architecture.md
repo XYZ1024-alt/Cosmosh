@@ -25,7 +25,7 @@ flowchart LR
 
 ### Main Process (`packages/main/src/index.ts`)
 
-- Starts backend process and BrowserWindow in parallel during app bootstrap.
+- Starts BrowserWindow and backend warmup in parallel during app bootstrap.
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
 - In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
@@ -40,6 +40,7 @@ flowchart LR
 - Registers idempotent graceful-shutdown flow for runtime signals and fatal process events.
 - Shutdown order is explicit: stop WS session services, close HTTP listener, then disconnect Prisma/SQLite handles.
 - Windows-specific termination (`SIGBREAK`) is handled in the same path as POSIX signals to reduce stale DB lock cases.
+- Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
 - Schema sync is fail-fast: backend startup stops when required tables still cannot be reconciled after runtime migration execution, preventing partial/undefined API behavior.
 - Migration ledger metadata is stored in Prisma-compatible `_prisma_migrations` format to keep a future path open for native `prisma migrate deploy/resolve` workflows.
@@ -50,6 +51,7 @@ flowchart LR
 - Creates SSH/local terminal sessions through backend APIs.
 - Connects terminal data channels through WebSocket and renders with `xterm.js`.
 - Non-home renderer pages (including SSH and settings editor/Monaco) are lazy-loaded to keep heavyweight assets out of the default startup path.
+- Renderer bootstrap hydrates settings from local cache first, then refreshes canonical values from backend in background.
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 
 ## 3. IPC Lifecycle (Current)
@@ -112,7 +114,7 @@ sequenceDiagram
 - Settings are now persisted by backend route `GET/PUT /api/v1/settings`.
 - Storage model is a single-row JSON payload per scope (`scopeAccountId` + `scopeDeviceId`) in `AppSettings`.
 - Scope defaults to local device (`deviceId=local-device`) while keeping account scope field for future sync.
-- Renderer bootstrap (`packages/renderer/src/main.tsx`) applies persisted language/theme at startup.
+- Renderer bootstrap (`packages/renderer/src/main.tsx`) applies persisted language/theme using cached settings at startup, then synchronizes with backend.
 - Non-visual settings (for example SSH runtime limits) are persisted and discoverable, but some are intentionally not bound to runtime behavior yet.
 - All setting definitions (types, defaults, constraints, enum sets, UI metadata, categories) live in a single registry: `packages/api-contract/src/settings-registry.ts`. Adding or removing a setting only requires editing this file (plus i18n locale files).
 - Validation logic in `packages/api-contract/src/settings.ts` is now generic and registry-driven: per-key rules (type check, enum, range, maxLength) are derived from the registry at runtime — no manual switch/case per key.

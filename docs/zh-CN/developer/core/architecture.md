@@ -25,7 +25,7 @@ flowchart LR
 
 ### Main 进程 (`packages/main/src/index.ts`)
 
-- 应用启动阶段并行拉起后端进程与 BrowserWindow。
+- 应用启动阶段并行拉起 BrowserWindow 与 backend 预热流程。
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
 - 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
@@ -40,6 +40,7 @@ flowchart LR
 - 注册幂等的优雅关闭流程，覆盖运行时信号与致命进程事件。
 - 关闭顺序固定：先停 WS 会话服务，再关闭 HTTP 监听，最后断开 Prisma/SQLite 连接句柄。
 - Windows 终止信号（`SIGBREAK`）与 POSIX 信号共用同一路径，降低数据库文件锁残留概率。
+- 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
 - Schema 同步采用快速失败策略：若运行时 migration 执行后仍无法满足必需表结构，backend 将中止启动，避免 API 进入部分可用/行为不确定状态。
 - migration 台账元数据采用与 Prisma 兼容的 `_prisma_migrations` 结构，便于后续平滑切换到原生 `prisma migrate deploy/resolve` 工作流。
@@ -50,6 +51,7 @@ flowchart LR
 - 通过后端 API 创建 SSH/本地终端会话。
 - 通过 WebSocket 建立终端数据通道，并由 `xterm.js` 渲染。
 - 非 Home 的渲染页（含 SSH 与设置编辑器/Monaco）采用懒加载，避免重型资源进入默认启动路径。
+- Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 
 ## 3. IPC 生命周期（当前）
@@ -112,7 +114,7 @@ sequenceDiagram
 - 设置通过后端路由 `GET/PUT /api/v1/settings` 持久化。
 - 存储模型为按作用域单行 JSON（`scopeAccountId` + `scopeDeviceId`）的 `AppSettings` 表。
 - 默认作用域为本机（`deviceId=local-device`），并预留 account 作用域字段用于未来同步。
-- Renderer 启动阶段（`packages/renderer/src/main.tsx`）会加载并应用已保存的语言与主题。
+- Renderer 启动阶段（`packages/renderer/src/main.tsx`）会优先使用缓存设置应用语言与主题，并在后台与 backend 同步。
 - 非视觉设置（如 SSH 运行时限制）当前仅做持久化与可发现，部分暂未绑定真实运行时行为。
 - 所有设置定义（类型、默认值、约束、枚举集、UI 元数据、分类）统一存放在单一注册表：`packages/api-contract/src/settings-registry.ts`。增删设置项仅需编辑此文件（加 i18n 语言文件）。
 - `packages/api-contract/src/settings.ts` 中的校验逻辑已改为通用的注册表驱动方式：每个 key 的规则（类型检查、枚举、范围、maxLength）在运行时从注册表派生，不再有手写的 switch/case。

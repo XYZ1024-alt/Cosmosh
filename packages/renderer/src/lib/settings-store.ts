@@ -24,6 +24,9 @@ type SettingsSnapshot = Readonly<SettingsValues>;
 
 let currentSnapshot: SettingsSnapshot = { ...DEFAULT_SETTINGS_VALUES };
 let storeInitialized = false;
+let settingsRefreshPromise: Promise<void> | null = null;
+
+const SETTINGS_CACHE_STORAGE_KEY = 'cosmosh.renderer.settings-cache.v1';
 
 // Listeners subscribed via `useSyncExternalStore`.
 const listeners = new Set<() => void>();
@@ -45,6 +48,64 @@ const getSnapshot = (): SettingsSnapshot => {
   return currentSnapshot;
 };
 
+/**
+ * Persists the latest settings snapshot for fast next-launch hydration.
+ *
+ * @param values Latest settings values.
+ * @returns Nothing.
+ */
+const persistSettingsCache = (values: SettingsValues): void => {
+  try {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    window.localStorage.setItem(SETTINGS_CACHE_STORAGE_KEY, JSON.stringify(values));
+  } catch {
+    // Ignore cache persistence failures and keep runtime in-memory state only.
+  }
+};
+
+/**
+ * Reads cached settings snapshot from localStorage.
+ *
+ * @returns Cached values or `null` when unavailable/invalid.
+ */
+const readCachedSettings = (): SettingsValues | null => {
+  try {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    const rawPayload = window.localStorage.getItem(SETTINGS_CACHE_STORAGE_KEY);
+    if (!rawPayload) {
+      return null;
+    }
+
+    const parsed = JSON.parse(rawPayload) as Partial<SettingsValues>;
+    return {
+      ...DEFAULT_SETTINGS_VALUES,
+      ...parsed,
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Fetches canonical settings from backend and applies them to the shared store.
+ *
+ * @returns Nothing.
+ */
+const refreshSettingsFromBackend = async (): Promise<void> => {
+  const response = await getAppSettings();
+  const nextValues = Object.freeze({ ...response.data.item.values });
+  currentSnapshot = nextValues;
+  persistSettingsCache(nextValues);
+  await applyRuntimeSettings(nextValues);
+  emitChange();
+};
+
 // ── Public API ───────────────────────────────────────────────
 
 /**
@@ -52,16 +113,28 @@ const getSnapshot = (): SettingsSnapshot => {
  * Intended to be called once during app bootstrap.
  */
 export const initializeSettingsStore = async (): Promise<void> => {
-  try {
-    const response = await getAppSettings();
-    currentSnapshot = Object.freeze({ ...response.data.item.values });
-  } catch {
-    currentSnapshot = Object.freeze({ ...DEFAULT_SETTINGS_VALUES });
+  if (storeInitialized) {
+    return;
   }
+
+  const cachedValues = readCachedSettings();
+  const initialValues = cachedValues ?? { ...DEFAULT_SETTINGS_VALUES };
+  currentSnapshot = Object.freeze(initialValues);
+  persistSettingsCache(initialValues);
 
   storeInitialized = true;
   await applyRuntimeSettings(currentSnapshot);
   emitChange();
+
+  if (!settingsRefreshPromise) {
+    settingsRefreshPromise = refreshSettingsFromBackend()
+      .catch(() => {
+        // Keep cached/default snapshot when backend is unavailable during startup.
+      })
+      .finally(() => {
+        settingsRefreshPromise = null;
+      });
+  }
 };
 
 /**
@@ -70,6 +143,7 @@ export const initializeSettingsStore = async (): Promise<void> => {
  */
 export const updateSettingsStoreValues = async (values: SettingsValues): Promise<void> => {
   currentSnapshot = Object.freeze({ ...values });
+  persistSettingsCache(values);
   await applyRuntimeSettings(currentSnapshot);
   emitChange();
 };
