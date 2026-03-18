@@ -79,6 +79,7 @@ import {
   renderEntityIcon,
 } from '../lib/entity-visuals';
 import { t } from '../lib/i18n';
+import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
 import { consumeSshEditorCreateMode, getActiveSshServerId, setActiveSshServerId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
@@ -211,6 +212,7 @@ const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState 
 const SSHEditor: React.FC = () => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
+  const showFullServerAddress = useSettingsValue('showFullServerAddress');
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
   const [tags, setTags] = React.useState<SshTag[]>([]);
@@ -957,7 +959,9 @@ const SSHEditor: React.FC = () => {
                               <EntityCard
                                 {...sidebarNavigation.getItemProps(sidebarIndex)}
                                 title={server.name}
-                                subtitle={server.note || server.host}
+                                subtitle={
+                                  server.note || resolveServerAddressForDisplay(server.host, showFullServerAddress)
+                                }
                                 selected={server.id === activeServerId}
                                 icon={createEntityIconNode({ iconKey, colorKey }, server.name)}
                                 onClick={() => onPickServer(server.id)}

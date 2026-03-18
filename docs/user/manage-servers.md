@@ -12,6 +12,12 @@
 - Settings > Advanced > Default Server Note Template pre-fills the Note field when creating a new server profile.
 - This template is applied only for new profiles and does not overwrite existing server notes.
 
+## Server Address Visibility
+
+- Use Settings > General > Show Full Server Address to control how host/IP values are displayed in server lists.
+- Enabled (default): the full server address is shown.
+- Disabled: addresses are masked with asterisks to reduce shoulder-surfing risk.
+
 ## Organize for Daily Use
 
 1. Apply stable naming, for example `env-region-role`.

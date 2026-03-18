@@ -214,6 +214,10 @@
         "description": "Sets the UI language.",
         "title": "Language"
       },
+      "showFullServerAddress": {
+        "description": "When disabled, server host/IP values in the server list are masked with asterisks.",
+        "title": "Show Full Server Address"
+      },
       "sshConnectionTimeoutSec": {
         "description": "Connection is automatically disconnected after timeout.",
         "placeholder": "45",

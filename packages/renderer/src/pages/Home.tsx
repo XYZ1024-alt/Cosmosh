@@ -89,6 +89,8 @@ import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/e
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
+import { resolveServerAddressForDisplay } from '../lib/server-address';
+import { useSettingsValue } from '../lib/settings-store';
 import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
@@ -158,6 +160,7 @@ const hashString = (value: string): number => {
 
 const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
+  const showFullServerAddress = useSettingsValue('showFullServerAddress');
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
   const [localTerminalProfiles, setLocalTerminalProfiles] = React.useState<LocalTerminalProfile[]>([]);
@@ -1290,7 +1293,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                                 draggable
                                 layout="grid"
                                 title={server.name}
-                                subtitle={server.host}
+                                subtitle={resolveServerAddressForDisplay(server.host, showFullServerAddress)}
                                 className={draggingServerId === server.id ? 'opacity-70' : undefined}
                                 icon={createEntityIconNode({ iconKey: server.iconKey, colorKey }, server.name)}
                                 action={

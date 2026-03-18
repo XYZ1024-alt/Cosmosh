@@ -214,6 +214,10 @@
         "description": "设置使用的界面语言。",
         "title": "语言"
       },
+      "showFullServerAddress": {
+        "description": "关闭后，服务器列表中的主机/IP 地址会以星号脱敏显示。",
+        "title": "显示完整服务器地址"
+      },
       "sshConnectionTimeoutSec": {
         "description": "超时后，连接将自动断开。",
         "placeholder": "45",
