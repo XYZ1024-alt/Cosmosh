@@ -585,6 +585,17 @@ const SSHEditor: React.FC = () => {
     [],
   );
 
+  const onHostChange = React.useCallback(
+    (nextHost: string) => {
+      onChangeForm('host', nextHost);
+
+      if (activeServerId === null && !formStateRef.current.name.trim()) {
+        onChangeForm('name', nextHost);
+      }
+    },
+    [activeServerId, onChangeForm],
+  );
+
   const createFolderDialog = useCreateFolderDialog({
     onCreated: (createdFolder, options) => {
       setFolders((previous) => [...previous, createdFolder]);
@@ -1083,7 +1094,7 @@ const SSHEditor: React.FC = () => {
                         id="ssh-editor-host"
                         value={formState.host}
                         placeholder={t('ssh.hostPlaceholder')}
-                        onChange={(event) => onChangeForm('host', event.target.value)}
+                        onChange={(event) => onHostChange(event.target.value)}
                       />
                     </FormControl>
                   </FormField>
