@@ -751,7 +751,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
 
         <main className="flex min-w-0 flex-1 flex-col pl-2">
           <div className="shrink-0 bg-bg pb-2">
-            <div className="mx-auto flex h-[46px] max-w-4xl items-start justify-between gap-4 pb-1">
+            <div className="mx-auto flex min-h-[46px] max-w-4xl items-start justify-between gap-4 pb-1">
               <div className="grid gap-1">
                 <h1 className="text-home-text ps-2 text-[24px] font-semibold">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
