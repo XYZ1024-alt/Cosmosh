@@ -191,7 +191,7 @@ const EntityVisualPicker: React.FC<EntityVisualPickerProps> = ({ visual, label, 
         )}
       </DropdownMenuTrigger>
       <DropdownMenuContent
-        className="w-[360px] p-2"
+        className="w-[340px] p-2"
         onKeyDownCapture={onContentKeyDownCapture}
       >
         <div className="m-1 mb-2 flex flex-wrap gap-2">
