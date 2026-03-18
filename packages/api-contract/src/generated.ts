@@ -333,6 +333,8 @@ export interface components {
         SshFolder: {
             id: string;
             name: string;
+            iconKey: string;
+            colorKey: components["schemas"]["SshVisualColorKey"];
             note?: string;
             /** Format: date-time */
             createdAt: string;
@@ -365,6 +367,8 @@ export interface components {
         SshServerListItem: {
             id: string;
             name: string;
+            iconKey: string;
+            colorKey: components["schemas"]["SshVisualColorKey"];
             host: string;
             port: number;
             username: string;
@@ -392,6 +396,8 @@ export interface components {
             port: number;
             username: string;
             authType: components["schemas"]["SshAuthType"];
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
             password?: string;
             privateKey?: string;
             privateKeyPassphrase?: string;
@@ -401,12 +407,18 @@ export interface components {
         };
         SshFolderCreateRequest: {
             name: string;
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
             note?: string;
         };
         SshFolderUpdateRequest: {
             name: string;
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
             note?: string;
         };
+        /** @enum {string} */
+        SshVisualColorKey: "slate" | "blue" | "emerald" | "violet" | "amber" | "rose" | "cyan" | "indigo" | "teal" | "lime";
         SshTagCreateRequest: {
             name: string;
         };

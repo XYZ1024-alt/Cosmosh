@@ -46,6 +46,7 @@
     "validation": {
       "algorithmLength": "algorithm must be 1-64 characters.",
       "authTypeEnum": "Auth type must be one of: password, key, both.",
+      "colorKeyInvalid": "Color key must be one of the predefined SSH visual colors when provided.",
       "colsRange": "cols must be an integer between 20 and 400.",
       "connectTimeoutRange": "connectTimeoutSec must be an integer between 5 and 180.",
       "fingerprintAlgorithmUnsupported": "Only sha256 host fingerprint algorithm is supported.",
@@ -54,6 +55,7 @@
       "folderNameLength": "Folder name is required and must be 1-120 characters.",
       "folderNoteLength": "Folder note must be 1000 characters or fewer.",
       "hostLength": "Host is required and must be 1-255 characters.",
+      "iconKeyLength": "Icon key must be between 1 and 64 characters when provided.",
       "invalidPayload": "Invalid request payload.",
       "invalidPayloadDetail": "Invalid request payload: {reason}",
       "noteLength": "Note must be 3000 characters or fewer.",

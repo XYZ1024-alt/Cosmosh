@@ -30,8 +30,9 @@ flowchart TB
 - **关键目录**：
   - `src/pages`：功能页面（`Home`、`SSH`、`SSHEditor`、`Settings`、`SettingsEditor`等）。
   - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
+  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
-  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）与工具抽象。
+  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）与工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。
 
 ### `packages/backend`

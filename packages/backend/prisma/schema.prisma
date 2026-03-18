@@ -21,6 +21,8 @@ enum SshLoginResult {
 model SshFolder {
   id        String      @id @default(cuid())
   name      String      @unique
+  iconKey   String      @default("Folder")
+  colorKey  String      @default("slate")
   note      String?
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
@@ -38,6 +40,8 @@ model SshTag {
 model SshServer {
   id                            String          @id @default(cuid())
   name                          String
+  iconKey                       String          @default("Server")
+  colorKey                      String          @default("blue")
   host                          String
   port                          Int             @default(22)
   username                      String

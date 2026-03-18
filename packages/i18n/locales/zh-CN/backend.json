@@ -46,6 +46,7 @@
     "validation": {
       "algorithmLength": "algorithm 长度需在 1-64 个字符之间。",
       "authTypeEnum": "认证类型必须是 password、key 或 both 之一。",
+      "colorKeyInvalid": "提供 colorKey 时，必须使用预定义的 SSH 配色键。",
       "colsRange": "cols 必须是 20 到 400 之间的整数。",
       "connectTimeoutRange": "connectTimeoutSec 必须是 5 到 180 之间的整数。",
       "fingerprintAlgorithmUnsupported": "仅支持 sha256 主机指纹算法。",
@@ -54,6 +55,7 @@
       "folderNameLength": "文件夹名称为必填，长度需在 1-120 个字符之间。",
       "folderNoteLength": "文件夹备注长度不能超过 1000 个字符。",
       "hostLength": "主机地址为必填，长度需在 1-255 个字符之间。",
+      "iconKeyLength": "提供 iconKey 时，长度必须在 1-64 个字符之间。",
       "invalidPayload": "请求载荷无效。",
       "invalidPayloadDetail": "请求载荷无效：{reason}",
       "noteLength": "备注长度不能超过 3000 个字符。",

@@ -7,10 +7,10 @@ type DirectionalNavigationOptions = {
 };
 
 type DirectionalNavigationItemProps = {
-  ref: (node: HTMLDivElement | null) => void;
+  ref: (node: HTMLElement | null) => void;
   tabIndex: number;
-  onFocus: React.FocusEventHandler<HTMLDivElement>;
-  onKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
+  onFocus: React.FocusEventHandler<HTMLElement>;
+  onKeyDown: React.KeyboardEventHandler<HTMLElement>;
 };
 
 const clampIndex = (value: number, itemCount: number): number => {
@@ -27,7 +27,7 @@ const clampIndex = (value: number, itemCount: number): number => {
 const resolveGeometricNeighborIndex = (
   currentIndex: number,
   key: string,
-  itemRefs: Array<HTMLDivElement | null>,
+  itemRefs: Array<HTMLElement | null>,
 ): number | null => {
   const currentNode = itemRefs[currentIndex];
   if (!currentNode) {
@@ -108,7 +108,7 @@ export const useDirectionalNavigation = ({
   initialIndex = 0,
 }: DirectionalNavigationOptions) => {
   const [activeIndex, setActiveIndex] = React.useState<number>(() => clampIndex(initialIndex, itemCount));
-  const itemRefs = React.useRef<Array<HTMLDivElement | null>>([]);
+  const itemRefs = React.useRef<Array<HTMLElement | null>>([]);
 
   React.useEffect(() => {
     setActiveIndex((previous) => clampIndex(previous, itemCount));
@@ -199,6 +199,7 @@ export const useDirectionalNavigation = ({
           }
 
           event.preventDefault();
+          event.stopPropagation();
           const nextIndex = resolveNextIndex(index, event.key);
           focusItem(nextIndex);
         },
@@ -210,6 +211,7 @@ export const useDirectionalNavigation = ({
   return {
     activeIndex,
     setActiveIndex,
+    focusItem,
     getItemProps,
   };
 };

@@ -17,7 +17,10 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
+import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
+import EntityIcon from '../components/home/EntityIcon';
+import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -30,14 +33,6 @@ import {
 } from '../components/ui/alert-dialog';
 import { Button } from '../components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '../components/ui/context-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '../components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -75,12 +70,19 @@ import {
   listSshTags,
   updateSshServer,
 } from '../lib/backend';
-import { createFolder, normalizeFolderName } from '../lib/folder-actions';
-import { colorKeyToClassName, resolveHomeVisual } from '../lib/home-visuals';
+import {
+  createEntityIconNode,
+  EntityColorKey,
+  getEntityColorClassName,
+  isEntityColorKey,
+  pickRandomEntityVisual,
+  renderEntityIcon,
+} from '../lib/entity-visuals';
 import { t } from '../lib/i18n';
 import { useSettingsValue } from '../lib/settings-store';
 import { consumeSshEditorCreateMode, getActiveSshServerId, setActiveSshServerId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
+import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
 
 type SshServerListItem = components['schemas']['SshServerListItem'];
@@ -92,6 +94,8 @@ type SortMode = 'default' | 'nameAsc' | 'nameDesc' | 'lastUsed' | 'createdAt';
 
 type ServerEditorFormState = {
   name: string;
+  iconKey: string;
+  colorKey: string;
   note: string;
   host: string;
   port: string;
@@ -116,8 +120,12 @@ const NO_FOLDER_SELECT_VALUE = '__none__';
 const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
 
 const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFormState => {
+  const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
+
   return {
     name: '',
+    iconKey: visual.iconKey,
+    colorKey: visual.colorKey,
     note: defaultServerNoteTemplate,
     host: '',
     port: '22',
@@ -184,6 +192,8 @@ const getServerSortTimestamp = (server: SshServerListItem, mode: 'lastUsed' | 'c
 const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState => {
   return {
     name: server.name,
+    iconKey: server.iconKey,
+    colorKey: server.colorKey,
     note: server.note ?? '',
     host: server.host,
     port: String(server.port),
@@ -196,18 +206,6 @@ const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState 
     tagIds: (server.tags ?? []).map((tag) => tag.id),
     strictHostKey: true,
   };
-};
-
-const createIconNode = (colorClassName: string, label: string): React.ReactNode => {
-  return (
-    <span
-      aria-hidden
-      className={classNames('inline-flex h-full w-full items-center justify-center rounded-md', colorClassName)}
-    >
-      <Server className="h-4 w-4" />
-      <span className="sr-only">{label}</span>
-    </span>
-  );
 };
 
 const SSHEditor: React.FC = () => {
@@ -224,9 +222,6 @@ const SSHEditor: React.FC = () => {
   const [formState, setFormState] = React.useState<ServerEditorFormState>(
     createInitialFormState(defaultServerNoteTemplate),
   );
-  const [isCreateFolderDialogOpen, setIsCreateFolderDialogOpen] = React.useState<boolean>(false);
-  const [newFolderName, setNewFolderName] = React.useState<string>('');
-  const [isFolderSubmitting, setIsFolderSubmitting] = React.useState<boolean>(false);
   const [isDeleteServerDialogOpen, setIsDeleteServerDialogOpen] = React.useState<boolean>(false);
   const [isDeletingServer, setIsDeletingServer] = React.useState<boolean>(false);
   const [deleteServerDraft, setDeleteServerDraft] = React.useState<{ id: string; name: string } | null>(null);
@@ -235,8 +230,6 @@ const SSHEditor: React.FC = () => {
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
   const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
   const preferCreateModeRef = React.useRef<boolean>(false);
-  const pendingSelectedFolderIdRef = React.useRef<string | null>(null);
-  const shouldSelectCreatedFolderRef = React.useRef<boolean>(false);
 
   const requiresPassword = formState.authType === 'password' || formState.authType === 'both';
   const requiresPrivateKey = formState.authType === 'key' || formState.authType === 'both';
@@ -256,19 +249,6 @@ const SSHEditor: React.FC = () => {
   React.useEffect(() => {
     formStateRef.current = formState;
   }, [formState]);
-
-  React.useEffect(() => {
-    const pendingSelectedFolderId = pendingSelectedFolderIdRef.current;
-    if (!pendingSelectedFolderId || !folders.some((folder) => folder.id === pendingSelectedFolderId)) {
-      return;
-    }
-
-    pendingSelectedFolderIdRef.current = null;
-    dirtyFieldKeysRef.current.add('folderId');
-    setFormState((previous) =>
-      previous.folderId === pendingSelectedFolderId ? previous : { ...previous, folderId: pendingSelectedFolderId },
-    );
-  }, [folders]);
 
   const resetDirtyFieldKeys = React.useCallback(() => {
     dirtyFieldKeysRef.current = new Set();
@@ -605,6 +585,17 @@ const SSHEditor: React.FC = () => {
     [],
   );
 
+  const createFolderDialog = useCreateFolderDialog({
+    onCreated: (createdFolder, options) => {
+      setFolders((previous) => [...previous, createdFolder]);
+
+      if (options.selectOnCreate) {
+        dirtyFieldKeysRef.current.add('folderId');
+        setFormState((previous) => ({ ...previous, folderId: createdFolder.id }));
+      }
+    },
+  });
+
   const onCreateTag = React.useCallback(
     async (name: string): Promise<SshTag | null> => {
       const normalizedName = name.trim();
@@ -671,50 +662,12 @@ const SSHEditor: React.FC = () => {
     setFormState(createInitialFormState(defaultServerNoteTemplate));
   }, [defaultServerNoteTemplate, resetDirtyFieldKeys]);
 
-  const onCreateFolder = React.useCallback((options?: { selectOnCreate?: boolean }) => {
-    shouldSelectCreatedFolderRef.current = options?.selectOnCreate ?? false;
-    setNewFolderName('');
-    setIsCreateFolderDialogOpen(true);
-  }, []);
-
-  const onCreateFolderDialogOpenChange = React.useCallback((open: boolean) => {
-    if (!open) {
-      shouldSelectCreatedFolderRef.current = false;
-      setNewFolderName('');
-    }
-
-    setIsCreateFolderDialogOpen(open);
-  }, []);
-
-  const submitCreateFolder = React.useCallback(async () => {
-    const folderName = normalizeFolderName(newFolderName);
-    if (!folderName) {
-      notifyWarning(t('home.folderNameRequired'));
-      return;
-    }
-
-    setIsFolderSubmitting(true);
-    try {
-      const createdFolder = await createFolder(folderName);
-      if (shouldSelectCreatedFolderRef.current) {
-        pendingSelectedFolderIdRef.current = createdFolder.id;
-      }
-
-      setFolders((previous) => [...previous, createdFolder]);
-
-      if (shouldSelectCreatedFolderRef.current) {
-        onChangeForm('folderId', createdFolder.id);
-      }
-
-      setIsCreateFolderDialogOpen(false);
-      setNewFolderName('');
-      shouldSelectCreatedFolderRef.current = false;
-    } catch (error: unknown) {
-      notifyError(error instanceof Error ? error.message : t('home.folderCreateFailed'));
-    } finally {
-      setIsFolderSubmitting(false);
-    }
-  }, [newFolderName, notifyError, notifyWarning, onChangeForm]);
+  const onCreateFolder = React.useCallback(
+    (options?: { selectOnCreate?: boolean }) => {
+      createFolderDialog.openCreateFolderDialog(options);
+    },
+    [createFolderDialog],
+  );
 
   const openDeleteServerDialog = React.useCallback(
     (serverId: string) => {
@@ -798,6 +751,8 @@ const SSHEditor: React.FC = () => {
             port,
             username: formState.username.trim(),
             authType: formState.authType,
+            iconKey: formState.iconKey,
+            colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
             password: formState.password.trim() || undefined,
             privateKey: formState.privateKey.trim() || undefined,
             privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
@@ -815,6 +770,8 @@ const SSHEditor: React.FC = () => {
             port,
             username: formState.username.trim(),
             authType: formState.authType,
+            iconKey: formState.iconKey,
+            colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
             password: formState.password.trim() || undefined,
             privateKey: formState.privateKey.trim() || undefined,
             privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
@@ -961,7 +918,13 @@ const SSHEditor: React.FC = () => {
                       selected
                       title={t('ssh.draftServerTitle')}
                       subtitle={t('ssh.draftServerSubtitle')}
-                      icon={createIconNode(colorKeyToClassName('blue'), t('ssh.draftServerTitle'))}
+                      icon={createEntityIconNode(
+                        {
+                          iconKey: 'Server',
+                          colorKey: 'blue',
+                        },
+                        t('ssh.draftServerTitle'),
+                      )}
                       onClick={onAddServer}
                     />
                   </section>
@@ -974,7 +937,8 @@ const SSHEditor: React.FC = () => {
                     ) : null}
                     <div className="space-y-1.5">
                       {group.items.map((server) => {
-                        const visual = resolveHomeVisual('server', server.id, server.folder?.id ?? server.id);
+                        const colorKey: EntityColorKey = isEntityColorKey(server.colorKey) ? server.colorKey : 'blue';
+                        const iconKey = server.iconKey;
                         const sidebarIndex = sidebarEntryIndexMap.get(`server:${server.id}`) ?? 0;
                         return (
                           <ContextMenu key={server.id}>
@@ -984,8 +948,7 @@ const SSHEditor: React.FC = () => {
                                 title={server.name}
                                 subtitle={server.note || server.host}
                                 selected={server.id === activeServerId}
-                                icon={createIconNode(colorKeyToClassName(visual.colorKey), server.name)}
-                                imageUrl={visual.imageUrl}
+                                icon={createEntityIconNode({ iconKey, colorKey }, server.name)}
                                 onClick={() => onPickServer(server.id)}
                               />
                             </ContextMenuTrigger>
@@ -1019,15 +982,9 @@ const SSHEditor: React.FC = () => {
         <main className="flex min-w-0 flex-1 flex-col pl-2">
           <div className="shrink-0 bg-bg pb-2">
             <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2">
-              <Menubar className="-ms-2">
-                <Input
-                  value={formState.name}
-                  placeholder={t('ssh.serverNamePlaceholder')}
-                  className="w-[280px]"
-                  onChange={(event) => onChangeForm('name', event.target.value)}
-                />
-              </Menubar>
-
+              <h1 className="text-home-text text-[24px] font-semibold">
+                {activeServerId ? formState.name || t('ssh.untitledServer') : t('ssh.newServer')}
+              </h1>
               <Menubar>
                 {activeServerId ? (
                   <>
@@ -1067,6 +1024,53 @@ const SSHEditor: React.FC = () => {
               onSubmit={(event) => void onSubmit(event)}
             >
               <section className="grid gap-3">
+                <div className="flex items-end justify-between gap-4">
+                  <EntityVisualPicker
+                    visual={{
+                      iconKey: formState.iconKey,
+                      colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
+                    }}
+                    label={t('home.iconSearchPlaceholder')}
+                    onChange={(nextVisual) => {
+                      onChangeForm('iconKey', nextVisual.iconKey);
+                      onChangeForm('colorKey', nextVisual.colorKey);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      aria-label={t('home.editVisual')}
+                    >
+                      <EntityIcon
+                        icon={
+                          <span
+                            className={classNames(
+                              'inline-flex h-full w-full items-center justify-center rounded-md',
+                              getEntityColorClassName(
+                                isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
+                              ),
+                            )}
+                          >
+                            {renderEntityIcon(formState.iconKey)}
+                          </span>
+                        }
+                        tone="flat"
+                      />
+                    </button>
+                  </EntityVisualPicker>
+                  <FormField className="flex-1">
+                    <FormLabel htmlFor="ssh-editor-name">{t('ssh.columnName')}</FormLabel>
+                    <FormControl>
+                      <Input
+                        id="ssh-editor-name"
+                        value={formState.name}
+                        placeholder={t('ssh.serverNamePlaceholder')}
+                        className="w-[280px]"
+                        onChange={(event) => onChangeForm('name', event.target.value)}
+                      />
+                    </FormControl>
+                  </FormField>
+                </div>
+
                 <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionBasicConnection')}
                 </div>
@@ -1298,38 +1302,18 @@ const SSHEditor: React.FC = () => {
         </main>
       </div>
 
-      <Dialog
-        open={isCreateFolderDialogOpen}
-        onOpenChange={onCreateFolderDialogOpenChange}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('home.quickAddFolder')}</DialogTitle>
-            <DialogDescription>{t('home.dialogCreateFolderDescription')}</DialogDescription>
-          </DialogHeader>
-          <Input
-            value={newFolderName}
-            placeholder={t('home.folderNamePlaceholder')}
-            onChange={(event) => setNewFolderName(event.target.value)}
-          />
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => onCreateFolderDialogOpenChange(false)}
-            >
-              {t('home.actionCancel')}
-            </Button>
-            <Button
-              disabled={isFolderSubmitting}
-              onClick={() => {
-                void submitCreateFolder();
-              }}
-            >
-              {t('home.actionCreate')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateFolderDialog
+        open={createFolderDialog.isOpen}
+        folderName={createFolderDialog.folderName}
+        visual={createFolderDialog.folderVisual}
+        isSubmitting={createFolderDialog.isSubmitting}
+        onOpenChange={createFolderDialog.onOpenChange}
+        onFolderNameChange={createFolderDialog.setFolderName}
+        onVisualChange={createFolderDialog.setFolderVisual}
+        onSubmit={() => {
+          void createFolderDialog.submitCreateFolder();
+        }}
+      />
 
       <AlertDialog
         open={isDeleteServerDialogOpen}

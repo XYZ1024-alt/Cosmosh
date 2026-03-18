@@ -842,6 +842,8 @@ components:
       required:
         - id
         - name
+        - iconKey
+        - colorKey
         - createdAt
         - updatedAt
       properties:
@@ -849,6 +851,12 @@ components:
           type: string
         name:
           type: string
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: "#/components/schemas/SshVisualColorKey"
         note:
           type: string
         createdAt:
@@ -911,6 +919,8 @@ components:
       required:
         - id
         - name
+        - iconKey
+        - colorKey
         - host
         - port
         - username
@@ -924,6 +934,12 @@ components:
           type: string
         name:
           type: string
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: "#/components/schemas/SshVisualColorKey"
         host:
           type: string
         port:
@@ -992,6 +1008,12 @@ components:
           maxLength: 120
         authType:
           $ref: "#/components/schemas/SshAuthType"
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: "#/components/schemas/SshVisualColorKey"
         password:
           type: string
           minLength: 1
@@ -1019,6 +1041,12 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: "#/components/schemas/SshVisualColorKey"
         note:
           type: string
           maxLength: 1000
@@ -1031,9 +1059,30 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: "#/components/schemas/SshVisualColorKey"
         note:
           type: string
           maxLength: 1000
+    SshVisualColorKey:
+      type: string
+      enum:
+        [
+          "slate",
+          "blue",
+          "emerald",
+          "violet",
+          "amber",
+          "rose",
+          "cyan",
+          "indigo",
+          "teal",
+          "lime",
+        ]
     SshTagCreateRequest:
       type: object
       required:

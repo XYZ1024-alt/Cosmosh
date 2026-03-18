@@ -32,6 +32,7 @@ import {
   parseUpdateFolderRequest,
   parseUpdateServerRequest,
 } from '../../ssh/validation.js';
+import { normalizeSshVisualColorKey } from '../../ssh/visuals.js';
 import { buildErrorPayload } from '../errors.js';
 import { type BackendHttpApp, getTranslator, translateValidationMessage } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
@@ -90,6 +91,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         items: folders.map((folder) => ({
           id: folder.id,
           name: folder.name,
+          iconKey: folder.iconKey,
+          colorKey: normalizeSshVisualColorKey(folder.colorKey, 'slate'),
           note: folder.note ?? undefined,
           createdAt: folder.createdAt.toISOString(),
           updatedAt: folder.updatedAt.toISOString(),
@@ -119,6 +122,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         data: {
           name: parsed.value.name,
           note: parsed.value.note,
+          iconKey: parsed.value.iconKey,
+          colorKey: parsed.value.colorKey,
         },
       });
 
@@ -130,6 +135,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
             id: folder.id,
             name: folder.name,
             note: folder.note ?? undefined,
+            iconKey: folder.iconKey,
+            colorKey: normalizeSshVisualColorKey(folder.colorKey, 'slate'),
             createdAt: folder.createdAt.toISOString(),
             updatedAt: folder.updatedAt.toISOString(),
           },
@@ -174,6 +181,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         data: {
           name: parsed.value.name,
           note: parsed.value.note,
+          iconKey: parsed.value.iconKey,
+          colorKey: parsed.value.colorKey,
         },
       });
 
@@ -185,6 +194,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
             id: folder.id,
             name: folder.name,
             note: folder.note ?? undefined,
+            iconKey: folder.iconKey,
+            colorKey: normalizeSshVisualColorKey(folder.colorKey, 'slate'),
             createdAt: folder.createdAt.toISOString(),
             updatedAt: folder.updatedAt.toISOString(),
           },
@@ -359,6 +370,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
             : null,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
+          iconKey: parsed.value.iconKey,
+          colorKey: parsed.value.colorKey,
           tags: {
             create: tagIds.map((tagId) => ({
               tag: {
@@ -501,6 +514,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           port: parsed.value.port,
           username: parsed.value.username,
           authType: parsed.value.authType,
+          iconKey: parsed.value.iconKey,
+          colorKey: parsed.value.colorKey,
           passwordEncrypted,
           privateKeyEncrypted,
           privateKeyPassphraseEncrypted,

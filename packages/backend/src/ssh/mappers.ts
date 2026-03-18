@@ -1,6 +1,8 @@
 import type { ApiSshListServersResponse } from '@cosmosh/api-contract';
 import type { Prisma } from '@prisma/client';
 
+import { normalizeSshVisualColorKey } from './visuals.js';
+
 /**
  * Shared Prisma include shape used by SSH server list/read queries.
  */
@@ -31,6 +33,8 @@ export const mapServerToListItem = (
   return {
     id: server.id,
     name: server.name,
+    iconKey: server.iconKey,
+    colorKey: normalizeSshVisualColorKey(server.colorKey),
     host: server.host,
     port: server.port,
     username: server.username,
@@ -42,6 +46,8 @@ export const mapServerToListItem = (
       ? {
           id: server.folder.id,
           name: server.folder.name,
+          iconKey: server.folder.iconKey,
+          colorKey: normalizeSshVisualColorKey(server.folder.colorKey, 'slate'),
           note: server.folder.note ?? undefined,
           createdAt: server.folder.createdAt.toISOString(),
           updatedAt: server.folder.updatedAt.toISOString(),

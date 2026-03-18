@@ -20,6 +20,31 @@ type ValidationResult<TValue> = {
   error?: ValidationError;
 };
 
+type SshVisualColorKey =
+  | 'slate'
+  | 'blue'
+  | 'emerald'
+  | 'violet'
+  | 'amber'
+  | 'rose'
+  | 'cyan'
+  | 'indigo'
+  | 'teal'
+  | 'lime';
+
+const SSH_VISUAL_COLOR_KEY_SET: ReadonlySet<SshVisualColorKey> = new Set([
+  'slate',
+  'blue',
+  'emerald',
+  'violet',
+  'amber',
+  'rose',
+  'cyan',
+  'indigo',
+  'teal',
+  'lime',
+]);
+
 const buildValidationError = (
   i18nKey: string,
   fallbackMessage: string,
@@ -43,6 +68,28 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : undefined;
+};
+
+const normalizeOptionalIconKey = (value: unknown): string | undefined => {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  if (normalized.length > 64) {
+    return undefined;
+  }
+
+  return normalized;
+};
+
+const normalizeOptionalColorKey = (value: unknown): SshVisualColorKey | undefined => {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  return SSH_VISUAL_COLOR_KEY_SET.has(normalized as SshVisualColorKey) ? (normalized as SshVisualColorKey) : undefined;
 };
 
 const isValidPort = (value: number): boolean => {
@@ -101,9 +148,31 @@ export const parseCreateFolderRequest = (payload: unknown): ValidationResult<Api
     };
   }
 
+  const iconKey = normalizeOptionalIconKey(payload.iconKey);
+  if (payload.iconKey !== undefined && !iconKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.iconKeyLength',
+        'Icon key must be between 1 and 64 characters when provided.',
+      ),
+    };
+  }
+
+  const colorKey = normalizeOptionalColorKey(payload.colorKey);
+  if (payload.colorKey !== undefined && !colorKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.colorKeyInvalid',
+        'Color key must be one of the predefined SSH visual colors when provided.',
+      ),
+    };
+  }
+
   return {
     value: {
       name,
+      iconKey,
+      colorKey,
       note,
     },
   };
@@ -162,9 +231,31 @@ export const parseUpdateFolderRequest = (payload: unknown): ValidationResult<Api
     };
   }
 
+  const iconKey = normalizeOptionalIconKey(payload.iconKey);
+  if (payload.iconKey !== undefined && !iconKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.iconKeyLength',
+        'Icon key must be between 1 and 64 characters when provided.',
+      ),
+    };
+  }
+
+  const colorKey = normalizeOptionalColorKey(payload.colorKey);
+  if (payload.colorKey !== undefined && !colorKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.colorKeyInvalid',
+        'Color key must be one of the predefined SSH visual colors when provided.',
+      ),
+    };
+  }
+
   return {
     value: {
       name,
+      iconKey,
+      colorKey,
       note,
     },
   };
@@ -249,6 +340,27 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
 
   const folderId = normalizeOptionalString(payload.folderId);
   const note = normalizeOptionalString(payload.note);
+  const iconKey = normalizeOptionalIconKey(payload.iconKey);
+  const colorKey = normalizeOptionalColorKey(payload.colorKey);
+
+  if (payload.iconKey !== undefined && !iconKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.iconKeyLength',
+        'Icon key must be between 1 and 64 characters when provided.',
+      ),
+    };
+  }
+
+  if (payload.colorKey !== undefined && !colorKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.colorKeyInvalid',
+        'Color key must be one of the predefined SSH visual colors when provided.',
+      ),
+    };
+  }
+
   if (note && note.length > 3000) {
     return {
       error: buildValidationError('errors.validation.noteLength', 'Note must be 3000 characters or fewer.'),
@@ -266,6 +378,8 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       privateKey,
       privateKeyPassphrase,
       folderId,
+      iconKey,
+      colorKey,
       tagIds: toUniqueIds(payload.tagIds),
       note,
     },
@@ -329,6 +443,26 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const folderId = normalizeOptionalString(payload.folderId);
   const note = normalizeOptionalString(payload.note);
+  const iconKey = normalizeOptionalIconKey(payload.iconKey);
+  const colorKey = normalizeOptionalColorKey(payload.colorKey);
+
+  if (payload.iconKey !== undefined && !iconKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.iconKeyLength',
+        'Icon key must be between 1 and 64 characters when provided.',
+      ),
+    };
+  }
+
+  if (payload.colorKey !== undefined && !colorKey) {
+    return {
+      error: buildValidationError(
+        'errors.validation.colorKeyInvalid',
+        'Color key must be one of the predefined SSH visual colors when provided.',
+      ),
+    };
+  }
 
   if (note && note.length > 3000) {
     return {
@@ -347,6 +481,8 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       privateKey,
       privateKeyPassphrase,
       folderId,
+      iconKey,
+      colorKey,
       tagIds: toOptionalUniqueIds(payload.tagIds),
       note,
     },

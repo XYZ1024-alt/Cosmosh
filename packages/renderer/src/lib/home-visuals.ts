@@ -1,6 +1,14 @@
+import {
+  EntityColorKey,
+  entityColorKeys,
+  getEntityColorClassName,
+  isEntityColorKey,
+  pickRandomEntityVisual,
+} from './entity-visuals';
+
 export type HomeIconKey = 'Folder' | 'Folders' | 'Package2' | 'Network' | 'Cloud' | 'Database' | 'Server' | 'HardDrive';
 
-export type HomeColorKey = 'slate' | 'blue' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan';
+export type HomeColorKey = EntityColorKey;
 
 export type HomeVisual = {
   iconKey: HomeIconKey;
@@ -21,7 +29,7 @@ type HomeVisualStore = {
 };
 
 const folderIconPool: HomeIconKey[] = ['Folder', 'Folders', 'Package2', 'Network', 'Cloud', 'Database'];
-const colorPool: HomeColorKey[] = ['slate', 'blue', 'emerald', 'violet', 'amber', 'rose', 'cyan'];
+const colorPool: HomeColorKey[] = [...entityColorKeys];
 const HOME_VISUALS_STORAGE_KEY = 'cosmosh.home.visual-overrides.v1';
 
 const hashString = (value: string): number => {
@@ -82,7 +90,7 @@ const writeVisualStore = (store: HomeVisualStore): void => {
 
 const sanitizeVisualOverride = (input: HomeVisualOverride): HomeVisualOverride => {
   const iconKey = input.iconKey && folderIconPool.includes(input.iconKey) ? input.iconKey : undefined;
-  const colorKey = input.colorKey && colorPool.includes(input.colorKey) ? input.colorKey : undefined;
+  const colorKey = input.colorKey && isEntityColorKey(input.colorKey) ? input.colorKey : undefined;
   const imageUrl = typeof input.imageUrl === 'string' ? input.imageUrl.trim() : '';
 
   return {
@@ -93,9 +101,11 @@ const sanitizeVisualOverride = (input: HomeVisualOverride): HomeVisualOverride =
 };
 
 const pickDefaultVisual = (seed: string): HomeVisual => {
+  const sharedVisual = pickRandomEntityVisual('folder', seed);
+
   return {
     iconKey: pickBySeed(seed, folderIconPool),
-    colorKey: pickBySeed(`${seed}:folder-color`, colorPool),
+    colorKey: sharedVisual.colorKey,
   };
 };
 
@@ -148,13 +158,5 @@ export const getHomeVisualCustomizationOptions = () => {
 };
 
 export const colorKeyToClassName = (colorKey: HomeColorKey): string => {
-  return {
-    slate: 'bg-home-icon-slate text-home-icon-slate-ink',
-    blue: 'bg-home-icon-blue text-home-icon-blue-ink',
-    emerald: 'bg-home-icon-emerald text-home-icon-emerald-ink',
-    violet: 'bg-home-icon-violet text-home-icon-violet-ink',
-    amber: 'bg-home-icon-amber text-home-icon-amber-ink',
-    rose: 'bg-home-icon-rose text-home-icon-rose-ink',
-    cyan: 'bg-home-icon-cyan text-home-icon-cyan-ink',
-  }[colorKey];
+  return getEntityColorClassName(colorKey);
 };

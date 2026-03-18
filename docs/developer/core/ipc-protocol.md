@@ -53,7 +53,18 @@ flowchart TB
 - API payload types come from `@cosmosh/api-contract`, generated from `packages/api-contract/openapi/cosmosh.openapi.yaml`.
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
 
-## 3.1 Terminal WebSocket Contract (Renderer ↔ Backend)
+### 3.1 SSH Visual Metadata Fields
+
+The following SSH entity payloads now include visual metadata for persistent icon/color customization:
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: optional `iconKey`, optional `colorKey`.
+- `ApiSshCreateFolderRequest` / `ApiSshUpdateFolderRequest`: optional `iconKey`, optional `colorKey`.
+- `ApiSshListServersResponse`: each server item includes `iconKey` and `colorKey`.
+- `ApiSshListFoldersResponse`: each folder item includes `iconKey` and `colorKey`.
+
+`colorKey` is constrained to the predefined palette enum in the API contract.
+
+## 3.2 Terminal WebSocket Contract (Renderer ↔ Backend)
 
 Although terminal stream messages are not Electron IPC channels, they are part of the same cross-process contract surface and must be versioned together.
 

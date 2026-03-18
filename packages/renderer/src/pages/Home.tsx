@@ -6,19 +6,13 @@ import {
   ArrowUpDown,
   CalendarPlus,
   Clock3,
-  Cloud,
   Copy,
-  Database,
   File,
-  Folder,
   FolderOpen,
   FolderPlus,
-  Folders,
-  HardDrive,
   Hash,
   Link,
   Network,
-  Package2,
   PackageOpen,
   Pencil,
   Plus,
@@ -32,7 +26,10 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
+import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
+import EntityIcon from '../components/home/EntityIcon';
+import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import HomeEmptyState from '../components/home/HomeEmptyState';
 import {
   AlertDialog,
@@ -88,12 +85,13 @@ import {
   listSshTags,
   updateSshServer,
 } from '../lib/backend';
-import { createFolder, normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
+import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/entity-visuals';
+import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
-import { colorKeyToClassName, type HomeIconKey, resolveHomeVisual } from '../lib/home-visuals';
 import { getLocale, t } from '../lib/i18n';
 import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
+import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
 
 type HomeProps = {
@@ -120,24 +118,12 @@ type SidebarCardItem = {
   title: string;
   subtitle: string;
   selected: boolean;
-  iconKey: HomeIconKey;
-  iconClassName: string;
-  imageUrl?: string;
+  iconKey: string;
+  colorKey: EntityColorKey;
   onClick: () => void;
 };
 
 const LOCAL_TERMINAL_FOLDER_ID = '__local_terminals__';
-
-const iconMap: Record<HomeIconKey, React.ComponentType<{ className?: string }>> = {
-  Folder,
-  Folders,
-  Package2,
-  Network,
-  Cloud,
-  Database,
-  Server,
-  HardDrive,
-};
 
 /**
  * Checks whether a tag is the internal "favorite" tag.
@@ -184,12 +170,16 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
   const [groupMode, setGroupMode] = React.useState<GroupMode>('lastUsed');
   const [sortMode, setSortMode] = React.useState<SortMode>('lastUsed');
   const [runtimeUserName, setRuntimeUserName] = React.useState<string>('user');
-  const [isCreateFolderDialogOpen, setIsCreateFolderDialogOpen] = React.useState<boolean>(false);
   const [isEditFolderDialogOpen, setIsEditFolderDialogOpen] = React.useState<boolean>(false);
   const [isDeleteFolderDialogOpen, setIsDeleteFolderDialogOpen] = React.useState<boolean>(false);
   const [isDeleteServerDialogOpen, setIsDeleteServerDialogOpen] = React.useState<boolean>(false);
   const [folderNameInput, setFolderNameInput] = React.useState<string>('');
-  const [activeFolderDraft, setActiveFolderDraft] = React.useState<{ id: string; name: string } | null>(null);
+  const [activeFolderDraft, setActiveFolderDraft] = React.useState<{
+    id: string;
+    name: string;
+    iconKey: string;
+    colorKey: EntityColorKey;
+  } | null>(null);
   const [activeServerDraft, setActiveServerDraft] = React.useState<{ id: string; name: string } | null>(null);
   const [isFolderActionSubmitting, setIsFolderActionSubmitting] = React.useState<boolean>(false);
   const [isServerDeleteSubmitting, setIsServerDeleteSubmitting] = React.useState<boolean>(false);
@@ -216,6 +206,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
       setIsLoading(false);
     }
   }, []);
+
+  const createFolderDialog = useCreateFolderDialog({
+    onCreated: async () => {
+      await reloadHomeData();
+    },
+  });
 
   React.useEffect(() => {
     void reloadHomeData();
@@ -556,7 +552,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         subtitle: t('home.hostCount', { count: recentCount }),
         selected: quickFilter === 'recent',
         iconKey: 'Cloud',
-        iconClassName: 'bg-home-icon-blue text-home-icon-blue-ink',
+        colorKey: 'blue',
         onClick: () => {
           setActiveFolderId('all');
           setQuickFilter('recent');
@@ -568,7 +564,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         subtitle: t('home.hostCount', { count: favoriteCount }),
         selected: quickFilter === 'favorite',
         iconKey: 'Database',
-        iconClassName: 'bg-home-icon-amber text-home-icon-amber-ink',
+        colorKey: 'amber',
         onClick: () => {
           setActiveFolderId('all');
           setQuickFilter('favorite');
@@ -579,8 +575,8 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
 
   const folderSidebarCards = React.useMemo<SidebarCardItem[]>(() => {
     const userFolders = folders.map((folder) => {
-      const visual = resolveHomeVisual('folder', folder.id, folder.id);
       const count = folderServerCountMap.get(folder.id) ?? 0;
+      const colorKey = isEntityColorKey(folder.colorKey) ? folder.colorKey : 'slate';
 
       return {
         key: `folder:${folder.id}`,
@@ -588,9 +584,8 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         title: folder.name,
         subtitle: t('home.hostCount', { count }),
         selected: activeFolderId === folder.id,
-        iconKey: visual.iconKey,
-        iconClassName: colorKeyToClassName(visual.colorKey),
-        imageUrl: visual.imageUrl,
+        iconKey: folder.iconKey,
+        colorKey,
         onClick: () => {
           setActiveFolderId(folder.id);
           setQuickFilter('none');
@@ -606,7 +601,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         subtitle: t('home.hostCount', { count: localTerminalProfiles.length }),
         selected: activeFolderId === LOCAL_TERMINAL_FOLDER_ID,
         iconKey: 'HardDrive',
-        iconClassName: 'bg-home-icon-blue text-home-icon-blue-ink',
+        colorKey: 'blue',
         onClick: () => {
           setActiveFolderId(LOCAL_TERMINAL_FOLDER_ID);
           setQuickFilter('none');
@@ -691,19 +686,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
     return ArrowUpDown;
   }, [sortMode]);
 
-  const createIconNode = React.useCallback((iconKey: HomeIconKey, colorClassName: string, label: string) => {
-    const Icon = iconMap[iconKey];
-    return (
-      <span
-        aria-hidden
-        className={classNames('inline-flex h-full w-full items-center justify-center rounded-md', colorClassName)}
-      >
-        <Icon className="h-4 w-4" />
-        <span className="sr-only">{label}</span>
-      </span>
-    );
-  }, []);
-
   const localTerminalFileManagerLabel = React.useMemo(() => {
     const platform = window.electron?.platform;
     if (platform === 'win32') {
@@ -760,47 +742,27 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
     [notifyError],
   );
 
-  const openCreateFolderDialog = React.useCallback(() => {
-    setFolderNameInput('');
-    setActiveFolderDraft(null);
-    setIsCreateFolderDialogOpen(true);
-  }, []);
+  const openEditFolderDialog = React.useCallback(
+    (folderId: string, folderName: string, iconKey: string, colorKey: EntityColorKey) => {
+      setActiveFolderDraft({ id: folderId, name: folderName, iconKey, colorKey });
+      setFolderNameInput(folderName);
+      setIsEditFolderDialogOpen(true);
+    },
+    [],
+  );
 
-  const openEditFolderDialog = React.useCallback((folderId: string, folderName: string) => {
-    setActiveFolderDraft({ id: folderId, name: folderName });
-    setFolderNameInput(folderName);
-    setIsEditFolderDialogOpen(true);
-  }, []);
-
-  const openDeleteFolderDialog = React.useCallback((folderId: string, folderName: string) => {
-    setActiveFolderDraft({ id: folderId, name: folderName });
-    setIsDeleteFolderDialogOpen(true);
-  }, []);
+  const openDeleteFolderDialog = React.useCallback(
+    (folderId: string, folderName: string, iconKey: string, colorKey: EntityColorKey) => {
+      setActiveFolderDraft({ id: folderId, name: folderName, iconKey, colorKey });
+      setIsDeleteFolderDialogOpen(true);
+    },
+    [],
+  );
 
   const openDeleteServerDialog = React.useCallback((serverId: string, serverName: string) => {
     setActiveServerDraft({ id: serverId, name: serverName });
     setIsDeleteServerDialogOpen(true);
   }, []);
-
-  const submitCreateFolder = React.useCallback(async () => {
-    const folderName = normalizeFolderName(folderNameInput);
-    if (!folderName) {
-      notifyWarning(t('home.folderNameRequired'));
-      return;
-    }
-
-    setIsFolderActionSubmitting(true);
-    try {
-      await createFolder(folderName);
-      setIsCreateFolderDialogOpen(false);
-      setFolderNameInput('');
-      await reloadHomeData();
-    } catch (error: unknown) {
-      notifyError(error instanceof Error ? error.message : t('home.folderCreateFailed'));
-    } finally {
-      setIsFolderActionSubmitting(false);
-    }
-  }, [folderNameInput, notifyError, notifyWarning, reloadHomeData]);
 
   const submitEditFolder = React.useCallback(async () => {
     if (!activeFolderDraft) {
@@ -815,7 +777,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
 
     setIsFolderActionSubmitting(true);
     try {
-      await renameFolder(activeFolderDraft.id, folderName);
+      await renameFolder(activeFolderDraft.id, folderName, {
+        iconKey: activeFolderDraft.iconKey,
+        colorKey: activeFolderDraft.colorKey,
+      });
       setIsEditFolderDialogOpen(false);
       setFolderNameInput('');
       setActiveFolderDraft(null);
@@ -978,7 +943,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                 title={t('home.groupAllHosts')}
                 subtitle={t('home.hostCount', { count: servers.length })}
                 selected={activeFolderId === 'all' && quickFilter === 'none'}
-                icon={createIconNode('Folder', 'bg-home-icon-bg text-header-text', t('home.groupAllHosts'))}
+                icon={createEntityIconNode({ iconKey: 'Folder', colorKey: 'slate' }, t('home.groupAllHosts'))}
                 onClick={() => {
                   setActiveFolderId('all');
                   setQuickFilter('none');
@@ -997,7 +962,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                     title={item.title}
                     subtitle={item.subtitle}
                     selected={item.selected}
-                    icon={createIconNode(item.iconKey, item.iconClassName, item.title)}
+                    icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
                     onClick={item.onClick}
                   />
                 ))}
@@ -1016,8 +981,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                         subtitle={item.subtitle}
                         selected={item.selected}
                         className={dragOverFolderId === item.folderId ? 'bg-home-card-active' : undefined}
-                        icon={createIconNode(item.iconKey, item.iconClassName, item.title)}
-                        imageUrl={item.imageUrl}
+                        icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
                         onDragOver={(event) => {
                           if (!item.folderId || item.folderId === LOCAL_TERMINAL_FOLDER_ID || !draggingServerId) {
                             return;
@@ -1069,7 +1033,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                             return;
                           }
 
-                          openEditFolderDialog(folderId, item.title);
+                          openEditFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
                         }}
                       >
                         {t('home.contextEditFolder')}
@@ -1083,7 +1047,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                             return;
                           }
 
-                          openDeleteFolderDialog(folderId, item.title);
+                          openDeleteFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
                         }}
                       >
                         {t('home.contextDeleteFolder')}
@@ -1227,7 +1191,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                         </DropdownMenuItem>
                         <DropdownMenuItem
                           icon={FolderPlus}
-                          onSelect={openCreateFolderDialog}
+                          onSelect={() => createFolderDialog.openCreateFolderDialog()}
                         >
                           {t('home.quickAddFolder')}
                         </DropdownMenuItem>
@@ -1275,11 +1239,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                             layout="grid"
                             title={profile.name}
                             subtitle={profile.command}
-                            icon={createIconNode(
-                              'HardDrive',
-                              'bg-home-icon-blue text-home-icon-blue-ink',
-                              profile.name,
-                            )}
+                            icon={createEntityIconNode({ iconKey: 'HardDrive', colorKey: 'blue' }, profile.name)}
                             onClick={() => onOpenSSH(toLocalTerminalTargetId(profile.id), profile.name)}
                           />
                         </ContextMenuTrigger>
@@ -1321,7 +1281,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                       {group.items.map((server) => {
                         const serverEntryKey = `${group.key}:${server.id}`;
                         const serverEntryIndex = serverGridIndexMap.get(serverEntryKey) ?? 0;
-                        const visual = resolveHomeVisual('server', server.id, server.folder?.id ?? server.id);
+                        const colorKey = isEntityColorKey(server.colorKey) ? server.colorKey : 'blue';
                         return (
                           <ContextMenu key={serverEntryKey}>
                             <ContextMenuTrigger className="block">
@@ -1332,8 +1292,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                                 title={server.name}
                                 subtitle={server.host}
                                 className={draggingServerId === server.id ? 'opacity-70' : undefined}
-                                icon={createIconNode(visual.iconKey, colorKeyToClassName(visual.colorKey), server.name)}
-                                imageUrl={visual.imageUrl}
+                                icon={createEntityIconNode({ iconKey: server.iconKey, colorKey }, server.name)}
                                 action={
                                   <Button
                                     variant="ghost"
@@ -1474,35 +1433,18 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         </main>
       </div>
 
-      <Dialog
-        open={isCreateFolderDialogOpen}
-        onOpenChange={setIsCreateFolderDialogOpen}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t('home.quickAddFolder')}</DialogTitle>
-            <DialogDescription>{t('home.dialogCreateFolderDescription')}</DialogDescription>
-          </DialogHeader>
-          <Input
-            value={folderNameInput}
-            placeholder={t('home.folderNamePlaceholder')}
-            onChange={(event) => setFolderNameInput(event.target.value)}
-          />
-          <DialogFooter>
-            <DialogSecondaryButton onClick={() => setIsCreateFolderDialogOpen(false)}>
-              {t('home.actionCancel')}
-            </DialogSecondaryButton>
-            <DialogPrimaryButton
-              disabled={isFolderActionSubmitting}
-              onClick={() => {
-                void submitCreateFolder();
-              }}
-            >
-              {t('home.actionCreate')}
-            </DialogPrimaryButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CreateFolderDialog
+        open={createFolderDialog.isOpen}
+        folderName={createFolderDialog.folderName}
+        visual={createFolderDialog.folderVisual}
+        isSubmitting={createFolderDialog.isSubmitting}
+        onOpenChange={createFolderDialog.onOpenChange}
+        onFolderNameChange={createFolderDialog.setFolderName}
+        onVisualChange={createFolderDialog.setFolderVisual}
+        onSubmit={() => {
+          void createFolderDialog.submitCreateFolder();
+        }}
+      />
 
       <Dialog
         open={isEditFolderDialogOpen}
@@ -1513,11 +1455,52 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
             <DialogTitle>{t('home.contextEditFolder')}</DialogTitle>
             <DialogDescription>{t('home.dialogEditFolderDescription')}</DialogDescription>
           </DialogHeader>
-          <Input
-            value={folderNameInput}
-            placeholder={t('home.folderNamePlaceholder')}
-            onChange={(event) => setFolderNameInput(event.target.value)}
-          />
+          <div className="flex items-center gap-2">
+            <EntityVisualPicker
+              visual={
+                activeFolderDraft
+                  ? { iconKey: activeFolderDraft.iconKey, colorKey: activeFolderDraft.colorKey }
+                  : { iconKey: 'Folder', colorKey: 'slate' }
+              }
+              label={t('home.iconSearchPlaceholder')}
+              onChange={(nextVisual: { iconKey: string; colorKey: EntityColorKey }) => {
+                setActiveFolderDraft((previous) => {
+                  if (!previous) {
+                    return previous;
+                  }
+
+                  return {
+                    ...previous,
+                    iconKey: nextVisual.iconKey,
+                    colorKey: nextVisual.colorKey,
+                  };
+                });
+              }}
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-9 w-9 shrink-0 rounded-sm-2 p-0"
+                aria-label={t('home.editVisual')}
+              >
+                <EntityIcon
+                  icon={createEntityIconNode(
+                    {
+                      iconKey: activeFolderDraft?.iconKey ?? 'Folder',
+                      colorKey: activeFolderDraft?.colorKey ?? 'slate',
+                    },
+                    t('home.editVisual'),
+                  )}
+                  tone="flat"
+                />
+              </Button>
+            </EntityVisualPicker>
+            <Input
+              value={folderNameInput}
+              placeholder={t('home.folderNamePlaceholder')}
+              onChange={(event) => setFolderNameInput(event.target.value)}
+            />
+          </div>
           <DialogFooter>
             <DialogSecondaryButton onClick={() => setIsEditFolderDialogOpen(false)}>
               {t('home.actionCancel')}

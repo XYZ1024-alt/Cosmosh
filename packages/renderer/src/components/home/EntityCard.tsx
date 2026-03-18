@@ -1,6 +1,8 @@
 import classNames from 'classnames';
 import React from 'react';
 
+import EntityIcon from './EntityIcon';
+
 type EntityCardProps = {
   title: string;
   subtitle?: string;
@@ -70,22 +72,11 @@ const EntityCard = React.forwardRef<HTMLDivElement, EntityCardProps>(
 
     const content = (
       <>
-        <span
-          className={classNames(
-            'inline-flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-sm-2',
-          )}
-        >
-          {imageUrl ? (
-            <img
-              src={imageUrl}
-              alt=""
-              className="h-full w-full object-cover"
-              draggable={false}
-            />
-          ) : (
-            icon
-          )}
-        </span>
+        <EntityIcon
+          icon={icon}
+          imageUrl={imageUrl}
+          tone={tone}
+        />
         <span className="flex min-w-0 flex-1 flex-col items-start gap-0.5">
           <span className={classNames('block w-full truncate text-sm font-semibold leading-tight text-header-text')}>
             {title}

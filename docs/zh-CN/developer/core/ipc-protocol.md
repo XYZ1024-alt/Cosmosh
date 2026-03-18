@@ -53,7 +53,18 @@ flowchart TB
 - API payload 类型来自 `@cosmosh/api-contract`，并由 `packages/api-contract/openapi/cosmosh.openapi.yaml` 生成。
 - Backend、Main IPC 代理与 renderer HTTP 调用端必须通过 `@cosmosh/api-contract` 中生成的 `API_PATHS` 及相关合同导出访问 API，不允许硬编码路由字符串。
 
-## 3.1 终端 WebSocket 契约（Renderer ↔ Backend）
+### 3.1 SSH 视觉元数据字段
+
+以下 SSH 实体相关载荷已包含用于持久化图标/配色自定义的视觉字段：
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：可选 `iconKey`、可选 `colorKey`。
+- `ApiSshCreateFolderRequest` / `ApiSshUpdateFolderRequest`：可选 `iconKey`、可选 `colorKey`。
+- `ApiSshListServersResponse`：每个服务器条目包含 `iconKey` 与 `colorKey`。
+- `ApiSshListFoldersResponse`：每个文件夹条目包含 `iconKey` 与 `colorKey`。
+
+`colorKey` 受 API 契约中的预设配色枚举约束。
+
+## 3.2 终端 WebSocket 契约（Renderer ↔ Backend）
 
 终端流式消息虽然不属于 Electron IPC channel，但同样属于跨进程契约面，必须与 IPC 变更一起维护版本一致性。
 
