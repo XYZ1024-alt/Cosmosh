@@ -11,8 +11,10 @@
     "check:sort": "node ./scripts/sort-locales.mjs --check",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "lint": "pnpm check && pnpm check:sort && pnpm typecheck",
-    "lint:fix": "pnpm sort && pnpm lint"
+    "lint": "pnpm check && pnpm check:sort && pnpm typecheck && pnpm lint:eslint",
+    "lint:eslint": "eslint src --ext .ts",
+    "lint:fix": "pnpm sort && pnpm lint:eslint --fix",
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -28,8 +30,16 @@
     "intl-messageformat": "^11.1.2"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "eslint": "^9.39.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "globals": "^17.4.0",
+    "prettier": "^3.8.1",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0",
     "vitest": "^4.0.18"
   }
 }

@@ -1,6 +1,6 @@
-import { messages } from './messages';
 import { IntlMessageFormat } from 'intl-messageformat';
 
+import { messages } from './messages';
 import type {
   CreateI18nOptions,
   EnableI18nDevHotReloadOptions,
@@ -8,8 +8,8 @@ import type {
   Locale,
   Messages,
   Scope,
-  TranslationPrimitive,
   TranslationParams,
+  TranslationPrimitive,
   TranslationTree,
 } from './types/i18n';
 

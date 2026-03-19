@@ -163,11 +163,7 @@ export const normalizeSettingsValuesStrict = (
 ): { value?: SettingsValues; error?: SettingValidationError } => {
   if (!isRecord(value)) {
     return {
-      error: validationError(
-        'settings.validation.notObject',
-        {},
-        'Settings values must be a JSON object.',
-      ),
+      error: validationError('settings.validation.notObject', {}, 'Settings values must be a JSON object.'),
     };
   }
 
@@ -199,11 +195,7 @@ export const normalizeSettingsValuesStrict = (
     const parsed = parseSettingValue(key, value[key]);
     if (parsed.value === undefined) {
       return {
-        error: parsed.error ?? validationError(
-          'settings.validation.invalid',
-          { key },
-          `${key} is invalid.`,
-        ),
+        error: parsed.error ?? validationError('settings.validation.invalid', { key }, `${key} is invalid.`),
       };
     }
 

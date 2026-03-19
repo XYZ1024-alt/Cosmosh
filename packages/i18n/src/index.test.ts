@@ -1,8 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { createI18n, createLocaleHeaders, resolveLocale } from './index';
-
 import type { Messages } from './index';
+import { createI18n, createLocaleHeaders, resolveLocale } from './index';
 
 const fixtureMessages: Messages = {
   en: {

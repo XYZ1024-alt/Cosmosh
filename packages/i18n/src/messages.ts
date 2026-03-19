@@ -6,7 +6,6 @@ import backendZhCN from '../locales/zh-CN/backend.json';
 import backendInshellisenseZhCN from '../locales/zh-CN/backend-inshellisense.json';
 import mainZhCN from '../locales/zh-CN/main.json';
 import rendererZhCN from '../locales/zh-CN/renderer.json';
-
 import type { Messages } from './types/i18n';
 
 const mergeTranslationTrees = (
