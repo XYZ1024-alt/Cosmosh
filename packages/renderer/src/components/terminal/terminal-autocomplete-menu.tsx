@@ -10,6 +10,7 @@ type TerminalAutocompleteItem = {
   id: string;
   label: string;
   insertText: string;
+  replacePrefixLength?: number;
   detail: string | null;
   source: 'history' | 'inshellisense' | 'runtime';
   kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
@@ -20,6 +21,7 @@ type TerminalAutocompleteMenuProps = {
   open: boolean;
   anchorTop: number;
   anchorLeft: number;
+  panelWidth: number;
   renderAbove: boolean;
   items: TerminalAutocompleteItem[];
   onItemSelect: (index: number) => void;
@@ -57,7 +59,7 @@ const resolveItemIcon = (item: TerminalAutocompleteItem): React.ReactNode => {
 };
 
 const TerminalAutocompleteMenu = React.forwardRef<TerminalAutocompleteMenuHandle, TerminalAutocompleteMenuProps>(
-  ({ open, anchorTop, anchorLeft, renderAbove, items, onItemSelect }, ref) => {
+  ({ open, anchorTop, anchorLeft, panelWidth, renderAbove, items, onItemSelect }, ref) => {
     const [activeIndex, setActiveIndex] = React.useState<number>(0);
     const itemElementRefs = React.useRef<Array<HTMLButtonElement | null>>([]);
 
@@ -123,10 +125,8 @@ const TerminalAutocompleteMenu = React.forwardRef<TerminalAutocompleteMenuHandle
         }}
       >
         <div
-          className={classNames(
-            menuStyles.content,
-            'max-h-[280px] min-w-[340px] max-w-[520px] overflow-y-auto overflow-x-hidden p-[4px]',
-          )}
+          className={classNames(menuStyles.content, 'max-h-[280px] overflow-y-auto overflow-x-hidden p-[4px]')}
+          style={{ width: `${panelWidth}px` }}
         >
           <TooltipProvider delayDuration={160}>
             {items.map((item, index) => {

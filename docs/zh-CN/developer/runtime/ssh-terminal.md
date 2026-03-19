@@ -101,6 +101,7 @@ sequenceDiagram
 ### 3.2 自动补全模型
 
 - 渲染层会在输入过程中以短延迟去抖触发 `completion-request`，并在用户手动按下 `Tab` 时主动立即触发一次。
+- 渲染层会基于 xterm 输入事件维护“按 pane 隔离”的本地命令前缀影子状态，使输入触发补全无需等待远端 shell 回显即可计算请求前缀。
 - 渲染层还会在 `completion-request` 中携带来源过滤开关（`includeHistory`、`includeBuiltInCommands`、`includePathSuggestions`、`includePasswordSuggestions`），其值来自设置项，且默认全部开启。
 - 后端补全引擎由 SSH 与本地终端会话服务共享，候选来源合并为：
   - 当前会话实时输入流提取的交互命令（历史信号，按会话隔离），
@@ -127,12 +128,16 @@ sequenceDiagram
 - 路径补全采用 provider 化并结合命令上下文：
   - 内置路径规则当前覆盖 `cd`（仅目录）、`cat`、`vim`，以及命令位的直接路径前缀（`./`、`../`、`/`、`~`），
   - 相对路径的部分输入（例如 `cd ../../c`）会基于会话跟踪的工作目录解析，并按“前缀优先、包含回退”匹配排序，
+  - 输入触发（typing）的请求会对路径 provider 使用短超时预算，避免慢文件系统探测阻塞命令/历史/规范候选；手动 `Tab` 触发仍使用完整 provider 结果，
+  - 输入触发（typing）的 history 评分会限制在“最近历史窗口”内执行，以在远端历史快照较大时保持补全延迟稳定，
   - 当当前 token 以 `-` 开头时，优先保留参数/参数值补全，当前 token 的路径 provider 会被门控关闭。
 - 交互式密钥提示检测基于输出流：
   - 后端会跟踪近期输出尾部并检测常见提示（`sudo` 密码、`su`/通用密码提示、密钥口令提示），
   - 当提示处于激活状态且会话存在可复用密钥时，补全会返回运行时 `secret` 动作项（`填充密码`）实现一步填充。
-- 接受补全时仅替换光标前的当前 token 片段（`replacePrefixLength`），不会清空整行命令，因此可稳定支持多参数连续组合输入。
-- `completion-response` 返回 `replacePrefixLength` 与候选项（`label`、`insertText`、`detail`、`source`、`kind`、`score`）。
+- 接受补全时默认仅替换光标前的当前 token 片段（`replacePrefixLength`）；候选项也可携带 `replacePrefixLength` 覆盖值（例如需要替换整段已输入前缀的根命令历史候选）。
+- 对“部分 token 的 history 补全”（例如 `docker e` -> `docker exec`），候选级 `replacePrefixLength` 会按“当前实际输入 token 长度”计算，避免误删前文导致错位或重复。
+- 当在非根 token 位置接受 history 候选时，后端返回“从当前 token 到命令末尾”的后缀插入文本（而非仅单个 token），以便一次接受即可补完整段历史命令续写。
+- `completion-response` 返回基础 `replacePrefixLength` 与候选项（`label`、`insertText`、可选候选级 `replacePrefixLength`、`detail`、`source`、`kind`、`score`）。
 - `detail` 会在后端会话服务发送响应前完成本地化，回退顺序为：翻译后的 `detailI18nKey` → 本地化来源标签（`历史记录` / `命令规范` / 运行时标签，如 `目录`、`文件`、`填充密码`）。
 - 候选可见时的键盘规则：
   - `ArrowUp/ArrowDown` 切换当前候选，并由补全导航独占消费，
@@ -141,7 +146,7 @@ sequenceDiagram
   - `Enter` 仍保持 shell 提交语义。
 - 候选面板布局约束：
   - 面板锚点会在终端可视区域内进行夹取，
-  - 面板宽度会适度扩大以容纳高信息密度说明，并保持视口夹取，
+  - 面板宽度会按当前 pane 可用空间动态计算（并受桌面目标宽度上限约束），锚点夹取也按该实际宽度计算，避免横向溢出，
   - 面板内容区使用最大高度与纵向滚动（`max-h`）保证长候选列表可完整访问，
   - 长命令与说明文本使用截断，避免横向溢出。
 

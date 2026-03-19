@@ -154,6 +154,7 @@ export type TerminalSelectionBarPosition = {
 export type TerminalAutocompleteAnchor = {
   top: number;
   left: number;
+  panelWidth: number;
   renderAbove: boolean;
 };
 
@@ -194,7 +195,7 @@ export const AUTOCOMPLETE_PANEL_ESTIMATED_WIDTH = 520;
 /** Horizontal/vertical safety padding for autocomplete popup placement. */
 export const AUTOCOMPLETE_PANEL_EDGE_PADDING = 8;
 /** Debounce window for typing-triggered autocomplete requests. */
-export const AUTOCOMPLETE_TYPING_DEBOUNCE_MS = 180;
+export const AUTOCOMPLETE_TYPING_DEBOUNCE_MS = 70;
 /** Hard limit of terminal panes visible in SSH page. */
 export const MAX_TERMINAL_PANES = 4;
 

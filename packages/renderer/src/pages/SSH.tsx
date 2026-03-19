@@ -613,6 +613,7 @@ const SSH: React.FC<SSHProps> = ({ tabId, isActive, connectionIntent, onConnecti
         }
         anchorTop={autocompleteAnchor?.top ?? 0}
         anchorLeft={autocompleteAnchor?.left ?? 0}
+        panelWidth={autocompleteAnchor?.panelWidth ?? 340}
         renderAbove={autocompleteAnchor?.renderAbove ?? false}
         items={autocompleteItems}
         onItemSelect={acceptAutocompleteAtIndex}

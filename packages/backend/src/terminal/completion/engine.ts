@@ -12,6 +12,9 @@ import type {
 const DEFAULT_COMPLETION_LIMIT = 8;
 const MAX_COMPLETION_LIMIT = 16;
 const MAX_PATH_ITEMS = 40;
+const TYPING_PATH_PROVIDER_TIMEOUT_MS = 55;
+const MAX_HISTORY_ITEMS_TYPING = 160;
+const MAX_HISTORY_ITEMS_MANUAL = 1_200;
 
 type CompletionRuntimeOptions = {
   recentCommands: string[];
@@ -487,19 +490,52 @@ const toHistoryItem = (
     return null;
   }
 
+  const historySuffixInsertText = shouldInsertWholeCommand
+    ? label
+    : historyTokens.slice(context.currentTokenIndex).join(COMMAND_PATH_SEPARATOR);
+  if (!historySuffixInsertText) {
+    return null;
+  }
+
   const distanceFromLatest = Math.max(0, totalCommands - 1 - index);
   const recencyBonus = Math.max(0, 180 - distanceFromLatest * 8);
+  // Partial-token history replacement must delete what user actually typed,
+  // not the full matched history token length.
+  const normalizedReplacePrefixLength = shouldInsertWholeCommand
+    ? context.normalizedLinePrefix.length
+    : context.currentTokenValue.length;
 
   return {
     id: `history:${index}:${label}`,
     label,
-    insertText: shouldInsertWholeCommand ? label : currentHistoryToken,
+    insertText: historySuffixInsertText,
+    replacePrefixLength: normalizedReplacePrefixLength,
     detail: 'History',
     detailI18nKey: 'completion.labels.history',
     source: 'history',
     kind: 'history',
     score: score + 24 + recencyBonus,
   };
+};
+
+/**
+ * Executes path provider with a short timeout for typing-triggered requests.
+ */
+const resolvePathItemsWithTriggerBudget = async (
+  pathProvider: NonNullable<CompletionRuntimeOptions['pathProvider']>,
+  pathContext: TerminalPathCompletionContext,
+  trigger: TerminalCompletionRequest['trigger'],
+): Promise<TerminalCompletionItem[]> => {
+  if (trigger !== 'typing') {
+    return collectPathItems(await pathProvider(pathContext), pathContext);
+  }
+
+  const timeoutPromise = new Promise<TerminalPathEntry[]>((resolve) => {
+    setTimeout(() => resolve([]), TYPING_PATH_PROVIDER_TIMEOUT_MS);
+  });
+
+  const pathEntries = await Promise.race([pathProvider(pathContext), timeoutPromise]);
+  return collectPathItems(pathEntries, pathContext);
 };
 
 const addItemWithBestScore = (target: Map<string, TerminalCompletionItem>, item: TerminalCompletionItem): void => {
@@ -822,7 +858,9 @@ const resolveTerminalCompletionsAsync = async (
   const itemMap = new Map<string, TerminalCompletionItem>();
 
   if (includeHistory) {
-    options.recentCommands.forEach((command, index) => {
+    const maxHistoryItems = request.trigger === 'typing' ? MAX_HISTORY_ITEMS_TYPING : MAX_HISTORY_ITEMS_MANUAL;
+    const recentCommands = options.recentCommands.slice(-maxHistoryItems);
+    recentCommands.forEach((command, index) => {
       const historyItem = toHistoryItem(
         command,
         {
@@ -834,7 +872,7 @@ const resolveTerminalCompletionsAsync = async (
           matchedCommandTokens,
         },
         index,
-        options.recentCommands.length,
+        recentCommands.length,
       );
       if (!historyItem) {
         return;
@@ -880,7 +918,7 @@ const resolveTerminalCompletionsAsync = async (
       completionLimit,
     );
     if (pathContext && options.pathProvider) {
-      const pathItems = collectPathItems(await options.pathProvider(pathContext), pathContext);
+      const pathItems = await resolvePathItemsWithTriggerBudget(options.pathProvider, pathContext, request.trigger);
       pathItems.forEach((item) => addItemWithBestScore(itemMap, item));
     }
   }

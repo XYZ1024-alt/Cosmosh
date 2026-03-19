@@ -39,7 +39,7 @@ type UseSshAutocompleteResult = {
   autocompleteAnchor: TerminalAutocompleteAnchor | null;
   autocompleteMenuRef: React.RefObject<TerminalAutocompleteMenuHandle | null>;
   acceptAutocompleteAtIndex: (index: number) => void;
-  applyAutocompleteInputData: (data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
   closeAutocompleteRef: React.RefObject<() => void>;
   resolveAutocompleteAnchorRef: React.RefObject<
     (commandStartColumn: number, cursorRow: number) => TerminalAutocompleteAnchor | null
@@ -96,6 +96,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   const latestAutocompleteCommandStartColumnRef = React.useRef<number>(0);
   const latestAutocompleteCursorRowRef = React.useRef<number>(0);
   const autocompleteMenuRef = React.useRef<TerminalAutocompleteMenuHandle | null>(null);
+  const localAutocompleteCommandPrefixByPaneRef = React.useRef<Map<string, string>>(new Map());
 
   const [autocompleteItems, setAutocompleteItems] = React.useState<TerminalAutocompleteItem[]>([]);
   const [autocompleteAnchor, setAutocompleteAnchor] = React.useState<TerminalAutocompleteAnchor | null>(null);
@@ -181,10 +182,12 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
 
       const cellWidth = internalTerminal._core?._renderService?.dimensions?.css?.cell?.width ?? 9;
       const cellHeight = internalTerminal._core?._renderService?.dimensions?.css?.cell?.height ?? 18;
+      const availablePanelWidth = Math.max(180, wrapperRect.width - AUTOCOMPLETE_PANEL_EDGE_PADDING * 2);
+      const panelWidth = Math.min(AUTOCOMPLETE_PANEL_ESTIMATED_WIDTH, availablePanelWidth);
       const left = containerRect.left - wrapperRect.left + commandStartColumn * cellWidth;
       const maxLeft = Math.max(
         AUTOCOMPLETE_PANEL_EDGE_PADDING,
-        wrapperRect.width - AUTOCOMPLETE_PANEL_ESTIMATED_WIDTH - AUTOCOMPLETE_PANEL_EDGE_PADDING,
+        wrapperRect.width - panelWidth - AUTOCOMPLETE_PANEL_EDGE_PADDING,
       );
       const cursorBaselineTop = containerRect.top - wrapperRect.top + cursorRow * cellHeight;
       const estimatedPanelHeight = 280;
@@ -193,6 +196,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       return {
         left: Math.max(AUTOCOMPLETE_PANEL_EDGE_PADDING, Math.min(left, maxLeft)),
         top: renderAbove ? cursorBaselineTop - 8 : cursorBaselineTop + cellHeight + 8,
+        panelWidth,
         renderAbove,
       };
     },
@@ -279,7 +283,8 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         return;
       }
 
-      const commandPrefix = lineContext.commandPrefix;
+      const shadowCommandPrefix = localAutocompleteCommandPrefixByPaneRef.current.get(activePaneId);
+      const commandPrefix = shadowCommandPrefix ?? lineContext.commandPrefix;
       const trimmedCommandPrefix = commandPrefix.trim();
       if (trimmedCommandPrefix.length > 0 && trimmedCommandPrefix.length < terminalAutoCompleteMinChars) {
         closeAutocomplete();
@@ -305,6 +310,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       closeAutocomplete,
       connectionState,
       dispatchCompletionRequest,
+      localAutocompleteCommandPrefixByPaneRef,
       mirrorPaneRuntimeMapRef,
       primaryPaneIdRef,
       primarySocketRef,
@@ -357,7 +363,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       }
 
       const terminal = terminalRef.current;
-      const deleteCount = Math.max(0, autocompleteReplacePrefixLengthRef.current);
+      const deleteCount = Math.max(0, targetItem.replacePrefixLength ?? autocompleteReplacePrefixLengthRef.current);
       const deletePrefix = '\x7f'.repeat(Math.max(0, deleteCount));
       sendClientMessage(socket, {
         type: 'input',
@@ -368,6 +374,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
 
       const previousLinePrefix = latestAutocompleteLinePrefixRef.current;
       const nextLinePrefix = `${previousLinePrefix.slice(0, Math.max(0, previousLinePrefix.length - deleteCount))}${targetItem.insertText}`;
+      localAutocompleteCommandPrefixByPaneRef.current.set(activePaneIdRef.current, nextLinePrefix);
 
       const shouldTriggerPathChain = targetItem.kind === 'path' && targetItem.insertText.endsWith('/');
       const shouldTriggerSecretChain = targetItem.kind === 'secret';
@@ -391,6 +398,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       activePaneIdRef,
       closeAutocomplete,
       dispatchCompletionRequest,
+      localAutocompleteCommandPrefixByPaneRef,
       scheduleAutocompleteRequest,
       socketRef,
       terminalRef,
@@ -404,14 +412,18 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
    * @returns Flags indicating whether to request or close autocomplete.
    */
   const applyAutocompleteInputData = React.useCallback(
-    (data: string): { shouldRequest: boolean; shouldClose: boolean } => {
+    (paneId: string, data: string): { shouldRequest: boolean; shouldClose: boolean } => {
       let shouldRequest = false;
       let shouldClose = false;
+      let canTrackCommandPrefix = true;
+      let nextLocalCommandPrefix = localAutocompleteCommandPrefixByPaneRef.current.get(paneId) ?? '';
 
       for (let index = 0; index < data.length; index += 1) {
         const char = data[index] ?? '';
 
         if (char === '\x1b') {
+          // Escape sequences are frequently cursor movement/edit commands; stop shadow tracking.
+          canTrackCommandPrefix = false;
           return {
             shouldRequest: false,
             shouldClose: true,
@@ -421,11 +433,13 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         if (char === '\r' || char === '\n' || char === '\u0003') {
           shouldRequest = false;
           shouldClose = true;
+          nextLocalCommandPrefix = '';
           continue;
         }
 
         if (char === '\x7f' || char === '\b') {
           shouldRequest = true;
+          nextLocalCommandPrefix = nextLocalCommandPrefix.slice(0, Math.max(0, nextLocalCommandPrefix.length - 1));
           continue;
         }
 
@@ -435,7 +449,17 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
 
         if (char >= ' ') {
           shouldRequest = true;
+          nextLocalCommandPrefix += char;
+          continue;
         }
+
+        canTrackCommandPrefix = false;
+      }
+
+      if (canTrackCommandPrefix) {
+        localAutocompleteCommandPrefixByPaneRef.current.set(paneId, nextLocalCommandPrefix);
+      } else {
+        localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
       }
 
       return {

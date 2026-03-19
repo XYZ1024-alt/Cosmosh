@@ -28,6 +28,7 @@ export type TerminalCompletionItem = {
   id: string;
   label: string;
   insertText: string;
+  replacePrefixLength?: number;
   detail: string | null;
   detailI18nKey?: string;
   source: TerminalCompletionSource;

@@ -25,7 +25,7 @@ type UseSshMirrorPanesParams = {
   setActivePane: (paneId: string) => void;
   refreshSelectionAnchor: () => void;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
-  applyAutocompleteInputData: (data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
   closeAutocompleteRef: React.RefObject<() => void>;
   scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual') => void>;
   handleCompletionResponse: (
@@ -145,7 +145,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           setActivePane(paneId);
         }
 
-        const autocompleteInputState = applyAutocompleteInputData(data);
+        const autocompleteInputState = applyAutocompleteInputData(paneId, data);
         if (autocompleteInputState.shouldClose) {
           closeAutocompleteRef.current();
         }

@@ -4,1555 +4,1543 @@
  */
 
 export interface paths {
-  '/api/health': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Backend liveness check. */
+        get: operations["health"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Backend liveness check. */
-    get: operations['health'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/test/ping': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/test/ping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Connectivity smoke test for renderer -> main -> backend chain. */
+        get: operations["testPing"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Connectivity smoke test for renderer -> main -> backend chain. */
-    get: operations['testPing'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/settings': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get application settings. */
+        get: operations["settingsGet"];
+        /** Update application settings. */
+        put: operations["settingsUpdate"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get application settings. */
-    get: operations['settingsGet'];
-    /** Update application settings. */
-    put: operations['settingsUpdate'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/servers': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List SSH servers. */
+        get: operations["sshListServers"];
+        put?: never;
+        /** Create SSH server configuration. */
+        post: operations["sshCreateServer"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List SSH servers. */
-    get: operations['sshListServers'];
-    put?: never;
-    /** Create SSH server configuration. */
-    post: operations['sshCreateServer'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/servers/{serverId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/servers/{serverId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update SSH server configuration. */
+        put: operations["sshUpdateServer"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /** Update SSH server configuration. */
-    put: operations['sshUpdateServer'];
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/servers/{serverId}/credentials': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/servers/{serverId}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get SSH server credentials for editor form prefill. */
+        get: operations["sshGetServerCredentials"];
+        put?: never;
+        post?: never;
+        /** Delete SSH server configuration. */
+        delete: operations["sshDeleteServer"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** Get SSH server credentials for editor form prefill. */
-    get: operations['sshGetServerCredentials'];
-    put?: never;
-    post?: never;
-    /** Delete SSH server configuration. */
-    delete: operations['sshDeleteServer'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/folders': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List SSH folders. */
+        get: operations["sshListFolders"];
+        put?: never;
+        /** Create SSH folder. */
+        post: operations["sshCreateFolder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List SSH folders. */
-    get: operations['sshListFolders'];
-    put?: never;
-    /** Create SSH folder. */
-    post: operations['sshCreateFolder'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/folders/{folderId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/folders/{folderId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update SSH folder. */
+        put: operations["sshUpdateFolder"];
+        post?: never;
+        /** Delete SSH folder. */
+        delete: operations["sshDeleteFolder"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    /** Update SSH folder. */
-    put: operations['sshUpdateFolder'];
-    post?: never;
-    /** Delete SSH folder. */
-    delete: operations['sshDeleteFolder'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/tags': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/tags": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List SSH tags. */
+        get: operations["sshListTags"];
+        put?: never;
+        /** Create SSH tag. */
+        post: operations["sshCreateTag"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List SSH tags. */
-    get: operations['sshListTags'];
-    put?: never;
-    /** Create SSH tag. */
-    post: operations['sshCreateTag'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/sessions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a live SSH terminal session. */
+        post: operations["sshCreateSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Create a live SSH terminal session. */
-    post: operations['sshCreateSession'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/sessions/{sessionId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Close a live SSH terminal session. */
+        delete: operations["sshCloseSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Close a live SSH terminal session. */
-    delete: operations['sshCloseSession'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/ssh/trusted-host-keys': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/ssh/trusted-host-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Trust a host fingerprint for a server. */
+        post: operations["sshTrustFingerprint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Trust a host fingerprint for a server. */
-    post: operations['sshTrustFingerprint'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/local-terminals/profiles': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/local-terminals/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List local terminal profiles available on host. */
+        get: operations["localTerminalListProfiles"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    /** List local terminal profiles available on host. */
-    get: operations['localTerminalListProfiles'];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/local-terminals/sessions': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/local-terminals/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create a live local terminal session. */
+        post: operations["localTerminalCreateSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    /** Create a live local terminal session. */
-    post: operations['localTerminalCreateSession'];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  '/api/v1/local-terminals/sessions/{sessionId}': {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    "/api/v1/local-terminals/sessions/{sessionId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Close a live local terminal session. */
+        delete: operations["localTerminalCloseSession"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
     };
-    get?: never;
-    put?: never;
-    post?: never;
-    /** Close a live local terminal session. */
-    delete: operations['localTerminalCloseSession'];
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-  schemas: {
-    HealthResponse: {
-      /** @enum {string} */
-      status: 'ok';
-      /** Format: date-time */
-      timestamp: string;
+    schemas: {
+        HealthResponse: {
+            /** @enum {string} */
+            status: "ok";
+            /** Format: date-time */
+            timestamp: string;
+        };
+        ApiMeta: {
+            code: string;
+            message: string;
+            requestId: string;
+            /** Format: date-time */
+            timestamp: string;
+        };
+        ApiError: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "COMMON_INTERNAL_SERVER_ERROR" | "AUTH_INVALID_TOKEN" | "SETTINGS_VALIDATION_FAILED" | "SSH_VALIDATION_FAILED" | "SSH_SERVER_CONFLICT" | "SSH_FOLDER_CONFLICT" | "SSH_TAG_CONFLICT" | "SSH_NOT_FOUND" | "SSH_HOST_UNTRUSTED" | "SSH_SESSION_NOT_FOUND" | "LOCAL_TERMINAL_VALIDATION_FAILED" | "LOCAL_TERMINAL_PROFILE_NOT_FOUND";
+            /** @enum {boolean} */
+            success: false;
+        };
+        /** @enum {string} */
+        SshAuthType: "password" | "key" | "both";
+        TestPingData: {
+            /** @enum {string} */
+            service: "cosmosh-backend";
+            /** @enum {string} */
+            mode: "electron-main" | "standalone";
+            authenticated: boolean;
+            capabilities: ("ssh" | "sftp")[];
+        };
+        TestPingSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "TEST_PING_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["TestPingData"];
+        };
+        /** @description Application settings values. Property definitions, types, defaults, constraints, and enum sets are managed by the settings registry at packages/api-contract/src/settings-registry.ts. This schema is intentionally loose; runtime validation lives in code. */
+        SettingsValues: {
+            [key: string]: unknown;
+        };
+        SettingsScope: {
+            accountId?: string;
+            deviceId: string;
+        };
+        SettingsResource: {
+            scope: components["schemas"]["SettingsScope"];
+            revision: number;
+            /** Format: date-time */
+            updatedAt: string;
+            values: components["schemas"]["SettingsValues"];
+        };
+        SettingsGetData: {
+            item: components["schemas"]["SettingsResource"];
+        };
+        SettingsUpdateRequest: {
+            scope?: components["schemas"]["SettingsScope"];
+            values: components["schemas"]["SettingsValues"];
+        };
+        SettingsUpdateData: {
+            item: components["schemas"]["SettingsResource"];
+        };
+        SshFolder: {
+            id: string;
+            name: string;
+            iconKey: string;
+            colorKey: components["schemas"]["SshVisualColorKey"];
+            note?: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SshTag: {
+            id: string;
+            name: string;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SshLoginAudit: {
+            id: string;
+            /** Format: date-time */
+            attemptedAt: string;
+            /** @enum {string} */
+            result: "success" | "failed";
+            failureReason?: string;
+            clientIp?: string;
+            sessionId?: string;
+            /** Format: date-time */
+            sessionStartedAt?: string;
+            /** Format: date-time */
+            sessionEndedAt?: string;
+            commandCount: number;
+        };
+        SshServerListItem: {
+            id: string;
+            name: string;
+            iconKey: string;
+            colorKey: components["schemas"]["SshVisualColorKey"];
+            host: string;
+            port: number;
+            username: string;
+            authType: components["schemas"]["SshAuthType"];
+            strictHostKey?: boolean;
+            hasPassword: boolean;
+            hasPrivateKey: boolean;
+            note?: string;
+            folder?: components["schemas"]["SshFolder"];
+            tags?: components["schemas"]["SshTag"][];
+            systemHostname?: string;
+            systemOs?: string;
+            systemArch?: string;
+            systemKernel?: string;
+            /** Format: date-time */
+            lastSystemSyncAt?: string;
+            lastLoginAudit?: components["schemas"]["SshLoginAudit"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+        };
+        SshServerCreateRequest: {
+            name: string;
+            host: string;
+            port: number;
+            username: string;
+            authType: components["schemas"]["SshAuthType"];
+            strictHostKey?: boolean;
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
+            password?: string;
+            privateKey?: string;
+            privateKeyPassphrase?: string;
+            folderId?: string;
+            tagIds?: string[];
+            note?: string;
+        };
+        SshFolderCreateRequest: {
+            name: string;
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
+            note?: string;
+        };
+        SshFolderUpdateRequest: {
+            name: string;
+            iconKey?: string;
+            colorKey?: components["schemas"]["SshVisualColorKey"];
+            note?: string;
+        };
+        /** @enum {string} */
+        SshVisualColorKey: "slate" | "blue" | "emerald" | "violet" | "amber" | "rose" | "cyan" | "indigo" | "teal" | "lime";
+        SshTagCreateRequest: {
+            name: string;
+        };
+        SshSessionCreateRequest: {
+            serverId: string;
+            /** @default 120 */
+            cols: number;
+            /** @default 32 */
+            rows: number;
+            /** @default xterm-256color */
+            term: string;
+            /** @default 45 */
+            connectTimeoutSec: number;
+            strictHostKey?: boolean;
+        };
+        SshTrustFingerprintRequest: {
+            serverId: string;
+            fingerprintSha256: string;
+            /**
+             * @default sha256
+             * @enum {string}
+             */
+            algorithm: "sha256";
+        };
+        SshHostVerificationRequiredData: {
+            serverId: string;
+            host: string;
+            port: number;
+            /** @enum {string} */
+            algorithm: "sha256";
+            fingerprint: string;
+        };
+        SshHostVerificationRequired: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_HOST_UNTRUSTED";
+            /** @enum {boolean} */
+            success: false;
+            data: components["schemas"]["SshHostVerificationRequiredData"];
+        };
+        SshServerListData: {
+            items: components["schemas"]["SshServerListItem"][];
+        };
+        SshFolderListData: {
+            items: components["schemas"]["SshFolder"][];
+        };
+        SshTagListData: {
+            items: components["schemas"]["SshTag"][];
+        };
+        SshServerCreateData: {
+            item: components["schemas"]["SshServerListItem"];
+        };
+        SshServerCredentialsData: {
+            authType: components["schemas"]["SshAuthType"];
+            password?: string;
+            privateKey?: string;
+            privateKeyPassphrase?: string;
+        };
+        SshFolderCreateData: {
+            item: components["schemas"]["SshFolder"];
+        };
+        SshTagCreateData: {
+            item: components["schemas"]["SshTag"];
+        };
+        SshSessionCreateData: {
+            sessionId: string;
+            serverId: string;
+            websocketUrl: string;
+            websocketToken: string;
+        };
+        SshTrustFingerprintData: {
+            /** @enum {boolean} */
+            trusted: true;
+        };
+        LocalTerminalProfile: {
+            id: string;
+            name: string;
+            command: string;
+            executablePath: string;
+            args: string[];
+        };
+        LocalTerminalProfileListData: {
+            items: components["schemas"]["LocalTerminalProfile"][];
+        };
+        LocalTerminalSessionCreateRequest: {
+            profileId: string;
+            /** @default 120 */
+            cols: number;
+            /** @default 32 */
+            rows: number;
+            /** @default xterm-256color */
+            term: string;
+            cwd?: string;
+        };
+        LocalTerminalSessionCreateData: {
+            sessionId: string;
+            profileId: string;
+            websocketUrl: string;
+            websocketToken: string;
+        };
+        LocalTerminalProfileListSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "LOCAL_TERMINAL_LIST_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["LocalTerminalProfileListData"];
+        };
+        LocalTerminalSessionCreateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "LOCAL_TERMINAL_SESSION_CREATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["LocalTerminalSessionCreateData"];
+        };
+        SettingsGetSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SETTINGS_GET_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SettingsGetData"];
+        };
+        SettingsUpdateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SETTINGS_UPDATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SettingsUpdateData"];
+        };
+        SshServerListSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_SERVER_LIST_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshServerListData"];
+        };
+        SshServerCreateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_SERVER_CREATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshServerCreateData"];
+        };
+        SshServerUpdateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_SERVER_UPDATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshServerCreateData"];
+        };
+        SshServerCredentialsSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_SERVER_CREDENTIALS_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshServerCredentialsData"];
+        };
+        SshFolderListSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_FOLDER_LIST_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshFolderListData"];
+        };
+        SshFolderCreateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_FOLDER_CREATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshFolderCreateData"];
+        };
+        SshFolderUpdateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_FOLDER_UPDATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshFolderCreateData"];
+        };
+        SshTagListSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_TAG_LIST_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshTagListData"];
+        };
+        SshTagCreateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_TAG_CREATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshTagCreateData"];
+        };
+        SshSessionCreateSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_SESSION_CREATE_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshSessionCreateData"];
+        };
+        SshTrustFingerprintSuccess: components["schemas"]["ApiMeta"] & {
+            /** @enum {string} */
+            code: "SSH_TRUST_FINGERPRINT_OK";
+            /** @enum {boolean} */
+            success: true;
+            data: components["schemas"]["SshTrustFingerprintData"];
+        };
     };
-    ApiMeta: {
-      code: string;
-      message: string;
-      requestId: string;
-      /** Format: date-time */
-      timestamp: string;
+    responses: never;
+    parameters: {
+        LocaleHeader: string;
     };
-    ApiError: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code:
-        | 'COMMON_INTERNAL_SERVER_ERROR'
-        | 'AUTH_INVALID_TOKEN'
-        | 'SETTINGS_VALIDATION_FAILED'
-        | 'SSH_VALIDATION_FAILED'
-        | 'SSH_SERVER_CONFLICT'
-        | 'SSH_FOLDER_CONFLICT'
-        | 'SSH_TAG_CONFLICT'
-        | 'SSH_NOT_FOUND'
-        | 'SSH_HOST_UNTRUSTED'
-        | 'SSH_SESSION_NOT_FOUND'
-        | 'LOCAL_TERMINAL_VALIDATION_FAILED'
-        | 'LOCAL_TERMINAL_PROFILE_NOT_FOUND';
-      /** @enum {boolean} */
-      success: false;
-    };
-    /** @enum {string} */
-    SshAuthType: 'password' | 'key' | 'both';
-    TestPingData: {
-      /** @enum {string} */
-      service: 'cosmosh-backend';
-      /** @enum {string} */
-      mode: 'electron-main' | 'standalone';
-      authenticated: boolean;
-      capabilities: ('ssh' | 'sftp')[];
-    };
-    TestPingSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'TEST_PING_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['TestPingData'];
-    };
-    /** @description Application settings values. Property definitions, types, defaults, constraints, and enum sets are managed by the settings registry at packages/api-contract/src/settings-registry.ts. This schema is intentionally loose; runtime validation lives in code. */
-    SettingsValues: {
-      [key: string]: unknown;
-    };
-    SettingsScope: {
-      accountId?: string;
-      deviceId: string;
-    };
-    SettingsResource: {
-      scope: components['schemas']['SettingsScope'];
-      revision: number;
-      /** Format: date-time */
-      updatedAt: string;
-      values: components['schemas']['SettingsValues'];
-    };
-    SettingsGetData: {
-      item: components['schemas']['SettingsResource'];
-    };
-    SettingsUpdateRequest: {
-      scope?: components['schemas']['SettingsScope'];
-      values: components['schemas']['SettingsValues'];
-    };
-    SettingsUpdateData: {
-      item: components['schemas']['SettingsResource'];
-    };
-    SshFolder: {
-      id: string;
-      name: string;
-      iconKey: string;
-      colorKey: components['schemas']['SshVisualColorKey'];
-      note?: string;
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      updatedAt: string;
-    };
-    SshTag: {
-      id: string;
-      name: string;
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      updatedAt: string;
-    };
-    SshLoginAudit: {
-      id: string;
-      /** Format: date-time */
-      attemptedAt: string;
-      /** @enum {string} */
-      result: 'success' | 'failed';
-      failureReason?: string;
-      clientIp?: string;
-      sessionId?: string;
-      /** Format: date-time */
-      sessionStartedAt?: string;
-      /** Format: date-time */
-      sessionEndedAt?: string;
-      commandCount: number;
-    };
-    SshServerListItem: {
-      id: string;
-      name: string;
-      iconKey: string;
-      colorKey: components['schemas']['SshVisualColorKey'];
-      host: string;
-      port: number;
-      username: string;
-      authType: components['schemas']['SshAuthType'];
-      strictHostKey?: boolean;
-      hasPassword: boolean;
-      hasPrivateKey: boolean;
-      note?: string;
-      folder?: components['schemas']['SshFolder'];
-      tags?: components['schemas']['SshTag'][];
-      systemHostname?: string;
-      systemOs?: string;
-      systemArch?: string;
-      systemKernel?: string;
-      /** Format: date-time */
-      lastSystemSyncAt?: string;
-      lastLoginAudit?: components['schemas']['SshLoginAudit'];
-      /** Format: date-time */
-      createdAt: string;
-      /** Format: date-time */
-      updatedAt: string;
-    };
-    SshServerCreateRequest: {
-      name: string;
-      host: string;
-      port: number;
-      username: string;
-      authType: components['schemas']['SshAuthType'];
-      strictHostKey?: boolean;
-      iconKey?: string;
-      colorKey?: components['schemas']['SshVisualColorKey'];
-      password?: string;
-      privateKey?: string;
-      privateKeyPassphrase?: string;
-      folderId?: string;
-      tagIds?: string[];
-      note?: string;
-    };
-    SshFolderCreateRequest: {
-      name: string;
-      iconKey?: string;
-      colorKey?: components['schemas']['SshVisualColorKey'];
-      note?: string;
-    };
-    SshFolderUpdateRequest: {
-      name: string;
-      iconKey?: string;
-      colorKey?: components['schemas']['SshVisualColorKey'];
-      note?: string;
-    };
-    /** @enum {string} */
-    SshVisualColorKey: 'slate' | 'blue' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan' | 'indigo' | 'teal' | 'lime';
-    SshTagCreateRequest: {
-      name: string;
-    };
-    SshSessionCreateRequest: {
-      serverId: string;
-      /** @default 120 */
-      cols: number;
-      /** @default 32 */
-      rows: number;
-      /** @default xterm-256color */
-      term: string;
-      /** @default 45 */
-      connectTimeoutSec: number;
-      strictHostKey?: boolean;
-    };
-    SshTrustFingerprintRequest: {
-      serverId: string;
-      fingerprintSha256: string;
-      /**
-       * @default sha256
-       * @enum {string}
-       */
-      algorithm: 'sha256';
-    };
-    SshHostVerificationRequiredData: {
-      serverId: string;
-      host: string;
-      port: number;
-      /** @enum {string} */
-      algorithm: 'sha256';
-      fingerprint: string;
-    };
-    SshHostVerificationRequired: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_HOST_UNTRUSTED';
-      /** @enum {boolean} */
-      success: false;
-      data: components['schemas']['SshHostVerificationRequiredData'];
-    };
-    SshServerListData: {
-      items: components['schemas']['SshServerListItem'][];
-    };
-    SshFolderListData: {
-      items: components['schemas']['SshFolder'][];
-    };
-    SshTagListData: {
-      items: components['schemas']['SshTag'][];
-    };
-    SshServerCreateData: {
-      item: components['schemas']['SshServerListItem'];
-    };
-    SshServerCredentialsData: {
-      authType: components['schemas']['SshAuthType'];
-      password?: string;
-      privateKey?: string;
-      privateKeyPassphrase?: string;
-    };
-    SshFolderCreateData: {
-      item: components['schemas']['SshFolder'];
-    };
-    SshTagCreateData: {
-      item: components['schemas']['SshTag'];
-    };
-    SshSessionCreateData: {
-      sessionId: string;
-      serverId: string;
-      websocketUrl: string;
-      websocketToken: string;
-    };
-    SshTrustFingerprintData: {
-      /** @enum {boolean} */
-      trusted: true;
-    };
-    LocalTerminalProfile: {
-      id: string;
-      name: string;
-      command: string;
-      executablePath: string;
-      args: string[];
-    };
-    LocalTerminalProfileListData: {
-      items: components['schemas']['LocalTerminalProfile'][];
-    };
-    LocalTerminalSessionCreateRequest: {
-      profileId: string;
-      /** @default 120 */
-      cols: number;
-      /** @default 32 */
-      rows: number;
-      /** @default xterm-256color */
-      term: string;
-      cwd?: string;
-    };
-    LocalTerminalSessionCreateData: {
-      sessionId: string;
-      profileId: string;
-      websocketUrl: string;
-      websocketToken: string;
-    };
-    LocalTerminalProfileListSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'LOCAL_TERMINAL_LIST_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['LocalTerminalProfileListData'];
-    };
-    LocalTerminalSessionCreateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'LOCAL_TERMINAL_SESSION_CREATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['LocalTerminalSessionCreateData'];
-    };
-    SettingsGetSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SETTINGS_GET_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SettingsGetData'];
-    };
-    SettingsUpdateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SETTINGS_UPDATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SettingsUpdateData'];
-    };
-    SshServerListSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_SERVER_LIST_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshServerListData'];
-    };
-    SshServerCreateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_SERVER_CREATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshServerCreateData'];
-    };
-    SshServerUpdateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_SERVER_UPDATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshServerCreateData'];
-    };
-    SshServerCredentialsSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_SERVER_CREDENTIALS_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshServerCredentialsData'];
-    };
-    SshFolderListSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_FOLDER_LIST_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshFolderListData'];
-    };
-    SshFolderCreateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_FOLDER_CREATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshFolderCreateData'];
-    };
-    SshFolderUpdateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_FOLDER_UPDATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshFolderCreateData'];
-    };
-    SshTagListSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_TAG_LIST_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshTagListData'];
-    };
-    SshTagCreateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_TAG_CREATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshTagCreateData'];
-    };
-    SshSessionCreateSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_SESSION_CREATE_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshSessionCreateData'];
-    };
-    SshTrustFingerprintSuccess: components['schemas']['ApiMeta'] & {
-      /** @enum {string} */
-      code: 'SSH_TRUST_FINGERPRINT_OK';
-      /** @enum {boolean} */
-      success: true;
-      data: components['schemas']['SshTrustFingerprintData'];
-    };
-  };
-  responses: never;
-  parameters: {
-    LocaleHeader: string;
-  };
-  requestBodies: never;
-  headers: never;
-  pathItems: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-  health: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
+    health: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Backend service is alive. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description Backend service is alive. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    testPing: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['HealthResponse'];
+        requestBody?: never;
+        responses: {
+            /** @description Successful ping response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TestPingSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-      };
     };
-  };
-  testPing: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
+    settingsGet: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Settings fetched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsGetSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description Successful ping response. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    settingsUpdate: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['TestPingSuccess'];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SettingsUpdateRequest"];
+            };
         };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description Settings updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettingsUpdateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  settingsGet: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
+    sshListServers: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSH servers listed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshServerListSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description Settings fetched. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    sshCreateServer: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SettingsGetSuccess'];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshServerCreateRequest"];
+            };
         };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description SSH server created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshServerCreateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict with existing server. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  settingsUpdate: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
+    sshUpdateServer: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                serverId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshServerCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description SSH server updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshServerUpdateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SSH server not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Conflict with existing server. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SettingsUpdateRequest'];
-      };
+    sshGetServerCredentials: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                serverId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSH server credentials fetched. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshServerCredentialsSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SSH server not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description Settings updated. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    sshDeleteServer: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                serverId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SettingsUpdateSuccess'];
+        requestBody?: never;
+        responses: {
+            /** @description SSH server deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SSH server not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshListServers: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
+    sshListFolders: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSH folders listed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshFolderListSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description SSH servers listed. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    sshCreateFolder: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SshServerListSuccess'];
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshFolderCreateRequest"];
+            };
         };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
+        responses: {
+            /** @description SSH folder created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshFolderCreateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Folder already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshCreateServer: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
+    sshUpdateFolder: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                folderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshFolderUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description SSH folder updated. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshFolderUpdateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SSH folder not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Folder already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshServerCreateRequest'];
-      };
+    sshDeleteFolder: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                folderId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description SSH folder deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description SSH folder not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description SSH server created. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    sshListTags: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SshServerCreateSuccess'];
+        requestBody?: never;
+        responses: {
+            /** @description SSH tags listed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshTagListSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Conflict with existing server. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshUpdateServer: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        serverId: string;
-      };
-      cookie?: never;
+    sshCreateTag: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshTagCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description SSH tag created. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshTagCreateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Tag already exists. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshServerCreateRequest'];
-      };
+    sshCreateSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshSessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description SSH session is ready for websocket streaming. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshSessionCreateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Server not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Host fingerprint is not trusted. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshHostVerificationRequired"];
+                };
+            };
+        };
     };
-    responses: {
-      /** @description SSH server updated. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    sshCloseSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SshServerUpdateSuccess'];
+        requestBody?: never;
+        responses: {
+            /** @description Session closed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Session not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description SSH server not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Conflict with existing server. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshGetServerCredentials: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        serverId: string;
-      };
-      cookie?: never;
+    sshTrustFingerprint: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SshTrustFingerprintRequest"];
+            };
+        };
+        responses: {
+            /** @description Host fingerprint has been trusted. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SshTrustFingerprintSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Server not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description SSH server credentials fetched. */
-      200: {
-        headers: {
-          [name: string]: unknown;
+    localTerminalListProfiles: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
         };
-        content: {
-          'application/json': components['schemas']['SshServerCredentialsSuccess'];
+        requestBody?: never;
+        responses: {
+            /** @description Local terminal profiles listed. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalTerminalProfileListSuccess"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description SSH server not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshDeleteServer: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        serverId: string;
-      };
-      cookie?: never;
+    localTerminalCreateSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LocalTerminalSessionCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Local terminal session is ready for websocket streaming. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LocalTerminalSessionCreateSuccess"];
+                };
+            };
+            /** @description Validation failed. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Profile not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+        };
     };
-    requestBody?: never;
-    responses: {
-      /** @description SSH server deleted. */
-      204: {
-        headers: {
-          [name: string]: unknown;
+    localTerminalCloseSession: {
+        parameters: {
+            query?: never;
+            header?: {
+                "x-cosmosh-locale"?: components["parameters"]["LocaleHeader"];
+            };
+            path: {
+                sessionId: string;
+            };
+            cookie?: never;
         };
-        content?: never;
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
+        requestBody?: never;
+        responses: {
+            /** @description Session closed. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication failed. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
+            /** @description Session not found. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description SSH server not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
     };
-  };
-  sshListFolders: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description SSH folders listed. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshFolderListSuccess'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshCreateFolder: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshFolderCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description SSH folder created. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshFolderCreateSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Folder already exists. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshUpdateFolder: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        folderId: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshFolderUpdateRequest'];
-      };
-    };
-    responses: {
-      /** @description SSH folder updated. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshFolderUpdateSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description SSH folder not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Folder already exists. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshDeleteFolder: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        folderId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description SSH folder deleted. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description SSH folder not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshListTags: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description SSH tags listed. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshTagListSuccess'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshCreateTag: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshTagCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description SSH tag created. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshTagCreateSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Tag already exists. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshCreateSession: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshSessionCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description SSH session is ready for websocket streaming. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshSessionCreateSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Server not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Host fingerprint is not trusted. */
-      409: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshHostVerificationRequired'];
-        };
-      };
-    };
-  };
-  sshCloseSession: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        sessionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Session closed. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Session not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  sshTrustFingerprint: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['SshTrustFingerprintRequest'];
-      };
-    };
-    responses: {
-      /** @description Host fingerprint has been trusted. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['SshTrustFingerprintSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Server not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  localTerminalListProfiles: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Local terminal profiles listed. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['LocalTerminalProfileListSuccess'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  localTerminalCreateSession: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path?: never;
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        'application/json': components['schemas']['LocalTerminalSessionCreateRequest'];
-      };
-    };
-    responses: {
-      /** @description Local terminal session is ready for websocket streaming. */
-      200: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['LocalTerminalSessionCreateSuccess'];
-        };
-      };
-      /** @description Validation failed. */
-      400: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Profile not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
-  localTerminalCloseSession: {
-    parameters: {
-      query?: never;
-      header?: {
-        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
-      };
-      path: {
-        sessionId: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Session closed. */
-      204: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Authentication failed. */
-      401: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-      /** @description Session not found. */
-      404: {
-        headers: {
-          [name: string]: unknown;
-        };
-        content: {
-          'application/json': components['schemas']['ApiError'];
-        };
-      };
-    };
-  };
 }

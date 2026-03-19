@@ -101,6 +101,7 @@ sequenceDiagram
 ### 3.2 Auto-Complete Model
 
 - Renderer triggers `completion-request` with a short typing debounce and also sends an immediate request when user manually presses `Tab`.
+- Renderer keeps a per-pane local command-prefix shadow from xterm input events, so typing-trigger completion does not wait for remote shell echo before computing request prefix.
 - Renderer also forwards source filter toggles in `completion-request` (`includeHistory`, `includeBuiltInCommands`, `includePathSuggestions`, `includePasswordSuggestions`) based on Settings and defaults each source to enabled.
 - Backend completion engine is shared by SSH and local-terminal session services and merges:
   - current session interactive commands captured from live input stream (history signal, isolated per session),
@@ -127,12 +128,16 @@ sequenceDiagram
 - Path completion is provider-based and command-context-aware:
   - built-in path rules currently cover `cd` (directory-only), `cat`, `vim`, and direct executable-style path prefixes (`./`, `../`, `/`, `~`) at command position,
   - relative-path partial input (for example, `cd ../../c`) is resolved against tracked session working directory and ranked with "prefix first, contains fallback" matching,
+  - typing-trigger requests apply a short path-provider timeout budget so command/history/spec candidates are not blocked by slow filesystem probes; manual `Tab` trigger still uses full provider results,
+  - typing-trigger history scoring is bounded to a recent history window to keep completion latency stable when shell history snapshots are large,
   - when current token starts with `-`, option/value suggestions keep priority and path provider is gated off for that token.
 - Interactive secret prompt detection is output-driven:
   - backend tracks recent output tail and detects common prompts (`sudo` password, `su`/generic password prompts, key passphrase prompts),
   - when prompt is active and a reusable session secret exists, completion can emit runtime `secret` action item (`Fill password`) for one-step insertion.
-- Acceptance replaces only the active token segment (`replacePrefixLength`) before cursor instead of clearing the entire command line, so multi-argument combinations remain intact.
-- `completion-response` contains `replacePrefixLength` plus items (`label`, `insertText`, `detail`, `source`, `kind`, `score`).
+- Acceptance replaces the active token segment by default (`replacePrefixLength`), and can optionally use per-item `replacePrefixLength` override (for example root history items that should replace full typed prefix).
+- For partial-token history completion (for example `docker e` -> `docker exec`), item-level `replacePrefixLength` is calculated from current typed token length to avoid over-delete and duplicated command segments.
+- For history candidates accepted at non-root token positions, backend returns the command suffix from current token to end (not only one token), so selection can complete the full historical command continuation in one accept action.
+- `completion-response` contains base `replacePrefixLength` plus items (`label`, `insertText`, optional item `replacePrefixLength`, `detail`, `source`, `kind`, `score`).
 - Completion `detail` is localized in backend session services before response emission, with fallback chain: translated `detailI18nKey` → localized source label (`History` / `Command spec` / runtime labels such as `Directory`, `File`, `Fill password`).
 - Renderer keyboard policy when suggestions are visible:
   - `ArrowUp/ArrowDown` changes active suggestion and is consumed by completion navigation,
@@ -141,7 +146,7 @@ sequenceDiagram
   - `Enter` remains shell submit behavior.
 - Suggestion panel layout constraints:
   - panel anchor is clamped to terminal viewport bounds,
-  - panel width is expanded for dense descriptions while preserving viewport clamping,
+  - panel width is computed from current pane available space (capped at desktop width target) and anchor clamping uses the computed width to avoid horizontal overflow,
   - panel body uses max height + vertical scroll (`max-h`) to keep large candidate sets fully reachable,
   - long labels/details are truncated to avoid horizontal overflow.
 
