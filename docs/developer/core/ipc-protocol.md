@@ -64,6 +64,12 @@ The following SSH entity payloads now include visual metadata for persistent ico
 
 `colorKey` is constrained to the predefined palette enum in the API contract.
 
+SSH security policy fields in current contract:
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey` boolean.
+- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey`.
+- `ApiSshCreateSessionRequest`: optional `strictHostKey` override used for one session attempt.
+
 ## 3.2 Terminal WebSocket Contract (Renderer ↔ Backend)
 
 Although terminal stream messages are not Electron IPC channels, they are part of the same cross-process contract surface and must be versioned together.

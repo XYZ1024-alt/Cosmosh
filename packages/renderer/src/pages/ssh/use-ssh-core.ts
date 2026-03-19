@@ -2,7 +2,7 @@ import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
 import type { TerminalAutocompleteMenuHandle } from '../../components/terminal/terminal-autocomplete-menu';
-import { resolveTerminalTarget } from './ssh-target';
+import type { SshConnectionIntent } from '../../types/tabs';
 import {
   DEFAULT_TELEMETRY_STATE,
   type HostFingerprintPrompt,
@@ -135,6 +135,10 @@ const useRuntimeFieldRef = <T>(
  * Input parameters for `useSshCore`.
  */
 export type UseSshCoreParams = {
+  tabId: string;
+  isActive: boolean;
+  connectionIntent: SshConnectionIntent;
+  onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
   terminalInitOptions: ITerminalOptions;
   sshConnectionTimeoutSec: number;
   terminalAutoCompleteEnabled: boolean;
@@ -305,6 +309,10 @@ export type UseSshCoreResult = {
  */
 export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const {
+    tabId,
+    isActive,
+    connectionIntent,
+    onConnectionIntentChange,
     terminalInitOptions,
     sshConnectionTimeoutSec,
     terminalAutoCompleteEnabled,
@@ -663,6 +671,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   }, []);
 
   useSshPrimarySession({
+    tabId,
+    isActive,
+    connectionIntent,
+    onConnectionIntentChange,
     terminalInitOptionsRef,
     terminalContainerRef,
     terminalRef,
@@ -692,6 +704,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   });
 
   useSshMirrorPanes({
+    isActive,
     connectionState,
     terminalPaneIds,
     terminalInitOptionsRef,
@@ -712,7 +725,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     scheduleAutocompleteRequestRef,
     handleCompletionResponse,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
-    resolveTerminalTarget,
     notifyWarning,
   });
 

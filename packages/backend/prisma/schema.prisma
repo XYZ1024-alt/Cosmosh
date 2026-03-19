@@ -45,6 +45,7 @@ model SshServer {
   host                          String
   port                          Int             @default(22)
   username                      String
+  strictHostKey                 Boolean         @default(true)
   authType                      SshAuthType
   passwordEncrypted             String?
   privateKeyEncrypted           String?

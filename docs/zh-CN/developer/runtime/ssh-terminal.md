@@ -35,6 +35,7 @@ sequenceDiagram
 - 请求字段：
   - `cols` / `rows`：终端视口尺寸。
   - `connectTimeoutSec`：来自设置项 `sshConnectionTimeoutSec` 的会话级 SSH 握手超时。
+  - `strictHostKey`：从 SSH 服务器配置透传的会话级主机密钥策略。
 - 步骤：
   1. 读取 server 记录与加密凭据。
   2. 解析可信主机指纹。
@@ -157,6 +158,8 @@ flowchart LR
 ## 4. 主机校验与信任流程
 
 - SSH 连接使用 `hostHash: 'sha256'` 与 `hostVerifier`。
+- `strictHostKey=true`：主机指纹必须已被信任，未知指纹返回 `SSH_HOST_UNTRUSTED`。
+- `strictHostKey=false`：本次会话允许未知主机指纹继续连接。
 - 若指纹未知：
   - backend 返回 `SSH_HOST_UNTRUSTED` 载荷。
   - renderer 打开信任确认弹窗。
@@ -170,6 +173,10 @@ flowchart LR
 - attach 超时：30 秒。
 - 任意 socket close/error 都会让 UI 进入失败状态。
 - 重试为 **手动**（`SSH.tsx` 的 retry 按钮），本质是创建新会话。
+- 重试严格绑定到当前 tab 最近一次成功解析的目标快照，不会重新读取全局“当前选择”。
+- 若首次连接在快照落库前失败，手动重试会回退到该 tab 的最新 intent 重新解析。
+- 每次连接都有 attempt identity（`attemptId`），并带有过期结果丢弃与可取消的连接前异步流程。
+- 隐藏 tab 不会触发新的连接副作用，只有 active tab 允许发起连接。
 - 当前尚未实现自动指数退避重连。
 
 ### 推荐下一步（规划中）
@@ -183,6 +190,7 @@ flowchart LR
 - Renderer 使用 `FitAddon` + resize observer 保持终端尺寸同步。
 - Backend 对终端尺寸做归一化限制（`20-400 cols`、`10-200 rows`）。
 - 通过 pending output queue 避免 attach 前早期输出丢失。
+- pending output 采用“条目数 + 字节数”双上限；超过上限时丢弃最旧输出并记录日志。
 - 遥测采用 5 秒定时采样 + 轻量文本解析，降低帧级开销。
 - history 刷新使用防抖 + 节流策略，平衡实时性与远端执行开销。
 
@@ -216,6 +224,7 @@ flowchart LR
 - 分屏入口在终端右键菜单（`拆分终端`），关闭入口同样在右键菜单（`关闭终端`）。
 - 当前实现最多同时展示 4 个终端窗格。
 - 每个分屏窗格会针对同一已解析目标（同一 SSH 服务器/本地 profile）独立创建后端终端会话，从而支持独立输入输出。
+- 镜像窗格在重试场景下始终复用主窗格的目标快照语义，避免会话目标漂移。
 - 新增分屏窗格从空白视口启动，仅接入并展示该窗格自己的会话流，避免来自其他窗格的陈旧缓冲内容串入。
 - 关闭窗格会释放该窗格自身 session/socket，其他窗格会继续运行。
 - 补全弹层锚点必须始终基于当前激活窗格容器计算，主窗格容器 ref 在重渲染时不能覆盖镜像窗格的激活几何信息。

@@ -53,6 +53,8 @@ flowchart LR
 - Non-home renderer pages (including SSH and settings editor/Monaco) are lazy-loaded to keep heavyweight assets out of the default startup path.
 - Renderer bootstrap hydrates settings from local cache first, then refreshes canonical values from backend in background.
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
+- SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
+- Hidden tabs are rendered but cannot start new SSH connect side effects; connect flow is active-tab gated.
 
 ## 3. IPC Lifecycle (Current)
 

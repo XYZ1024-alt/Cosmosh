@@ -9,6 +9,7 @@ import type { MirrorPaneRuntime, ResolvedTerminalTarget, ServerInboundMessage } 
 import { applyTerminalRuntimeOptions, SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
 
 type UseSshMirrorPanesParams = {
+  isActive: boolean;
   connectionState: 'connecting' | 'connected' | 'failed';
   terminalPaneIds: string[];
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
@@ -38,7 +39,6 @@ type UseSshMirrorPanesParams = {
     algorithm: string;
     fingerprint: string;
   }) => Promise<boolean>;
-  resolveTerminalTarget: () => Promise<ResolvedTerminalTarget>;
   notifyWarning: (message: string) => void;
 };
 
@@ -50,6 +50,7 @@ type UseSshMirrorPanesParams = {
  */
 export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   const {
+    isActive,
     connectionState,
     terminalPaneIds,
     terminalInitOptionsRef,
@@ -70,12 +71,11 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     scheduleAutocompleteRequestRef,
     handleCompletionResponse,
     requestHostFingerprintTrust,
-    resolveTerminalTarget,
     notifyWarning,
   } = params;
 
   React.useEffect(() => {
-    if (connectionState !== 'connected') {
+    if (!isActive || connectionState !== 'connected') {
       return;
     }
 
@@ -191,8 +191,12 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
 
       const connectPaneSession = async (): Promise<void> => {
         try {
-          const target = resolvedTerminalTargetRef.current ?? (await resolveTerminalTarget());
-          resolvedTerminalTargetRef.current = target;
+          const target = resolvedTerminalTargetRef.current;
+          if (!target) {
+            notifyWarning(t('ssh.sessionInitFailed'));
+            return;
+          }
+
           const sessionCols = Math.max(20, terminal.cols || 120);
           const sessionRows = Math.max(10, terminal.rows || 30);
 
@@ -326,10 +330,10 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
     mirrorPaneRuntimeMapRef,
+    isActive,
     paneContainerMapRef,
     refreshSelectionAnchor,
     requestHostFingerprintTrust,
-    resolveTerminalTarget,
     resolvedTerminalTargetRef,
     scheduleAutocompleteRequestRef,
     scheduleFitAndResizeSyncRef,
@@ -341,6 +345,17 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     terminalPaneIds,
     notifyWarning,
   ]);
+
+  React.useEffect(() => {
+    if (connectionState === 'connected' && isActive) {
+      return;
+    }
+
+    mirrorPaneRuntimeMapRef.current.forEach((runtime) => {
+      runtime.dispose();
+    });
+    mirrorPaneRuntimeMapRef.current.clear();
+  }, [connectionState, isActive, mirrorPaneRuntimeMapRef]);
 
   React.useEffect(() => {
     const mirrorRuntimeMap = mirrorPaneRuntimeMapRef.current;

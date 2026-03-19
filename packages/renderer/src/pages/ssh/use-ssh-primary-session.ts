@@ -4,13 +4,23 @@ import React from 'react';
 
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
+import { resolveConnectMode, withResolvedSnapshot } from '../../lib/ssh-connection-intent';
+import type { SshConnectionIntent } from '../../types/tabs';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
-import { resolveTerminalTarget } from './ssh-target';
+import {
+  resolveTerminalTargetFromIntent,
+  resolveTerminalTargetFromSnapshot,
+  toResolvedTargetSnapshot,
+} from './ssh-target';
 import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } from './ssh-types';
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
 
 type UseSshPrimarySessionParams = {
+  tabId: string;
+  isActive: boolean;
+  connectionIntent: SshConnectionIntent;
+  onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
   terminalContainerRef: React.RefObject<HTMLDivElement | null>;
   terminalRef: React.RefObject<Terminal | null>;
@@ -56,6 +66,10 @@ type UseSshPrimarySessionParams = {
  */
 export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void => {
   const {
+    tabId,
+    isActive,
+    connectionIntent,
+    onConnectionIntentChange,
     terminalInitOptionsRef,
     terminalContainerRef,
     terminalRef,
@@ -83,6 +97,28 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
   } = params;
+
+  const isActiveRef = React.useRef<boolean>(isActive);
+  const connectionIntentRef = React.useRef<SshConnectionIntent>(connectionIntent);
+  const tabIdRef = React.useRef<string>(tabId);
+  const onConnectionIntentChangeRef = React.useRef<(nextIntent: SshConnectionIntent) => void>(onConnectionIntentChange);
+  const resumeConnectRef = React.useRef<(() => void) | null>(null);
+
+  React.useEffect(() => {
+    isActiveRef.current = isActive;
+  }, [isActive]);
+
+  React.useEffect(() => {
+    connectionIntentRef.current = connectionIntent;
+  }, [connectionIntent]);
+
+  React.useEffect(() => {
+    tabIdRef.current = tabId;
+  }, [tabId]);
+
+  React.useEffect(() => {
+    onConnectionIntentChangeRef.current = onConnectionIntentChange;
+  }, [onConnectionIntentChange]);
 
   React.useEffect(() => {
     const terminal = new Terminal(terminalInitOptionsRef.current);
@@ -142,9 +178,15 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     let socket: WebSocket | null = null;
     let sessionId: string | null = null;
     let sessionType: 'ssh-server' | 'local-terminal' | null = null;
+    let connectAttemptId = 0;
+    let connectAbortController: AbortController | null = null;
     let lastSyncedCols: number | null = null;
     let lastSyncedRows: number | null = null;
     let fitFrameId: number | null = null;
+
+    const isStaleAttempt = (attemptId: number): boolean => {
+      return disposed || attemptId !== connectAttemptId;
+    };
 
     const syncResizeIfNeeded = (): void => {
       if (disposed || !socket || socket.readyState !== WebSocket.OPEN) {
@@ -264,17 +306,37 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       }
     };
 
-    const connectSession = async (): Promise<void> => {
+    const connectSession = async (mode: 'initial' | 'retry'): Promise<void> => {
       try {
+        if (!isActiveRef.current) {
+          return;
+        }
+
+        connectAbortController?.abort();
+        connectAbortController = new AbortController();
+        connectAttemptId += 1;
+        const attemptId = connectAttemptId;
+
         setConnectionState('connecting');
         setConnectionError('');
         setTelemetryState(DEFAULT_TELEMETRY_STATE);
 
-        const target = await resolveTerminalTarget();
-        if (disposed) {
+        const activeIntent = connectionIntentRef.current;
+        if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
+          throw new Error('Cannot retry without a resolved target snapshot.');
+        }
+
+        const target =
+          mode === 'retry'
+            ? await resolveTerminalTargetFromSnapshot(activeIntent.lastResolvedSnapshot!, connectAbortController.signal)
+            : await resolveTerminalTargetFromIntent(activeIntent, connectAbortController.signal);
+
+        if (isStaleAttempt(attemptId)) {
           return;
         }
+
         resolvedTerminalTargetRef.current = target;
+        onConnectionIntentChangeRef.current(withResolvedSnapshot(activeIntent, toResolvedTargetSnapshot(target)));
 
         if (target.type === 'ssh-server') {
           onTabTitleChangeRef.current?.(target.server.name.trim() || t('tabs.page.ssh'));
@@ -300,7 +362,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           hostFingerprintNotTrustedMessage: t('ssh.hostFingerprintNotTrusted'),
         });
 
-        if (disposed) {
+        if (isStaleAttempt(attemptId)) {
           if (openedSession.sessionType === 'local-terminal') {
             void closeLocalTerminalSession(openedSession.sessionId).catch(() => undefined);
           } else {
@@ -316,10 +378,16 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         if (activePaneIdRef.current === primaryPaneIdRef.current) {
           socketRef.current = socket;
         }
-        socket.addEventListener('message', handleSocketMessage);
+        socket.addEventListener('message', (event) => {
+          if (isStaleAttempt(attemptId)) {
+            return;
+          }
+
+          handleSocketMessage(event);
+        });
 
         socket.addEventListener('open', () => {
-          if (disposed) {
+          if (isStaleAttempt(attemptId)) {
             return;
           }
 
@@ -329,12 +397,13 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         });
 
         socket.addEventListener('close', () => {
+          if (isStaleAttempt(attemptId)) {
+            return;
+          }
+
           primarySocketRef.current = null;
           if (activePaneIdRef.current === primaryPaneIdRef.current) {
             socketRef.current = null;
-          }
-          if (disposed) {
-            return;
           }
 
           setConnectionState('failed');
@@ -342,21 +411,32 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         });
 
         socket.addEventListener('error', () => {
+          if (isStaleAttempt(attemptId)) {
+            return;
+          }
+
           primarySocketRef.current = null;
           if (activePaneIdRef.current === primaryPaneIdRef.current) {
             socketRef.current = null;
-          }
-          if (disposed) {
-            return;
           }
 
           setConnectionState('failed');
           setConnectionError(t('ssh.websocketTransportFailed'));
         });
       } catch (error: unknown) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+
         const message = error instanceof Error ? error.message : t('ssh.sessionInitFailed');
         setConnectionState('failed');
         setConnectionError(message);
+        console.warn('[ssh][connect] Failed to initialize SSH session.', {
+          tabId: tabIdRef.current,
+          mode,
+          intentId: connectionIntentRef.current.intentId,
+          reason: message,
+        });
       }
     };
 
@@ -414,11 +494,22 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     window.addEventListener('resize', handleWindowResize);
     refreshSelectionAnchor();
 
-    connectSessionRef.current = connectSession;
-    void connectSession();
+    connectSessionRef.current = () => {
+      const mode = resolveConnectMode(connectionIntentRef.current, 'retry');
+      void connectSession(mode);
+    };
+    resumeConnectRef.current = () => {
+      const mode = resolveConnectMode(connectionIntentRef.current, 'retry');
+      void connectSession(mode);
+    };
+
+    if (isActiveRef.current) {
+      void connectSession('initial');
+    }
 
     return () => {
       disposed = true;
+      connectAbortController?.abort();
 
       if (retryFitFrameId !== null) {
         cancelAnimationFrame(retryFitFrameId);
@@ -451,6 +542,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       }
 
       connectSessionRef.current = null;
+      resumeConnectRef.current = null;
       scheduleFitAndResizeSyncRef.current = null;
       primaryTerminalRef.current = null;
       terminalRef.current = null;
@@ -495,4 +587,16 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     terminalInitOptionsRef,
     terminalRef,
   ]);
+
+  React.useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    if (primarySocketRef.current) {
+      return;
+    }
+
+    resumeConnectRef.current?.();
+  }, [isActive, primarySocketRef]);
 };

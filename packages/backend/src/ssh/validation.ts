@@ -70,6 +70,14 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
+  if (typeof value !== 'boolean') {
+    return undefined;
+  }
+
+  return value;
+};
+
 const normalizeOptionalIconKey = (value: unknown): string | undefined => {
   const normalized = normalizeOptionalString(value);
   if (!normalized) {
@@ -316,6 +324,13 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
   const password = normalizeOptionalString(payload.password);
   const privateKey = normalizeOptionalString(payload.privateKey);
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
+  const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+
+  if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
+    return {
+      error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
 
   const shouldUsePassword = authType === 'password' || authType === 'both';
   const shouldUsePrivateKey = authType === 'key' || authType === 'both';
@@ -377,6 +392,7 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       password,
       privateKey,
       privateKeyPassphrase,
+      strictHostKey: strictHostKey ?? true,
       folderId,
       iconKey,
       colorKey,
@@ -441,6 +457,13 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
   const password = normalizeOptionalString(payload.password);
   const privateKey = normalizeOptionalString(payload.privateKey);
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
+  const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+
+  if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
+    return {
+      error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
   const folderId = normalizeOptionalString(payload.folderId);
   const note = normalizeOptionalString(payload.note);
   const iconKey = normalizeOptionalIconKey(payload.iconKey);
@@ -480,6 +503,7 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       password,
       privateKey,
       privateKeyPassphrase,
+      strictHostKey,
       folderId,
       iconKey,
       colorKey,
@@ -511,6 +535,13 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
   const term = normalizeOptionalString(payload.term) ?? 'xterm-256color';
   const connectTimeoutSec =
     typeof payload.connectTimeoutSec === 'number' ? payload.connectTimeoutSec : Number(payload.connectTimeoutSec ?? 45);
+  const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+
+  if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
+    return {
+      error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
 
   if (!Number.isInteger(cols) || cols < 20 || cols > 400) {
     return {
@@ -546,6 +577,7 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
       rows,
       term,
       connectTimeoutSec,
+      strictHostKey,
     },
   };
 };

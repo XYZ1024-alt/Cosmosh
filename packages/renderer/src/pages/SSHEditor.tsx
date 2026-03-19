@@ -81,7 +81,7 @@ import {
 import { t } from '../lib/i18n';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
-import { consumeSshEditorCreateMode, getActiveSshServerId, setActiveSshServerId } from '../lib/ssh-target';
+import { consumeSshEditorCreateMode } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
@@ -205,11 +205,16 @@ const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState 
     privateKeyPassphrase: '',
     folderId: server.folder?.id ?? '',
     tagIds: (server.tags ?? []).map((tag) => tag.id),
-    strictHostKey: true,
+    strictHostKey: server.strictHostKey ?? true,
   };
 };
 
-const SSHEditor: React.FC = () => {
+type SSHEditorProps = {
+  preferredServerId?: string;
+  preferCreateMode?: boolean;
+};
+
+const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMode = false }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
@@ -231,7 +236,11 @@ const SSHEditor: React.FC = () => {
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
   const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
-  const preferCreateModeRef = React.useRef<boolean>(false);
+  const preferCreateModeRef = React.useRef<boolean>(preferCreateMode);
+
+  React.useEffect(() => {
+    preferCreateModeRef.current = preferCreateMode;
+  }, [preferCreateMode]);
 
   const requiresPassword = formState.authType === 'password' || formState.authType === 'both';
   const requiresPrivateKey = formState.authType === 'key' || formState.authType === 'both';
@@ -304,7 +313,6 @@ const SSHEditor: React.FC = () => {
         return;
       }
 
-      const preferredServerId = getActiveSshServerId();
       const currentId =
         currentActiveServerId && nextServers.some((server) => server.id === currentActiveServerId)
           ? currentActiveServerId
@@ -335,7 +343,7 @@ const SSHEditor: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, [defaultServerNoteTemplate, notifyError, resetDirtyFieldKeys]);
+  }, [defaultServerNoteTemplate, notifyError, preferredServerId, resetDirtyFieldKeys]);
 
   React.useEffect(() => {
     void reloadData();
@@ -566,7 +574,6 @@ const SSHEditor: React.FC = () => {
 
       preferCreateModeRef.current = false;
       resetDirtyFieldKeys();
-      setActiveSshServerId(serverId);
       setActiveServerId(serverId);
       setFormState({
         ...mapServerToFormState(targetServer),
@@ -670,7 +677,6 @@ const SSHEditor: React.FC = () => {
   const onAddServer = React.useCallback(() => {
     preferCreateModeRef.current = true;
     resetDirtyFieldKeys();
-    setActiveSshServerId('');
     setActiveServerId(null);
     setFormState(createInitialFormState(defaultServerNoteTemplate));
   }, [defaultServerNoteTemplate, resetDirtyFieldKeys]);
@@ -708,7 +714,7 @@ const SSHEditor: React.FC = () => {
       }
 
       if (activeServerId === deleteServerDraft.id) {
-        setActiveSshServerId('');
+        preferCreateModeRef.current = true;
       }
 
       setIsDeleteServerDialogOpen(false);
@@ -772,9 +778,9 @@ const SSHEditor: React.FC = () => {
             folderId: formState.folderId || undefined,
             tagIds: formState.tagIds,
             note: formState.note.trim() || undefined,
+            strictHostKey: formState.strictHostKey,
           });
           resetDirtyFieldKeys();
-          setActiveSshServerId(activeServerId);
           successMessage = t('ssh.serverUpdatedSuccessfully');
         } else {
           const created = await createSshServer({
@@ -791,12 +797,13 @@ const SSHEditor: React.FC = () => {
             folderId: formState.folderId || undefined,
             tagIds: formState.tagIds,
             note: formState.note.trim() || undefined,
+            strictHostKey: formState.strictHostKey,
           });
 
           const createdServerId = created.data.item.id;
           resetDirtyFieldKeys();
-          setActiveSshServerId(createdServerId);
           preferCreateModeRef.current = false;
+          setActiveServerId(createdServerId);
         }
 
         await reloadData();

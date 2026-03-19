@@ -373,6 +373,7 @@ export interface components {
             port: number;
             username: string;
             authType: components["schemas"]["SshAuthType"];
+            strictHostKey?: boolean;
             hasPassword: boolean;
             hasPrivateKey: boolean;
             note?: string;
@@ -396,6 +397,7 @@ export interface components {
             port: number;
             username: string;
             authType: components["schemas"]["SshAuthType"];
+            strictHostKey?: boolean;
             iconKey?: string;
             colorKey?: components["schemas"]["SshVisualColorKey"];
             password?: string;
@@ -432,6 +434,7 @@ export interface components {
             term: string;
             /** @default 45 */
             connectTimeoutSec: number;
+            strictHostKey?: boolean;
         };
         SshTrustFingerprintRequest: {
             serverId: string;

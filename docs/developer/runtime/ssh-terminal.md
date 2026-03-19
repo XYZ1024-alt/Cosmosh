@@ -35,6 +35,7 @@ sequenceDiagram
 - Request fields:
   - `cols` / `rows`: terminal viewport dimensions.
   - `connectTimeoutSec`: per-session SSH handshake timeout from Settings (`sshConnectionTimeoutSec`).
+  - `strictHostKey`: explicit per-attempt host key policy propagated from SSH server configuration.
 - Steps:
   1. Load server record + encrypted credentials.
   2. Resolve trusted host fingerprints.
@@ -157,6 +158,8 @@ flowchart LR
 ## 4. Host Verification & Trust Flow
 
 - SSH connect uses `hostHash: 'sha256'` and `hostVerifier`.
+- `strictHostKey=true`: host fingerprint must be trusted; unknown fingerprint returns `SSH_HOST_UNTRUSTED`.
+- `strictHostKey=false`: unknown host fingerprint is accepted for that session attempt.
 - If fingerprint is unknown:
   - backend returns `SSH_HOST_UNTRUSTED` payload.
   - renderer opens trust dialog.
@@ -170,6 +173,10 @@ flowchart LR
 - Session attach timeout: 30s.
 - Any socket close/error transitions UI state to failed.
 - Retry is **manual** via UI retry button (`SSH.tsx`), which creates a new session.
+- Retry is bound to the tab's latest resolved target snapshot and never re-reads global target selection.
+- If the first connect fails before any snapshot is captured, manual retry falls back to fresh intent resolution for that tab.
+- Each connect attempt has attempt identity (`attemptId`) with stale-result dropping and abortable pre-connect resolution.
+- Hidden tabs do not trigger new connection side effects; only active tab can start connect flow.
 - No automatic exponential reconnection loop is implemented yet.
 
 ### Recommended Next Step (Planned)
@@ -183,6 +190,7 @@ flowchart LR
 - Renderer uses `FitAddon` + resize observer to keep shell size synchronized.
 - Backend normalizes terminal sizes to prevent extreme allocations (`20-400 cols`, `10-200 rows`).
 - Pending output queue avoids losing early SSH output before WS attach.
+- Pending output buffering is bounded by chunk count and total bytes; overflow drops oldest chunks and emits drop logs.
 - Telemetry sampling is interval-based (5s) and lightweight text parsing to reduce per-frame cost.
 - History refresh uses debounce + throttle to balance freshness and remote execution overhead.
 
@@ -216,6 +224,7 @@ Notes:
 - Split action is exposed from the terminal context menu (`Split Terminal`), and close action is exposed as `Close Terminal`.
 - Maximum visible panes are capped at 4 in current implementation.
 - Each split pane creates its own backend terminal session against the same resolved target (same SSH server/local profile), so panes can run independent commands.
+- Mirror panes always reuse the primary pane's resolved target snapshot semantics on retries.
 - New split panes start from an empty viewport and render only their own session stream to avoid stale buffer carry-over from other panes.
 - Closing a pane only affects renderer layout state; backend session lifecycle remains unchanged until the page-level session closes.
 - Closing a pane disposes only that pane’s session/socket; the remaining panes continue running.

@@ -358,6 +358,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           host: parsed.value.host,
           port: parsed.value.port,
           username: parsed.value.username,
+          strictHostKey: parsed.value.strictHostKey,
           authType: parsed.value.authType,
           passwordEncrypted: parsed.value.password
             ? encryptSensitiveValue(parsed.value.password, context.credentialEncryptionKey)
@@ -433,6 +434,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         passwordEncrypted: true,
         privateKeyEncrypted: true,
         privateKeyPassphraseEncrypted: true,
+        strictHostKey: true,
       },
     });
 
@@ -516,6 +518,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           authType: parsed.value.authType,
           iconKey: parsed.value.iconKey,
           colorKey: parsed.value.colorKey,
+          strictHostKey: parsed.value.strictHostKey ?? existingServer.strictHostKey,
           passwordEncrypted,
           privateKeyEncrypted,
           privateKeyPassphraseEncrypted,

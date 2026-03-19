@@ -38,6 +38,7 @@ export const mapServerToListItem = (
     host: server.host,
     port: server.port,
     username: server.username,
+    strictHostKey: server.strictHostKey,
     authType: server.authType,
     hasPassword: Boolean(server.passwordEncrypted),
     hasPrivateKey: Boolean(server.privateKeyEncrypted),

@@ -9,11 +9,16 @@ export type TerminalLiveSessionBase = {
   sessionId: string;
   websocketToken: string;
   pendingOutput: string[];
+  pendingOutputBytes: number;
+  pendingOutputDropCount: number;
   attachTimeout: NodeJS.Timeout;
   t: I18nInstance['t'];
   socket: WebSocket | null;
   disposed: boolean;
 };
+
+export const TERMINAL_PENDING_OUTPUT_MAX_CHUNKS = 2048;
+export const TERMINAL_PENDING_OUTPUT_MAX_BYTES = 1024 * 1024;
 
 /**
  * Extended session shape for services that maintain telemetry/history timers.
@@ -154,11 +159,15 @@ export abstract class BaseTerminalSessionService<
    * Non-output payloads are intentionally dropped while detached to avoid stale control messages.
    */
   protected sendServerMessage(session: TSession, payload: TOutboundMessage): void {
+    if (session.disposed) {
+      return;
+    }
+
     if (!session.socket || session.socket.readyState !== session.socket.OPEN) {
       if (payload.type === 'output') {
         const maybeOutputPayload = payload as unknown as { data?: unknown };
         if (typeof maybeOutputPayload.data === 'string') {
-          session.pendingOutput.push(maybeOutputPayload.data);
+          this.bufferPendingOutput(session, maybeOutputPayload.data);
         }
       }
       return;
@@ -174,7 +183,43 @@ export abstract class BaseTerminalSessionService<
         continue;
       }
 
+      session.pendingOutputBytes = Math.max(0, session.pendingOutputBytes - Buffer.byteLength(data, 'utf8'));
+
       this.sendServerMessage(session, createOutputMessage(data));
+    }
+
+    if (session.pendingOutputDropCount > 0) {
+      console.warn('[terminal][pending-output] Dropped buffered output while detached.', {
+        sessionId: session.sessionId,
+        droppedChunks: session.pendingOutputDropCount,
+      });
+      session.pendingOutputDropCount = 0;
+    }
+  }
+
+  /**
+   * Pushes one detached output chunk into bounded memory buffer.
+   *
+   * @param session Live session that owns the pending queue.
+   * @param data Output chunk to buffer.
+   * @returns Nothing.
+   */
+  private bufferPendingOutput(session: TSession, data: string): void {
+    const chunkBytes = Buffer.byteLength(data, 'utf8');
+    session.pendingOutput.push(data);
+    session.pendingOutputBytes += chunkBytes;
+
+    while (
+      session.pendingOutput.length > TERMINAL_PENDING_OUTPUT_MAX_CHUNKS ||
+      session.pendingOutputBytes > TERMINAL_PENDING_OUTPUT_MAX_BYTES
+    ) {
+      const dropped = session.pendingOutput.shift();
+      if (!dropped) {
+        break;
+      }
+
+      session.pendingOutputBytes = Math.max(0, session.pendingOutputBytes - Buffer.byteLength(dropped, 'utf8'));
+      session.pendingOutputDropCount += 1;
     }
   }
 

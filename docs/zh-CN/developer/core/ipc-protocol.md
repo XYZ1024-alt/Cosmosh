@@ -64,6 +64,12 @@ flowchart TB
 
 `colorKey` 受 API 契约中的预设配色枚举约束。
 
+当前 SSH 安全策略相关字段：
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：`strictHostKey` 布尔值。
+- `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey`。
+- `ApiSshCreateSessionRequest`：可选 `strictHostKey`，可用于单次会话尝试覆盖。
+
 ## 3.2 终端 WebSocket 契约（Renderer ↔ Backend）
 
 终端流式消息虽然不属于 Electron IPC channel，但同样属于跨进程契约面，必须与 IPC 变更一起维护版本一致性。

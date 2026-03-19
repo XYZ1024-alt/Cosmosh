@@ -356,6 +356,8 @@ export class LocalTerminalSessionService extends BaseTerminalSessionService<Loca
       websocketToken,
       pty,
       pendingOutput,
+      pendingOutputBytes: 0,
+      pendingOutputDropCount: 0,
       attachTimeout,
       telemetryInterval: null,
       historySyncTimeout: null,

@@ -62,6 +62,7 @@ export const openTerminalSessionSocket = async (
     rows,
     term,
     connectTimeoutSec,
+    strictHostKey: target.server.strictHostKey,
   });
 
   if (!createResult.success && createResult.code === 'SSH_HOST_UNTRUSTED') {
@@ -89,6 +90,7 @@ export const openTerminalSessionSocket = async (
       rows,
       term,
       connectTimeoutSec,
+      strictHostKey: target.server.strictHostKey,
     });
   }
 

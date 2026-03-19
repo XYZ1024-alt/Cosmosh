@@ -5,7 +5,12 @@ import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { type RawData } from 'ws';
 
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
-import { BaseTerminalSessionService, type TerminalManagedSessionBase } from '../terminal/base-session-service.js';
+import {
+  BaseTerminalSessionService,
+  TERMINAL_PENDING_OUTPUT_MAX_BYTES,
+  TERMINAL_PENDING_OUTPUT_MAX_CHUNKS,
+  type TerminalManagedSessionBase,
+} from '../terminal/base-session-service.js';
 import { localizeTerminalCompletionItems, resolveTerminalCompletions } from '../terminal/completion/engine.js';
 import { createRemotePathProvider } from '../terminal/completion/path-providers.js';
 import {
@@ -37,6 +42,7 @@ type CreateSshSessionInput = {
   rows: number;
   term: string;
   connectTimeoutSec: number;
+  strictHostKey?: boolean;
 };
 
 type CreateSshSessionSuccess = {
@@ -230,13 +236,35 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     });
 
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
+    const strictHostKey = input.strictHostKey ?? server.strictHostKey;
     const pendingOutput: string[] = [];
+    let pendingOutputBytes = 0;
+    let pendingOutputDropCount = 0;
+    const bufferPendingOutput = (chunk: string): void => {
+      const chunkBytes = Buffer.byteLength(chunk, 'utf8');
+      pendingOutput.push(chunk);
+      pendingOutputBytes += chunkBytes;
+
+      while (
+        pendingOutput.length > TERMINAL_PENDING_OUTPUT_MAX_CHUNKS ||
+        pendingOutputBytes > TERMINAL_PENDING_OUTPUT_MAX_BYTES
+      ) {
+        const dropped = pendingOutput.shift();
+        if (!dropped) {
+          break;
+        }
+
+        pendingOutputBytes = Math.max(0, pendingOutputBytes - Buffer.byteLength(dropped, 'utf8'));
+        pendingOutputDropCount += 1;
+      }
+    };
     let liveSession: SshLiveSession | null = null;
     const shellResult = await this.openShell(server, {
       cols: input.cols,
       rows: input.rows,
       term: input.term,
       connectTimeoutSec: input.connectTimeoutSec,
+      strictHostKey,
       trustedFingerprintSet,
       t: i18n.t,
       onOutput: (data) => {
@@ -260,7 +288,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           return;
         }
 
-        pendingOutput.push(data);
+        bufferPendingOutput(data);
       },
     });
 
@@ -316,6 +344,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       client: shellResult.client,
       stream: shellResult.stream,
       pendingOutput,
+      pendingOutputBytes,
+      pendingOutputDropCount,
       attachTimeout,
       telemetryInterval: null,
       lastNetworkSample: null,
@@ -934,6 +964,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       rows: number;
       term: string;
       connectTimeoutSec: number;
+      strictHostKey: boolean;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
       onOutput: (data: string) => void;
@@ -952,6 +983,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       hostHash: 'sha256',
       hostVerifier: (hashedKey: string) => {
         presentedFingerprint = hashedKey;
+        if (!options.strictHostKey) {
+          return true;
+        }
+
         return options.trustedFingerprintSet.has(hashedKey);
       },
     };
@@ -1051,7 +1086,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
         client.end();
 
-        if (presentedFingerprint && !options.trustedFingerprintSet.has(presentedFingerprint)) {
+        if (options.strictHostKey && presentedFingerprint && !options.trustedFingerprintSet.has(presentedFingerprint)) {
           settle({
             type: 'host-untrusted',
             fingerprint: presentedFingerprint,

@@ -9,7 +9,8 @@ import { listLocalTerminalProfiles } from './lib/backend';
 import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
-import { requestSshEditorCreateMode, setActiveSshServerId, toLocalTerminalTargetId } from './lib/ssh-target';
+import { createSshConnectionIntent, toLocalTerminalTargetId } from './lib/ssh-connection-intent';
+import { requestSshEditorCreateMode } from './lib/ssh-target';
 import { AppToastProvider } from './lib/toast';
 import { resolvePageDefaults, useTabs } from './lib/useTabs';
 import Home from './pages/Home';
@@ -271,8 +272,12 @@ const App: React.FC = () => {
 
       const targetId = toLocalTerminalTargetId(targetProfile.id);
       const tabId = addTab('ssh');
-      setActiveSshServerId(targetId);
-      updateTab(tabId, { title: targetProfile.name });
+      updateTab(tabId, {
+        title: targetProfile.name,
+        state: {
+          sshConnectionIntent: createSshConnectionIntent(targetId),
+        },
+      });
     } catch {
       handleOpenLocalTerminalList();
     }
@@ -347,33 +352,66 @@ const App: React.FC = () => {
                 <Home
                   isActive={tab.id === activeTabId}
                   onOpenSSH={(serverId, tabTitle, options) => {
-                    setActiveSshServerId(serverId);
                     if (options?.openInNewTab) {
                       const newTabId = addTab('ssh');
-                      if (tabTitle) {
-                        updateTab(newTabId, { title: tabTitle });
-                      }
+                      updateTab(newTabId, {
+                        ...(tabTitle ? { title: tabTitle } : {}),
+                        state: {
+                          sshConnectionIntent: createSshConnectionIntent(serverId),
+                        },
+                      });
                       return;
                     }
 
                     openPageInTab(tab.id, 'ssh');
-                    if (tabTitle) {
-                      updateTab(tab.id, { title: tabTitle });
-                    }
+                    updateTab(tab.id, {
+                      ...(tabTitle ? { title: tabTitle } : {}),
+                      state: {
+                        ...(tab.state ?? {}),
+                        sshConnectionIntent: createSshConnectionIntent(serverId),
+                      },
+                    });
                   }}
                   onOpenSshEditor={(serverId) => {
                     const trimmedServerId = serverId.trim();
                     if (trimmedServerId.length === 0) {
                       requestSshEditorCreateMode();
                     }
-                    setActiveSshServerId(trimmedServerId);
+
                     openPageInTab(tab.id, 'ssh-editor');
+                    updateTab(tab.id, {
+                      state: {
+                        ...(tab.state ?? {}),
+                        sshEditor: {
+                          preferredServerId: trimmedServerId || undefined,
+                          createMode: trimmedServerId.length === 0,
+                        },
+                      },
+                    });
                   }}
                 />
               )}
               {tab.page === 'ssh' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <SSH
+                    tabId={tab.id}
+                    isActive={tab.id === activeTabId}
+                    connectionIntent={
+                      tab.state?.sshConnectionIntent ?? {
+                        intentId: `tab:${tab.id}:ssh`,
+                        createdAt: 0,
+                        target: null,
+                        lastResolvedSnapshot: null,
+                      }
+                    }
+                    onConnectionIntentChange={(nextIntent) => {
+                      updateTab(tab.id, {
+                        state: {
+                          ...(tab.state ?? {}),
+                          sshConnectionIntent: nextIntent,
+                        },
+                      });
+                    }}
                     onTabTitleChange={(title) => {
                       updateTab(tab.id, { title });
                     }}
@@ -382,7 +420,10 @@ const App: React.FC = () => {
               )}
               {tab.page === 'ssh-editor' && (
                 <React.Suspense fallback={pageLoadingFallback}>
-                  <SSHEditor />
+                  <SSHEditor
+                    preferredServerId={tab.state?.sshEditor?.preferredServerId}
+                    preferCreateMode={Boolean(tab.state?.sshEditor?.createMode)}
+                  />
                 </React.Suspense>
               )}
               {tab.page === 'settings' && (
