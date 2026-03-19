@@ -108,6 +108,7 @@ export const useTabs = (options?: UseTabsOptions) => {
               page,
               title: defaults.title,
               iconKey: defaults.iconKey,
+              iconColorKey: undefined,
             }
           : tab,
       ),

@@ -5,7 +5,7 @@ import React from 'react';
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { resolveConnectMode, withResolvedSnapshot } from '../../lib/ssh-connection-intent';
-import type { SshConnectionIntent } from '../../types/tabs';
+import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import {
   resolveTerminalTargetFromIntent,
@@ -35,6 +35,9 @@ type UseSshPrimarySessionParams = {
   connectSessionRef: React.RefObject<(() => void) | null>;
   selectionPointerClientXRef: React.RefObject<number | null>;
   onTabTitleChangeRef: React.RefObject<((title: string) => void) | undefined>;
+  onTabVisualChangeRef: React.RefObject<
+    ((visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void) | undefined
+  >;
   setConnectionState: React.Dispatch<React.SetStateAction<'connecting' | 'connected' | 'failed'>>;
   setConnectionError: React.Dispatch<React.SetStateAction<string>>;
   setTelemetryState: React.Dispatch<React.SetStateAction<SshTelemetryState>>;
@@ -84,6 +87,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     connectSessionRef,
     selectionPointerClientXRef,
     onTabTitleChangeRef,
+    onTabVisualChangeRef,
     setConnectionState,
     setConnectionError,
     setTelemetryState,
@@ -340,8 +344,13 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (target.type === 'ssh-server') {
           onTabTitleChangeRef.current?.(target.server.name.trim() || t('tabs.page.ssh'));
+          onTabVisualChangeRef.current?.({
+            iconKey: target.server.iconKey?.trim() || 'Server',
+            iconColorKey: target.server.colorKey ?? undefined,
+          });
         } else {
           onTabTitleChangeRef.current?.(target.profileName?.trim() || t('tabs.page.localTerminal'));
+          onTabVisualChangeRef.current?.({ iconKey: 'terminal', iconColorKey: undefined });
         }
 
         if (target.type === 'local-terminal') {
@@ -568,6 +577,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
     onTabTitleChangeRef,
+    onTabVisualChangeRef,
     primaryPaneIdRef,
     primarySocketRef,
     primaryTerminalRef,

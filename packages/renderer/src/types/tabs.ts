@@ -1,6 +1,9 @@
+import type { components } from '@cosmosh/api-contract';
+
 export type TabPage = string;
 
 export type TabIconKey = string;
+export type TabIconColorKey = components['schemas']['SshVisualColorKey'];
 
 export type SshTargetSelection = {
   type: 'ssh-server' | 'local-terminal';
@@ -39,6 +42,7 @@ export type TabItem = {
   title: string;
   page: TabPage;
   iconKey: TabIconKey;
+  iconColorKey?: TabIconColorKey;
   closable?: boolean;
   state?: {
     settingsCategory?: string;

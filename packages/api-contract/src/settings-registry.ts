@@ -19,6 +19,7 @@ export interface SettingsValues {
   language: 'en' | 'zh-CN';
   theme: 'dark' | 'light' | 'auto';
   showFullServerAddress: boolean;
+  sshTabApplyServerVisualStyle: boolean;
   terminalAltClickMovesCursor: boolean;
   terminalCursorBlink: boolean;
   terminalFontFamily: string;
@@ -335,6 +336,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'general.server.showFullServerAddress',
     commandActionId: 'settings.general.server.showFullServerAddress.toggle',
     searchTerms: ['ssh', 'server address', 'host', 'ip', 'mask', 'privacy'],
+  },
+  {
+    key: 'sshTabApplyServerVisualStyle',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.sshTabApplyServerVisualStyle.title',
+    descriptionI18nKey: 'settings.items.sshTabApplyServerVisualStyle.description',
+    category: SETTINGS_CATEGORIES.theme,
+    section: SETTINGS_CATEGORIES.theme.sections.appearance,
+    control: 'switch',
+    path: 'theme.tabs.ssh.applyServerVisualStyle',
+    commandActionId: 'settings.theme.tabs.ssh.applyServerVisualStyle.toggle',
+    searchTerms: ['ssh', 'tab icon', 'server icon', 'icon color', 'tab appearance'],
   },
   {
     key: 'terminalCursorInactiveStyle',

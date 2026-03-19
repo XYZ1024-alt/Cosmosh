@@ -49,6 +49,7 @@ const Header: React.FC<{
   const openSettingsEditorByAltClickRef = React.useRef<boolean>(false);
   const devToolsEnabled = useSettingsValue('devToolsEnabled');
   const accountSyncEnabled = useSettingsValue('accountSyncEnabled');
+  const applySshServerVisuals = useSettingsValue('sshTabApplyServerVisualStyle');
   // Margin for window controls on macOS/Windows/Linux
   const platform = window.electron?.platform;
 
@@ -123,6 +124,7 @@ const Header: React.FC<{
         <Tabs
           tabs={tabs}
           activeTab={activeTab}
+          applySshServerVisuals={applySshServerVisuals}
           onActiveTabChange={onActiveTabChange}
           onAddTab={onAddTab}
           onCloseTab={onCloseTab}

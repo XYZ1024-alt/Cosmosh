@@ -24,7 +24,7 @@ import { t } from '../lib/i18n';
 import { useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import { useTerminalTextDropZone } from '../lib/use-terminal-text-drop-zone';
-import type { SshConnectionIntent } from '../types/tabs';
+import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../types/tabs';
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import { parseOptionalNumberSetting, resolveSearchUrl, resolveTerminalFontWeightSetting } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
@@ -40,13 +40,21 @@ type SSHProps = {
   connectionIntent: SshConnectionIntent;
   onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
   onTabTitleChange?: (title: string) => void;
+  onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
 };
 
 /**
  * SSH page that orchestrates terminal lifecycle, websocket sessions,
  * split-pane mirroring, and interaction overlays.
  */
-const SSH: React.FC<SSHProps> = ({ tabId, isActive, connectionIntent, onConnectionIntentChange, onTabTitleChange }) => {
+const SSH: React.FC<SSHProps> = ({
+  tabId,
+  isActive,
+  connectionIntent,
+  onConnectionIntentChange,
+  onTabTitleChange,
+  onTabVisualChange,
+}) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const settingsValues = useSettingsValues();
 
@@ -160,6 +168,7 @@ const SSH: React.FC<SSHProps> = ({ tabId, isActive, connectionIntent, onConnecti
     terminalAutoCompleteFuzzyMatch,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     onTabTitleChange,
+    onTabVisualChange,
     notifyWarning,
   });
 

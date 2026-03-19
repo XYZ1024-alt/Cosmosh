@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import { Bug, FileText, Home as HomeIcon, Server, Settings as SettingsIcon, Terminal, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import React from 'react';
 
 import Header from './components/header/Header';
@@ -11,10 +11,11 @@ import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
 import { createSshConnectionIntent, toLocalTerminalTargetId } from './lib/ssh-connection-intent';
 import { requestSshEditorCreateMode } from './lib/ssh-target';
+import { renderTabIconByKey } from './lib/tab-icon';
 import { AppToastProvider } from './lib/toast';
 import { resolvePageDefaults, useTabs } from './lib/useTabs';
 import Home from './pages/Home';
-import type { TabIconKey, TabItem } from './types/tabs';
+import type { TabItem } from './types/tabs';
 
 const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
 const Debug = React.lazy(() => import('./pages/Debug'));
@@ -32,23 +33,21 @@ const pageLoadingFallback = (
   />
 );
 
-const tabIconMap: Record<TabIconKey, React.ReactNode> = {
-  home: <HomeIcon className="h-4 w-4" />,
-  ssh: <Server className="h-4 w-4" />,
-  settings: <SettingsIcon className="h-4 w-4" />,
-  file: <FileText className="h-4 w-4" />,
-  terminal: <Terminal className="h-4 w-4" />,
-  debug: <Bug className="h-4 w-4" />,
-};
-
 type TabSwitcherOverlayProps = {
   tabs: TabItem[];
   activeTabId: string;
+  applySshServerVisualStyle: boolean;
   onCloseTab: (tabId: string) => void;
   onCommitTab: (tabId: string) => void;
 };
 
-const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({ tabs, activeTabId, onCloseTab, onCommitTab }) => {
+const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
+  tabs,
+  activeTabId,
+  applySshServerVisualStyle,
+  onCloseTab,
+  onCommitTab,
+}) => {
   const [isOpen, setIsOpen] = React.useState<boolean>(false);
   const [targetTabId, setTargetTabId] = React.useState<string>('');
   const modifierKeyName = 'Control';
@@ -141,7 +140,7 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({ tabs, activeTab
         const pageLabel = resolvePageDefaults(tab.page).title;
         return pageLabel === tab.title ? undefined : pageLabel;
       })(),
-      icon: tabIconMap[tab.iconKey] ?? <FileText className="h-4 w-4" />,
+      icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, applySshServerVisualStyle && tab.page === 'ssh'),
       actions: tab.closable
         ? [
             {
@@ -159,7 +158,7 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({ tabs, activeTab
         closeSwitcher();
       },
     }));
-  }, [closeSwitcher, onCloseTab, onCommitTab, tabs]);
+  }, [applySshServerVisualStyle, closeSwitcher, onCloseTab, onCommitTab, tabs]);
 
   const activeIndex = React.useMemo(() => {
     if (items.length === 0) {
@@ -205,6 +204,7 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({ tabs, activeTab
 const App: React.FC = () => {
   const terminalContextLaunchBehavior = useSettingsValue('terminalContextLaunchBehavior');
   const defaultLocalTerminalProfile = useSettingsValue('defaultLocalTerminalProfile');
+  const applySshServerVisualStyle = useSettingsValue('sshTabApplyServerVisualStyle');
 
   const handleLastTabClose = React.useCallback(() => {
     window.electron?.closeWindow();
@@ -274,6 +274,8 @@ const App: React.FC = () => {
       const tabId = addTab('ssh');
       updateTab(tabId, {
         title: targetProfile.name,
+        iconKey: 'terminal',
+        iconColorKey: undefined,
         state: {
           sshConnectionIntent: createSshConnectionIntent(targetId),
         },
@@ -415,6 +417,12 @@ const App: React.FC = () => {
                     onTabTitleChange={(title) => {
                       updateTab(tab.id, { title });
                     }}
+                    onTabVisualChange={(visual) => {
+                      updateTab(tab.id, {
+                        iconKey: visual.iconKey,
+                        iconColorKey: visual.iconColorKey,
+                      });
+                    }}
                   />
                 </React.Suspense>
               )}
@@ -518,6 +526,7 @@ const App: React.FC = () => {
           <TabSwitcherOverlay
             tabs={tabs}
             activeTabId={activeTabId}
+            applySshServerVisualStyle={applySshServerVisualStyle}
             onCloseTab={closeTab}
             onCommitTab={setActiveTabId}
           />

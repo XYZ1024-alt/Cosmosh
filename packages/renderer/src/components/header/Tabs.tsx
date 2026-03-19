@@ -20,22 +20,13 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import * as RadixTabs from '@radix-ui/react-tabs';
 import classNames from 'classnames';
-import {
-  Bug,
-  ChevronLeft,
-  ChevronRight,
-  FileText,
-  Home,
-  PlusIcon,
-  Server,
-  Settings,
-  Terminal,
-  XIcon,
-} from 'lucide-react';
+import { ChevronLeft, ChevronRight, PlusIcon, XIcon } from 'lucide-react';
 import React from 'react';
 
+import { getEntityColorClassName } from '../../lib/entity-visuals';
 import { t } from '../../lib/i18n';
-import type { TabIconKey, TabItem } from '../../types/tabs';
+import { renderTabIcon } from '../../lib/tab-icon';
+import type { TabItem } from '../../types/tabs';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -45,22 +36,24 @@ import {
   ContextMenuTrigger,
 } from '../ui/context-menu';
 
-const iconMap: Record<TabIconKey, React.ReactNode> = {
-  home: <Home className="h-4 w-4" />,
-  ssh: <Server className="h-4 w-4" />,
-  settings: <Settings className="h-4 w-4" />,
-  file: <FileText className="h-4 w-4" />,
-  terminal: <Terminal className="h-4 w-4" />,
-  debug: <Bug className="h-4 w-4" />,
-};
+const DragOverlayTab: React.FC<{ tab: TabItem; width: number; applySshServerVisuals: boolean }> = ({
+  tab,
+  width,
+  applySshServerVisuals,
+}) => {
+  const shouldApplySshTabVisual = applySshServerVisuals && tab.page === 'ssh' && Boolean(tab.iconColorKey);
 
-const DragOverlayTab: React.FC<{ tab: TabItem; width: number }> = ({ tab, width }) => {
   return (
     <div
-      className="box-border inline-flex h-[34px] items-center justify-between gap-1.5 overflow-hidden rounded-lg bg-header-tab-active px-2"
+      className={classNames(
+        'box-border inline-flex h-[34px] items-center justify-between gap-1.5 overflow-hidden rounded-lg px-2',
+        shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : 'bg-header-tab-active',
+      )}
       style={{ width, minWidth: width, maxWidth: width }}
     >
-      <span aria-hidden>{iconMap[tab.iconKey]}</span>
+      <span aria-hidden>
+        {renderTabIcon(tab, !shouldApplySshTabVisual && applySshServerVisuals && tab.page === 'ssh')}
+      </span>
       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm">{tab.title}</span>
       {tab.closable && <XIcon className="h-4 w-4" />}
     </div>
@@ -75,10 +68,13 @@ const SortableTab = React.forwardRef<
     tab: TabItem;
     isActive: boolean;
     width: number;
+    applySshServerVisuals: boolean;
     onClose: CloseTabHandler;
     onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
   }
->(({ tab, isActive, width, onClose, onContextMenu }, forwardedRef) => {
+>(({ tab, isActive, width, applySshServerVisuals, onClose, onContextMenu }, forwardedRef) => {
+  const shouldApplySshTabVisual = applySshServerVisuals && tab.page === 'ssh' && Boolean(tab.iconColorKey);
+
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
     animateLayoutChanges: (args) => defaultAnimateLayoutChanges(args),
@@ -130,11 +126,15 @@ const SortableTab = React.forwardRef<
           style={{ WebkitAppRegion: 'no-drag', width, minWidth: width, maxWidth: width }}
           className={classNames(
             'box-border inline-flex h-full w-full flex-none items-center justify-between gap-1.5 overflow-hidden rounded-lg px-2',
-            isActive ? 'bg-header-tab-active' : 'hover:bg-header-tab-hover',
+            shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : '',
+            shouldApplySshTabVisual && !isDragging ? (isActive ? 'opacity-100' : 'opacity-80 hover:opacity-90') : '',
+            !shouldApplySshTabVisual ? (isActive ? 'bg-header-tab-active' : 'hover:bg-header-tab-hover') : '',
             isDragging ? 'opacity-0' : '',
           )}
         >
-          <span aria-hidden>{iconMap[tab.iconKey]}</span>
+          <span aria-hidden>
+            {renderTabIcon(tab, !shouldApplySshTabVisual && applySshServerVisuals && tab.page === 'ssh')}
+          </span>
           <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm">{tab.title}</span>
           {tab.closable && (
             <button
@@ -178,6 +178,7 @@ SortableTab.displayName = 'SortableTab';
 type TabsProps = {
   tabs: TabItem[];
   activeTab: string;
+  applySshServerVisuals?: boolean;
   onActiveTabChange?: (id: string) => void;
   onAddTab?: () => void;
   onCloseTab?: (id: string) => void;
@@ -189,6 +190,7 @@ type TabsProps = {
 export const Tabs: React.FC<TabsProps> = ({
   tabs,
   activeTab,
+  applySshServerVisuals = false,
   onActiveTabChange,
   onAddTab,
   onCloseTab,
@@ -431,6 +433,12 @@ export const Tabs: React.FC<TabsProps> = ({
     () => orderedTabs.find((tab) => tab.id === activeDragTabId) ?? null,
     [activeDragTabId, orderedTabs],
   );
+  const hasColoredSshTabVisual = React.useCallback(
+    (tab: TabItem | undefined): boolean => {
+      return applySshServerVisuals && tab?.page === 'ssh' && Boolean(tab.iconColorKey);
+    },
+    [applySshServerVisuals],
+  );
 
   return (
     <RadixTabs.Root
@@ -566,6 +574,7 @@ export const Tabs: React.FC<TabsProps> = ({
                               tab={tab}
                               isActive={activeTab === tab.id}
                               width={tabWidth}
+                              applySshServerVisuals={applySshServerVisuals}
                               onClose={onCloseTab ?? (() => {})}
                               onContextMenu={() => setContextTabId(tab.id)}
                             />
@@ -601,7 +610,10 @@ export const Tabs: React.FC<TabsProps> = ({
                             aria-hidden
                             className={classNames(
                               'h-[16px] w-[2px] shrink-0 bg-header-divider',
-                              activeTab === tab.id || activeTab === orderedTabs[index + 1]?.id
+                              activeTab === tab.id ||
+                                activeTab === orderedTabs[index + 1]?.id ||
+                                hasColoredSshTabVisual(tab) ||
+                                hasColoredSshTabVisual(orderedTabs[index + 1])
                                 ? 'opacity-0'
                                 : 'opacity-100',
                             )}
@@ -621,6 +633,7 @@ export const Tabs: React.FC<TabsProps> = ({
                     <DragOverlayTab
                       tab={activeDragTab}
                       width={tabWidth}
+                      applySshServerVisuals={applySshServerVisuals}
                     />
                   ) : null}
                 </DragOverlay>

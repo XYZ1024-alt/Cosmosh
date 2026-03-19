@@ -228,6 +228,10 @@
         "placeholder": "10000",
         "title": "SSH Max Rows"
       },
+      "sshTabApplyServerVisualStyle": {
+        "description": "Apply the selected server icon color and background style to SSH tabs.",
+        "title": "Apply Server Icon Colors To SSH Tabs"
+      },
       "terminalAltClickMovesCursor": {
         "description": "Use Alt (Option on macOS) + click to move the cursor to the clicked position.",
         "title": "Alt/Option Click Moves Cursor"

@@ -2,7 +2,7 @@ import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
 import type { TerminalAutocompleteMenuHandle } from '../../components/terminal/terminal-autocomplete-menu';
-import type { SshConnectionIntent } from '../../types/tabs';
+import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
 import {
   DEFAULT_TELEMETRY_STATE,
   type HostFingerprintPrompt,
@@ -151,6 +151,7 @@ export type UseSshCoreParams = {
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalSelectionBarEnabled: boolean;
   onTabTitleChange?: (title: string) => void;
+  onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
   requestHostFingerprintTrust?: (prompt: HostFingerprintPrompt) => Promise<boolean>;
   notifyWarning: (message: string) => void;
 };
@@ -325,6 +326,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteFuzzyMatch,
     terminalSelectionBarEnabled,
     onTabTitleChange,
+    onTabVisualChange,
     requestHostFingerprintTrust,
     notifyWarning,
   } = params;
@@ -347,6 +349,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     },
   );
   const onTabTitleChangeRef = React.useRef<UseSshCoreParams['onTabTitleChange']>(onTabTitleChange);
+  const onTabVisualChangeRef = React.useRef<UseSshCoreParams['onTabVisualChange']>(onTabVisualChange);
   const fingerprintPromptResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
 
   const terminalContainerRef = React.useRef<HTMLDivElement | null>(null);
@@ -429,6 +432,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     onTabTitleChangeRef.current = onTabTitleChange;
   }, [onTabTitleChange]);
+
+  React.useEffect(() => {
+    onTabVisualChangeRef.current = onTabVisualChange;
+  }, [onTabVisualChange]);
 
   React.useEffect(() => {
     activePaneIdRef.current = activePaneId;
@@ -689,6 +696,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     connectSessionRef,
     selectionPointerClientXRef,
     onTabTitleChangeRef,
+    onTabVisualChangeRef,
     setConnectionState,
     setConnectionError,
     setTelemetryState,
