@@ -71,6 +71,8 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteMaxItems = settingsValues.terminalAutoCompleteMaxItems;
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
+    const terminalTextColor =
+      getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-terminal').trim() || '#cccccc';
     const terminalBackground =
       getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-card-bg-terminal').trim() || '#000000';
     const cursorWidth = parseOptionalNumberSetting(settingsValues.terminalCursorWidth, { min: 1, max: 32 });
@@ -113,6 +115,7 @@ const SSH: React.FC<SSHProps> = ({
       tabStopWidth: settingsValues.terminalTabStopWidth,
       theme: {
         background: terminalBackground,
+        foreground: terminalTextColor,
       },
     };
   }, [

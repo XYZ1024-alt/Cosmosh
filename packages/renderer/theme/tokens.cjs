@@ -1,3 +1,6 @@
+const standardTextColorDefault = '#eeeeee';
+const standardTextColorMuted = '#a7b0bd';
+
 const base = {
   font: {
     sans: '"Space Grotesk", "IBM Plex Sans", system-ui, sans-serif',
@@ -17,8 +20,8 @@ const base = {
   },
   colors: {
     text: {
-      DEFAULT: '#ffffff',
-      muted: '#a7b0bd',
+      DEFAULT: standardTextColorDefault,
+      muted: standardTextColorMuted,
     },
     bg: {
       DEFAULT: '#000000',
@@ -31,8 +34,8 @@ const base = {
         active: '#2F2F2F',
       },
       text: {
-        DEFAULT: '#ffffff',
-        muted: '#a7b0bd',
+        DEFAULT: standardTextColorDefault,
+        muted: standardTextColorMuted,
       },
       divider: '#333333',
     },
@@ -59,7 +62,7 @@ const base = {
       divider: '#2b2b2b',
       icon: {
         bg: '#d2d6dc',
-        active: '#ffffff',
+        active: standardTextColorDefault,
         slate: '#30343f',
         'slate-ink': '#d9dde5',
         blue: '#1f334f',
@@ -90,9 +93,10 @@ const base = {
         bg: {
           DEFAULT: '#191919',
           terminal: '#0f0f0f',
-        }
+        },
       },
       terminal: {
+        DEFAULT: '#cccccc',
         split: {
           divider: '#2a2a2a',
         },
@@ -112,8 +116,8 @@ const base = {
       divider: '#33333399',
       input: '#1a1a1ad9',
       text: {
-        DEFAULT: '#ffffff',
-        muted: '#a7b0bd',
+        DEFAULT: standardTextColorDefault,
+        muted: standardTextColorMuted,
       },
       item: {
         hover: '#242424e6',
@@ -128,8 +132,8 @@ const base = {
       surface: '#0e0e0ee6',
       border: '#33333333',
       text: {
-        DEFAULT: '#ffffff',
-        muted: '#a7b0bd',
+        DEFAULT: standardTextColorDefault,
+        muted: standardTextColorMuted,
       },
       action: {
         danger: '#f87171',
@@ -139,8 +143,8 @@ const base = {
       surface: '#070707f2',
       border: '#3333332e',
       text: {
-        DEFAULT: '#ffffff',
-        muted: '#a7b0bd',
+        DEFAULT: standardTextColorDefault,
+        muted: standardTextColorMuted,
       },
       icon: {
         info: '#60a5fa',
@@ -155,8 +159,8 @@ const base = {
         hover: '#292929cc',
       },
       text: {
-        DEFAULT: '#ffffff',
-        muted: '#a7b0bd',
+        DEFAULT: standardTextColorDefault,
+        muted: standardTextColorMuted,
       },
       switch: {
         track: {
