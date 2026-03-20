@@ -125,10 +125,6 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   });
 
   ipcMain.handle('app:open-devtools', () => {
-    if (app.isPackaged) {
-      return false;
-    }
-
     const targetWindow = resolveTargetWindow(options);
 
     if (!targetWindow || targetWindow.isDestroyed()) {
