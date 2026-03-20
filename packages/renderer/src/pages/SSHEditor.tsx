@@ -45,7 +45,7 @@ import { Form, FormControl, FormField, FormLabel, FormMessage } from '../compone
 import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import type { InputContextMenuItem } from '../components/ui/input-context-menu-registry';
-import { Label } from '../components/ui/label';
+import { LabelWithTooltip } from '../components/ui/label-with-tooltip';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { PasswordField } from '../components/ui/password-field';
@@ -776,7 +776,6 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             privateKey: formState.privateKey.trim() || undefined,
             privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
             folderId: formState.folderId || undefined,
-            tagIds: formState.tagIds,
             note: formState.note.trim() || undefined,
             strictHostKey: formState.strictHostKey,
           });
@@ -1234,12 +1233,13 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                     checked={formState.strictHostKey}
                     onCheckedChange={(checkedState) => onChangeForm('strictHostKey', checkedState)}
                   />
-                  <Label
+                  <LabelWithTooltip
                     htmlFor="ssh-editor-strict-host-key"
-                    className={formStyles.inlineLabel}
+                    tooltip={t('ssh.strictHostKeyCheckingTooltip')}
+                    labelClassName={formStyles.inlineLabel}
                   >
                     {t('ssh.strictHostKeyChecking')}
-                  </Label>
+                  </LabelWithTooltip>
                 </div>
               </section>
 

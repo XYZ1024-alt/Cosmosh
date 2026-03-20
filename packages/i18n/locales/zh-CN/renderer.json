@@ -607,6 +607,7 @@
     "sessionInitFailed": "初始化 SSH 会话失败。",
     "sortDefault": "默认",
     "strictHostKeyChecking": "严格主机密钥校验",
+    "strictHostKeyCheckingTooltip": "启用后，Cosmosh 只会连接到其 SSH 主机密钥指纹已经被信任的主机。遇到未知指纹时，会先提示你确认。",
     "tagNamePlaceholder": "按 Enter 键添加标签",
     "tagsLegend": "标签",
     "title": "SSH",

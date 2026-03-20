@@ -607,6 +607,7 @@
     "sessionInitFailed": "Failed to initialize SSH session.",
     "sortDefault": "Default",
     "strictHostKeyChecking": "Strict Host Key Checking",
+    "strictHostKeyCheckingTooltip": "When enabled, Cosmosh only connects to hosts whose SSH host key fingerprint is already trusted. Unknown fingerprints trigger a confirmation prompt.",
     "tagNamePlaceholder": "Press Enter to add tag",
     "tagsLegend": "Tags",
     "title": "SSH",

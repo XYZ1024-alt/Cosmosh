@@ -69,10 +69,12 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Form, FormControl, FormField, FormLabel, FormMessage } from '../components/ui/form';
+import { FormLabelWithTooltip } from '../components/ui/form-label-with-tooltip';
 import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import { InputContextMenuItem, InputMenuTarget } from '../components/ui/input-context-menu-registry';
 import { Label } from '../components/ui/label';
+import { LabelWithTooltip } from '../components/ui/label-with-tooltip';
 import { menuStyles } from '../components/ui/menu-styles';
 import {
   Menubar,
@@ -578,12 +580,13 @@ const ComponentsField: React.FC = () => {
               checked={strictHostKey}
               onCheckedChange={setStrictHostKey}
             />
-            <Label
+            <LabelWithTooltip
               htmlFor="ssh-strict-host-key"
-              className={formStyles.inlineLabel}
+              tooltip={t('ssh.strictHostKeyCheckingTooltip')}
+              labelClassName={formStyles.inlineLabel}
             >
-              Strict Host Key Checking
-            </Label>
+              {t('ssh.strictHostKeyChecking')}
+            </LabelWithTooltip>
           </div>
 
           <div className="flex items-center gap-0.5">
@@ -592,23 +595,25 @@ const ComponentsField: React.FC = () => {
               checked={enableCompression}
               onCheckedChange={(checkedState) => setEnableCompression(checkedState === true)}
             />
-            <Label
+            <LabelWithTooltip
               htmlFor="ssh-compression"
-              className={formStyles.inlineLabel}
+              tooltip={t('ssh.enableCompressionTooltip')}
+              labelClassName={formStyles.inlineLabel}
             >
               Enable Compression
-            </Label>
+            </LabelWithTooltip>
           </div>
         </div>
 
         <FormField>
           <div className="mb-1 flex items-center justify-between">
-            <FormLabel
+            <FormLabelWithTooltip
               htmlFor="ssh-timeout"
               className={formStyles.inlineLabel}
+              tooltip="How long Cosmosh waits before disconnecting an SSH session."
             >
               Connection Timeout
-            </FormLabel>
+            </FormLabelWithTooltip>
             <span className={formStyles.helperText}>{connectionTimeout[0]}s</span>
           </div>
           <Slider
