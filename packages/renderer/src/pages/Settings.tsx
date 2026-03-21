@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
+import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
 import SettingsAboutSection, { type AppVersionInfo } from '../components/settings/SettingsAboutSection';
 import { Button } from '../components/ui/button';
 import {
@@ -708,9 +709,9 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 px-3 py-2">
-      <div className="flex min-h-0 flex-1 gap-3.5">
-        <aside className="flex h-full w-[250px] shrink-0 flex-col">
+    <SplitWorkbenchLayout
+      sidebar={
+        <>
           <div className="pb-3">
             <Menubar className="w-full">
               <div className="relative w-full">
@@ -745,12 +746,11 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
               })}
             </div>
           </div>
-        </aside>
-
-        <div className="w-px shrink-0 bg-home-divider" />
-
-        <main className="flex min-w-0 flex-1 flex-col pl-2">
-          <div className="shrink-0 bg-bg pb-2">
+        </>
+      }
+      main={
+        <SplitWorkbenchMainPanel
+          header={
             <div className="mx-auto flex min-h-[46px] max-w-4xl items-start justify-between gap-4 pb-1">
               <div className="grid gap-1">
                 <h1 className="text-home-text ps-2 text-[24px] font-semibold">
@@ -775,9 +775,8 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
                 </Menubar>
               ) : null}
             </div>
-          </div>
-
-          <div className="scrollbar-gutter-stable -me-2 min-h-0 flex-1 overflow-auto">
+          }
+          body={
             <div className="mx-auto max-w-4xl flex-1">
               {isLoading ? <div className="px-2 text-sm text-home-text-subtle">{t('settings.loading')}</div> : null}
 
@@ -859,10 +858,10 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
                 </div>
               ) : null}
             </div>
-          </div>
-        </main>
-      </div>
-
+          }
+        />
+      }
+    >
       <Dialog
         open={isDatabaseSecurityDialogOpen}
         onOpenChange={setIsDatabaseSecurityDialogOpen}
@@ -957,7 +956,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </SplitWorkbenchLayout>
   );
 };
 

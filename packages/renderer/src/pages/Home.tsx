@@ -31,6 +31,7 @@ import EntityCard from '../components/home/EntityCard';
 import EntityIcon from '../components/home/EntityIcon';
 import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import HomeEmptyState from '../components/home/HomeEmptyState';
+import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -932,510 +933,514 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 px-3 py-2">
-      <h1 className="px-2 pb-2 text-[28px] font-semibold text-header-text">
-        {t('home.greetingWithUser', { greeting, name: runtimeUserName })}
-      </h1>
-
-      <div className="flex min-h-0 flex-1 gap-3.5">
-        <aside className="flex h-full w-[250px] shrink-0 flex-col">
-          <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
-            <div className="pb-5">
-              <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">{t('home.groupAll')}</div>
-              <EntityCard
-                title={t('home.groupAllHosts')}
-                subtitle={t('home.hostCount', { count: servers.length })}
-                selected={activeFolderId === 'all' && quickFilter === 'none'}
-                icon={createEntityIconNode({ iconKey: 'Folder', colorKey: 'slate' }, t('home.groupAllHosts'))}
-                onClick={() => {
-                  setActiveFolderId('all');
-                  setQuickFilter('none');
-                }}
-              />
-            </div>
-
-            <div className="pb-5">
-              <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">
-                {t('home.groupFavoriteAndRecent')}
-              </div>
-              <div className="space-y-1.5">
-                {quickSidebarCards.map((item) => (
-                  <EntityCard
-                    key={item.key}
-                    title={item.title}
-                    subtitle={item.subtitle}
-                    selected={item.selected}
-                    icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
-                    onClick={item.onClick}
-                  />
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">{t('home.groupFolders')}</div>
-              <div className="space-y-1.5">
-                {folderSidebarCards.map((item, index) => (
-                  <ContextMenu key={item.key}>
-                    <ContextMenuTrigger className="block">
-                      <EntityCard
-                        {...folderListNavigation.getItemProps(index)}
-                        title={item.title}
-                        subtitle={item.subtitle}
-                        selected={item.selected}
-                        className={dragOverFolderId === item.folderId ? 'bg-home-card-active' : undefined}
-                        icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
-                        onDragOver={(event) => {
-                          if (!item.folderId || item.folderId === LOCAL_TERMINAL_FOLDER_ID || !draggingServerId) {
-                            return;
-                          }
-
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = 'move';
-                          if (dragOverFolderId !== item.folderId) {
-                            setDragOverFolderId(item.folderId);
-                          }
-                        }}
-                        onDragLeave={() => {
-                          if (dragOverFolderId === item.folderId) {
-                            setDragOverFolderId(null);
-                          }
-                        }}
-                        onDrop={(event) => {
-                          if (!item.folderId || item.folderId === LOCAL_TERMINAL_FOLDER_ID) {
-                            return;
-                          }
-
-                          event.preventDefault();
-                          const droppedServerId =
-                            event.dataTransfer.getData('application/x-cosmosh-server-id') || draggingServerId;
-                          if (!droppedServerId) {
-                            return;
-                          }
-
-                          setDragOverFolderId(null);
-                          setDraggingServerId(null);
-                          void handleAssignServerToFolder(droppedServerId, item.folderId);
-                        }}
-                        onClick={item.onClick}
-                      />
-                    </ContextMenuTrigger>
-                    <ContextMenuContent>
-                      <ContextMenuItem
-                        icon={FolderOpen}
-                        onSelect={item.onClick}
-                      >
-                        {t('home.contextOpenFolder')}
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        icon={Pencil}
-                        disabled={item.folderId === LOCAL_TERMINAL_FOLDER_ID}
-                        onSelect={() => {
-                          const folderId = item.folderId;
-                          if (!folderId || folderId === LOCAL_TERMINAL_FOLDER_ID) {
-                            return;
-                          }
-
-                          openEditFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
-                        }}
-                      >
-                        {t('home.contextEditFolder')}
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        icon={Trash2}
-                        disabled={item.folderId === LOCAL_TERMINAL_FOLDER_ID}
-                        onSelect={() => {
-                          const folderId = item.folderId;
-                          if (!folderId || folderId === LOCAL_TERMINAL_FOLDER_ID) {
-                            return;
-                          }
-
-                          openDeleteFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
-                        }}
-                      >
-                        {t('home.contextDeleteFolder')}
-                      </ContextMenuItem>
-                    </ContextMenuContent>
-                  </ContextMenu>
-                ))}
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <div className="w-px shrink-0 bg-home-divider" />
-
-        <main className="min-w-0 flex-1 overflow-auto pl-2">
-          <div className="pb-4">
-            <div className="flex items-center justify-between gap-4 pb-2 ps-2">
-              <div className="min-w-0 pb-2 text-[20px] font-semibold leading-[1.02] tracking-[-0.01em] text-header-text">
-                {selectedGroupName}
-              </div>
-
-              <div className="flex items-center">
-                <TooltipProvider delayDuration={180}>
-                  <Menubar className="mr-1">
-                    <div className="w-50 relative">
-                      <Input
-                        value={search}
-                        placeholder={t('home.searchPlaceholder')}
-                        className="pr-9"
-                        onChange={(event) => setSearch(event.target.value)}
-                      />
-                      <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
-                    </div>
-                  </Menubar>
-                  <Menubar className="mr-1">
-                    <DropdownMenu>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              aria-label={t('home.groupModeAction')}
-                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                            >
-                              {React.createElement(groupModeIcon, { className: 'h-4 w-4' })}
-                            </button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{t('home.groupModeAction')}</TooltipContent>
-                      </Tooltip>
-                      <DropdownMenuContent>
-                        <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'none'}
-                          onSelect={() => setGroupMode('none')}
-                        >
-                          {t('home.groupModeNone')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'lastUsed'}
-                          onSelect={() => setGroupMode('lastUsed')}
-                        >
-                          {t('home.groupModeLastUsed')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'tag'}
-                          onSelect={() => setGroupMode('tag')}
-                        >
-                          {t('home.groupModeTag')}
-                        </DropdownMenuCheckboxItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <DropdownMenu>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              aria-label={t('home.sortAction')}
-                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                            >
-                              {React.createElement(sortModeIcon, { className: 'h-4 w-4' })}
-                            </button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{t('home.sortAction')}</TooltipContent>
-                      </Tooltip>
-                      <DropdownMenuContent>
-                        <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameAsc'}
-                          onSelect={() => setSortMode('nameAsc')}
-                        >
-                          {t('home.sortByNameAsc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameDesc'}
-                          onSelect={() => setSortMode('nameDesc')}
-                        >
-                          {t('home.sortByNameDesc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'lastUsed'}
-                          onSelect={() => setSortMode('lastUsed')}
-                        >
-                          {t('home.sortByLastUsed')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'createdAt'}
-                          onSelect={() => setSortMode('createdAt')}
-                        >
-                          {t('home.sortByCreatedAt')}
-                        </DropdownMenuCheckboxItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-
-                    <MenubarSeparator vertical />
-
-                    <DropdownMenu>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <button
-                              type="button"
-                              aria-label={t('home.addAction')}
-                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
-                      </Tooltip>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem
-                          icon={Server}
-                          onSelect={() => onOpenSshEditor('')}
-                        >
-                          {t('home.quickAddServer')}
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          icon={FolderPlus}
-                          onSelect={() => createFolderDialog.openCreateFolderDialog()}
-                        >
-                          {t('home.quickAddFolder')}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </Menubar>
-                </TooltipProvider>
-              </div>
-            </div>
-
-            <MenuToggleGroup
-              type="single"
-              value={activeTag}
-              className="-ms-1"
-              onValueChange={(value) => {
-                if (value) {
-                  setActiveTag(value);
-                }
+    <SplitWorkbenchLayout
+      topSlot={
+        <h1 className="px-2 pb-2 text-[28px] font-semibold text-header-text">
+          {t('home.greetingWithUser', { greeting, name: runtimeUserName })}
+        </h1>
+      }
+      sidebar={
+        <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
+          <div className="pb-5">
+            <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">{t('home.groupAll')}</div>
+            <EntityCard
+              title={t('home.groupAllHosts')}
+              subtitle={t('home.hostCount', { count: servers.length })}
+              selected={activeFolderId === 'all' && quickFilter === 'none'}
+              icon={createEntityIconNode({ iconKey: 'Folder', colorKey: 'slate' }, t('home.groupAllHosts'))}
+              onClick={() => {
+                setActiveFolderId('all');
+                setQuickFilter('none');
               }}
-            >
-              {tags.map((tagName) => (
-                <MenuToggleGroupItem
-                  key={tagName}
-                  value={tagName}
-                >
-                  {tagName === 'all' ? t('home.tagAll') : tagName}
-                </MenuToggleGroupItem>
-              ))}
-            </MenuToggleGroup>
+            />
           </div>
 
-          {isLoading ? <div className="text-home-text-subtle">{t('home.loading')}</div> : null}
-          {errorMessage ? <div className="text-form-message-error">{errorMessage}</div> : null}
+          <div className="pb-5">
+            <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">
+              {t('home.groupFavoriteAndRecent')}
+            </div>
+            <div className="space-y-1.5">
+              {quickSidebarCards.map((item) => (
+                <EntityCard
+                  key={item.key}
+                  title={item.title}
+                  subtitle={item.subtitle}
+                  selected={item.selected}
+                  icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
+                  onClick={item.onClick}
+                />
+              ))}
+            </div>
+          </div>
 
-          {!isLoading && !errorMessage ? (
-            <div className="space-y-4 pb-2">
-              {activeFolderId === LOCAL_TERMINAL_FOLDER_ID ? (
-                <section>
-                  <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
-                    {filteredLocalTerminalProfiles.map((profile, index) => (
-                      <ContextMenu key={profile.id}>
-                        <ContextMenuTrigger className="block">
-                          <EntityCard
-                            {...localTerminalGridNavigation.getItemProps(index)}
-                            layout="grid"
-                            title={profile.name}
-                            subtitle={profile.command}
-                            icon={createEntityIconNode({ iconKey: 'HardDrive', colorKey: 'blue' }, profile.name)}
-                            onClick={() => onOpenSSH(toLocalTerminalTargetId(profile.id), profile.name)}
-                          />
-                        </ContextMenuTrigger>
-                        <ContextMenuContent>
-                          <ContextMenuItem
-                            icon={Terminal}
-                            onSelect={() => onOpenSSH(toLocalTerminalTargetId(profile.id), profile.name)}
+          <div>
+            <div className="px-2 pb-2.5 text-xs font-medium text-home-text-subtle">{t('home.groupFolders')}</div>
+            <div className="space-y-1.5">
+              {folderSidebarCards.map((item, index) => (
+                <ContextMenu key={item.key}>
+                  <ContextMenuTrigger className="block">
+                    <EntityCard
+                      {...folderListNavigation.getItemProps(index)}
+                      title={item.title}
+                      subtitle={item.subtitle}
+                      selected={item.selected}
+                      className={dragOverFolderId === item.folderId ? 'bg-home-card-active' : undefined}
+                      icon={createEntityIconNode({ iconKey: item.iconKey, colorKey: item.colorKey }, item.title)}
+                      onDragOver={(event) => {
+                        if (!item.folderId || item.folderId === LOCAL_TERMINAL_FOLDER_ID || !draggingServerId) {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        event.dataTransfer.dropEffect = 'move';
+                        if (dragOverFolderId !== item.folderId) {
+                          setDragOverFolderId(item.folderId);
+                        }
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverFolderId === item.folderId) {
+                          setDragOverFolderId(null);
+                        }
+                      }}
+                      onDrop={(event) => {
+                        if (!item.folderId || item.folderId === LOCAL_TERMINAL_FOLDER_ID) {
+                          return;
+                        }
+
+                        event.preventDefault();
+                        const droppedServerId =
+                          event.dataTransfer.getData('application/x-cosmosh-server-id') || draggingServerId;
+                        if (!droppedServerId) {
+                          return;
+                        }
+
+                        setDragOverFolderId(null);
+                        setDraggingServerId(null);
+                        void handleAssignServerToFolder(droppedServerId, item.folderId);
+                      }}
+                      onClick={item.onClick}
+                    />
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      icon={FolderOpen}
+                      onSelect={item.onClick}
+                    >
+                      {t('home.contextOpenFolder')}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      icon={Pencil}
+                      disabled={item.folderId === LOCAL_TERMINAL_FOLDER_ID}
+                      onSelect={() => {
+                        const folderId = item.folderId;
+                        if (!folderId || folderId === LOCAL_TERMINAL_FOLDER_ID) {
+                          return;
+                        }
+
+                        openEditFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
+                      }}
+                    >
+                      {t('home.contextEditFolder')}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      icon={Trash2}
+                      disabled={item.folderId === LOCAL_TERMINAL_FOLDER_ID}
+                      onSelect={() => {
+                        const folderId = item.folderId;
+                        if (!folderId || folderId === LOCAL_TERMINAL_FOLDER_ID) {
+                          return;
+                        }
+
+                        openDeleteFolderDialog(folderId, item.title, item.iconKey, item.colorKey);
+                      }}
+                    >
+                      {t('home.contextDeleteFolder')}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
+              ))}
+            </div>
+          </div>
+        </div>
+      }
+      main={
+        <SplitWorkbenchMainPanel
+          mode="panel-scroll"
+          header={
+            <>
+              <div className="flex items-center justify-between gap-4 pb-2 ps-2">
+                <div className="min-w-0 pb-2 text-[20px] font-semibold leading-[1.02] tracking-[-0.01em] text-header-text">
+                  {selectedGroupName}
+                </div>
+
+                <div className="flex items-center">
+                  <TooltipProvider delayDuration={180}>
+                    <Menubar className="mr-1">
+                      <div className="w-50 relative">
+                        <Input
+                          value={search}
+                          placeholder={t('home.searchPlaceholder')}
+                          className="pr-9"
+                          onChange={(event) => setSearch(event.target.value)}
+                        />
+                        <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
+                      </div>
+                    </Menubar>
+                    <Menubar className="mr-1">
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t('home.groupModeAction')}
+                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                              >
+                                {React.createElement(groupModeIcon, { className: 'h-4 w-4' })}
+                              </button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{t('home.groupModeAction')}</TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent>
+                          <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
+                          <DropdownMenuCheckboxItem
+                            checked={groupMode === 'none'}
+                            onSelect={() => setGroupMode('none')}
                           >
-                            {t('home.contextConnect')}
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            icon={FolderOpen}
-                            onSelect={() => {
-                              void handleShowInFileManager(profile.executablePath);
-                            }}
+                            {t('home.groupModeNone')}
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={groupMode === 'lastUsed'}
+                            onSelect={() => setGroupMode('lastUsed')}
                           >
-                            {localTerminalFileManagerLabel}
-                          </ContextMenuItem>
-                          <ContextMenuSeparator />
-                          <ContextMenuItem
-                            disabled
-                            className="text-xs text-home-text-subtle"
+                            {t('home.groupModeLastUsed')}
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={groupMode === 'tag'}
+                            onSelect={() => setGroupMode('tag')}
                           >
-                            {t('home.contextLocalTerminalManagedHint')}
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
-                    ))}
-                  </div>
-                </section>
-              ) : (
-                groupedServers.map((group) => (
-                  <section key={group.key}>
-                    {group.title ? (
-                      <div className="px-2 pb-2.5 text-[13px] font-medium text-home-text-subtle">{group.title}</div>
-                    ) : null}
-                    <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
-                      {group.items.map((server) => {
-                        const serverEntryKey = `${group.key}:${server.id}`;
-                        const serverEntryIndex = serverGridIndexMap.get(serverEntryKey) ?? 0;
-                        const colorKey = isEntityColorKey(server.colorKey) ? server.colorKey : 'blue';
-                        return (
-                          <ContextMenu key={serverEntryKey}>
+                            {t('home.groupModeTag')}
+                          </DropdownMenuCheckboxItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t('home.sortAction')}
+                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                              >
+                                {React.createElement(sortModeIcon, { className: 'h-4 w-4' })}
+                              </button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{t('home.sortAction')}</TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent>
+                          <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
+                          <DropdownMenuCheckboxItem
+                            checked={sortMode === 'nameAsc'}
+                            onSelect={() => setSortMode('nameAsc')}
+                          >
+                            {t('home.sortByNameAsc')}
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={sortMode === 'nameDesc'}
+                            onSelect={() => setSortMode('nameDesc')}
+                          >
+                            {t('home.sortByNameDesc')}
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={sortMode === 'lastUsed'}
+                            onSelect={() => setSortMode('lastUsed')}
+                          >
+                            {t('home.sortByLastUsed')}
+                          </DropdownMenuCheckboxItem>
+                          <DropdownMenuCheckboxItem
+                            checked={sortMode === 'createdAt'}
+                            onSelect={() => setSortMode('createdAt')}
+                          >
+                            {t('home.sortByCreatedAt')}
+                          </DropdownMenuCheckboxItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+
+                      <MenubarSeparator vertical />
+
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t('home.addAction')}
+                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem
+                            icon={Server}
+                            onSelect={() => onOpenSshEditor('')}
+                          >
+                            {t('home.quickAddServer')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            icon={FolderPlus}
+                            onSelect={() => createFolderDialog.openCreateFolderDialog()}
+                          >
+                            {t('home.quickAddFolder')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </Menubar>
+                  </TooltipProvider>
+                </div>
+              </div>
+
+              <MenuToggleGroup
+                type="single"
+                value={activeTag}
+                className="-ms-1"
+                onValueChange={(value) => {
+                  if (value) {
+                    setActiveTag(value);
+                  }
+                }}
+              >
+                {tags.map((tagName) => (
+                  <MenuToggleGroupItem
+                    key={tagName}
+                    value={tagName}
+                  >
+                    {tagName === 'all' ? t('home.tagAll') : tagName}
+                  </MenuToggleGroupItem>
+                ))}
+              </MenuToggleGroup>
+            </>
+          }
+          body={
+            <>
+              {isLoading ? <div className="text-home-text-subtle">{t('home.loading')}</div> : null}
+              {errorMessage ? <div className="text-form-message-error">{errorMessage}</div> : null}
+
+              {!isLoading && !errorMessage ? (
+                <div className="space-y-4 pb-2">
+                  {activeFolderId === LOCAL_TERMINAL_FOLDER_ID ? (
+                    <section>
+                      <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
+                        {filteredLocalTerminalProfiles.map((profile, index) => (
+                          <ContextMenu key={profile.id}>
                             <ContextMenuTrigger className="block">
                               <EntityCard
-                                {...serverGridNavigation.getItemProps(serverEntryIndex)}
-                                draggable
+                                {...localTerminalGridNavigation.getItemProps(index)}
                                 layout="grid"
-                                title={server.name}
-                                subtitle={resolveServerAddressForDisplay(server.host, showFullServerAddress)}
-                                className={draggingServerId === server.id ? 'opacity-70' : undefined}
-                                icon={createEntityIconNode({ iconKey: server.iconKey, colorKey }, server.name)}
-                                action={
-                                  <Button
-                                    variant="ghost"
-                                    tabIndex={serverEntryIndex === serverGridNavigation.activeIndex ? 0 : -1}
-                                    className="h-[32px] w-[32px] rounded-[8px] px-0 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
-                                    aria-label={t('home.contextConnectSftp')}
-                                    onClick={(event) => {
-                                      event.stopPropagation();
-                                    }}
-                                  >
-                                    <File className="h-4 w-4 flex-shrink-0" />
-                                  </Button>
-                                }
-                                onDragStart={(event) => {
-                                  event.dataTransfer.setData('application/x-cosmosh-server-id', server.id);
-                                  event.dataTransfer.effectAllowed = 'move';
-                                  setDraggingServerId(server.id);
-                                }}
-                                onDragEnd={() => {
-                                  setDraggingServerId(null);
-                                  setDragOverFolderId(null);
-                                }}
-                                onClick={(event) => openServerFromCard(server, event)}
+                                title={profile.name}
+                                subtitle={profile.command}
+                                icon={createEntityIconNode({ iconKey: 'HardDrive', colorKey: 'blue' }, profile.name)}
+                                onClick={() => onOpenSSH(toLocalTerminalTargetId(profile.id), profile.name)}
                               />
                             </ContextMenuTrigger>
                             <ContextMenuContent>
                               <ContextMenuItem
                                 icon={Terminal}
-                                onSelect={() => onOpenSSH(server.id, server.name)}
+                                onSelect={() => onOpenSSH(toLocalTerminalTargetId(profile.id), profile.name)}
                               >
                                 {t('home.contextConnect')}
                               </ContextMenuItem>
-                              <ContextMenuItem
-                                onSelect={() => onOpenSSH(server.id, server.name, { openInNewTab: true })}
-                              >
-                                {t('home.openSshNewTab')}
-                                <ContextMenuShortcut>{openInNewTabShortcutLabel}</ContextMenuShortcut>
-                              </ContextMenuItem>
-                              {/* TODO(home): SFTP connect entry is pending dedicated SFTP page/session wiring. */}
-                              <ContextMenuItem
-                                disabled
-                                icon={File}
-                              >
-                                {t('home.contextConnectSftp')}
-                              </ContextMenuItem>
                               <ContextMenuSeparator />
                               <ContextMenuItem
-                                icon={isServerFavorite(server) ? StarOff : Star}
+                                icon={FolderOpen}
                                 onSelect={() => {
-                                  void handleToggleFavorite(server);
+                                  void handleShowInFileManager(profile.executablePath);
                                 }}
                               >
-                                {isServerFavorite(server) ? t('home.contextUnfavorite') : t('home.contextFavorite')}
+                                {localTerminalFileManagerLabel}
                               </ContextMenuItem>
                               <ContextMenuSeparator />
-                              <ContextMenuSub>
-                                <ContextMenuSubTrigger icon={Copy}>{t('home.contextCopy')}</ContextMenuSubTrigger>
-                                <ContextMenuSubContent>
-                                  <ContextMenuItem
-                                    icon={Network}
-                                    onSelect={() => {
-                                      void handleCopyToClipboard(server.host);
-                                    }}
-                                  >
-                                    {t('home.contextCopyIp')}
-                                  </ContextMenuItem>
-                                  <ContextMenuItem
-                                    icon={Server}
-                                    onSelect={() => {
-                                      void handleCopyToClipboard(server.name);
-                                    }}
-                                  >
-                                    {t('home.contextCopyName')}
-                                  </ContextMenuItem>
-                                  <ContextMenuItem
-                                    icon={Hash}
-                                    onSelect={() => {
-                                      void handleCopyToClipboard(String(server.port));
-                                    }}
-                                  >
-                                    {t('home.contextCopyPort')}
-                                  </ContextMenuItem>
-                                  <ContextMenuItem
-                                    icon={Link}
-                                    onSelect={() => {
-                                      void handleCopyToClipboard(
-                                        `ssh://${server.username}@${server.host}:${server.port}`,
-                                      );
-                                    }}
-                                  >
-                                    {t('home.contextCopySchema')}
-                                  </ContextMenuItem>
-                                </ContextMenuSubContent>
-                              </ContextMenuSub>
-                              <ContextMenuSeparator />
                               <ContextMenuItem
-                                icon={Pencil}
-                                onSelect={() => onOpenSshEditor(server.id)}
+                                disabled
+                                className="text-xs text-home-text-subtle"
                               >
-                                {t('home.contextEdit')}
-                              </ContextMenuItem>
-                              <ContextMenuItem
-                                icon={Trash2}
-                                onSelect={() => openDeleteServerDialog(server.id, server.name)}
-                              >
-                                {t('home.contextDelete')}
+                                {t('home.contextLocalTerminalManagedHint')}
                               </ContextMenuItem>
                             </ContextMenuContent>
                           </ContextMenu>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))
-              )}
-            </div>
-          ) : null}
+                        ))}
+                      </div>
+                    </section>
+                  ) : (
+                    groupedServers.map((group) => (
+                      <section key={group.key}>
+                        {group.title ? (
+                          <div className="px-2 pb-2.5 text-[13px] font-medium text-home-text-subtle">{group.title}</div>
+                        ) : null}
+                        <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
+                          {group.items.map((server) => {
+                            const serverEntryKey = `${group.key}:${server.id}`;
+                            const serverEntryIndex = serverGridIndexMap.get(serverEntryKey) ?? 0;
+                            const colorKey = isEntityColorKey(server.colorKey) ? server.colorKey : 'blue';
+                            return (
+                              <ContextMenu key={serverEntryKey}>
+                                <ContextMenuTrigger className="block">
+                                  <EntityCard
+                                    {...serverGridNavigation.getItemProps(serverEntryIndex)}
+                                    draggable
+                                    layout="grid"
+                                    title={server.name}
+                                    subtitle={resolveServerAddressForDisplay(server.host, showFullServerAddress)}
+                                    className={draggingServerId === server.id ? 'opacity-70' : undefined}
+                                    icon={createEntityIconNode({ iconKey: server.iconKey, colorKey }, server.name)}
+                                    action={
+                                      <Button
+                                        variant="ghost"
+                                        tabIndex={serverEntryIndex === serverGridNavigation.activeIndex ? 0 : -1}
+                                        className="h-[32px] w-[32px] rounded-[8px] px-0 opacity-0 transition-opacity focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100"
+                                        aria-label={t('home.contextConnectSftp')}
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                        }}
+                                      >
+                                        <File className="h-4 w-4 flex-shrink-0" />
+                                      </Button>
+                                    }
+                                    onDragStart={(event) => {
+                                      event.dataTransfer.setData('application/x-cosmosh-server-id', server.id);
+                                      event.dataTransfer.effectAllowed = 'move';
+                                      setDraggingServerId(server.id);
+                                    }}
+                                    onDragEnd={() => {
+                                      setDraggingServerId(null);
+                                      setDragOverFolderId(null);
+                                    }}
+                                    onClick={(event) => openServerFromCard(server, event)}
+                                  />
+                                </ContextMenuTrigger>
+                                <ContextMenuContent>
+                                  <ContextMenuItem
+                                    icon={Terminal}
+                                    onSelect={() => onOpenSSH(server.id, server.name)}
+                                  >
+                                    {t('home.contextConnect')}
+                                  </ContextMenuItem>
+                                  <ContextMenuItem
+                                    onSelect={() => onOpenSSH(server.id, server.name, { openInNewTab: true })}
+                                  >
+                                    {t('home.openSshNewTab')}
+                                    <ContextMenuShortcut>{openInNewTabShortcutLabel}</ContextMenuShortcut>
+                                  </ContextMenuItem>
+                                  {/* TODO(home): SFTP connect entry is pending dedicated SFTP page/session wiring. */}
+                                  <ContextMenuItem
+                                    disabled
+                                    icon={File}
+                                  >
+                                    {t('home.contextConnectSftp')}
+                                  </ContextMenuItem>
+                                  <ContextMenuSeparator />
+                                  <ContextMenuItem
+                                    icon={isServerFavorite(server) ? StarOff : Star}
+                                    onSelect={() => {
+                                      void handleToggleFavorite(server);
+                                    }}
+                                  >
+                                    {isServerFavorite(server) ? t('home.contextUnfavorite') : t('home.contextFavorite')}
+                                  </ContextMenuItem>
+                                  <ContextMenuSeparator />
+                                  <ContextMenuSub>
+                                    <ContextMenuSubTrigger icon={Copy}>{t('home.contextCopy')}</ContextMenuSubTrigger>
+                                    <ContextMenuSubContent>
+                                      <ContextMenuItem
+                                        icon={Network}
+                                        onSelect={() => {
+                                          void handleCopyToClipboard(server.host);
+                                        }}
+                                      >
+                                        {t('home.contextCopyIp')}
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        icon={Server}
+                                        onSelect={() => {
+                                          void handleCopyToClipboard(server.name);
+                                        }}
+                                      >
+                                        {t('home.contextCopyName')}
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        icon={Hash}
+                                        onSelect={() => {
+                                          void handleCopyToClipboard(String(server.port));
+                                        }}
+                                      >
+                                        {t('home.contextCopyPort')}
+                                      </ContextMenuItem>
+                                      <ContextMenuItem
+                                        icon={Link}
+                                        onSelect={() => {
+                                          void handleCopyToClipboard(
+                                            `ssh://${server.username}@${server.host}:${server.port}`,
+                                          );
+                                        }}
+                                      >
+                                        {t('home.contextCopySchema')}
+                                      </ContextMenuItem>
+                                    </ContextMenuSubContent>
+                                  </ContextMenuSub>
+                                  <ContextMenuSeparator />
+                                  <ContextMenuItem
+                                    icon={Pencil}
+                                    onSelect={() => onOpenSshEditor(server.id)}
+                                  >
+                                    {t('home.contextEdit')}
+                                  </ContextMenuItem>
+                                  <ContextMenuItem
+                                    icon={Trash2}
+                                    onSelect={() => openDeleteServerDialog(server.id, server.name)}
+                                  >
+                                    {t('home.contextDelete')}
+                                  </ContextMenuItem>
+                                </ContextMenuContent>
+                              </ContextMenu>
+                            );
+                          })}
+                        </div>
+                      </section>
+                    ))
+                  )}
+                </div>
+              ) : null}
 
-          {!isLoading &&
-          !errorMessage &&
-          activeFolderId !== LOCAL_TERMINAL_FOLDER_ID &&
-          filteredServers.length === 0 ? (
-            <HomeEmptyState
-              text={t('home.empty')}
-              icon={PackageOpen}
-            />
-          ) : null}
+              {!isLoading &&
+              !errorMessage &&
+              activeFolderId !== LOCAL_TERMINAL_FOLDER_ID &&
+              filteredServers.length === 0 ? (
+                <HomeEmptyState
+                  text={t('home.empty')}
+                  icon={PackageOpen}
+                />
+              ) : null}
 
-          {!isLoading &&
-          !errorMessage &&
-          activeFolderId === LOCAL_TERMINAL_FOLDER_ID &&
-          filteredLocalTerminalProfiles.length === 0 ? (
-            <HomeEmptyState
-              text={t('home.empty')}
-              icon={PackageOpen}
-            />
-          ) : null}
-        </main>
-      </div>
-
+              {!isLoading &&
+              !errorMessage &&
+              activeFolderId === LOCAL_TERMINAL_FOLDER_ID &&
+              filteredLocalTerminalProfiles.length === 0 ? (
+                <HomeEmptyState
+                  text={t('home.empty')}
+                  icon={PackageOpen}
+                />
+              ) : null}
+            </>
+          }
+        />
+      }
+    >
       <CreateFolderDialog
         open={createFolderDialog.isOpen}
         folderName={createFolderDialog.folderName}
@@ -1575,7 +1580,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </SplitWorkbenchLayout>
   );
 };
 

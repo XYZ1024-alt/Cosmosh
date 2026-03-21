@@ -21,6 +21,7 @@ import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
 import EntityIcon from '../components/home/EntityIcon';
 import EntityVisualPicker from '../components/home/EntityVisualPicker';
+import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -828,9 +829,9 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 px-3 py-2">
-      <div className="flex min-h-0 flex-1 gap-3.5">
-        <aside className="flex h-full w-[250px] shrink-0 flex-col">
+    <SplitWorkbenchLayout
+      sidebar={
+        <>
           <div className="pb-3">
             <Menubar>
               <div className="w-50 relative">
@@ -996,12 +997,11 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
               </div>
             ) : null}
           </div>
-        </aside>
-
-        <div className="w-px shrink-0 bg-home-divider" />
-
-        <main className="flex min-w-0 flex-1 flex-col pl-2">
-          <div className="shrink-0 bg-bg pb-2">
+        </>
+      }
+      main={
+        <SplitWorkbenchMainPanel
+          header={
             <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2">
               <h1 className="text-home-text text-[24px] font-semibold">
                 {activeServerId ? formState.name || t('ssh.untitledServer') : t('ssh.newServer')}
@@ -1036,9 +1036,8 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                 </Button>
               </Menubar>
             </div>
-          </div>
-
-          <div className="scrollbar-gutter-stable -me-2 min-h-0 flex-1 overflow-auto">
+          }
+          body={
             <Form
               id="ssh-editor-form"
               className="mx-auto grid max-w-4xl gap-4 pb-4"
@@ -1320,10 +1319,10 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                 </FormField>
               </section>
             </Form>
-          </div>
-        </main>
-      </div>
-
+          }
+        />
+      }
+    >
       <CreateFolderDialog
         open={createFolderDialog.isOpen}
         folderName={createFolderDialog.folderName}
@@ -1362,7 +1361,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </SplitWorkbenchLayout>
   );
 };
 
