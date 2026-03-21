@@ -5,6 +5,12 @@ import os from 'node:os';
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, shell } from 'electron';
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
+import {
+  collectProcessPerformanceStats,
+  createMainCpuUsagePercentSampler,
+  exportMainProcessHeapSnapshot,
+  type ProcessPerformanceStatsPayload,
+} from './utils/process-performance';
 
 /**
  * Dependency contract for registering app-level utility IPC handlers.
@@ -45,6 +51,8 @@ const resolveTargetWindow = (options: RegisterAppUtilityIpcHandlersOptions): Bro
  * Registers shell/window/i18n utility channels exposed to renderer.
  */
 export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHandlersOptions): void => {
+  const sampleMainCpuUsagePercent = createMainCpuUsagePercentSampler();
+
   const resolveCommit = (): string => {
     const fromEnv = process.env.COSMOSH_GIT_COMMIT ?? process.env.GIT_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA;
     if (typeof fromEnv === 'string' && fromEnv.trim().length > 0) {
@@ -227,4 +235,15 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
       return { canceled: true };
     }
   });
+
+  ipcMain.handle('app:get-process-performance-stats', async (): Promise<ProcessPerformanceStatsPayload> => {
+    return collectProcessPerformanceStats(resolveTargetWindow(options), sampleMainCpuUsagePercent);
+  });
+
+  ipcMain.handle(
+    'app:export-main-heap-snapshot',
+    async (): Promise<{ ok: boolean; filePath?: string; message?: string }> => {
+      return exportMainProcessHeapSnapshot();
+    },
+  );
 };

@@ -150,6 +150,27 @@ contextBridge.exposeInMainWorld('electron', {
   importPrivateKeyFromFile: () => {
     return invokeIpc<{ canceled: boolean; content?: string }>('app:import-private-key');
   },
+  getProcessPerformanceStats: () => {
+    return invokeIpc<{
+      sampledAt: number;
+      cpuPercent: number | null;
+      mainProcessMemory: {
+        rssBytes: number;
+        heapTotalBytes: number;
+        heapUsedBytes: number;
+        externalBytes: number;
+        arrayBuffersBytes: number;
+      };
+      rendererProcessMemory: {
+        residentSetBytes: number;
+        privateBytes: number;
+        sharedBytes: number;
+      } | null;
+    }>('app:get-process-performance-stats');
+  },
+  exportMainHeapSnapshot: () => {
+    return invokeIpc<{ ok: boolean; filePath?: string; message?: string }>('app:export-main-heap-snapshot');
+  },
 
   // ---------------------------------------------------------------------------
   // Backend settings and SSH channels

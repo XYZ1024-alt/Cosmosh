@@ -80,6 +80,23 @@ declare global {
       openExternalUrl: (targetUrl: string) => Promise<boolean>;
       setWindowsSystemMenuSymbolColor: (symbolColor: string) => Promise<boolean>;
       importPrivateKeyFromFile: () => Promise<{ canceled: boolean; content?: string }>;
+      getProcessPerformanceStats: () => Promise<{
+        sampledAt: number;
+        cpuPercent: number | null;
+        mainProcessMemory: {
+          rssBytes: number;
+          heapTotalBytes: number;
+          heapUsedBytes: number;
+          externalBytes: number;
+          arrayBuffersBytes: number;
+        };
+        rendererProcessMemory: {
+          residentSetBytes: number;
+          privateBytes: number;
+          sharedBytes: number;
+        } | null;
+      }>;
+      exportMainHeapSnapshot: () => Promise<{ ok: boolean; filePath?: string; message?: string }>;
       backendTestPing: () => Promise<ApiTestPingResponse | ApiErrorResponse>;
       backendSettingsGet: () => Promise<ApiSettingsGetResponse | ApiErrorResponse>;
       backendSettingsUpdate: (

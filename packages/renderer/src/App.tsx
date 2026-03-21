@@ -2,10 +2,12 @@ import classNames from 'classnames';
 import { X } from 'lucide-react';
 import React from 'react';
 
+import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
 import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
 import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { listLocalTerminalProfiles } from './lib/backend';
+import { readShowSystemMonitorOverlayPreference, writeShowSystemMonitorOverlayPreference } from './lib/debug-tools';
 import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
@@ -205,6 +207,14 @@ const App: React.FC = () => {
   const terminalContextLaunchBehavior = useSettingsValue('terminalContextLaunchBehavior');
   const defaultLocalTerminalProfile = useSettingsValue('defaultLocalTerminalProfile');
   const applySshServerVisualStyle = useSettingsValue('sshTabApplyServerVisualStyle');
+  const [showSystemMonitorOverlay, setShowSystemMonitorOverlay] = React.useState<boolean>(() => {
+    return readShowSystemMonitorOverlayPreference();
+  });
+
+  const handleShowSystemMonitorOverlayChange = React.useCallback((nextVisible: boolean): void => {
+    setShowSystemMonitorOverlay(nextVisible);
+    writeShowSystemMonitorOverlayPreference(nextVisible);
+  }, []);
 
   const handleLastTabClose = React.useCallback(() => {
     window.electron?.closeWindow();
@@ -463,6 +473,8 @@ const App: React.FC = () => {
                   <Debug
                     activeTabTitle={tab.title}
                     activeTabIcon={tab.iconKey}
+                    showSystemMonitorOverlay={showSystemMonitorOverlay}
+                    onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
                     onOpenSSH={(openInNewTab) => (openInNewTab ? addTab('ssh') : openPageInTab(tab.id, 'ssh'))}
                     onOpenSettings={(openInNewTab) =>
                       openInNewTab ? addTab('settings') : openPageInTab(tab.id, 'settings')
@@ -486,7 +498,16 @@ const App: React.FC = () => {
         })}
       </div>
     );
-  }, [activeTabId, addTab, contentTabOrder, openPageInTab, tabsById, updateTab]);
+  }, [
+    activeTabId,
+    addTab,
+    contentTabOrder,
+    handleShowSystemMonitorOverlayChange,
+    openPageInTab,
+    showSystemMonitorOverlay,
+    tabsById,
+    updateTab,
+  ]);
 
   return (
     <AppToastProvider>
@@ -530,6 +551,8 @@ const App: React.FC = () => {
             onCloseTab={closeTab}
             onCommitTab={setActiveTabId}
           />
+
+          <SystemPerformanceOverlay visible={showSystemMonitorOverlay} />
         </div>
       </InputContextMenuProvider>
     </AppToastProvider>
