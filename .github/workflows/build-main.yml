@@ -13,7 +13,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            buildArgs: --linux AppImage deb zip
+          - os: windows-latest
+            platform: win
+            buildArgs: --win nsis zip
+          - os: macos-latest
+            platform: mac
+            buildArgs: --mac dmg zip --x64 --arm64 --universal
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -27,16 +36,90 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build main
-        run: pnpm --filter @cosmosh/main build
-      - name: Upload main installers
+        run: |
+          pnpm --filter @cosmosh/main run prebuild
+          pnpm --filter @cosmosh/main exec tsc -p tsconfig.json
+          pnpm --filter @cosmosh/main exec electron-builder ${{ matrix.buildArgs }}
+
+      - name: Upload Windows portable zip
+        if: matrix.platform == 'win'
         uses: actions/upload-artifact@v4
         with:
-          name: cosmosh-main-installers-${{ matrix.os }}
+          name: cosmosh-main-windows-portable-zip
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            packages/main/release/**/*.zip
+
+      - name: Upload Windows installer exe
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-windows-installer-exe
           retention-days: 14
           if-no-files-found: warn
           path: |
             packages/main/release/**/*.exe
-            packages/main/release/**/*.dmg
+
+      - name: Upload Linux portable zip
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-linux-portable-zip
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
             packages/main/release/**/*.zip
+
+      - name: Upload Linux AppImage installer
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-linux-installer-appimage
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
             packages/main/release/**/*.AppImage
+
+      - name: Upload Linux deb installer
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-linux-installer-deb
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
             packages/main/release/**/*.deb
+
+      - name: Upload macOS x64 artifacts
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-macos-x64
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            packages/main/release/**/*x64*.dmg
+            packages/main/release/**/*x64*.zip
+
+      - name: Upload macOS arm64 artifacts
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-macos-arm64
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            packages/main/release/**/*arm64*.dmg
+            packages/main/release/**/*arm64*.zip
+
+      - name: Upload macOS universal artifacts
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: cosmosh-main-macos-universal
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            packages/main/release/**/*universal*.dmg
+            packages/main/release/**/*universal*.zip
