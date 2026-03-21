@@ -95,6 +95,11 @@ declare global {
           privateBytes: number;
           sharedBytes: number;
         } | null;
+        backendProcess: {
+          pid: number;
+          cpuPercent: number | null;
+          memoryRssBytes: number | null;
+        } | null;
       }>;
       exportMainHeapSnapshot: () => Promise<{ ok: boolean; filePath?: string; message?: string }>;
       backendTestPing: () => Promise<ApiTestPingResponse | ApiErrorResponse>;

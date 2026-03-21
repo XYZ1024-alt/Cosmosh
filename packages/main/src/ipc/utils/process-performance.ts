@@ -4,6 +4,7 @@ import path from 'node:path';
 import v8 from 'node:v8';
 
 import { app, type BrowserWindow } from 'electron';
+import pidusage from 'pidusage';
 
 export type MainProcessMemoryStats = {
   rssBytes: number;
@@ -19,11 +20,18 @@ export type RendererProcessMemoryStats = {
   sharedBytes: number;
 };
 
+export type BackendProcessStats = {
+  pid: number;
+  cpuPercent: number | null;
+  memoryRssBytes: number | null;
+};
+
 export type ProcessPerformanceStatsPayload = {
   sampledAt: number;
   cpuPercent: number | null;
   mainProcessMemory: MainProcessMemoryStats;
   rendererProcessMemory: RendererProcessMemoryStats | null;
+  backendProcess: BackendProcessStats | null;
 };
 
 export type HeapSnapshotExportResult = {
@@ -149,30 +157,63 @@ export const resolveRendererMemoryUsage = (targetWindow: BrowserWindow | null): 
 };
 
 /**
+ * Resolves backend child-process CPU and RSS memory usage from process ID.
+ *
+ * @param processId Backend child process ID.
+ * @returns Backend process metrics when available.
+ */
+const resolveBackendProcessStats = async (processId: number | null): Promise<BackendProcessStats | null> => {
+  if (!Number.isInteger(processId) || processId === null || processId <= 0) {
+    return null;
+  }
+
+  try {
+    const stats = await pidusage(processId);
+
+    const cpuPercent =
+      typeof stats.cpu === 'number' && Number.isFinite(stats.cpu) ? Math.max(0, Math.min(100, stats.cpu)) : null;
+    const memoryRssBytes =
+      typeof stats.memory === 'number' && Number.isFinite(stats.memory) ? Math.max(0, stats.memory) : null;
+
+    return {
+      pid: processId,
+      cpuPercent,
+      memoryRssBytes,
+    };
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Collects main and renderer performance statistics for debug overlay sampling.
  *
  * @param targetWindow Browser window used for renderer memory resolution.
  * @param sampleCpuPercent CPU sampler function.
+ * @param resolveBackendProcessId Backend process ID resolver.
  * @returns Aggregated process performance stats.
  */
 export const collectProcessPerformanceStats = (
   targetWindow: BrowserWindow | null,
   sampleCpuPercent: () => number | null,
-): ProcessPerformanceStatsPayload => {
+  resolveBackendProcessId: () => number | null,
+): Promise<ProcessPerformanceStatsPayload> => {
   const mainMemoryUsage = process.memoryUsage();
-
-  return {
-    sampledAt: Date.now(),
-    cpuPercent: sampleCpuPercent(),
-    mainProcessMemory: {
-      rssBytes: mainMemoryUsage.rss,
-      heapTotalBytes: mainMemoryUsage.heapTotal,
-      heapUsedBytes: mainMemoryUsage.heapUsed,
-      externalBytes: mainMemoryUsage.external,
-      arrayBuffersBytes: mainMemoryUsage.arrayBuffers,
-    },
-    rendererProcessMemory: resolveRendererMemoryUsage(targetWindow),
-  };
+  return resolveBackendProcessStats(resolveBackendProcessId()).then((backendProcess) => {
+    return {
+      sampledAt: Date.now(),
+      cpuPercent: sampleCpuPercent(),
+      mainProcessMemory: {
+        rssBytes: mainMemoryUsage.rss,
+        heapTotalBytes: mainMemoryUsage.heapTotal,
+        heapUsedBytes: mainMemoryUsage.heapUsed,
+        externalBytes: mainMemoryUsage.external,
+        arrayBuffersBytes: mainMemoryUsage.arrayBuffers,
+      },
+      rendererProcessMemory: resolveRendererMemoryUsage(targetWindow),
+      backendProcess,
+    };
+  });
 };
 
 /**

@@ -33,6 +33,8 @@ export type RegisterAppUtilityIpcHandlersOptions = {
   getDatabaseSecurityInfo: () => Promise<DatabaseSecurityInfo>;
   /** Restarts backend runtime without restarting the full Electron app. */
   restartBackendRuntime: () => Promise<boolean>;
+  /** Returns current backend process ID for diagnostics sampling. */
+  getBackendProcessId: () => number | null;
   /** Applies runtime Windows title bar symbol color for system menu controls. */
   setWindowsSystemMenuSymbolColor: (symbolColor: string) => boolean;
 };
@@ -237,7 +239,11 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   });
 
   ipcMain.handle('app:get-process-performance-stats', async (): Promise<ProcessPerformanceStatsPayload> => {
-    return collectProcessPerformanceStats(resolveTargetWindow(options), sampleMainCpuUsagePercent);
+    return collectProcessPerformanceStats(
+      resolveTargetWindow(options),
+      sampleMainCpuUsagePercent,
+      options.getBackendProcessId,
+    );
   });
 
   ipcMain.handle(

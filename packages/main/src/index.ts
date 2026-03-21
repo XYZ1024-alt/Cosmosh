@@ -866,6 +866,7 @@ registerAppUtilityIpcHandlers({
   resolveBuildTime,
   getDatabaseSecurityInfo,
   restartBackendRuntime: restartBackendService,
+  getBackendProcessId: () => backendProcess?.pid ?? null,
   setWindowsSystemMenuSymbolColor,
 });
 

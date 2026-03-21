@@ -17,12 +17,19 @@ type MainProcessStats = {
     privateBytes: number;
     sharedBytes: number;
   } | null;
+  backendProcess: {
+    pid: number;
+    cpuPercent: number | null;
+    memoryRssBytes: number | null;
+  } | null;
 };
 
 type OverlaySnapshot = {
   fps: number | null;
   mainCpuPercent: number | null;
   mainMemoryRssBytes: number | null;
+  backendCpuPercent: number | null;
+  backendMemoryRssBytes: number | null;
   rendererMemoryResidentSetBytes: number | null;
   rendererJsHeapUsedBytes: number | null;
   sampledAt: number | null;
@@ -147,6 +154,8 @@ const collectOverlaySnapshot = async (): Promise<OverlaySnapshot> => {
     fps: null,
     mainCpuPercent: mainStats?.cpuPercent ?? null,
     mainMemoryRssBytes: mainStats?.mainProcessMemory.rssBytes ?? null,
+    backendCpuPercent: mainStats?.backendProcess?.cpuPercent ?? null,
+    backendMemoryRssBytes: mainStats?.backendProcess?.memoryRssBytes ?? null,
     rendererMemoryResidentSetBytes: mainStats?.rendererProcessMemory?.residentSetBytes ?? null,
     rendererJsHeapUsedBytes: readRendererJsHeapUsage(),
     sampledAt: mainStats?.sampledAt ?? Date.now(),
@@ -163,6 +172,8 @@ const SystemPerformanceOverlay: React.FC<SystemPerformanceOverlayProps> = ({ vis
     fps: null,
     mainCpuPercent: null,
     mainMemoryRssBytes: null,
+    backendCpuPercent: null,
+    backendMemoryRssBytes: null,
     rendererMemoryResidentSetBytes: null,
     rendererJsHeapUsedBytes: null,
     sampledAt: null,
@@ -387,6 +398,14 @@ const SystemPerformanceOverlay: React.FC<SystemPerformanceOverlayProps> = ({ vis
 
         <span className="text-command-text-muted">Main Memory (RSS)</span>
         <span>{formatMemoryBytes(snapshot.mainMemoryRssBytes)}</span>
+
+        <span className="text-command-text-muted">Backend CPU</span>
+        <span>
+          {typeof snapshot.backendCpuPercent === 'number' ? `${snapshot.backendCpuPercent.toFixed(1)}%` : 'N/A'}
+        </span>
+
+        <span className="text-command-text-muted">Backend Memory (RSS)</span>
+        <span>{formatMemoryBytes(snapshot.backendMemoryRssBytes)}</span>
 
         <span className="text-command-text-muted">Renderer Memory (RSS)</span>
         <span>{formatMemoryBytes(snapshot.rendererMemoryResidentSetBytes)}</span>

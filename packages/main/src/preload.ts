@@ -166,6 +166,11 @@ contextBridge.exposeInMainWorld('electron', {
         privateBytes: number;
         sharedBytes: number;
       } | null;
+      backendProcess: {
+        pid: number;
+        cpuPercent: number | null;
+        memoryRssBytes: number | null;
+      } | null;
     }>('app:get-process-performance-stats');
   },
   exportMainHeapSnapshot: () => {
