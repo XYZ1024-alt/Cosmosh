@@ -381,6 +381,10 @@
       "theme": {
         "description": "控制在界面中使用的颜色主题。",
         "title": "主题"
+      },
+      "userMenuDebugEntryEnabled": {
+        "description": "在用户菜单中显示“调试”入口。该选项面向开发和高级诊断场景。",
+        "title": "在用户菜单显示调试入口"
       }
     },
     "loading": "正在加载设置...",

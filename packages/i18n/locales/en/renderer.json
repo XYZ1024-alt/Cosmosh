@@ -381,6 +381,10 @@
       "theme": {
         "description": "Controls the color theme used in the interface.",
         "title": "Theme"
+      },
+      "userMenuDebugEntryEnabled": {
+        "description": "Show the Debug entry in the user menu. Intended for development and advanced diagnostics.",
+        "title": "Show Debug Entry In User Menu"
       }
     },
     "loading": "Loading settings...",

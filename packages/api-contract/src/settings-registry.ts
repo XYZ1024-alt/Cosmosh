@@ -43,6 +43,7 @@ export interface SettingsValues {
   terminalSmoothScrollDuration: number;
   terminalTabStopWidth: number;
   devToolsEnabled: boolean;
+  userMenuDebugEntryEnabled: boolean;
   autoSaveEnabled: boolean;
   accountSyncEnabled: boolean;
   defaultServerNoteTemplate: string;
@@ -499,6 +500,21 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'advanced.runtime.devToolsEnabled',
     commandActionId: 'settings.advanced.runtime.devTools.toggle',
     searchTerms: ['devtools', 'developer tools', 'debug tools', 'ctrl+shift+i'],
+    options: [{ value: 'true' }, { value: 'false' }],
+  },
+  {
+    key: 'userMenuDebugEntryEnabled',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.userMenuDebugEntryEnabled.title',
+    descriptionI18nKey: 'settings.items.userMenuDebugEntryEnabled.description',
+    optionI18nNamespace: 'boolean',
+    category: SETTINGS_CATEGORIES.advanced,
+    section: SETTINGS_CATEGORIES.advanced.sections.runtime,
+    control: 'select',
+    path: 'advanced.runtime.userMenuDebugEntryEnabled',
+    commandActionId: 'settings.advanced.runtime.userMenuDebugEntry.toggle',
+    searchTerms: ['debug menu', 'user menu', 'profile menu', 'advanced debug'],
     options: [{ value: 'true' }, { value: 'false' }],
   },
   {

@@ -48,6 +48,7 @@ const Header: React.FC<{
   const { success: notifySuccess, warning: notifyWarning } = useToast();
   const openSettingsEditorByAltClickRef = React.useRef<boolean>(false);
   const devToolsEnabled = useSettingsValue('devToolsEnabled');
+  const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
   const accountSyncEnabled = useSettingsValue('accountSyncEnabled');
   const applySshServerVisuals = useSettingsValue('sshTabApplyServerVisualStyle');
   // Margin for window controls on macOS/Windows/Linux
@@ -216,7 +217,7 @@ const Header: React.FC<{
           >
             {t('header.syncSettings')}
           </DropdownMenuItem>
-          {devToolsEnabled ? (
+          {isDev || devToolsEnabled ? (
             <DropdownMenuItem
               icon={Bug}
               onSelect={onOpenDevTools}
@@ -234,7 +235,7 @@ const Header: React.FC<{
               {t('header.restartBackend')}
             </DropdownMenuItem>
           ) : null}
-          {isDev ? (
+          {isDev || userMenuDebugEntryEnabled ? (
             <DropdownMenuItem
               icon={Bug}
               onSelect={() => onOpenDebugTab?.()}
