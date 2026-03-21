@@ -60,6 +60,7 @@ jobs:
           if-no-files-found: warn
           path: |
             packages/main/release/**/*.exe
+            !packages/main/release/**/win-unpacked/**
 
       - name: Upload Linux portable zip
         if: matrix.platform == 'linux'
