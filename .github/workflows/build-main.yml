@@ -21,8 +21,11 @@ jobs:
             platform: win
             buildArgs: --win nsis zip
           - os: macos-latest
-            platform: mac
-            buildArgs: --mac dmg zip --x64 --arm64 --universal
+            platform: mac-x64
+            buildArgs: --mac dmg zip --x64
+          - os: macos-latest
+            platform: mac-arm64
+            buildArgs: --mac dmg zip --arm64
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -93,34 +96,23 @@ jobs:
             packages/main/release/**/*.deb
 
       - name: Upload macOS x64 artifacts
-        if: matrix.platform == 'mac'
+        if: matrix.platform == 'mac-x64'
         uses: actions/upload-artifact@v4
         with:
           name: cosmosh-main-macos-x64
           retention-days: 14
           if-no-files-found: warn
           path: |
-            packages/main/release/**/*x64*.dmg
-            packages/main/release/**/*x64*.zip
+            packages/main/release/**/*.dmg
+            packages/main/release/**/*.zip
 
       - name: Upload macOS arm64 artifacts
-        if: matrix.platform == 'mac'
+        if: matrix.platform == 'mac-arm64'
         uses: actions/upload-artifact@v4
         with:
           name: cosmosh-main-macos-arm64
           retention-days: 14
           if-no-files-found: warn
           path: |
-            packages/main/release/**/*arm64*.dmg
-            packages/main/release/**/*arm64*.zip
-
-      - name: Upload macOS universal artifacts
-        if: matrix.platform == 'mac'
-        uses: actions/upload-artifact@v4
-        with:
-          name: cosmosh-main-macos-universal
-          retention-days: 14
-          if-no-files-found: warn
-          path: |
-            packages/main/release/**/*universal*.dmg
-            packages/main/release/**/*universal*.zip
+            packages/main/release/**/*.dmg
+            packages/main/release/**/*.zip

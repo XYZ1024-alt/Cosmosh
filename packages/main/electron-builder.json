@@ -36,7 +36,7 @@
   ],
   "mac": {
     "category": "public.app-category.developer-tools",
-    "x64ArchFiles": "**/node_modules/.prisma/client/libquery_engine-darwin-*.dylib.node",
+    "x64ArchFiles": "**/node_modules/{**/*.node,.prisma/client/libquery_engine-darwin-*.dylib.node}",
     "target": [
       "dmg",
       "zip"
