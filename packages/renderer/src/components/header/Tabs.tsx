@@ -127,19 +127,34 @@ const SortableTab = React.forwardRef<
           className={classNames(
             'box-border inline-flex h-full w-full flex-none items-center justify-between gap-1.5 overflow-hidden rounded-lg px-2',
             shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : '',
-            shouldApplySshTabVisual && !isDragging ? (isActive ? 'opacity-100' : 'opacity-80 hover:opacity-90') : '',
+            shouldApplySshTabVisual && !isDragging
+              ? isActive
+                ? ''
+                : "relative before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-black/50 before:content-[''] hover:before:bg-black/35"
+              : '',
             !shouldApplySshTabVisual ? (isActive ? 'bg-header-tab-active' : 'hover:bg-header-tab-hover') : '',
             isDragging ? 'opacity-0' : '',
           )}
         >
-          <span aria-hidden>
+          <span
+            aria-hidden
+            className={classNames(shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '')}
+          >
             {renderTabIcon(tab, !shouldApplySshTabVisual && applySshServerVisuals && tab.page === 'ssh')}
           </span>
-          <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm">{tab.title}</span>
+          <span
+            className={classNames(
+              'flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm',
+              shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '',
+            )}
+          >
+            {tab.title}
+          </span>
           {tab.closable && (
             <button
               type="button"
               aria-label={`Close ${tab.title}`}
+              className={classNames(shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '')}
               tabIndex={isActive ? 0 : -1}
               onPointerDown={(e) => {
                 e.preventDefault();
