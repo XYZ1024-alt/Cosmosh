@@ -82,6 +82,7 @@ Main enters fallback resolver in all of these cases:
 1. `safeStorage.isEncryptionAvailable()` is `false`.
 2. `safeStorage` is available but `encryptedDbMasterKey` decryption fails.
 3. `safeStorage` is available but encrypt/persist fails while creating a new key.
+4. `safeStorage` path is unavailable and emergency fallback key is available.
 
 When fallback is entered due to unavailable `safeStorage`, Main logs:
 
@@ -122,7 +123,21 @@ If hash check fails, startup throws:
 
 - `master password verification failed in fallback mode.`
 
-### 5.4 Auto-migration when `safeStorage` recovers
+### 5.4 Emergency fallback key path
+
+To avoid startup dead-end when both `safeStorage` and master-password fallback are unavailable, Main now persists an emergency local fallback key:
+
+- `emergencyFallbackDbMasterKey?: string`
+
+Runtime behavior:
+
+1. If emergency fallback key exists, use it directly.
+2. If master-password fallback succeeds, persist emergency fallback key for future non-interactive recovery.
+3. If no DB file exists and fallback resolver fails, auto-provision a new emergency fallback key for first-run startup.
+
+If an existing DB file already exists and neither `safeStorage` nor fallback materials can recover old key material, startup still fails fast with explicit error to avoid silent data lockout.
+
+### 5.5 Auto-migration when `safeStorage` recovers
 
 If fallback successfully resolves a key while `safeStorage` is available again, Main will automatically:
 
@@ -132,7 +147,7 @@ If fallback successfully resolves a key while `safeStorage` is available again, 
 
 This avoids accidental key rotation and keeps previously encrypted database data readable after recovery.
 
-### 5.5 Why this Linux error pattern appears
+### 5.6 Why this Linux error pattern appears
 
 This error sequence usually indicates:
 
@@ -154,6 +169,8 @@ Fields:
 
 - `encryptedDbMasterKey?: string`
   - Base64 encoded encrypted payload from `safeStorage` path.
+- `emergencyFallbackDbMasterKey?: string`
+  - Plaintext emergency fallback key used for availability-first recovery when `safeStorage` and password resolver are unavailable.
 - `masterPasswordHash?: string`
   - Hex hash used only in fallback verification.
 - `masterPasswordSalt?: string`
@@ -163,6 +180,7 @@ Notes:
 
 - File can contain both safeStorage and fallback fields during transitions.
 - Fallback fields are required only when `safeStorage` is unavailable.
+- Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again.
 
 ## 7. Action Playbook for Linux Packaging
 
