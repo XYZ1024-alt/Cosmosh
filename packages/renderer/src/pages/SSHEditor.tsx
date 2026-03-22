@@ -1299,7 +1299,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value={INLINE_KEYCHAIN_SELECT_VALUE}>{t('ssh.keychainOptionInline')}</SelectItem>
-                          <SelectSeparator />
+                          {sharedKeychains.length > 0 && <SelectSeparator />}
                           {sharedKeychains.map((keychain) => (
                             <SelectItem
                               key={keychain.id}
