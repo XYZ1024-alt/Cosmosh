@@ -8,6 +8,7 @@ import { CommandPalette, type CommandPaletteItem } from './components/ui/command
 import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { listLocalTerminalProfiles } from './lib/backend';
 import { readShowSystemMonitorOverlayPreference, writeShowSystemMonitorOverlayPreference } from './lib/debug-tools';
+import { getEntityColorClassName } from './lib/entity-visuals';
 import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
@@ -136,31 +137,36 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
   }, [closeSwitcher, commitTarget, isOpen, modifierKeyName, moveTarget, tabs.length]);
 
   const items = React.useMemo<CommandPaletteItem[]>(() => {
-    return tabs.map((tab) => ({
-      key: tab.id,
-      title: tab.title,
-      subtitle: (() => {
-        const pageLabel = resolvePageDefaults(tab.page).title;
-        return pageLabel === tab.title ? undefined : pageLabel;
-      })(),
-      icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, applySshServerVisualStyle && tab.page === 'ssh'),
-      actions: tab.closable
-        ? [
-            {
-              key: `${tab.id}-close`,
-              icon: <X className="h-3.5 w-3.5" />,
-              tooltip: t('tabs.closeCurrent'),
-              onSelect: () => {
-                onCloseTab(tab.id);
+    return tabs.map((tab) => {
+      const shouldApplySshTabVisual = applySshServerVisualStyle && tab.page === 'ssh' && Boolean(tab.iconColorKey);
+
+      return {
+        key: tab.id,
+        title: tab.title,
+        subtitle: (() => {
+          const pageLabel = resolvePageDefaults(tab.page).title;
+          return pageLabel === tab.title ? undefined : pageLabel;
+        })(),
+        icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, !shouldApplySshTabVisual),
+        rowClassName: shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : undefined,
+        actions: tab.closable
+          ? [
+              {
+                key: `${tab.id}-close`,
+                icon: <X className="h-3.5 w-3.5" />,
+                tooltip: t('tabs.closeCurrent'),
+                onSelect: () => {
+                  onCloseTab(tab.id);
+                },
               },
-            },
-          ]
-        : undefined,
-      onSelect: () => {
-        onCommitTab(tab.id);
-        closeSwitcher();
-      },
-    }));
+            ]
+          : undefined,
+        onSelect: () => {
+          onCommitTab(tab.id);
+          closeSwitcher();
+        },
+      };
+    });
   }, [applySshServerVisualStyle, closeSwitcher, onCloseTab, onCommitTab, tabs]);
 
   const activeIndex = React.useMemo(() => {
