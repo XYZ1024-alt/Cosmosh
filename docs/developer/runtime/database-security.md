@@ -73,10 +73,17 @@ Important behavior:
 - Stored value is encrypted blob, not plaintext key.
 - Decryption is bound to OS secure storage availability.
 - Main process performs encryption/decryption; renderer is not used for this path.
+- If decryption or secure persistence fails at runtime, Main now attempts fallback resolver instead of failing immediately.
 
-## 5. Fallback Path: Master Password Mode (When `safeStorage` Unavailable)
+## 5. Fallback Path: Master Password Mode (When `safeStorage` Is Unavailable or Fails)
 
-When `safeStorage.isEncryptionAvailable()` is `false`, Main logs:
+Main enters fallback resolver in all of these cases:
+
+1. `safeStorage.isEncryptionAvailable()` is `false`.
+2. `safeStorage` is available but `encryptedDbMasterKey` decryption fails.
+3. `safeStorage` is available but encrypt/persist fails while creating a new key.
+
+When fallback is entered due to unavailable `safeStorage`, Main logs:
 
 - `[db:key] Electron safeStorage is unavailable. Falling back to master password mode.`
 
@@ -107,7 +114,7 @@ If password env or salt is missing, startup throws:
 
 Fallback verification and derivation are currently:
 
-- Verify hash: `sha256("<salt>:<password>")` compared with stored `masterPasswordHash`.
+- Verify hash: `scryptSync(password, salt, 32).toString('hex')` compared with stored `masterPasswordHash`.
 - Constant-time compare: `timingSafeEqual(...)`.
 - If verified, derive DB key: `scryptSync(password, salt, 32).toString('hex')`.
 
@@ -115,7 +122,17 @@ If hash check fails, startup throws:
 
 - `master password verification failed in fallback mode.`
 
-### 5.4 Why this Linux error pattern appears
+### 5.4 Auto-migration when `safeStorage` recovers
+
+If fallback successfully resolves a key while `safeStorage` is available again, Main will automatically:
+
+1. Encrypt the resolved fallback key with `safeStorage`.
+2. Persist it into `security.config.json` as `encryptedDbMasterKey`.
+3. Continue startup using the same recovered key.
+
+This avoids accidental key rotation and keeps previously encrypted database data readable after recovery.
+
+### 5.5 Why this Linux error pattern appears
 
 This error sequence usually indicates:
 
@@ -155,7 +172,7 @@ Until renderer-side “Set Master Password” flow is implemented end-to-end, us
 
 1. Choose a strong master password in secure operator workflow.
 2. Generate/store `masterPasswordSalt`.
-3. Compute `masterPasswordHash = sha256("<salt>:<password>")` in hex.
+3. Compute `masterPasswordHash = scryptSync(password, salt, 32).toString('hex')`.
 4. Write both fields into `<userData>/security.config.json`.
 5. Set env `COSMOSH_DB_MASTER_PASSWORD` before launching app.
 6. Ensure env is not exposed in shell history/system logs where avoidable.

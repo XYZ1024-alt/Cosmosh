@@ -87,6 +87,59 @@ const writeSecurityConfig = async (config: DatabaseSecurityConfig): Promise<void
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 };
 
+/**
+ * Returns true when fallback metadata is fully provisioned in persisted config.
+ *
+ * @param config Persisted database security config.
+ * @returns `true` when fallback hash and salt both exist.
+ */
+const hasFallbackMetadata = (config: DatabaseSecurityConfig): boolean => {
+  return (
+    typeof config.masterPasswordHash === 'string' &&
+    config.masterPasswordHash.trim().length > 0 &&
+    typeof config.masterPasswordSalt === 'string' &&
+    config.masterPasswordSalt.trim().length > 0
+  );
+};
+
+/**
+ * Returns true when runtime env can execute fallback verification.
+ *
+ * @param config Persisted database security config.
+ * @returns `true` when metadata and env password are both present.
+ */
+const canUseFallbackInCurrentRuntime = (config: DatabaseSecurityConfig): boolean => {
+  const hasMasterPasswordEnv =
+    typeof process.env.COSMOSH_DB_MASTER_PASSWORD === 'string' &&
+    process.env.COSMOSH_DB_MASTER_PASSWORD.trim().length > 0;
+
+  return hasFallbackMetadata(config) && hasMasterPasswordEnv;
+};
+
+/**
+ * Encrypts and persists a plaintext database key through `safeStorage`.
+ *
+ * @param config Existing persisted security config.
+ * @param plainTextKey Plaintext database key to protect.
+ * @returns `true` on successful encryption + persistence.
+ */
+const persistEncryptedDatabaseKeyWithSafeStorage = async (
+  config: DatabaseSecurityConfig,
+  plainTextKey: string,
+): Promise<boolean> => {
+  try {
+    const encryptedMasterKey = safeStorage.encryptString(plainTextKey).toString('base64');
+    await writeSecurityConfig({
+      ...config,
+      encryptedDbMasterKey: encryptedMasterKey,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[db:key] Failed to encrypt/persist database key through safeStorage.', error);
+    return false;
+  }
+};
+
 const normalizeHashHex = (hash: string): Buffer => {
   return Buffer.from(hash.trim().toLowerCase(), 'hex');
 };
@@ -141,6 +194,94 @@ const resolveDatabaseKeyFromMasterPasswordFallback = async (
 };
 
 /**
+ * Executes fallback resolver and tries migrating recovered key back to safeStorage.
+ *
+ * @param config Persisted security config.
+ * @param isDev Whether app is currently in development mode.
+ * @param reason Human-readable reason for entering fallback path.
+ * @returns Resolved plaintext database key.
+ */
+const resolveWithFallbackAndTrySafeStorageMigration = async (
+  config: DatabaseSecurityConfig,
+  isDev: boolean,
+  reason: string,
+): Promise<string> => {
+  console.warn(`[db:key] ${reason} Falling back to master password mode.`);
+
+  try {
+    const fallbackKey = await resolveDatabaseKeyFromMasterPasswordFallback(config, isDev);
+
+    if (!isDev && safeStorage.isEncryptionAvailable()) {
+      const migrated = await persistEncryptedDatabaseKeyWithSafeStorage(config, fallbackKey);
+      if (migrated) {
+        console.log('[db:key] Successfully migrated fallback-derived database key into safeStorage.');
+      } else {
+        console.warn(
+          '[db:key] Fallback-derived database key resolved, but migration into safeStorage failed. Using fallback key for current session.',
+        );
+      }
+    }
+
+    return fallbackKey;
+  } catch (fallbackError) {
+    throw new Error(`[db:key] ${reason} Fallback resolver also failed.`, { cause: fallbackError });
+  }
+};
+
+/**
+ * Resolves database key from persisted config using safeStorage-first policy,
+ * while guaranteeing fallback coverage for all safeStorage-read/write failures.
+ *
+ * @param config Persisted security config.
+ * @param isDev Whether app is currently in development mode.
+ * @returns Resolved plaintext database key.
+ */
+const resolveDatabaseKeyFromConfig = async (config: DatabaseSecurityConfig, isDev: boolean): Promise<string> => {
+  if (!safeStorage.isEncryptionAvailable()) {
+    return resolveWithFallbackAndTrySafeStorageMigration(config, isDev, 'Electron safeStorage is unavailable.');
+  }
+
+  if (config.encryptedDbMasterKey) {
+    try {
+      console.log('[db:key] Loading encrypted database master key from secure storage config.');
+      const decrypted = safeStorage.decryptString(Buffer.from(config.encryptedDbMasterKey, 'base64'));
+      return decrypted;
+    } catch (error) {
+      return resolveWithFallbackAndTrySafeStorageMigration(
+        config,
+        isDev,
+        `Failed to decrypt encryptedDbMasterKey from safeStorage (${error instanceof Error ? error.message : 'unknown error'}).`,
+      );
+    }
+  }
+
+  if (canUseFallbackInCurrentRuntime(config)) {
+    console.log('[db:key] safeStorage available without encryptedDbMasterKey. Attempting fallback migration first.');
+    return resolveWithFallbackAndTrySafeStorageMigration(config, isDev, 'No encryptedDbMasterKey found in config.');
+  }
+
+  if (hasFallbackMetadata(config)) {
+    throw new Error(
+      '[db:key] safeStorage is available and fallback metadata exists, but COSMOSH_DB_MASTER_PASSWORD is missing. Refusing to generate a new key to avoid database lockout.',
+    );
+  }
+
+  console.log('[db:key] Generating new database master key and storing encrypted payload in secure storage config.');
+  const generatedMasterKey = randomBytes(32).toString('hex');
+
+  const persisted = await persistEncryptedDatabaseKeyWithSafeStorage(config, generatedMasterKey);
+  if (persisted) {
+    return generatedMasterKey;
+  }
+
+  return resolveWithFallbackAndTrySafeStorageMigration(
+    config,
+    isDev,
+    'safeStorage encryption/persistence failed while creating a new database key.',
+  );
+};
+
+/**
  * Returns the SQLite file path used by backend runtime.
  * Development and packaged modes intentionally use different storage roots.
  */
@@ -174,28 +315,7 @@ export const getDatabaseEncryptionKey = async (): Promise<string> => {
   }
 
   const config = await readSecurityConfig();
-
-  if (safeStorage.isEncryptionAvailable()) {
-    if (config.encryptedDbMasterKey) {
-      console.log('[db:key] Loading encrypted database master key from secure storage config.');
-      const decrypted = safeStorage.decryptString(Buffer.from(config.encryptedDbMasterKey, 'base64'));
-      return decrypted;
-    }
-
-    console.log('[db:key] Generating new database master key and storing encrypted payload in secure storage config.');
-    const generatedMasterKey = randomBytes(32).toString('hex');
-    const encryptedMasterKey = safeStorage.encryptString(generatedMasterKey).toString('base64');
-
-    await writeSecurityConfig({
-      ...config,
-      encryptedDbMasterKey: encryptedMasterKey,
-    });
-
-    return generatedMasterKey;
-  }
-
-  console.warn('[db:key] Electron safeStorage is unavailable. Falling back to master password mode.');
-  return resolveDatabaseKeyFromMasterPasswordFallback(config, isDev);
+  return resolveDatabaseKeyFromConfig(config, isDev);
 };
 
 /**
@@ -209,12 +329,7 @@ export const exportPlainTextKey = async (): Promise<string> => {
   }
 
   const config = await readSecurityConfig();
-
-  if (config.encryptedDbMasterKey && safeStorage.isEncryptionAvailable()) {
-    return safeStorage.decryptString(Buffer.from(config.encryptedDbMasterKey, 'base64'));
-  }
-
-  return resolveDatabaseKeyFromMasterPasswordFallback(config, isDev);
+  return resolveDatabaseKeyFromConfig(config, isDev);
 };
 
 /**
