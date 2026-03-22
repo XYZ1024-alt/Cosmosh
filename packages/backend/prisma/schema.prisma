@@ -18,6 +18,11 @@ enum SshLoginResult {
   failed
 }
 
+enum SshKeychainVisibility {
+  hidden
+  shared
+}
+
 model SshFolder {
   id        String      @id @default(cuid())
   name      String      @unique
@@ -27,6 +32,7 @@ model SshFolder {
   createdAt DateTime    @default(now())
   updatedAt DateTime    @updatedAt
   servers   SshServer[]
+  keychains SshKeychain[]
 }
 
 model SshTag {
@@ -35,36 +41,67 @@ model SshTag {
   createdAt DateTime       @default(now())
   updatedAt DateTime       @updatedAt
   servers   SshServerTag[]
+  keychains SshKeychainTagLink[]
 }
 
 model SshServer {
-  id                            String          @id @default(cuid())
+  id               String          @id @default(cuid())
+  name             String
+  iconKey          String          @default("Server")
+  colorKey         String          @default("blue")
+  host             String
+  port             Int             @default(22)
+  username         String
+  strictHostKey    Boolean         @default(true)
+  keychainId       String
+  note             String?
+  folderId         String?
+  systemHostname   String?
+  systemOs         String?
+  systemArch       String?
+  systemKernel     String?
+  lastSystemSyncAt DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+  folder           SshFolder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  keychain         SshKeychain     @relation(fields: [keychainId], references: [id], onDelete: Restrict)
+  tags             SshServerTag[]
+  loginAudits      SshLoginAudit[]
+
+  @@unique([host, port, username])
+  @@index([folderId])
+  @@index([keychainId])
+}
+
+model SshKeychain {
+  id                            String                @id @default(cuid())
   name                          String
-  iconKey                       String          @default("Server")
-  colorKey                      String          @default("blue")
-  host                          String
-  port                          Int             @default(22)
-  username                      String
-  strictHostKey                 Boolean         @default(true)
+  iconKey                       String                @default("KeyRound")
+  colorKey                      String                @default("emerald")
   authType                      SshAuthType
   passwordEncrypted             String?
   privateKeyEncrypted           String?
   privateKeyPassphraseEncrypted String?
+  visibility                    SshKeychainVisibility @default(hidden)
   note                          String?
   folderId                      String?
-  systemHostname                String?
-  systemOs                      String?
-  systemArch                    String?
-  systemKernel                  String?
-  lastSystemSyncAt              DateTime?
-  createdAt                     DateTime        @default(now())
-  updatedAt                     DateTime        @updatedAt
-  folder                        SshFolder?      @relation(fields: [folderId], references: [id], onDelete: SetNull)
-  tags                          SshServerTag[]
-  loginAudits                   SshLoginAudit[]
+  createdAt                     DateTime              @default(now())
+  updatedAt                     DateTime              @updatedAt
+  folder                        SshFolder?            @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  tags                          SshKeychainTagLink[]
+  servers                       SshServer[]
 
-  @@unique([host, port, username])
   @@index([folderId])
+}
+
+model SshKeychainTagLink {
+  keychainId String
+  tagId      String
+  keychain   SshKeychain @relation(fields: [keychainId], references: [id], onDelete: Cascade)
+  tag        SshTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([keychainId, tagId])
+  @@index([tagId])
 }
 
 model SshKnownHost {

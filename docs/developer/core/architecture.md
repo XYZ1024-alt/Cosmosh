@@ -175,6 +175,15 @@ flowchart LR
 ### 6.3 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
+
+## 7. SSH Keychain Credential Model (2026-03)
+
+- SSH credentials are now persisted in `SshKeychain` and linked from `SshServer.keychainId`.
+- `SshServer` keeps connection identity and host policy (`host`, `port`, `username`, `strictHostKey`) but no longer stores encrypted password/private-key fields directly.
+- Keychain organization metadata reuses the same `SshFolder` and `SshTag` domains used by servers (no separate keychain-only folder/tag tables).
+- Existing per-server edit UX is preserved by allowing inline credential input in the SSH editor; backend transparently materializes/updates hidden keychains.
+- Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.
+- SSH session creation resolves credentials through server → keychain relation before opening `ssh2` connections.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.
 - **Backend boundary**: protocol validation, session lifecycle, and resource cleanup ownership.
 - **Remote boundary**: SSH host / local shell instability is treated as external and mapped to stable UI error codes.

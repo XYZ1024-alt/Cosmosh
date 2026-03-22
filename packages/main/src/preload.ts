@@ -8,6 +8,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -15,14 +17,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -219,6 +225,25 @@ contextBridge.exposeInMainWorld('electron', {
   backendSshCreateTag: (payload: ApiSshCreateTagRequest) => {
     return invokeIpc<ApiSshCreateTagResponse | ApiErrorResponse>('backend:ssh-create-tag', payload);
   },
+  backendSshListKeychains: () => {
+    return invokeIpc<ApiSshListKeychainsResponse | ApiErrorResponse>('backend:ssh-list-keychains');
+  },
+  backendSshCreateKeychain: (payload: ApiSshCreateKeychainRequest) => {
+    return invokeIpc<ApiSshCreateKeychainResponse | ApiErrorResponse>('backend:ssh-create-keychain', payload);
+  },
+  backendSshUpdateKeychain: (keychainId: string, payload: ApiSshUpdateKeychainRequest) => {
+    return invokeIpc<ApiSshUpdateKeychainResponse | ApiErrorResponse>(
+      'backend:ssh-update-keychain',
+      keychainId,
+      payload,
+    );
+  },
+  backendSshGetKeychainCredentials: (keychainId: string) => {
+    return invokeIpc<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse>(
+      'backend:ssh-get-keychain-credentials',
+      keychainId,
+    );
+  },
   backendSshCreateSession: (payload: ApiSshCreateSessionRequest) => {
     return invokeIpc<
       ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse
@@ -235,6 +260,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSshDeleteFolder: (folderId: string) => {
     return invokeIpc<{ success: boolean }>('backend:ssh-delete-folder', folderId);
+  },
+  backendSshDeleteKeychain: (keychainId: string) => {
+    return invokeIpc<{ success: boolean }>('backend:ssh-delete-keychain', keychainId);
   },
 
   // ---------------------------------------------------------------------------

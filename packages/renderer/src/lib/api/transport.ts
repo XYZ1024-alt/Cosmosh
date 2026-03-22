@@ -9,6 +9,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -16,14 +18,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -54,6 +60,10 @@ type ApiResponse =
   | ApiSshCreateSessionResponse
   | ApiSshCreateSessionHostVerificationRequiredResponse
   | ApiSshTrustFingerprintResponse
+  | ApiSshListKeychainsResponse
+  | ApiSshCreateKeychainResponse
+  | ApiSshUpdateKeychainResponse
+  | ApiSshGetKeychainCredentialsResponse
   | ApiLocalTerminalListProfilesResponse
   | ApiLocalTerminalCreateSessionResponse;
 
@@ -77,6 +87,13 @@ export type ApiTransport = {
   ) => Promise<ApiSshUpdateFolderResponse | ApiErrorResponse>;
   listSshTags: () => Promise<ApiSshListTagsResponse | ApiErrorResponse>;
   createSshTag: (payload: ApiSshCreateTagRequest) => Promise<ApiSshCreateTagResponse | ApiErrorResponse>;
+  listSshKeychains: () => Promise<ApiSshListKeychainsResponse | ApiErrorResponse>;
+  createSshKeychain: (payload: ApiSshCreateKeychainRequest) => Promise<ApiSshCreateKeychainResponse | ApiErrorResponse>;
+  updateSshKeychain: (
+    keychainId: string,
+    payload: ApiSshUpdateKeychainRequest,
+  ) => Promise<ApiSshUpdateKeychainResponse | ApiErrorResponse>;
+  getSshKeychainCredentials: (keychainId: string) => Promise<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse>;
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse>;
@@ -91,6 +108,7 @@ export type ApiTransport = {
   closeSshSession: (sessionId: string) => Promise<{ success: boolean }>;
   deleteSshServer: (serverId: string) => Promise<{ success: boolean }>;
   deleteSshFolder: (folderId: string) => Promise<{ success: boolean }>;
+  deleteSshKeychain: (keychainId: string) => Promise<{ success: boolean }>;
 };
 
 // Browser fallback uses build-time URL configuration to prepare for future web runtime.
@@ -167,6 +185,24 @@ const createElectronTransport = (): ApiTransport => {
     createSshTag: async (payload) => {
       return (await window.electron!.backendSshCreateTag(payload)) as ApiSshCreateTagResponse | ApiErrorResponse;
     },
+    listSshKeychains: async () => {
+      return (await window.electron!.backendSshListKeychains()) as ApiSshListKeychainsResponse | ApiErrorResponse;
+    },
+    createSshKeychain: async (payload) => {
+      return (await window.electron!.backendSshCreateKeychain(payload)) as
+        | ApiSshCreateKeychainResponse
+        | ApiErrorResponse;
+    },
+    updateSshKeychain: async (keychainId, payload) => {
+      return (await window.electron!.backendSshUpdateKeychain(keychainId, payload)) as
+        | ApiSshUpdateKeychainResponse
+        | ApiErrorResponse;
+    },
+    getSshKeychainCredentials: async (keychainId) => {
+      return (await window.electron!.backendSshGetKeychainCredentials(keychainId)) as
+        | ApiSshGetKeychainCredentialsResponse
+        | ApiErrorResponse;
+    },
     createSshSession: async (payload) => {
       return (await window.electron!.backendSshCreateSession(payload)) as
         | ApiSshCreateSessionResponse
@@ -199,6 +235,9 @@ const createElectronTransport = (): ApiTransport => {
     },
     deleteSshFolder: async (folderId) => {
       return await window.electron!.backendSshDeleteFolder(folderId);
+    },
+    deleteSshKeychain: async (keychainId) => {
+      return await window.electron!.backendSshDeleteKeychain(keychainId);
     },
   };
 };
@@ -282,6 +321,24 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiSshCreateTagResponse
         | ApiErrorResponse;
     },
+    listSshKeychains: async () => {
+      return (await callBrowserApi(API_PATHS.sshListKeychains, 'GET')) as
+        | ApiSshListKeychainsResponse
+        | ApiErrorResponse;
+    },
+    createSshKeychain: async (payload) => {
+      return (await callBrowserApi(API_PATHS.sshCreateKeychain, 'POST', payload)) as
+        | ApiSshCreateKeychainResponse
+        | ApiErrorResponse;
+    },
+    updateSshKeychain: async (keychainId, payload) => {
+      const path = API_PATHS.sshUpdateKeychain.replace('{keychainId}', encodeURIComponent(keychainId));
+      return (await callBrowserApi(path, 'PUT', payload)) as ApiSshUpdateKeychainResponse | ApiErrorResponse;
+    },
+    getSshKeychainCredentials: async (keychainId) => {
+      const path = API_PATHS.sshGetKeychainCredentials.replace('{keychainId}', encodeURIComponent(keychainId));
+      return (await callBrowserApi(path, 'GET')) as ApiSshGetKeychainCredentialsResponse | ApiErrorResponse;
+    },
     createSshSession: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateSession, 'POST', payload)) as
         | ApiSshCreateSessionResponse
@@ -328,6 +385,18 @@ const createBrowserTransport = (): ApiTransport => {
     },
     deleteSshFolder: async (folderId) => {
       const path = API_PATHS.sshDeleteFolder.replace('{folderId}', encodeURIComponent(folderId));
+      const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${resolveBrowserAuthToken() ?? ''}`,
+          [API_HEADERS.locale]: navigator.language,
+        },
+      });
+
+      return { success: response.status === 204 };
+    },
+    deleteSshKeychain: async (keychainId) => {
+      const path = API_PATHS.sshDeleteKeychain.replace('{keychainId}', encodeURIComponent(keychainId));
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {

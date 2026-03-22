@@ -17,6 +17,7 @@ import {
   type ApiSshUpdateServerResponse,
   createApiSuccess,
 } from '@cosmosh/api-contract';
+import type { Prisma as PrismaTypes } from '@prisma/client';
 import prismaClientPackage from '@prisma/client';
 
 const { Prisma } = prismaClientPackage;
@@ -44,7 +45,7 @@ const isReservedSshTagName = (name: string): boolean => {
 };
 
 const cleanupUnusedSshTags = async (db: ReturnType<BackendAppContext['getDbClient']>): Promise<void> => {
-  const orphanTags = await db.sshTag.findMany({
+  const serverUnusedTags = await db.sshTag.findMany({
     where: {
       servers: {
         none: {},
@@ -55,6 +56,26 @@ const cleanupUnusedSshTags = async (db: ReturnType<BackendAppContext['getDbClien
       name: true,
     },
   });
+
+  if (serverUnusedTags.length === 0) {
+    return;
+  }
+
+  const serverUnusedTagIds = serverUnusedTags.map((tag) => tag.id);
+  const keychainUsedTags = await db.sshKeychainTagLink.findMany({
+    where: {
+      tagId: {
+        in: serverUnusedTagIds,
+      },
+    },
+    select: {
+      tagId: true,
+    },
+    distinct: ['tagId'],
+  });
+
+  const keychainUsedTagIdSet = new Set(keychainUsedTags.map((entry) => entry.tagId));
+  const orphanTags = serverUnusedTags.filter((tag) => !keychainUsedTagIdSet.has(tag.id));
 
   const removableTagIds = orphanTags.filter((tag) => !isReservedSshTagName(tag.name)).map((tag) => tag.id);
 
@@ -69,6 +90,146 @@ const cleanupUnusedSshTags = async (db: ReturnType<BackendAppContext['getDbClien
       },
     },
   });
+};
+
+const cleanupUnusedHiddenKeychains = async (db: ReturnType<BackendAppContext['getDbClient']>): Promise<void> => {
+  await db.sshKeychain.deleteMany({
+    where: {
+      visibility: 'hidden',
+      servers: {
+        none: {},
+      },
+    },
+  });
+};
+
+type KeychainWithRelations = PrismaTypes.SshKeychainGetPayload<{
+  include: {
+    folder: true;
+    tags: {
+      include: {
+        tag: true;
+      };
+    };
+  };
+}>;
+
+const mapKeychainToListItem = (keychain: KeychainWithRelations) => {
+  return {
+    id: keychain.id,
+    name: keychain.name,
+    iconKey: keychain.iconKey,
+    colorKey: normalizeSshVisualColorKey(keychain.colorKey, 'emerald'),
+    authType: keychain.authType,
+    visibility: keychain.visibility,
+    hasPassword: Boolean(keychain.passwordEncrypted),
+    hasPrivateKey: Boolean(keychain.privateKeyEncrypted),
+    note: keychain.note ?? undefined,
+    folder: keychain.folder
+      ? {
+          id: keychain.folder.id,
+          name: keychain.folder.name,
+          iconKey: keychain.folder.iconKey,
+          colorKey: normalizeSshVisualColorKey(keychain.folder.colorKey, 'slate'),
+          note: keychain.folder.note ?? undefined,
+          createdAt: keychain.folder.createdAt.toISOString(),
+          updatedAt: keychain.folder.updatedAt.toISOString(),
+        }
+      : undefined,
+    tags: keychain.tags.map((entry) => ({
+      id: entry.tag.id,
+      name: entry.tag.name,
+      createdAt: entry.tag.createdAt.toISOString(),
+      updatedAt: entry.tag.updatedAt.toISOString(),
+    })),
+    createdAt: keychain.createdAt.toISOString(),
+    updatedAt: keychain.updatedAt.toISOString(),
+  };
+};
+
+const ensureInlineCredentialKeychain = async (
+  db: ReturnType<BackendAppContext['getDbClient']>,
+  input: {
+    serverName: string;
+    authType?: 'password' | 'key' | 'both';
+    password?: string;
+    privateKey?: string;
+    privateKeyPassphrase?: string;
+  },
+  encryptionKey: Buffer,
+  existing?: {
+    keychainId: string;
+    keychainVisibility: 'hidden' | 'shared';
+    passwordEncrypted: string | null;
+    privateKeyEncrypted: string | null;
+    privateKeyPassphraseEncrypted: string | null;
+  },
+): Promise<string | null> => {
+  if (!input.authType) {
+    return null;
+  }
+
+  const shouldUsePassword = input.authType === 'password' || input.authType === 'both';
+  const shouldUsePrivateKey = input.authType === 'key' || input.authType === 'both';
+
+  const passwordEncrypted = shouldUsePassword
+    ? input.password
+      ? encryptSensitiveValue(input.password, encryptionKey)
+      : (existing?.passwordEncrypted ?? null)
+    : null;
+
+  const privateKeyEncrypted = shouldUsePrivateKey
+    ? input.privateKey
+      ? encryptSensitiveValue(input.privateKey, encryptionKey)
+      : (existing?.privateKeyEncrypted ?? null)
+    : null;
+
+  const privateKeyPassphraseEncrypted = shouldUsePrivateKey
+    ? input.privateKeyPassphrase
+      ? encryptSensitiveValue(input.privateKeyPassphrase, encryptionKey)
+      : (existing?.privateKeyPassphraseEncrypted ?? null)
+    : null;
+
+  if (shouldUsePassword && !passwordEncrypted) {
+    return null;
+  }
+
+  if (shouldUsePrivateKey && !privateKeyEncrypted) {
+    return null;
+  }
+
+  const shouldUpdateExistingHidden = existing && existing.keychainVisibility === 'hidden';
+  if (shouldUpdateExistingHidden) {
+    await db.sshKeychain.update({
+      where: {
+        id: existing.keychainId,
+      },
+      data: {
+        authType: input.authType,
+        passwordEncrypted,
+        privateKeyEncrypted,
+        privateKeyPassphraseEncrypted,
+      },
+    });
+
+    return existing.keychainId;
+  }
+
+  const keychain = await db.sshKeychain.create({
+    data: {
+      name: `${input.serverName} Keychain`,
+      authType: input.authType,
+      passwordEncrypted,
+      privateKeyEncrypted,
+      privateKeyPassphraseEncrypted,
+      visibility: 'hidden',
+    },
+    select: {
+      id: true,
+    },
+  });
+
+  return keychain.id;
 };
 
 /**
@@ -286,6 +447,398 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
     }
   });
 
+  app.get(API_PATHS.sshListKeychains, async (c) => {
+    const t = getTranslator(c);
+    const db = context.getDbClient();
+    const keychains = await db.sshKeychain.findMany({
+      include: {
+        folder: true,
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
+
+    return c.json(
+      createApiSuccess({
+        code: API_CODES.sshKeychainListOk,
+        message: t('success.ssh.keychainsFetched'),
+        data: {
+          items: keychains.map(mapKeychainToListItem),
+        },
+      }),
+    );
+  });
+
+  app.post(API_PATHS.sshCreateKeychain, async (c) => {
+    const t = getTranslator(c);
+    const payload = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+    const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
+    const authType = payload?.authType;
+    const visibility = payload?.visibility;
+    const password = typeof payload?.password === 'string' ? payload.password.trim() : undefined;
+    const privateKey = typeof payload?.privateKey === 'string' ? payload.privateKey.trim() : undefined;
+    const privateKeyPassphrase =
+      typeof payload?.privateKeyPassphrase === 'string' ? payload.privateKeyPassphrase.trim() : undefined;
+    const folderId = typeof payload?.folderId === 'string' ? payload.folderId.trim() : undefined;
+    const tagIds = Array.isArray(payload?.tagIds)
+      ? [...new Set(payload.tagIds.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean))]
+      : [];
+
+    if (!name || name.length > 120) {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverNameLength')), 400);
+    }
+
+    if (authType !== 'password' && authType !== 'key' && authType !== 'both') {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.authTypeEnum')), 400);
+    }
+
+    if (visibility !== undefined && visibility !== 'hidden' && visibility !== 'shared') {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.invalidPayload')), 400);
+    }
+
+    const shouldUsePassword = authType === 'password' || authType === 'both';
+    const shouldUsePrivateKey = authType === 'key' || authType === 'both';
+
+    if (shouldUsePassword && !password) {
+      return c.json(
+        buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.passwordRequiredForAuthType')),
+        400,
+      );
+    }
+
+    if (shouldUsePrivateKey && !privateKey) {
+      return c.json(
+        buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.privateKeyRequiredForAuthType')),
+        400,
+      );
+    }
+
+    if (folderId) {
+      const folder = await context.getDbClient().sshFolder.findUnique({
+        where: { id: folderId },
+        select: { id: true },
+      });
+
+      if (!folder) {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.folderNotFound')), 400);
+      }
+    }
+
+    if (tagIds.length > 0) {
+      const existingTags = await context.getDbClient().sshTag.findMany({
+        where: {
+          id: {
+            in: tagIds,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (existingTags.length !== tagIds.length) {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.tagsNotFound')), 400);
+      }
+    }
+
+    try {
+      const db = context.getDbClient();
+      const keychain = await db.sshKeychain.create({
+        data: {
+          name,
+          authType,
+          visibility: visibility === 'shared' ? 'shared' : 'hidden',
+          iconKey: typeof payload?.iconKey === 'string' && payload.iconKey.trim() ? payload.iconKey.trim() : undefined,
+          colorKey:
+            typeof payload?.colorKey === 'string' && payload.colorKey.trim() ? payload.colorKey.trim() : undefined,
+          note: typeof payload?.note === 'string' ? payload.note.trim() || undefined : undefined,
+          folderId: folderId || undefined,
+          tags: {
+            create: tagIds.map((tagId) => ({
+              tag: {
+                connect: {
+                  id: tagId,
+                },
+              },
+            })),
+          },
+          passwordEncrypted: shouldUsePassword
+            ? encryptSensitiveValue(password ?? '', context.credentialEncryptionKey)
+            : null,
+          privateKeyEncrypted: shouldUsePrivateKey
+            ? encryptSensitiveValue(privateKey ?? '', context.credentialEncryptionKey)
+            : null,
+          privateKeyPassphraseEncrypted:
+            shouldUsePrivateKey && privateKeyPassphrase
+              ? encryptSensitiveValue(privateKeyPassphrase, context.credentialEncryptionKey)
+              : null,
+        },
+        include: {
+          folder: true,
+          tags: {
+            include: {
+              tag: true,
+            },
+          },
+        },
+      });
+
+      return c.json(
+        createApiSuccess({
+          code: API_CODES.sshKeychainCreateOk,
+          message: t('success.ssh.keychainCreated'),
+          data: {
+            item: mapKeychainToListItem(keychain),
+          },
+        }),
+      );
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return c.json(buildErrorPayload(API_CODES.sshKeychainConflict, t('errors.ssh.serverConflict')), 409);
+      }
+
+      throw error;
+    }
+  });
+
+  app.put(API_PATHS.sshUpdateKeychain.replace('{keychainId}', ':keychainId'), async (c) => {
+    const t = getTranslator(c);
+    const keychainId = c.req.param('keychainId');
+    const payload = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
+
+    if (!keychainId) {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverIdRequired')), 400);
+    }
+
+    const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
+    const authType = payload?.authType;
+    const visibility = payload?.visibility;
+    const password = typeof payload?.password === 'string' ? payload.password.trim() : undefined;
+    const privateKey = typeof payload?.privateKey === 'string' ? payload.privateKey.trim() : undefined;
+    const privateKeyPassphrase =
+      typeof payload?.privateKeyPassphrase === 'string' ? payload.privateKeyPassphrase.trim() : undefined;
+    const folderId = typeof payload?.folderId === 'string' ? payload.folderId.trim() : undefined;
+    const tagIds = Array.isArray(payload?.tagIds)
+      ? [...new Set(payload.tagIds.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean))]
+      : [];
+
+    if (!name || name.length > 120) {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverNameLength')), 400);
+    }
+
+    if (authType !== 'password' && authType !== 'key' && authType !== 'both') {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.authTypeEnum')), 400);
+    }
+
+    if (visibility !== undefined && visibility !== 'hidden' && visibility !== 'shared') {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.invalidPayload')), 400);
+    }
+
+    const db = context.getDbClient();
+    const existing = await db.sshKeychain.findUnique({
+      where: { id: keychainId },
+      select: {
+        id: true,
+        passwordEncrypted: true,
+        privateKeyEncrypted: true,
+        privateKeyPassphraseEncrypted: true,
+      },
+    });
+
+    if (!existing) {
+      return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 404);
+    }
+
+    const shouldUsePassword = authType === 'password' || authType === 'both';
+    const shouldUsePrivateKey = authType === 'key' || authType === 'both';
+
+    const passwordEncrypted = shouldUsePassword
+      ? password
+        ? encryptSensitiveValue(password, context.credentialEncryptionKey)
+        : existing.passwordEncrypted
+      : null;
+
+    const privateKeyEncrypted = shouldUsePrivateKey
+      ? privateKey
+        ? encryptSensitiveValue(privateKey, context.credentialEncryptionKey)
+        : existing.privateKeyEncrypted
+      : null;
+
+    const privateKeyPassphraseEncrypted = shouldUsePrivateKey
+      ? privateKeyPassphrase
+        ? encryptSensitiveValue(privateKeyPassphrase, context.credentialEncryptionKey)
+        : existing.privateKeyPassphraseEncrypted
+      : null;
+
+    if (shouldUsePassword && !passwordEncrypted) {
+      return c.json(
+        buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.passwordRequiredForAuthType')),
+        400,
+      );
+    }
+
+    if (shouldUsePrivateKey && !privateKeyEncrypted) {
+      return c.json(
+        buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.privateKeyRequiredForAuthType')),
+        400,
+      );
+    }
+
+    if (folderId) {
+      const folder = await db.sshFolder.findUnique({
+        where: { id: folderId },
+        select: { id: true },
+      });
+
+      if (!folder) {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.folderNotFound')), 400);
+      }
+    }
+
+    if (tagIds.length > 0) {
+      const existingTags = await db.sshTag.findMany({
+        where: {
+          id: {
+            in: tagIds,
+          },
+        },
+        select: {
+          id: true,
+        },
+      });
+
+      if (existingTags.length !== tagIds.length) {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.tagsNotFound')), 400);
+      }
+    }
+
+    const keychain = await db.sshKeychain.update({
+      where: { id: keychainId },
+      data: {
+        name,
+        authType,
+        visibility: visibility === 'shared' ? 'shared' : 'hidden',
+        iconKey: typeof payload?.iconKey === 'string' && payload.iconKey.trim() ? payload.iconKey.trim() : undefined,
+        colorKey:
+          typeof payload?.colorKey === 'string' && payload.colorKey.trim() ? payload.colorKey.trim() : undefined,
+        note: typeof payload?.note === 'string' ? payload.note.trim() || undefined : undefined,
+        folderId: folderId || undefined,
+        passwordEncrypted,
+        privateKeyEncrypted,
+        privateKeyPassphraseEncrypted,
+        tags: {
+          deleteMany: {},
+          create: tagIds.map((tagId) => ({
+            tag: {
+              connect: {
+                id: tagId,
+              },
+            },
+          })),
+        },
+      },
+      include: {
+        folder: true,
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+      },
+    });
+
+    return c.json(
+      createApiSuccess({
+        code: API_CODES.sshKeychainUpdateOk,
+        message: t('success.ssh.keychainUpdated'),
+        data: {
+          item: mapKeychainToListItem(keychain),
+        },
+      }),
+    );
+  });
+
+  app.delete(API_PATHS.sshDeleteKeychain.replace('{keychainId}', ':keychainId'), async (c) => {
+    const t = getTranslator(c);
+    const keychainId = c.req.param('keychainId');
+    if (!keychainId) {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverIdRequired')), 400);
+    }
+
+    const db = context.getDbClient();
+    const inUse = await db.sshServer.count({
+      where: {
+        keychainId,
+      },
+    });
+
+    if (inUse > 0) {
+      return c.json(buildErrorPayload(API_CODES.sshKeychainInUse, t('errors.validation.invalidPayload')), 409);
+    }
+
+    try {
+      await db.sshKeychain.delete({ where: { id: keychainId } });
+      return c.body(null, 204);
+    } catch (error: unknown) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 404);
+      }
+
+      throw error;
+    }
+  });
+
+  app.get(API_PATHS.sshGetKeychainCredentials.replace('{keychainId}', ':keychainId'), async (c) => {
+    const t = getTranslator(c);
+    const keychainId = c.req.param('keychainId');
+    if (!keychainId) {
+      return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverIdRequired')), 400);
+    }
+
+    const db = context.getDbClient();
+    const keychain = await db.sshKeychain.findUnique({
+      where: {
+        id: keychainId,
+      },
+      select: {
+        id: true,
+        authType: true,
+        passwordEncrypted: true,
+        privateKeyEncrypted: true,
+        privateKeyPassphraseEncrypted: true,
+      },
+    });
+
+    if (!keychain) {
+      return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 404);
+    }
+
+    return c.json(
+      createApiSuccess({
+        code: API_CODES.sshKeychainCredentialsOk,
+        message: t('success.ssh.keychainCredentialsFetched'),
+        data: {
+          authType: keychain.authType,
+          password: keychain.passwordEncrypted
+            ? decryptSensitiveValue(keychain.passwordEncrypted, context.credentialEncryptionKey)
+            : undefined,
+          privateKey: keychain.privateKeyEncrypted
+            ? decryptSensitiveValue(keychain.privateKeyEncrypted, context.credentialEncryptionKey)
+            : undefined,
+          privateKeyPassphrase: keychain.privateKeyPassphraseEncrypted
+            ? decryptSensitiveValue(keychain.privateKeyPassphraseEncrypted, context.credentialEncryptionKey)
+            : undefined,
+        },
+      }),
+    );
+  });
+
   app.get(API_PATHS.sshListServers, async (c) => {
     const t = getTranslator(c);
     const db = context.getDbClient();
@@ -352,6 +905,38 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
     }
 
     try {
+      if (parsed.value.keychainId) {
+        const keychain = await db.sshKeychain.findUnique({
+          where: { id: parsed.value.keychainId },
+          select: { id: true },
+        });
+
+        if (!keychain) {
+          return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 400);
+        }
+      }
+
+      const keychainId =
+        parsed.value.keychainId ??
+        (await ensureInlineCredentialKeychain(
+          db,
+          {
+            serverName: parsed.value.name,
+            authType: parsed.value.authType,
+            password: parsed.value.password,
+            privateKey: parsed.value.privateKey,
+            privateKeyPassphrase: parsed.value.privateKeyPassphrase,
+          },
+          context.credentialEncryptionKey,
+        ));
+
+      if (!keychainId) {
+        return c.json(
+          buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.passwordRequiredForAuthType')),
+          400,
+        );
+      }
+
       const server = await db.sshServer.create({
         data: {
           name: parsed.value.name,
@@ -359,16 +944,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           port: parsed.value.port,
           username: parsed.value.username,
           strictHostKey: parsed.value.strictHostKey,
-          authType: parsed.value.authType,
-          passwordEncrypted: parsed.value.password
-            ? encryptSensitiveValue(parsed.value.password, context.credentialEncryptionKey)
-            : null,
-          privateKeyEncrypted: parsed.value.privateKey
-            ? encryptSensitiveValue(parsed.value.privateKey, context.credentialEncryptionKey)
-            : null,
-          privateKeyPassphraseEncrypted: parsed.value.privateKeyPassphrase
-            ? encryptSensitiveValue(parsed.value.privateKeyPassphrase, context.credentialEncryptionKey)
-            : null,
+          keychainId,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
           iconKey: parsed.value.iconKey,
@@ -431,10 +1007,17 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       },
       select: {
         id: true,
-        passwordEncrypted: true,
-        privateKeyEncrypted: true,
-        privateKeyPassphraseEncrypted: true,
         strictHostKey: true,
+        keychainId: true,
+        keychain: {
+          select: {
+            id: true,
+            visibility: true,
+            passwordEncrypted: true,
+            privateKeyEncrypted: true,
+            privateKeyPassphraseEncrypted: true,
+          },
+        },
       },
     });
 
@@ -470,35 +1053,39 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       }
     }
 
-    const shouldUsePassword = parsed.value.authType === 'password' || parsed.value.authType === 'both';
-    const shouldUsePrivateKey = parsed.value.authType === 'key' || parsed.value.authType === 'both';
+    if (parsed.value.keychainId) {
+      const targetKeychain = await db.sshKeychain.findUnique({
+        where: { id: parsed.value.keychainId },
+        select: { id: true },
+      });
 
-    const passwordEncrypted = shouldUsePassword
-      ? parsed.value.password
-        ? encryptSensitiveValue(parsed.value.password, context.credentialEncryptionKey)
-        : existingServer.passwordEncrypted
-      : null;
-
-    const privateKeyEncrypted = shouldUsePrivateKey
-      ? parsed.value.privateKey
-        ? encryptSensitiveValue(parsed.value.privateKey, context.credentialEncryptionKey)
-        : existingServer.privateKeyEncrypted
-      : null;
-
-    const privateKeyPassphraseEncrypted = shouldUsePrivateKey
-      ? parsed.value.privateKeyPassphrase
-        ? encryptSensitiveValue(parsed.value.privateKeyPassphrase, context.credentialEncryptionKey)
-        : existingServer.privateKeyPassphraseEncrypted
-      : null;
-
-    if (shouldUsePassword && !passwordEncrypted) {
-      return c.json(
-        buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.passwordRequiredForAuthType')),
-        400,
-      );
+      if (!targetKeychain) {
+        return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 400);
+      }
     }
 
-    if (shouldUsePrivateKey && !privateKeyEncrypted) {
+    const keychainId =
+      parsed.value.keychainId ??
+      (await ensureInlineCredentialKeychain(
+        db,
+        {
+          serverName: parsed.value.name,
+          authType: parsed.value.authType,
+          password: parsed.value.password,
+          privateKey: parsed.value.privateKey,
+          privateKeyPassphrase: parsed.value.privateKeyPassphrase,
+        },
+        context.credentialEncryptionKey,
+        {
+          keychainId: existingServer.keychain.id,
+          keychainVisibility: existingServer.keychain.visibility,
+          passwordEncrypted: existingServer.keychain.passwordEncrypted,
+          privateKeyEncrypted: existingServer.keychain.privateKeyEncrypted,
+          privateKeyPassphraseEncrypted: existingServer.keychain.privateKeyPassphraseEncrypted,
+        },
+      ));
+
+    if (!keychainId) {
       return c.json(
         buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.privateKeyRequiredForAuthType')),
         400,
@@ -515,13 +1102,10 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           host: parsed.value.host,
           port: parsed.value.port,
           username: parsed.value.username,
-          authType: parsed.value.authType,
+          keychainId,
           iconKey: parsed.value.iconKey,
           colorKey: parsed.value.colorKey,
           strictHostKey: parsed.value.strictHostKey ?? existingServer.strictHostKey,
-          passwordEncrypted,
-          privateKeyEncrypted,
-          privateKeyPassphraseEncrypted,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
           ...(tagIds
@@ -554,6 +1138,10 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         await cleanupUnusedSshTags(db);
       }
 
+      if (existingServer.keychainId !== keychainId) {
+        await cleanupUnusedHiddenKeychains(db);
+      }
+
       return c.json(payload);
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -582,6 +1170,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       });
 
       await cleanupUnusedSshTags(db);
+      await cleanupUnusedHiddenKeychains(db);
 
       return c.body(null, 204);
     } catch (error: unknown) {
@@ -608,10 +1197,14 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       },
       select: {
         id: true,
-        authType: true,
-        passwordEncrypted: true,
-        privateKeyEncrypted: true,
-        privateKeyPassphraseEncrypted: true,
+        keychain: {
+          select: {
+            authType: true,
+            passwordEncrypted: true,
+            privateKeyEncrypted: true,
+            privateKeyPassphraseEncrypted: true,
+          },
+        },
       },
     });
 
@@ -623,15 +1216,15 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       code: API_CODES.sshServerCredentialsOk,
       message: t('success.ssh.serverCredentialsFetched'),
       data: {
-        authType: server.authType,
-        password: server.passwordEncrypted
-          ? decryptSensitiveValue(server.passwordEncrypted, context.credentialEncryptionKey)
+        authType: server.keychain.authType,
+        password: server.keychain.passwordEncrypted
+          ? decryptSensitiveValue(server.keychain.passwordEncrypted, context.credentialEncryptionKey)
           : undefined,
-        privateKey: server.privateKeyEncrypted
-          ? decryptSensitiveValue(server.privateKeyEncrypted, context.credentialEncryptionKey)
+        privateKey: server.keychain.privateKeyEncrypted
+          ? decryptSensitiveValue(server.keychain.privateKeyEncrypted, context.credentialEncryptionKey)
           : undefined,
-        privateKeyPassphrase: server.privateKeyPassphraseEncrypted
-          ? decryptSensitiveValue(server.privateKeyPassphraseEncrypted, context.credentialEncryptionKey)
+        privateKeyPassphrase: server.keychain.privateKeyPassphraseEncrypted
+          ? decryptSensitiveValue(server.keychain.privateKeyPassphraseEncrypted, context.credentialEncryptionKey)
           : undefined,
       },
     });

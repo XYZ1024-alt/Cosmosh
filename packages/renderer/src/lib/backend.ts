@@ -4,6 +4,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -11,14 +13,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -89,6 +95,27 @@ export const createSshTag = async (payload: ApiSshCreateTagRequest): Promise<Api
   return backendClient.createSshTag(payload);
 };
 
+export const listSshKeychains = async (): Promise<ApiSshListKeychainsResponse> => {
+  return backendClient.listSshKeychains();
+};
+
+export const createSshKeychain = async (
+  payload: ApiSshCreateKeychainRequest,
+): Promise<ApiSshCreateKeychainResponse> => {
+  return backendClient.createSshKeychain(payload);
+};
+
+export const updateSshKeychain = async (
+  keychainId: string,
+  payload: ApiSshUpdateKeychainRequest,
+): Promise<ApiSshUpdateKeychainResponse> => {
+  return backendClient.updateSshKeychain(keychainId, payload);
+};
+
+export const getSshKeychainCredentials = async (keychainId: string): Promise<ApiSshGetKeychainCredentialsResponse> => {
+  return backendClient.getSshKeychainCredentials(keychainId);
+};
+
 export const createSshSession = async (
   payload: ApiSshCreateSessionRequest,
 ): Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse> => {
@@ -125,4 +152,8 @@ export const deleteSshServer = async (serverId: string): Promise<{ success: bool
 
 export const deleteSshFolder = async (folderId: string): Promise<{ success: boolean }> => {
   return backendClient.deleteSshFolder(folderId);
+};
+
+export const deleteSshKeychain = async (keychainId: string): Promise<{ success: boolean }> => {
+  return backendClient.deleteSshKeychain(keychainId);
 };

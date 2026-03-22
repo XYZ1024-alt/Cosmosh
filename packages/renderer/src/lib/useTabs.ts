@@ -27,6 +27,10 @@ export const resolvePageDefaults = (page: TabPage): { title: string; iconKey: Ta
     return { title: t('tabs.page.sshEditor'), iconKey: 'ssh' };
   }
 
+  if (page === 'ssh-keychains') {
+    return { title: t('tabs.page.sshKeychains'), iconKey: 'keychain' };
+  }
+
   if (page === 'settings') {
     return { title: t('tabs.page.settings'), iconKey: 'settings' };
   }

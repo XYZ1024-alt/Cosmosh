@@ -1,6 +1,6 @@
 import * as RadixAvatar from '@radix-ui/react-avatar';
 import classNames from 'classnames';
-import { Bug, Info, RefreshCcw, Server, Settings } from 'lucide-react';
+import { Bug, Info, KeyRound, RefreshCcw, Server, Settings } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -27,6 +27,7 @@ const Header: React.FC<{
   onCloseOtherTabs?: (id: string) => void;
   onReorderTabs?: (nextTabs: TabItem[]) => void;
   onOpenSSHEditorTab?: () => void;
+  onOpenSSHKeychainsTab?: () => void;
   onOpenSettingsTab?: (options?: { categoryId?: 'about' }) => void;
   onOpenSettingsEditorTab?: () => void;
   onOpenDebugTab?: () => void;
@@ -41,6 +42,7 @@ const Header: React.FC<{
   onCloseOtherTabs,
   onReorderTabs,
   onOpenSSHEditorTab,
+  onOpenSSHKeychainsTab,
   onOpenSettingsTab,
   onOpenSettingsEditorTab,
   onOpenDebugTab,
@@ -207,6 +209,14 @@ const Header: React.FC<{
             }}
           >
             {t('tabs.page.sshEditor')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            icon={KeyRound}
+            onSelect={() => {
+              void onOpenSSHKeychainsTab?.();
+            }}
+          >
+            {t('tabs.page.sshKeychains')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

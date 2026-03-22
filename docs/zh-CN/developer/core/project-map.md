@@ -113,3 +113,17 @@ flowchart TD
    - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
 2. 在 `packages/i18n/locales/en/*.json` 和 `zh-CN/*.json` 中添加 i18n key。
 3. 无需修改其他文件——校验、默认值与 UI 渲染均从注册表自动派生。
+
+## 7. SSH 钥匙链模块归属（2026-03）
+
+- 数据模型归属：
+  - `packages/backend/prisma/schema.prisma` 定义 `SshKeychain` 与 `SshServer.keychainId` 关系。
+  - 钥匙链的文件夹/标签元数据复用 `SshFolder`、`SshTag`（以及 `SshKeychainTagLink`），不再维护钥匙链专属文件夹/标签表。
+- 运行时归属：
+  - `packages/backend/src/http/routes/ssh.ts` 负责钥匙链 CRUD 与凭据读取接口。
+  - `packages/backend/src/ssh/session-service.ts` 负责连接阶段 server→keychain 凭据解析。
+- Bridge 归属：
+  - `packages/main/src/ipc/register-backend-ipc.ts` 与 `packages/main/src/preload.ts` 负责钥匙链 IPC 代理通道。
+- Renderer 归属：
+  - `packages/renderer/src/pages/SSHEditor.tsx` 负责单服务器内的钥匙链选择与内联认证回退流程。
+  - `packages/renderer/src/pages/SSHKeychains.tsx` 负责独立钥匙链管理页面的增删改流程。

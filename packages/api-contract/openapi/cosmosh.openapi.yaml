@@ -8,7 +8,7 @@ servers:
   - url: http://127.0.0.1:{port}
     variables:
       port:
-        default: "3000"
+        default: '3000'
 security:
   - CosmoshInternalToken: []
 paths:
@@ -20,12 +20,12 @@ paths:
       operationId: health
       security: []
       responses:
-        "200":
+        '200':
           description: Backend service is alive.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/HealthResponse"
+                $ref: '#/components/schemas/HealthResponse'
   /api/v1/test/ping:
     get:
       tags:
@@ -33,20 +33,20 @@ paths:
       summary: Connectivity smoke test for renderer -> main -> backend chain.
       operationId: testPing
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: Successful ping response.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/TestPingSuccess"
-        "401":
+                $ref: '#/components/schemas/TestPingSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/settings:
     get:
       tags:
@@ -54,52 +54,52 @@ paths:
       summary: Get application settings.
       operationId: settingsGet
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: Settings fetched.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SettingsGetSuccess"
-        "401":
+                $ref: '#/components/schemas/SettingsGetSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
     put:
       tags:
         - settings
       summary: Update application settings.
       operationId: settingsUpdate
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SettingsUpdateRequest"
+              $ref: '#/components/schemas/SettingsUpdateRequest'
       responses:
-        "200":
+        '200':
           description: Settings updated.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SettingsUpdateSuccess"
-        "400":
+                $ref: '#/components/schemas/SettingsUpdateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/servers:
     get:
       tags:
@@ -107,58 +107,58 @@ paths:
       summary: List SSH servers.
       operationId: sshListServers
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: SSH servers listed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshServerListSuccess"
-        "401":
+                $ref: '#/components/schemas/SshServerListSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
     post:
       tags:
         - ssh
       summary: Create SSH server configuration.
       operationId: sshCreateServer
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshServerCreateRequest"
+              $ref: '#/components/schemas/SshServerCreateRequest'
       responses:
-        "200":
+        '200':
           description: SSH server created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshServerCreateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshServerCreateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Conflict with existing server.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/servers/{serverId}:
     put:
       tags:
@@ -166,7 +166,7 @@ paths:
       summary: Update SSH server configuration.
       operationId: sshUpdateServer
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: serverId
           in: path
           required: true
@@ -177,38 +177,65 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshServerCreateRequest"
+              $ref: '#/components/schemas/SshServerCreateRequest'
       responses:
-        "200":
+        '200':
           description: SSH server updated.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshServerUpdateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshServerUpdateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
+                $ref: '#/components/schemas/ApiError'
+        '404':
           description: SSH server not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Conflict with existing server.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - ssh
+      summary: Delete SSH server configuration.
+      operationId: sshDeleteServer
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: serverId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: SSH server deleted.
+        '404':
+          description: SSH server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/servers/{serverId}/credentials:
     get:
       tags:
@@ -216,58 +243,199 @@ paths:
       summary: Get SSH server credentials for editor form prefill.
       operationId: sshGetServerCredentials
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: serverId
           in: path
           required: true
           schema:
             type: string
       responses:
-        "200":
+        '200':
           description: SSH server credentials fetched.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshServerCredentialsSuccess"
-        "404":
+                $ref: '#/components/schemas/SshServerCredentialsSuccess'
+        '404':
           description: SSH server not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/ssh/keychains:
+    get:
+      tags:
+        - ssh
+      summary: List SSH keychains.
+      operationId: sshListKeychains
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      responses:
+        '200':
+          description: SSH keychains listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshKeychainListSuccess'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    post:
+      tags:
+        - ssh
+      summary: Create SSH keychain.
+      operationId: sshCreateKeychain
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SshKeychainCreateRequest'
+      responses:
+        '200':
+          description: SSH keychain created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshKeychainCreateSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Conflict with existing keychain.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/ssh/keychains/{keychainId}:
+    put:
+      tags:
+        - ssh
+      summary: Update SSH keychain.
+      operationId: sshUpdateKeychain
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: keychainId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SshKeychainUpdateRequest'
+      responses:
+        '200':
+          description: SSH keychain updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshKeychainUpdateSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: SSH keychain not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
     delete:
       tags:
         - ssh
-      summary: Delete SSH server configuration.
-      operationId: sshDeleteServer
+      summary: Delete SSH keychain.
+      operationId: sshDeleteKeychain
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
-        - name: serverId
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: keychainId
           in: path
           required: true
           schema:
             type: string
       responses:
-        "204":
-          description: SSH server deleted.
-        "404":
-          description: SSH server not found.
+        '204':
+          description: SSH keychain deleted.
+        '404':
+          description: SSH keychain not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: SSH keychain is in use.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/ssh/keychains/{keychainId}/credentials:
+    get:
+      tags:
+        - ssh
+      summary: Get SSH keychain credentials for editor form prefill.
+      operationId: sshGetKeychainCredentials
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: keychainId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: SSH keychain credentials fetched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshKeychainCredentialsSuccess'
+        '404':
+          description: SSH keychain not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/folders:
     get:
       tags:
@@ -275,58 +443,58 @@ paths:
       summary: List SSH folders.
       operationId: sshListFolders
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: SSH folders listed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshFolderListSuccess"
-        "401":
+                $ref: '#/components/schemas/SshFolderListSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
     post:
       tags:
         - ssh
       summary: Create SSH folder.
       operationId: sshCreateFolder
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshFolderCreateRequest"
+              $ref: '#/components/schemas/SshFolderCreateRequest'
       responses:
-        "200":
+        '200':
           description: SSH folder created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshFolderCreateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshFolderCreateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Folder already exists.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/folders/{folderId}:
     put:
       tags:
@@ -334,7 +502,7 @@ paths:
       summary: Update SSH folder.
       operationId: sshUpdateFolder
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: folderId
           in: path
           required: true
@@ -345,65 +513,65 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshFolderUpdateRequest"
+              $ref: '#/components/schemas/SshFolderUpdateRequest'
       responses:
-        "200":
+        '200':
           description: SSH folder updated.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshFolderUpdateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshFolderUpdateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
+                $ref: '#/components/schemas/ApiError'
+        '404':
           description: SSH folder not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Folder already exists.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
     delete:
       tags:
         - ssh
       summary: Delete SSH folder.
       operationId: sshDeleteFolder
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: folderId
           in: path
           required: true
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: SSH folder deleted.
-        "404":
+        '404':
           description: SSH folder not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/tags:
     get:
       tags:
@@ -411,58 +579,58 @@ paths:
       summary: List SSH tags.
       operationId: sshListTags
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: SSH tags listed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshTagListSuccess"
-        "401":
+                $ref: '#/components/schemas/SshTagListSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
     post:
       tags:
         - ssh
       summary: Create SSH tag.
       operationId: sshCreateTag
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshTagCreateRequest"
+              $ref: '#/components/schemas/SshTagCreateRequest'
       responses:
-        "200":
+        '200':
           description: SSH tag created.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshTagCreateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshTagCreateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Tag already exists.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/sessions:
     post:
       tags:
@@ -470,44 +638,44 @@ paths:
       summary: Create a live SSH terminal session.
       operationId: sshCreateSession
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshSessionCreateRequest"
+              $ref: '#/components/schemas/SshSessionCreateRequest'
       responses:
-        "200":
+        '200':
           description: SSH session is ready for websocket streaming.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshSessionCreateSuccess"
-        "400":
+                $ref: '#/components/schemas/SshSessionCreateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
+                $ref: '#/components/schemas/ApiError'
+        '404':
           description: Server not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "409":
+                $ref: '#/components/schemas/ApiError'
+        '409':
           description: Host fingerprint is not trusted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshHostVerificationRequired"
-        "401":
+                $ref: '#/components/schemas/SshHostVerificationRequired'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/sessions/{sessionId}:
     delete:
       tags:
@@ -515,27 +683,27 @@ paths:
       summary: Close a live SSH terminal session.
       operationId: sshCloseSession
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: sessionId
           in: path
           required: true
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Session closed.
-        "404":
+        '404':
           description: Session not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/trusted-host-keys:
     post:
       tags:
@@ -543,38 +711,38 @@ paths:
       summary: Trust a host fingerprint for a server.
       operationId: sshTrustFingerprint
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SshTrustFingerprintRequest"
+              $ref: '#/components/schemas/SshTrustFingerprintRequest'
       responses:
-        "200":
+        '200':
           description: Host fingerprint has been trusted.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SshTrustFingerprintSuccess"
-        "400":
+                $ref: '#/components/schemas/SshTrustFingerprintSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
+                $ref: '#/components/schemas/ApiError'
+        '404':
           description: Server not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/local-terminals/profiles:
     get:
       tags:
@@ -582,20 +750,20 @@ paths:
       summary: List local terminal profiles available on host.
       operationId: localTerminalListProfiles
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       responses:
-        "200":
+        '200':
           description: Local terminal profiles listed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LocalTerminalProfileListSuccess"
-        "401":
+                $ref: '#/components/schemas/LocalTerminalProfileListSuccess'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/local-terminals/sessions:
     post:
       tags:
@@ -603,38 +771,38 @@ paths:
       summary: Create a live local terminal session.
       operationId: localTerminalCreateSession
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/LocalTerminalSessionCreateRequest"
+              $ref: '#/components/schemas/LocalTerminalSessionCreateRequest'
       responses:
-        "200":
+        '200':
           description: Local terminal session is ready for websocket streaming.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LocalTerminalSessionCreateSuccess"
-        "400":
+                $ref: '#/components/schemas/LocalTerminalSessionCreateSuccess'
+        '400':
           description: Validation failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "404":
+                $ref: '#/components/schemas/ApiError'
+        '404':
           description: Profile not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
   /api/v1/local-terminals/sessions/{sessionId}:
     delete:
       tags:
@@ -642,27 +810,27 @@ paths:
       summary: Close a live local terminal session.
       operationId: localTerminalCloseSession
       parameters:
-        - $ref: "#/components/parameters/LocaleHeader"
+        - $ref: '#/components/parameters/LocaleHeader'
         - name: sessionId
           in: path
           required: true
           schema:
             type: string
       responses:
-        "204":
+        '204':
           description: Session closed.
-        "404":
+        '404':
           description: Session not found.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
-        "401":
+                $ref: '#/components/schemas/ApiError'
+        '401':
           description: Authentication failed.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ApiError"
+                $ref: '#/components/schemas/ApiError'
 components:
   securitySchemes:
     CosmoshInternalToken:
@@ -685,7 +853,7 @@ components:
       properties:
         status:
           type: string
-          enum: ["ok"]
+          enum: ['ok']
         timestamp:
           type: string
           format: date-time
@@ -708,7 +876,7 @@ components:
           format: date-time
     ApiError:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -718,25 +886,30 @@ components:
               type: string
               enum:
                 [
-                  "COMMON_INTERNAL_SERVER_ERROR",
-                  "AUTH_INVALID_TOKEN",
-                  "SETTINGS_VALIDATION_FAILED",
-                  "SSH_VALIDATION_FAILED",
-                  "SSH_SERVER_CONFLICT",
-                  "SSH_FOLDER_CONFLICT",
-                  "SSH_TAG_CONFLICT",
-                  "SSH_NOT_FOUND",
-                  "SSH_HOST_UNTRUSTED",
-                  "SSH_SESSION_NOT_FOUND",
-                  "LOCAL_TERMINAL_VALIDATION_FAILED",
-                  "LOCAL_TERMINAL_PROFILE_NOT_FOUND",
+                  'COMMON_INTERNAL_SERVER_ERROR',
+                  'AUTH_INVALID_TOKEN',
+                  'SETTINGS_VALIDATION_FAILED',
+                  'SSH_VALIDATION_FAILED',
+                  'SSH_SERVER_CONFLICT',
+                  'SSH_FOLDER_CONFLICT',
+                  'SSH_TAG_CONFLICT',
+                  'SSH_KEYCHAIN_CONFLICT',
+                  'SSH_NOT_FOUND',
+                  'SSH_HOST_UNTRUSTED',
+                  'SSH_SESSION_NOT_FOUND',
+                  'SSH_KEYCHAIN_IN_USE',
+                  'LOCAL_TERMINAL_VALIDATION_FAILED',
+                  'LOCAL_TERMINAL_PROFILE_NOT_FOUND',
                 ]
             success:
               type: boolean
               enum: [false]
     SshAuthType:
       type: string
-      enum: ["password", "key", "both"]
+      enum: ['password', 'key', 'both']
+    SshKeychainVisibility:
+      type: string
+      enum: ['hidden', 'shared']
     TestPingData:
       type: object
       required:
@@ -747,22 +920,22 @@ components:
       properties:
         service:
           type: string
-          enum: ["cosmosh-backend"]
+          enum: ['cosmosh-backend']
         mode:
           type: string
-          enum: ["electron-main", "standalone"]
+          enum: ['electron-main', 'standalone']
         authenticated:
           type: boolean
         capabilities:
           type: array
           items:
             type: string
-            enum: ["ssh", "sftp"]
+            enum: ['ssh', 'sftp']
           minItems: 2
           maxItems: 2
     TestPingSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -771,12 +944,12 @@ components:
           properties:
             code:
               type: string
-              enum: ["TEST_PING_OK"]
+              enum: ['TEST_PING_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/TestPingData"
+              $ref: '#/components/schemas/TestPingData'
     SettingsValues:
       type: object
       description: >
@@ -805,7 +978,7 @@ components:
         - values
       properties:
         scope:
-          $ref: "#/components/schemas/SettingsScope"
+          $ref: '#/components/schemas/SettingsScope'
         revision:
           type: integer
           minimum: 0
@@ -813,30 +986,30 @@ components:
           type: string
           format: date-time
         values:
-          $ref: "#/components/schemas/SettingsValues"
+          $ref: '#/components/schemas/SettingsValues'
     SettingsGetData:
       type: object
       required:
         - item
       properties:
         item:
-          $ref: "#/components/schemas/SettingsResource"
+          $ref: '#/components/schemas/SettingsResource'
     SettingsUpdateRequest:
       type: object
       required:
         - values
       properties:
         scope:
-          $ref: "#/components/schemas/SettingsScope"
+          $ref: '#/components/schemas/SettingsScope'
         values:
-          $ref: "#/components/schemas/SettingsValues"
+          $ref: '#/components/schemas/SettingsValues'
     SettingsUpdateData:
       type: object
       required:
         - item
       properties:
         item:
-          $ref: "#/components/schemas/SettingsResource"
+          $ref: '#/components/schemas/SettingsResource'
     SshFolder:
       type: object
       required:
@@ -856,7 +1029,7 @@ components:
           minLength: 1
           maxLength: 64
         colorKey:
-          $ref: "#/components/schemas/SshVisualColorKey"
+          $ref: '#/components/schemas/SshVisualColorKey'
         note:
           type: string
         createdAt:
@@ -898,7 +1071,7 @@ components:
           format: date-time
         result:
           type: string
-          enum: ["success", "failed"]
+          enum: ['success', 'failed']
         failureReason:
           type: string
         clientIp:
@@ -924,6 +1097,7 @@ components:
         - host
         - port
         - username
+        - keychainId
         - authType
         - hasPassword
         - hasPrivateKey
@@ -939,7 +1113,7 @@ components:
           minLength: 1
           maxLength: 64
         colorKey:
-          $ref: "#/components/schemas/SshVisualColorKey"
+          $ref: '#/components/schemas/SshVisualColorKey'
         host:
           type: string
         port:
@@ -948,8 +1122,10 @@ components:
           maximum: 65535
         username:
           type: string
+        keychainId:
+          type: string
         authType:
-          $ref: "#/components/schemas/SshAuthType"
+          $ref: '#/components/schemas/SshAuthType'
         strictHostKey:
           type: boolean
         hasPassword:
@@ -959,11 +1135,11 @@ components:
         note:
           type: string
         folder:
-          $ref: "#/components/schemas/SshFolder"
+          $ref: '#/components/schemas/SshFolder'
         tags:
           type: array
           items:
-            $ref: "#/components/schemas/SshTag"
+            $ref: '#/components/schemas/SshTag'
         systemHostname:
           type: string
         systemOs:
@@ -976,7 +1152,7 @@ components:
           type: string
           format: date-time
         lastLoginAudit:
-          $ref: "#/components/schemas/SshLoginAudit"
+          $ref: '#/components/schemas/SshLoginAudit'
         createdAt:
           type: string
           format: date-time
@@ -990,7 +1166,6 @@ components:
         - host
         - port
         - username
-        - authType
       properties:
         name:
           type: string
@@ -1008,8 +1183,10 @@ components:
           type: string
           minLength: 1
           maxLength: 120
+        keychainId:
+          type: string
         authType:
-          $ref: "#/components/schemas/SshAuthType"
+          $ref: '#/components/schemas/SshAuthType'
         strictHostKey:
           type: boolean
         iconKey:
@@ -1017,7 +1194,7 @@ components:
           minLength: 1
           maxLength: 64
         colorKey:
-          $ref: "#/components/schemas/SshVisualColorKey"
+          $ref: '#/components/schemas/SshVisualColorKey'
         password:
           type: string
           minLength: 1
@@ -1050,7 +1227,7 @@ components:
           minLength: 1
           maxLength: 64
         colorKey:
-          $ref: "#/components/schemas/SshVisualColorKey"
+          $ref: '#/components/schemas/SshVisualColorKey'
         note:
           type: string
           maxLength: 1000
@@ -1068,25 +1245,13 @@ components:
           minLength: 1
           maxLength: 64
         colorKey:
-          $ref: "#/components/schemas/SshVisualColorKey"
+          $ref: '#/components/schemas/SshVisualColorKey'
         note:
           type: string
           maxLength: 1000
     SshVisualColorKey:
       type: string
-      enum:
-        [
-          "slate",
-          "blue",
-          "emerald",
-          "violet",
-          "amber",
-          "rose",
-          "cyan",
-          "indigo",
-          "teal",
-          "lime",
-        ]
+      enum: ['slate', 'blue', 'emerald', 'violet', 'amber', 'rose', 'cyan', 'indigo', 'teal', 'lime']
     SshTagCreateRequest:
       type: object
       required:
@@ -1139,7 +1304,7 @@ components:
           maxLength: 255
         algorithm:
           type: string
-          enum: ["sha256"]
+          enum: ['sha256']
           default: sha256
     SshHostVerificationRequiredData:
       type: object
@@ -1158,12 +1323,12 @@ components:
           type: integer
         algorithm:
           type: string
-          enum: ["sha256"]
+          enum: ['sha256']
         fingerprint:
           type: string
     SshHostVerificationRequired:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1172,12 +1337,12 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_HOST_UNTRUSTED"]
+              enum: ['SSH_HOST_UNTRUSTED']
             success:
               type: boolean
               enum: [false]
             data:
-              $ref: "#/components/schemas/SshHostVerificationRequiredData"
+              $ref: '#/components/schemas/SshHostVerificationRequiredData'
     SshServerListData:
       type: object
       required:
@@ -1186,7 +1351,7 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/SshServerListItem"
+            $ref: '#/components/schemas/SshServerListItem'
     SshFolderListData:
       type: object
       required:
@@ -1195,7 +1360,7 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/SshFolder"
+            $ref: '#/components/schemas/SshFolder'
     SshTagListData:
       type: object
       required:
@@ -1204,21 +1369,138 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/SshTag"
+            $ref: '#/components/schemas/SshTag'
     SshServerCreateData:
       type: object
       required:
         - item
       properties:
         item:
-          $ref: "#/components/schemas/SshServerListItem"
+          $ref: '#/components/schemas/SshServerListItem'
     SshServerCredentialsData:
       type: object
       required:
         - authType
       properties:
         authType:
-          $ref: "#/components/schemas/SshAuthType"
+          $ref: '#/components/schemas/SshAuthType'
+        password:
+          type: string
+        privateKey:
+          type: string
+        privateKeyPassphrase:
+          type: string
+    SshKeychainListItem:
+      type: object
+      required:
+        - id
+        - name
+        - iconKey
+        - colorKey
+        - authType
+        - visibility
+        - hasPassword
+        - hasPrivateKey
+        - tags
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        iconKey:
+          type: string
+        colorKey:
+          $ref: '#/components/schemas/SshVisualColorKey'
+        authType:
+          $ref: '#/components/schemas/SshAuthType'
+        visibility:
+          $ref: '#/components/schemas/SshKeychainVisibility'
+        hasPassword:
+          type: boolean
+        hasPrivateKey:
+          type: boolean
+        note:
+          type: string
+        folder:
+          $ref: '#/components/schemas/SshFolder'
+        tags:
+          type: array
+          items:
+            $ref: '#/components/schemas/SshTag'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    SshKeychainListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SshKeychainListItem'
+    SshKeychainCreateRequest:
+      type: object
+      required:
+        - name
+        - authType
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        iconKey:
+          type: string
+          minLength: 1
+          maxLength: 64
+        colorKey:
+          $ref: '#/components/schemas/SshVisualColorKey'
+        authType:
+          $ref: '#/components/schemas/SshAuthType'
+        visibility:
+          $ref: '#/components/schemas/SshKeychainVisibility'
+        folderId:
+          type: string
+          minLength: 1
+        tagIds:
+          type: array
+          items:
+            type: string
+            minLength: 1
+        password:
+          type: string
+          minLength: 1
+        privateKey:
+          type: string
+          minLength: 1
+        privateKeyPassphrase:
+          type: string
+          minLength: 1
+        note:
+          type: string
+          maxLength: 3000
+    SshKeychainUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/SshKeychainCreateRequest'
+    SshKeychainCreateData:
+      type: object
+      required:
+        - item
+      properties:
+        item:
+          $ref: '#/components/schemas/SshKeychainListItem'
+    SshKeychainCredentialsData:
+      type: object
+      required:
+        - authType
+      properties:
+        authType:
+          $ref: '#/components/schemas/SshAuthType'
         password:
           type: string
         privateKey:
@@ -1231,14 +1513,14 @@ components:
         - item
       properties:
         item:
-          $ref: "#/components/schemas/SshFolder"
+          $ref: '#/components/schemas/SshFolder'
     SshTagCreateData:
       type: object
       required:
         - item
       properties:
         item:
-          $ref: "#/components/schemas/SshTag"
+          $ref: '#/components/schemas/SshTag'
     SshSessionCreateData:
       type: object
       required:
@@ -1292,7 +1574,7 @@ components:
         items:
           type: array
           items:
-            $ref: "#/components/schemas/LocalTerminalProfile"
+            $ref: '#/components/schemas/LocalTerminalProfile'
     LocalTerminalSessionCreateRequest:
       type: object
       required:
@@ -1336,7 +1618,7 @@ components:
           type: string
     LocalTerminalProfileListSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1345,15 +1627,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["LOCAL_TERMINAL_LIST_OK"]
+              enum: ['LOCAL_TERMINAL_LIST_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/LocalTerminalProfileListData"
+              $ref: '#/components/schemas/LocalTerminalProfileListData'
     LocalTerminalSessionCreateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1362,15 +1644,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["LOCAL_TERMINAL_SESSION_CREATE_OK"]
+              enum: ['LOCAL_TERMINAL_SESSION_CREATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/LocalTerminalSessionCreateData"
+              $ref: '#/components/schemas/LocalTerminalSessionCreateData'
     SettingsGetSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1379,15 +1661,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SETTINGS_GET_OK"]
+              enum: ['SETTINGS_GET_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SettingsGetData"
+              $ref: '#/components/schemas/SettingsGetData'
     SettingsUpdateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1396,15 +1678,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SETTINGS_UPDATE_OK"]
+              enum: ['SETTINGS_UPDATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SettingsUpdateData"
+              $ref: '#/components/schemas/SettingsUpdateData'
     SshServerListSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1413,15 +1695,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_SERVER_LIST_OK"]
+              enum: ['SSH_SERVER_LIST_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshServerListData"
+              $ref: '#/components/schemas/SshServerListData'
     SshServerCreateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1430,15 +1712,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_SERVER_CREATE_OK"]
+              enum: ['SSH_SERVER_CREATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshServerCreateData"
+              $ref: '#/components/schemas/SshServerCreateData'
     SshServerUpdateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1447,15 +1729,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_SERVER_UPDATE_OK"]
+              enum: ['SSH_SERVER_UPDATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshServerCreateData"
+              $ref: '#/components/schemas/SshServerCreateData'
     SshServerCredentialsSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1464,15 +1746,83 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_SERVER_CREDENTIALS_OK"]
+              enum: ['SSH_SERVER_CREDENTIALS_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshServerCredentialsData"
+              $ref: '#/components/schemas/SshServerCredentialsData'
+    SshKeychainListSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SSH_KEYCHAIN_LIST_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SshKeychainListData'
+    SshKeychainCreateSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SSH_KEYCHAIN_CREATE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SshKeychainCreateData'
+    SshKeychainUpdateSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SSH_KEYCHAIN_UPDATE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SshKeychainCreateData'
+    SshKeychainCredentialsSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SSH_KEYCHAIN_CREDENTIALS_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SshKeychainCredentialsData'
     SshFolderListSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1481,15 +1831,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_FOLDER_LIST_OK"]
+              enum: ['SSH_FOLDER_LIST_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshFolderListData"
+              $ref: '#/components/schemas/SshFolderListData'
     SshFolderCreateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1498,15 +1848,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_FOLDER_CREATE_OK"]
+              enum: ['SSH_FOLDER_CREATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshFolderCreateData"
+              $ref: '#/components/schemas/SshFolderCreateData'
     SshFolderUpdateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1515,15 +1865,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_FOLDER_UPDATE_OK"]
+              enum: ['SSH_FOLDER_UPDATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshFolderCreateData"
+              $ref: '#/components/schemas/SshFolderCreateData'
     SshTagListSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1532,15 +1882,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_TAG_LIST_OK"]
+              enum: ['SSH_TAG_LIST_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshTagListData"
+              $ref: '#/components/schemas/SshTagListData'
     SshTagCreateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1549,15 +1899,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_TAG_CREATE_OK"]
+              enum: ['SSH_TAG_CREATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshTagCreateData"
+              $ref: '#/components/schemas/SshTagCreateData'
     SshSessionCreateSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1566,15 +1916,15 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_SESSION_CREATE_OK"]
+              enum: ['SSH_SESSION_CREATE_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshSessionCreateData"
+              $ref: '#/components/schemas/SshSessionCreateData'
     SshTrustFingerprintSuccess:
       allOf:
-        - $ref: "#/components/schemas/ApiMeta"
+        - $ref: '#/components/schemas/ApiMeta'
         - type: object
           required:
             - success
@@ -1583,9 +1933,9 @@ components:
           properties:
             code:
               type: string
-              enum: ["SSH_TRUST_FINGERPRINT_OK"]
+              enum: ['SSH_TRUST_FINGERPRINT_OK']
             success:
               type: boolean
               enum: [true]
             data:
-              $ref: "#/components/schemas/SshTrustFingerprintData"
+              $ref: '#/components/schemas/SshTrustFingerprintData'

@@ -4,6 +4,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -11,14 +13,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -45,6 +51,13 @@ export type BackendClient = {
   updateSshFolder: (folderId: string, payload: ApiSshUpdateFolderRequest) => Promise<ApiSshUpdateFolderResponse>;
   listSshTags: () => Promise<ApiSshListTagsResponse>;
   createSshTag: (payload: ApiSshCreateTagRequest) => Promise<ApiSshCreateTagResponse>;
+  listSshKeychains: () => Promise<ApiSshListKeychainsResponse>;
+  createSshKeychain: (payload: ApiSshCreateKeychainRequest) => Promise<ApiSshCreateKeychainResponse>;
+  updateSshKeychain: (
+    keychainId: string,
+    payload: ApiSshUpdateKeychainRequest,
+  ) => Promise<ApiSshUpdateKeychainResponse>;
+  getSshKeychainCredentials: (keychainId: string) => Promise<ApiSshGetKeychainCredentialsResponse>;
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse>;
@@ -57,6 +70,7 @@ export type BackendClient = {
   closeSshSession: (sessionId: string) => Promise<{ success: boolean }>;
   deleteSshServer: (serverId: string) => Promise<{ success: boolean }>;
   deleteSshFolder: (folderId: string) => Promise<{ success: boolean }>;
+  deleteSshKeychain: (keychainId: string) => Promise<{ success: boolean }>;
 };
 
 export const createBackendClient = (): BackendClient => {
@@ -172,6 +186,42 @@ export const createBackendClient = (): BackendClient => {
 
       return payload;
     },
+    listSshKeychains: async () => {
+      const payload = await transport.listSshKeychains();
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    createSshKeychain: async (requestPayload) => {
+      const payload = await transport.createSshKeychain(requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    updateSshKeychain: async (keychainId, requestPayload) => {
+      const payload = await transport.updateSshKeychain(keychainId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    getSshKeychainCredentials: async (keychainId) => {
+      const payload = await transport.getSshKeychainCredentials(keychainId);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
     createSshSession: async (requestPayload) => {
       const payload = await transport.createSshSession(requestPayload);
 
@@ -227,6 +277,9 @@ export const createBackendClient = (): BackendClient => {
     },
     deleteSshFolder: async (folderId) => {
       return transport.deleteSshFolder(folderId);
+    },
+    deleteSshKeychain: async (keychainId) => {
+      return transport.deleteSshKeychain(keychainId);
     },
   };
 };

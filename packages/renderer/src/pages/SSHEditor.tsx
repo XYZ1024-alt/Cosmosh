@@ -5,6 +5,7 @@ import {
   ArrowUpAZ,
   ArrowUpDown,
   CalendarPlus,
+  Edit,
   FileUp,
   Folder,
   FolderPlus,
@@ -62,11 +63,14 @@ import { Switch } from '../components/ui/switch';
 import { TagInput } from '../components/ui/tag-input';
 import { Textarea } from '../components/ui/textarea';
 import {
+  createSshKeychain,
   createSshServer,
   createSshTag,
   deleteSshServer,
+  getSshKeychainCredentials,
   getSshServerCredentials,
   listSshFolders,
+  listSshKeychains,
   listSshServers,
   listSshTags,
   updateSshServer,
@@ -91,6 +95,7 @@ type SshServerListItem = components['schemas']['SshServerListItem'];
 type SshFolder = components['schemas']['SshFolder'];
 type SshTag = components['schemas']['SshTag'];
 type SshAuthType = components['schemas']['SshAuthType'];
+type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 
 type SortMode = 'default' | 'nameAsc' | 'nameDesc' | 'lastUsed' | 'createdAt';
 
@@ -103,6 +108,7 @@ type ServerEditorFormState = {
   port: string;
   username: string;
   authType: SshAuthType;
+  keychainId: string;
   password: string;
   privateKey: string;
   privateKeyPassphrase: string;
@@ -120,6 +126,8 @@ type ServerCredentialCache = {
 
 const NO_FOLDER_SELECT_VALUE = '__none__';
 const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
+const INLINE_KEYCHAIN_SELECT_VALUE = '__inline_keychain__';
+const ADD_KEYCHAIN_SELECT_VALUE = '__add_keychain__';
 
 const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFormState => {
   const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
@@ -133,6 +141,7 @@ const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFor
     port: '22',
     username: '',
     authType: 'password',
+    keychainId: '',
     password: '',
     privateKey: '',
     privateKeyPassphrase: '',
@@ -201,6 +210,7 @@ const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState 
     port: String(server.port),
     username: server.username,
     authType: server.authType,
+    keychainId: server.keychainId,
     password: '',
     privateKey: '',
     privateKeyPassphrase: '',
@@ -222,6 +232,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
   const [tags, setTags] = React.useState<SshTag[]>([]);
+  const [keychains, setKeychains] = React.useState<SshKeychainListItem[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
   const [search, setSearch] = React.useState<string>('');
@@ -242,9 +253,6 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   React.useEffect(() => {
     preferCreateModeRef.current = preferCreateMode;
   }, [preferCreateMode]);
-
-  const requiresPassword = formState.authType === 'password' || formState.authType === 'both';
-  const requiresPrivateKey = formState.authType === 'key' || formState.authType === 'both';
 
   const activeServer = React.useMemo(() => {
     if (!activeServerId) {
@@ -270,14 +278,16 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     setIsLoading(true);
 
     try {
-      const [foldersResponse, serversResponse, tagsResponse] = await Promise.all([
+      const [foldersResponse, serversResponse, tagsResponse, keychainsResponse] = await Promise.all([
         listSshFolders(),
         listSshServers(),
         listSshTags(),
+        listSshKeychains(),
       ]);
       const nextFolders = foldersResponse.data.items;
       const nextServers = serversResponse.data.items;
       const nextTags = tagsResponse.data.items;
+      const nextKeychains = keychainsResponse.data.items;
       const nextDefaultServerNoteTemplate = defaultServerNoteTemplate;
       const currentActiveServerId = activeServerIdRef.current;
       const currentFormState = formStateRef.current;
@@ -286,6 +296,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
       setFolders(nextFolders);
       setServers(nextServers);
       setTags(nextTags);
+      setKeychains(nextKeychains);
 
       if (consumeSshEditorCreateMode()) {
         preferCreateModeRef.current = true;
@@ -395,6 +406,132 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
       cancelled = true;
     };
   }, [activeServerId, notifyError]);
+
+  React.useEffect(() => {
+    if (!formState.keychainId) {
+      return;
+    }
+
+    let cancelled = false;
+    const requestedKeychainId = formState.keychainId;
+
+    const loadKeychainCredentials = async () => {
+      try {
+        const response = await getSshKeychainCredentials(requestedKeychainId);
+        if (cancelled) {
+          return;
+        }
+
+        const nextCredentials: ServerCredentialCache = {
+          authType: response.data.authType,
+          password: response.data.password ?? '',
+          privateKey: response.data.privateKey ?? '',
+          privateKeyPassphrase: response.data.privateKeyPassphrase ?? '',
+        };
+
+        setFormState((previous) => ({
+          ...previous,
+          ...nextCredentials,
+        }));
+      } catch {
+        if (!cancelled) {
+          notifyError(t('ssh.credentialsLoadFailed'));
+        }
+      }
+    };
+
+    void loadKeychainCredentials();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [formState.keychainId, notifyError]);
+
+  const selectedKeychain = React.useMemo(() => {
+    if (!formState.keychainId) {
+      return null;
+    }
+
+    return keychains.find((item) => item.id === formState.keychainId) ?? null;
+  }, [formState.keychainId, keychains]);
+
+  const sharedKeychains = React.useMemo(() => {
+    return keychains.filter((item) => item.visibility === 'shared');
+  }, [keychains]);
+
+  const isUsingHiddenKeychain = selectedKeychain?.visibility === 'hidden';
+  const isUsingInlineCredentials = !formState.keychainId || isUsingHiddenKeychain || !selectedKeychain;
+  const keychainSelectValue = isUsingInlineCredentials ? INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
+
+  const requiresPassword =
+    isUsingInlineCredentials && (formState.authType === 'password' || formState.authType === 'both');
+  const requiresPrivateKey =
+    isUsingInlineCredentials && (formState.authType === 'key' || formState.authType === 'both');
+
+  const openSelectedKeychainEditor = React.useCallback(() => {
+    if (!selectedKeychain) {
+      return;
+    }
+
+    notifyWarning(t('ssh.keychainEditComingSoon'));
+  }, [notifyWarning, selectedKeychain]);
+
+  const saveInlineCredentialsToSharedKeychain = React.useCallback(async () => {
+    if (!isUsingInlineCredentials) {
+      return;
+    }
+
+    if (!formState.name.trim()) {
+      notifyWarning(t('ssh.validationRequiredFields'));
+      return;
+    }
+
+    const shouldUsePassword = formState.authType === 'password' || formState.authType === 'both';
+    const shouldUsePrivateKey = formState.authType === 'key' || formState.authType === 'both';
+
+    if (shouldUsePassword && !formState.password.trim()) {
+      notifyWarning(t('ssh.validationPasswordRequired'));
+      return;
+    }
+
+    if (shouldUsePrivateKey && !formState.privateKey.trim()) {
+      notifyWarning(t('ssh.validationPrivateKeyRequired'));
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const created = await createSshKeychain({
+        name: `${formState.name.trim()} Keychain`,
+        authType: formState.authType,
+        visibility: 'shared',
+        password: formState.password.trim() || undefined,
+        privateKey: formState.privateKey.trim() || undefined,
+        privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
+      });
+
+      const createdKeychainId = created.data.item.id;
+      await reloadData();
+      dirtyFieldKeysRef.current.add('keychainId');
+      setFormState((previous) => ({ ...previous, keychainId: createdKeychainId }));
+      notifySuccess(t('ssh.saveInlineCredentialsToKeychainSuccess'));
+    } catch (error: unknown) {
+      notifyError(error instanceof Error ? error.message : t('ssh.saveInlineCredentialsToKeychainFailed'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  }, [
+    formState.authType,
+    formState.name,
+    formState.password,
+    formState.privateKey,
+    formState.privateKeyPassphrase,
+    isUsingInlineCredentials,
+    notifyError,
+    notifySuccess,
+    notifyWarning,
+    reloadData,
+  ]);
 
   const sortServers = React.useCallback((items: SshServerListItem[], mode: SortMode): SshServerListItem[] => {
     return [...items].sort((left, right) => {
@@ -770,6 +907,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             host: formState.host.trim(),
             port,
             username: formState.username.trim(),
+            keychainId: formState.keychainId || undefined,
             authType: formState.authType,
             iconKey: formState.iconKey,
             colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
@@ -788,6 +926,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             host: formState.host.trim(),
             port,
             username: formState.username.trim(),
+            keychainId: formState.keychainId || undefined,
             authType: formState.authType,
             iconKey: formState.iconKey,
             colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
@@ -1128,7 +1267,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                   {t('ssh.sectionAuthentication')}
                 </div>
 
-                <div className="grid grid-cols-[5fr_2fr] gap-3">
+                <div className="grid grid-cols-[2fr_2fr_1fr] gap-3">
                   <FormField>
                     <FormLabel htmlFor="ssh-editor-username">{t('ssh.columnUser')}</FormLabel>
                     <FormControl>
@@ -1141,6 +1280,75 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                     </FormControl>
                   </FormField>
 
+                  <FormField>
+                    <FormLabel htmlFor="ssh-editor-keychain">{t('ssh.keychainLabel')}</FormLabel>
+                    <FormControl>
+                      <Select
+                        value={keychainSelectValue}
+                        onValueChange={(value) => {
+                          if (value === ADD_KEYCHAIN_SELECT_VALUE) {
+                            notifyWarning(t('ssh.keychainCreateComingSoon'));
+                            return;
+                          }
+
+                          onChangeForm('keychainId', value === INLINE_KEYCHAIN_SELECT_VALUE ? '' : value);
+                        }}
+                      >
+                        <SelectTrigger id="ssh-editor-keychain">
+                          <SelectValue placeholder={t('ssh.keychainSelectPlaceholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={INLINE_KEYCHAIN_SELECT_VALUE}>{t('ssh.keychainOptionInline')}</SelectItem>
+                          <SelectSeparator />
+                          {sharedKeychains.map((keychain) => (
+                            <SelectItem
+                              key={keychain.id}
+                              value={keychain.id}
+                            >
+                              {keychain.name}
+                            </SelectItem>
+                          ))}
+                          <SelectSeparator />
+                          <SelectItem value={ADD_KEYCHAIN_SELECT_VALUE}>{t('ssh.keychainOptionCreate')}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </FormControl>
+                  </FormField>
+
+                  {!isUsingInlineCredentials ? (
+                    <FormField>
+                      <FormLabel>&nbsp;</FormLabel>
+                      <FormControl>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={openSelectedKeychainEditor}
+                        >
+                          <Edit size={16} />
+                          {t('ssh.keychainEditCredentials')}
+                        </Button>
+                      </FormControl>
+                    </FormField>
+                  ) : isUsingInlineCredentials ? (
+                    <FormField>
+                      <FormLabel>&nbsp;</FormLabel>
+                      <FormControl>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            void saveInlineCredentialsToSharedKeychain();
+                          }}
+                        >
+                          {t('ssh.saveInlineCredentialsToKeychain')}
+                        </Button>{' '}
+                      </FormControl>
+                    </FormField>
+                  ) : null}
+                </div>
+
+                {isUsingInlineCredentials ? (
                   <FormField>
                     <FormLabel htmlFor="ssh-editor-auth-type">{t('ssh.columnAuth')}</FormLabel>
                     <FormControl>
@@ -1159,7 +1367,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                       </Select>
                     </FormControl>
                   </FormField>
-                </div>
+                ) : null}
 
                 {requiresPassword ? (
                   <FormField>

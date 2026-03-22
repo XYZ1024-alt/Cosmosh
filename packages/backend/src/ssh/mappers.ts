@@ -8,6 +8,14 @@ import { normalizeSshVisualColorKey } from './visuals.js';
  */
 export const serverQueryInclude = {
   folder: true,
+  keychain: {
+    select: {
+      id: true,
+      authType: true,
+      passwordEncrypted: true,
+      privateKeyEncrypted: true,
+    },
+  },
   tags: {
     include: {
       tag: true,
@@ -39,9 +47,10 @@ export const mapServerToListItem = (
     port: server.port,
     username: server.username,
     strictHostKey: server.strictHostKey,
-    authType: server.authType,
-    hasPassword: Boolean(server.passwordEncrypted),
-    hasPrivateKey: Boolean(server.privateKeyEncrypted),
+    keychainId: server.keychain.id,
+    authType: server.keychain.authType,
+    hasPassword: Boolean(server.keychain.passwordEncrypted),
+    hasPrivateKey: Boolean(server.keychain.privateKeyEncrypted),
     note: server.note ?? undefined,
     folder: server.folder
       ? {

@@ -37,7 +37,7 @@ sequenceDiagram
   - `connectTimeoutSec`: per-session SSH handshake timeout from Settings (`sshConnectionTimeoutSec`).
   - `strictHostKey`: explicit per-attempt host key policy propagated from SSH server configuration.
 - Steps:
-  1. Load server record + encrypted credentials.
+  1. Load server record + linked keychain encrypted credentials.
   2. Resolve trusted host fingerprints.
   3. Open SSH shell via `ssh2.Client.shell`.
   4. Write `SshLoginAudit` record:
@@ -258,6 +258,12 @@ When SSH session behavior is wrong, verify in order:
   - `off`: ignores context-launch auto-navigation.
 - When `openDefaultLocalTerminal` is enabled, profile selection honors Settings `defaultLocalTerminalProfile` (`auto` or a concrete profile id loaded from current local terminal profiles) and falls back to first available profile.
 - If Cosmosh is already running, `second-instance` pushes launch context to renderer via IPC event.
+
+## 9. Keychain Credential Runtime Notes (2026-03)
+
+- Session connect flow now resolves auth material from `SshServer.keychainId`.
+- Supported keychain auth variants remain `password`, `key`, `both`; this keeps SSH runtime behavior stable while allowing future auth variant expansion in one place.
+- Hidden keychains are eligible for automatic cleanup when no server references remain, preventing long-term secret record drift.
 - `second-instance` resolution uses both CLI args and Electron `workingDirectory` as fallback, reducing context-loss cases where only focus happened.
 - On local terminal session creation (`POST /api/v1/local-terminals/sessions`), Main forwards `cwd` once.
 - Backend validates `cwd` and falls back to `os.homedir()` when path is invalid or inaccessible.

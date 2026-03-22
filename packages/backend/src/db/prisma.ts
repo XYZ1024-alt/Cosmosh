@@ -691,6 +691,21 @@ const splitMigrationStatements = (migrationSql: string): string[] => {
 };
 
 /**
+ * Detects whether a migration needs non-transactional execution.
+ *
+ * SQLite ignores `PRAGMA foreign_keys=OFF` inside an active transaction.
+ * Prisma-generated SQLite migrations commonly rely on this pragma while
+ * rebuilding tables, so these files must execute statement-by-statement
+ * outside `client.$transaction(...)`.
+ *
+ * @param migrationSql Full migration.sql contents.
+ * @returns True when migration toggles SQLite foreign key enforcement.
+ */
+const requiresNonTransactionalSqliteExecution = (migrationSql: string): boolean => {
+  return /PRAGMA\s+foreign_keys\s*=\s*(OFF|ON)/i.test(migrationSql);
+};
+
+/**
  * Applies pending Prisma migration files in-order on backend startup.
  *
  * @param client Active Prisma client.
@@ -721,16 +736,27 @@ const applyPendingPrismaMigrations = async (client: PrismaClientType): Promise<n
     const checksum = createHash('sha256').update(migrationSql).digest('hex');
     const migrationRecordId = buildMigrationRecordId(migrationFile.migrationName, checksum);
     const migrationStartedAt = Date.now();
+    const runWithoutTransaction = requiresNonTransactionalSqliteExecution(migrationSql);
 
-    await client.$transaction(async (transactionClient) => {
+    if (runWithoutTransaction) {
       for (const statement of statements) {
-        await transactionClient.$executeRawUnsafe(statement);
+        await client.$executeRawUnsafe(statement);
       }
 
-      await transactionClient.$executeRawUnsafe(
+      await client.$executeRawUnsafe(
         `INSERT INTO "${RUNTIME_MIGRATION_TABLE_NAME}" ("id", "checksum", "migration_name", "started_at", "finished_at", "applied_steps_count") VALUES ('${escapeSqliteLiteral(migrationRecordId)}', '${escapeSqliteLiteral(checksum)}', '${escapeSqliteLiteral(migrationFile.migrationName)}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${statements.length});`,
       );
-    });
+    } else {
+      await client.$transaction(async (transactionClient) => {
+        for (const statement of statements) {
+          await transactionClient.$executeRawUnsafe(statement);
+        }
+
+        await transactionClient.$executeRawUnsafe(
+          `INSERT INTO "${RUNTIME_MIGRATION_TABLE_NAME}" ("id", "checksum", "migration_name", "started_at", "finished_at", "applied_steps_count") VALUES ('${escapeSqliteLiteral(migrationRecordId)}', '${escapeSqliteLiteral(checksum)}', '${escapeSqliteLiteral(migrationFile.migrationName)}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${statements.length});`,
+        );
+      });
+    }
 
     console.log(`[db:init] Applied Prisma migration: ${migrationFile.migrationName}`);
     console.log(

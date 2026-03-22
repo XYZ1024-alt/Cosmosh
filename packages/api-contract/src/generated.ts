@@ -85,7 +85,8 @@ export interface paths {
     /** Update SSH server configuration. */
     put: operations['sshUpdateServer'];
     post?: never;
-    delete?: never;
+    /** Delete SSH server configuration. */
+    delete: operations['sshDeleteServer'];
     options?: never;
     head?: never;
     patch?: never;
@@ -102,8 +103,60 @@ export interface paths {
     get: operations['sshGetServerCredentials'];
     put?: never;
     post?: never;
-    /** Delete SSH server configuration. */
-    delete: operations['sshDeleteServer'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/ssh/keychains': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List SSH keychains. */
+    get: operations['sshListKeychains'];
+    put?: never;
+    /** Create SSH keychain. */
+    post: operations['sshCreateKeychain'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/ssh/keychains/{keychainId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Update SSH keychain. */
+    put: operations['sshUpdateKeychain'];
+    post?: never;
+    /** Delete SSH keychain. */
+    delete: operations['sshDeleteKeychain'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/ssh/keychains/{keychainId}/credentials': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get SSH keychain credentials for editor form prefill. */
+    get: operations['sshGetKeychainCredentials'];
+    put?: never;
+    post?: never;
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -292,9 +345,11 @@ export interface components {
         | 'SSH_SERVER_CONFLICT'
         | 'SSH_FOLDER_CONFLICT'
         | 'SSH_TAG_CONFLICT'
+        | 'SSH_KEYCHAIN_CONFLICT'
         | 'SSH_NOT_FOUND'
         | 'SSH_HOST_UNTRUSTED'
         | 'SSH_SESSION_NOT_FOUND'
+        | 'SSH_KEYCHAIN_IN_USE'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
         | 'LOCAL_TERMINAL_PROFILE_NOT_FOUND';
       /** @enum {boolean} */
@@ -302,6 +357,8 @@ export interface components {
     };
     /** @enum {string} */
     SshAuthType: 'password' | 'key' | 'both';
+    /** @enum {string} */
+    SshKeychainVisibility: 'hidden' | 'shared';
     TestPingData: {
       /** @enum {string} */
       service: 'cosmosh-backend';
@@ -384,6 +441,7 @@ export interface components {
       host: string;
       port: number;
       username: string;
+      keychainId: string;
       authType: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       hasPassword: boolean;
@@ -408,7 +466,8 @@ export interface components {
       host: string;
       port: number;
       username: string;
-      authType: components['schemas']['SshAuthType'];
+      keychainId?: string;
+      authType?: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       iconKey?: string;
       colorKey?: components['schemas']['SshVisualColorKey'];
@@ -485,6 +544,49 @@ export interface components {
       item: components['schemas']['SshServerListItem'];
     };
     SshServerCredentialsData: {
+      authType: components['schemas']['SshAuthType'];
+      password?: string;
+      privateKey?: string;
+      privateKeyPassphrase?: string;
+    };
+    SshKeychainListItem: {
+      id: string;
+      name: string;
+      iconKey: string;
+      colorKey: components['schemas']['SshVisualColorKey'];
+      authType: components['schemas']['SshAuthType'];
+      visibility: components['schemas']['SshKeychainVisibility'];
+      hasPassword: boolean;
+      hasPrivateKey: boolean;
+      note?: string;
+      folder?: components['schemas']['SshFolder'];
+      tags: components['schemas']['SshTag'][];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    SshKeychainListData: {
+      items: components['schemas']['SshKeychainListItem'][];
+    };
+    SshKeychainCreateRequest: {
+      name: string;
+      iconKey?: string;
+      colorKey?: components['schemas']['SshVisualColorKey'];
+      authType: components['schemas']['SshAuthType'];
+      visibility?: components['schemas']['SshKeychainVisibility'];
+      folderId?: string;
+      tagIds?: string[];
+      password?: string;
+      privateKey?: string;
+      privateKeyPassphrase?: string;
+      note?: string;
+    };
+    SshKeychainUpdateRequest: components['schemas']['SshKeychainCreateRequest'];
+    SshKeychainCreateData: {
+      item: components['schemas']['SshKeychainListItem'];
+    };
+    SshKeychainCredentialsData: {
       authType: components['schemas']['SshAuthType'];
       password?: string;
       privateKey?: string;
@@ -587,6 +689,34 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SshServerCredentialsData'];
+    };
+    SshKeychainListSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SSH_KEYCHAIN_LIST_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SshKeychainListData'];
+    };
+    SshKeychainCreateSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SSH_KEYCHAIN_CREATE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SshKeychainCreateData'];
+    };
+    SshKeychainUpdateSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SSH_KEYCHAIN_UPDATE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SshKeychainCreateData'];
+    };
+    SshKeychainCredentialsSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SSH_KEYCHAIN_CREDENTIALS_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SshKeychainCredentialsData'];
     };
     SshFolderListSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -922,6 +1052,46 @@ export interface operations {
       };
     };
   };
+  sshDeleteServer: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        serverId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description SSH server deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description SSH server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
   sshGetServerCredentials: {
     parameters: {
       query?: never;
@@ -964,20 +1134,159 @@ export interface operations {
       };
     };
   };
-  sshDeleteServer: {
+  sshListKeychains: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description SSH keychains listed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SshKeychainListSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sshCreateKeychain: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SshKeychainCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description SSH keychain created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SshKeychainCreateSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Conflict with existing keychain. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sshUpdateKeychain: {
     parameters: {
       query?: never;
       header?: {
         'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
       };
       path: {
-        serverId: string;
+        keychainId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SshKeychainUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description SSH keychain updated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SshKeychainUpdateSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description SSH keychain not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sshDeleteKeychain: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        keychainId: string;
       };
       cookie?: never;
     };
     requestBody?: never;
     responses: {
-      /** @description SSH server deleted. */
+      /** @description SSH keychain deleted. */
       204: {
         headers: {
           [name: string]: unknown;
@@ -993,7 +1302,58 @@ export interface operations {
           'application/json': components['schemas']['ApiError'];
         };
       };
-      /** @description SSH server not found. */
+      /** @description SSH keychain not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description SSH keychain is in use. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sshGetKeychainCredentials: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        keychainId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description SSH keychain credentials fetched. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SshKeychainCredentialsSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description SSH keychain not found. */
       404: {
         headers: {
           [name: string]: unknown;

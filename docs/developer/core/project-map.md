@@ -40,7 +40,7 @@ flowchart TB
 - **Role**: Internal API + session orchestration runtime.
 - **Key folders**:
   - `src/http/routes`: REST endpoints for settings, SSH entities, and local terminal actions.
-  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry).
+  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution).
   - `src/settings`: settings payload defaults and validation parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
@@ -105,6 +105,20 @@ flowchart TD
 3. Add validation/parser layer for input boundaries.
 4. Expose consumption path to renderer via main bridge.
 5. Sync architecture/runtime docs.
+
+## 7. SSH Keychain Ownership Map (2026-03)
+
+- Data model owner:
+  - `packages/backend/prisma/schema.prisma` for `SshKeychain` and `SshServer.keychainId` relation.
+  - Keychain folder/tag metadata reuses `SshFolder` and `SshTag` (plus `SshKeychainTagLink`) instead of dedicated keychain-only folder/tag tables.
+- Runtime owner:
+  - `packages/backend/src/http/routes/ssh.ts` for keychain CRUD + credential fetch routes.
+  - `packages/backend/src/ssh/session-service.ts` for server→keychain credential hydration during connect.
+- Bridge owner:
+  - `packages/main/src/ipc/register-backend-ipc.ts` and `packages/main/src/preload.ts` for keychain IPC proxy channels.
+- Renderer owner:
+  - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
+  - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
 
 ### Add New Application Setting
 

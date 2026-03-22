@@ -8,6 +8,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -15,14 +17,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -229,6 +235,45 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
     },
   );
 
+  ipcMain.handle('backend:ssh-list-keychains', async (): Promise<ApiSshListKeychainsResponse | ApiErrorResponse> => {
+    return options.requestBackend<ApiSshListKeychainsResponse>(API_PATHS.sshListKeychains, { method: 'GET' });
+  });
+
+  ipcMain.handle(
+    'backend:ssh-create-keychain',
+    async (_event, payload: ApiSshCreateKeychainRequest): Promise<ApiSshCreateKeychainResponse | ApiErrorResponse> => {
+      return options.requestBackend<ApiSshCreateKeychainResponse>(API_PATHS.sshCreateKeychain, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:ssh-update-keychain',
+    async (
+      _event,
+      keychainId: string,
+      payload: ApiSshUpdateKeychainRequest,
+    ): Promise<ApiSshUpdateKeychainResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sshUpdateKeychain, 'keychainId', keychainId);
+      return options.requestBackend<ApiSshUpdateKeychainResponse>(path, {
+        method: 'PUT',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:ssh-get-keychain-credentials',
+    async (_event, keychainId: string): Promise<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sshGetKeychainCredentials, 'keychainId', keychainId);
+      return options.requestBackend<ApiSshGetKeychainCredentialsResponse>(path, {
+        method: 'GET',
+      });
+    },
+  );
+
   ipcMain.handle(
     'backend:ssh-create-session',
     async (
@@ -263,6 +308,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   registerDeleteHandler(options, 'backend:ssh-close-session', API_PATHS.sshCloseSession, 'sessionId');
   registerDeleteHandler(options, 'backend:ssh-delete-server', API_PATHS.sshDeleteServer, 'serverId');
   registerDeleteHandler(options, 'backend:ssh-delete-folder', API_PATHS.sshDeleteFolder, 'folderId');
+  registerDeleteHandler(options, 'backend:ssh-delete-keychain', API_PATHS.sshDeleteKeychain, 'keychainId');
 };
 
 /**

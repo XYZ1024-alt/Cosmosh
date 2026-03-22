@@ -25,6 +25,7 @@ const Settings = React.lazy(() => import('./pages/Settings'));
 const SettingsEditor = React.lazy(() => import('./pages/SettingsEditor'));
 const SSH = React.lazy(() => import('./pages/SSH'));
 const SSHEditor = React.lazy(() => import('./pages/SSHEditor'));
+const SSHKeychains = React.lazy(() => import('./pages/SSHKeychains'));
 
 let hasCheckedInitialPendingLaunchWorkingDirectory = false;
 
@@ -444,6 +445,11 @@ const App: React.FC = () => {
                   />
                 </React.Suspense>
               )}
+              {tab.page === 'ssh-keychains' && (
+                <React.Suspense fallback={pageLoadingFallback}>
+                  <SSHKeychains />
+                </React.Suspense>
+              )}
               {tab.page === 'settings' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <Settings
@@ -488,6 +494,9 @@ const App: React.FC = () => {
                     onOpenSshEditor={(openInNewTab) =>
                       openInNewTab ? addTab('ssh-editor') : openPageInTab(tab.id, 'ssh-editor')
                     }
+                    onOpenSshKeychains={(openInNewTab) =>
+                      openInNewTab ? addTab('ssh-keychains') : openPageInTab(tab.id, 'ssh-keychains')
+                    }
                     onRenameTab={(title) => updateTab(tab.id, { title })}
                     onChangeIcon={(iconKey) => updateTab(tab.id, { iconKey })}
                   />
@@ -530,6 +539,7 @@ const App: React.FC = () => {
               onCloseOtherTabs={closeOtherTabs}
               onReorderTabs={reorderTabs}
               onOpenSSHEditorTab={() => addTab('ssh-editor')}
+              onOpenSSHKeychainsTab={() => addTab('ssh-keychains')}
               onOpenSettingsTab={(options) =>
                 addTab('settings', {
                   state: {

@@ -1,6 +1,6 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import type { PrismaClient, SshServer } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { type RawData } from 'ws';
 
@@ -34,6 +34,12 @@ import {
 import { decryptSensitiveValue } from './crypto.js';
 
 type GetDbClient = () => PrismaClient;
+
+type SshServerWithKeychain = Prisma.SshServerGetPayload<{
+  include: {
+    keychain: true;
+  };
+}>;
 
 type CreateSshSessionInput = {
   locale: Locale;
@@ -216,6 +222,9 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const server = await db.sshServer.findUnique({
       where: {
         id: input.serverId,
+      },
+      include: {
+        keychain: true,
       },
     });
 
@@ -958,7 +967,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   }
 
   private async openShell(
-    server: SshServer,
+    server: SshServerWithKeychain,
     options: {
       cols: number;
       rows: number;
@@ -994,31 +1003,34 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     let completionSecretValue: string | null = null;
 
     try {
-      if (server.authType === 'password' || server.authType === 'both') {
-        if (!server.passwordEncrypted) {
+      if (server.keychain.authType === 'password' || server.keychain.authType === 'both') {
+        if (!server.keychain.passwordEncrypted) {
           return {
             type: 'failed',
             message: options.t('errors.ssh.passwordNotConfigured'),
           };
         }
 
-        connectConfig.password = decryptSensitiveValue(server.passwordEncrypted, this.credentialEncryptionKey);
+        connectConfig.password = decryptSensitiveValue(server.keychain.passwordEncrypted, this.credentialEncryptionKey);
         completionSecretValue = typeof connectConfig.password === 'string' ? connectConfig.password : null;
       }
 
-      if (server.authType === 'key' || server.authType === 'both') {
-        if (!server.privateKeyEncrypted) {
+      if (server.keychain.authType === 'key' || server.keychain.authType === 'both') {
+        if (!server.keychain.privateKeyEncrypted) {
           return {
             type: 'failed',
             message: options.t('errors.ssh.privateKeyNotConfigured'),
           };
         }
 
-        connectConfig.privateKey = decryptSensitiveValue(server.privateKeyEncrypted, this.credentialEncryptionKey);
+        connectConfig.privateKey = decryptSensitiveValue(
+          server.keychain.privateKeyEncrypted,
+          this.credentialEncryptionKey,
+        );
 
-        if (server.privateKeyPassphraseEncrypted) {
+        if (server.keychain.privateKeyPassphraseEncrypted) {
           connectConfig.passphrase = decryptSensitiveValue(
-            server.privateKeyPassphraseEncrypted,
+            server.keychain.privateKeyPassphraseEncrypted,
             this.credentialEncryptionKey,
           );
           if (!completionSecretValue && typeof connectConfig.passphrase === 'string') {

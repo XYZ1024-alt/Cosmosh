@@ -8,6 +8,8 @@ import type {
   ApiSettingsUpdateResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
+  ApiSshCreateKeychainRequest,
+  ApiSshCreateKeychainResponse,
   ApiSshCreateServerRequest,
   ApiSshCreateServerResponse,
   ApiSshCreateSessionHostVerificationRequiredResponse,
@@ -15,14 +17,18 @@ import type {
   ApiSshCreateSessionResponse,
   ApiSshCreateTagRequest,
   ApiSshCreateTagResponse,
+  ApiSshGetKeychainCredentialsResponse,
   ApiSshGetServerCredentialsResponse,
   ApiSshListFoldersResponse,
+  ApiSshListKeychainsResponse,
   ApiSshListServersResponse,
   ApiSshListTagsResponse,
   ApiSshTrustFingerprintRequest,
   ApiSshTrustFingerprintResponse,
   ApiSshUpdateFolderRequest,
   ApiSshUpdateFolderResponse,
+  ApiSshUpdateKeychainRequest,
+  ApiSshUpdateKeychainResponse,
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
@@ -128,6 +134,17 @@ declare global {
       ) => Promise<ApiSshUpdateFolderResponse | ApiErrorResponse>;
       backendSshListTags: () => Promise<ApiSshListTagsResponse | ApiErrorResponse>;
       backendSshCreateTag: (payload: ApiSshCreateTagRequest) => Promise<ApiSshCreateTagResponse | ApiErrorResponse>;
+      backendSshListKeychains: () => Promise<ApiSshListKeychainsResponse | ApiErrorResponse>;
+      backendSshCreateKeychain: (
+        payload: ApiSshCreateKeychainRequest,
+      ) => Promise<ApiSshCreateKeychainResponse | ApiErrorResponse>;
+      backendSshUpdateKeychain: (
+        keychainId: string,
+        payload: ApiSshUpdateKeychainRequest,
+      ) => Promise<ApiSshUpdateKeychainResponse | ApiErrorResponse>;
+      backendSshGetKeychainCredentials: (
+        keychainId: string,
+      ) => Promise<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse>;
       backendSshCreateSession: (
         payload: ApiSshCreateSessionRequest,
       ) => Promise<
@@ -139,6 +156,7 @@ declare global {
       backendSshCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;
+      backendSshDeleteKeychain: (keychainId: string) => Promise<{ success: boolean }>;
       backendLocalTerminalListProfiles: () => Promise<LocalTerminalListResponse | ApiErrorResponse>;
       backendLocalTerminalCreateSession: (
         payload: LocalTerminalCreateSessionRequest,

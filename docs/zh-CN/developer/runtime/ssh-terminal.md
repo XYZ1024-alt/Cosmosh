@@ -37,7 +37,7 @@ sequenceDiagram
   - `connectTimeoutSec`：来自设置项 `sshConnectionTimeoutSec` 的会话级 SSH 握手超时。
   - `strictHostKey`：从 SSH 服务器配置透传的会话级主机密钥策略。
 - 步骤：
-  1. 读取 server 记录与加密凭据。
+  1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
   3. 通过 `ssh2.Client.shell` 打开 SSH shell。
   4. 写入 `SshLoginAudit` 记录：
@@ -258,6 +258,12 @@ flowchart LR
 - 当选择 `openDefaultLocalTerminal` 时，会优先使用设置项 `defaultLocalTerminalProfile`（`auto` 或来自当前本地终端列表的具体 profile id），若不可用则回退到首个可用配置。
 - 若 Cosmosh 已在运行，`second-instance` 会通过 IPC 事件把启动上下文推送到渲染层。
 - `second-instance` 在解析上下文时会同时使用 CLI 参数与 Electron 提供的 `workingDirectory` 兜底，降低仅聚焦不触发新终端的情况。
+
+## 9. 钥匙链凭据运行时说明（2026-03）
+
+- SSH 连接阶段的认证材料统一从 `SshServer.keychainId` 解析。
+- 当前钥匙链认证类型仍为 `password`、`key`、`both`，运行时行为与旧版保持一致，并为后续扩展认证方式预留入口。
+- 无服务器引用的隐藏钥匙链会在后端清理流程中被回收，避免长期堆积孤儿密钥记录。
 - 在下一次创建本地终端会话（`POST /api/v1/local-terminals/sessions`）时，Main 会透传一次 `cwd`。
 - Backend 会校验 `cwd`，若路径不可用则回退到 `os.homedir()`。
 
