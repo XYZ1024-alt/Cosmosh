@@ -141,9 +141,10 @@ sequenceDiagram
 - Completion `detail` is localized in backend session services before response emission, with fallback chain: translated `detailI18nKey` → localized source label (`History` / `Command spec` / runtime labels such as `Directory`, `File`, `Fill password`).
 - Renderer keyboard policy when suggestions are visible:
   - `ArrowUp/ArrowDown` changes active suggestion and is consumed by completion navigation,
-  - `Tab` accepts active suggestion,
+  - suggestion apply shortcut is configurable via Settings (`terminalAutoCompleteAcceptKeys`): `Tab` (default/current), `Enter`, or both,
+  - when `Tab` is enabled and no suggestion is visible, pressing `Tab` triggers an immediate manual completion request,
   - `Escape` closes suggestion menu,
-  - `Enter` remains shell submit behavior.
+  - when `Enter` is not selected as apply shortcut, it remains shell submit behavior.
 - Suggestion panel layout constraints:
   - panel anchor is clamped to terminal viewport bounds,
   - panel width is computed from current pane available space (capped at desktop width target) and anchor clamping uses the computed width to avoid horizontal overflow,

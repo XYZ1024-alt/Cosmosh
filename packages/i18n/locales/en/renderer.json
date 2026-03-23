@@ -236,6 +236,10 @@
         "description": "Use Alt (Option on macOS) + click to move the cursor to the clicked position.",
         "title": "Alt/Option Click Moves Cursor"
       },
+      "terminalAutoCompleteAcceptKeys": {
+        "description": "Controls which key applies the highlighted auto-complete suggestion.",
+        "title": "Auto Complete Apply Shortcut"
+      },
       "terminalAutoCompleteBuiltInCommandsEnabled": {
         "description": "Include built-in command and option suggestions from command specs.",
         "title": "Auto Complete Built-in Command Suggestions"
@@ -413,6 +417,11 @@
         "custom": "Custom",
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
+      },
+      "terminalAutoCompleteAcceptKeys": {
+        "enter": "Enter",
+        "tab": "Tab",
+        "tabEnter": "Tab/Enter"
       },
       "terminalContextLaunchBehavior": {
         "off": "Disabled",

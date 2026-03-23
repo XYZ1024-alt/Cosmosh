@@ -236,6 +236,10 @@
         "description": "按住 Alt（macOS 为 Option）并点击时，将光标移动到点击位置。",
         "title": "Alt/Option 点击移动光标"
       },
+      "terminalAutoCompleteAcceptKeys": {
+        "description": "控制使用哪个按键应用当前高亮的自动补全候选。",
+        "title": "自动补全应用快捷键"
+      },
       "terminalAutoCompleteBuiltInCommandsEnabled": {
         "description": "在自动补全面板中包含内置命令与选项建议。",
         "title": "自动补全内置命令建议"
@@ -413,6 +417,11 @@
         "custom": "自定义",
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
+      },
+      "terminalAutoCompleteAcceptKeys": {
+        "enter": "回车",
+        "tab": "Tab",
+        "tabEnter": "Tab/回车"
       },
       "terminalContextLaunchBehavior": {
         "off": "关闭",

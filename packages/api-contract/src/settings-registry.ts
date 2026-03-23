@@ -58,6 +58,7 @@ export interface SettingsValues {
   terminalAutoCompleteBuiltInCommandsEnabled: boolean;
   terminalAutoCompletePathEnabled: boolean;
   terminalAutoCompletePasswordEnabled: boolean;
+  terminalAutoCompleteAcceptKeys: 'tab' | 'enter' | 'tabEnter';
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
@@ -682,6 +683,21 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.autoComplete.password.enabled',
     commandActionId: 'settings.terminal.runtime.autoComplete.password.enabled.toggle',
     searchTerms: ['terminal', 'autocomplete', 'password', 'secret fill'],
+  },
+  {
+    key: 'terminalAutoCompleteAcceptKeys',
+    valueType: 'string',
+    defaultValue: 'tab',
+    nameI18nKey: 'settings.items.terminalAutoCompleteAcceptKeys.title',
+    descriptionI18nKey: 'settings.items.terminalAutoCompleteAcceptKeys.description',
+    optionI18nNamespace: 'terminalAutoCompleteAcceptKeys',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.autoComplete,
+    control: 'select',
+    path: 'terminal.runtime.autoComplete.acceptKeys',
+    commandActionId: 'settings.terminal.runtime.autoComplete.acceptKeys.set',
+    searchTerms: ['terminal', 'autocomplete', 'accept', 'shortcut', 'tab', 'enter'],
+    options: [{ value: 'tab' }, { value: 'enter' }, { value: 'tabEnter' }],
   },
   {
     key: 'terminalAutoCompleteMinChars',

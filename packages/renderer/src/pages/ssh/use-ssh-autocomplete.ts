@@ -20,6 +20,7 @@ type UseSshAutocompleteParams = {
   terminalAutoCompleteBuiltInCommandsEnabled: boolean;
   terminalAutoCompletePathEnabled: boolean;
   terminalAutoCompletePasswordEnabled: boolean;
+  terminalAutoCompleteAcceptKeys: 'tab' | 'enter' | 'tabEnter';
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
@@ -71,6 +72,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
     terminalAutoCompleteBuiltInCommandsEnabled,
     terminalAutoCompletePathEnabled,
     terminalAutoCompletePasswordEnabled,
+    terminalAutoCompleteAcceptKeys,
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
@@ -478,11 +480,15 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
    */
   const handleAutocompleteTerminalKeyDown = React.useCallback(
     (event: KeyboardEvent) => {
+      const acceptsByTab = terminalAutoCompleteAcceptKeys === 'tab' || terminalAutoCompleteAcceptKeys === 'tabEnter';
+      const acceptsByEnter =
+        terminalAutoCompleteAcceptKeys === 'enter' || terminalAutoCompleteAcceptKeys === 'tabEnter';
+
       if (event.isComposing || event.key === 'Process') {
         return;
       }
 
-      if (event.key === 'Tab') {
+      if (event.key === 'Tab' && acceptsByTab) {
         event.preventDefault();
         event.stopPropagation();
         if (autocompleteItems.length > 0) {
@@ -490,6 +496,13 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         } else {
           scheduleAutocompleteRequest('manual');
         }
+        return;
+      }
+
+      if (event.key === 'Enter' && acceptsByEnter && autocompleteItems.length > 0) {
+        event.preventDefault();
+        event.stopPropagation();
+        acceptAutocompleteAtIndex(autocompleteMenuRef.current?.getActiveIndex() ?? 0);
         return;
       }
 
@@ -517,7 +530,13 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         closeAutocomplete();
       }
     },
-    [acceptAutocompleteAtIndex, autocompleteItems, closeAutocomplete, scheduleAutocompleteRequest],
+    [
+      acceptAutocompleteAtIndex,
+      autocompleteItems,
+      closeAutocomplete,
+      scheduleAutocompleteRequest,
+      terminalAutoCompleteAcceptKeys,
+    ],
   );
 
   const closeAutocompleteRef = React.useRef(closeAutocomplete);

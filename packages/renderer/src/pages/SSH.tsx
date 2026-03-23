@@ -67,6 +67,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteBuiltInCommandsEnabled = settingsValues.terminalAutoCompleteBuiltInCommandsEnabled;
   const terminalAutoCompletePathEnabled = settingsValues.terminalAutoCompletePathEnabled;
   const terminalAutoCompletePasswordEnabled = settingsValues.terminalAutoCompletePasswordEnabled;
+  const terminalAutoCompleteAcceptKeys = settingsValues.terminalAutoCompleteAcceptKeys;
   const terminalAutoCompleteMinChars = settingsValues.terminalAutoCompleteMinChars;
   const terminalAutoCompleteMaxItems = settingsValues.terminalAutoCompleteMaxItems;
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
@@ -166,6 +167,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompleteBuiltInCommandsEnabled,
     terminalAutoCompletePathEnabled,
     terminalAutoCompletePasswordEnabled,
+    terminalAutoCompleteAcceptKeys,
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
