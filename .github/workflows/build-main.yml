@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-22.04
             platform: linux
             buildArgs: --linux AppImage deb zip
           - os: windows-latest
@@ -39,6 +39,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build main
+        env:
+          COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.platform == 'linux' && '1' || '0' }}
+          COSMOSH_MAX_GLIBC_VERSION: 2.35
         run: |
           pnpm --filter @cosmosh/main run prebuild
           pnpm --filter @cosmosh/main exec tsc -p tsconfig.json
