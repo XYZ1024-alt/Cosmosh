@@ -24,7 +24,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-22.04, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -40,4 +40,7 @@ jobs:
       - name: Build and publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.os == 'ubuntu-22.04' && '1' || '0' }}
+          COSMOSH_MAX_GLIBC_VERSION: 2.35
+          COSMOSH_REQUIRED_PRISMA_TARGETS: ${{ matrix.os == 'ubuntu-22.04' && 'debian-openssl-1.1.x,debian-openssl-3.0.x' || '' }}
         run: pnpm --filter @cosmosh/main build

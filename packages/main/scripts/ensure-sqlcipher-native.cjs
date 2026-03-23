@@ -9,6 +9,79 @@ const packageName = 'better-sqlite3-multiple-ciphers';
 const mainPackageJsonPath = path.join(workspaceRoot, 'packages', 'main', 'package.json');
 
 /**
+ * Parses semver-like runtime strings used by glibc for lexical-safe compare.
+ */
+const parseVersionTuple = (value) => {
+  const [major = '0', minor = '0', patch = '0'] = value.split('.');
+  return [Number.parseInt(major, 10), Number.parseInt(minor, 10), Number.parseInt(patch, 10)];
+};
+
+/**
+ * Compares two dot-separated version strings and returns comparison result.
+ */
+const compareVersionStrings = (left, right) => {
+  const leftTuple = parseVersionTuple(left);
+  const rightTuple = parseVersionTuple(right);
+
+  for (let index = 0; index < 3; index += 1) {
+    const l = Number.isNaN(leftTuple[index]) ? 0 : leftTuple[index];
+    const r = Number.isNaN(rightTuple[index]) ? 0 : rightTuple[index];
+    if (l > r) {
+      return 1;
+    }
+    if (l < r) {
+      return -1;
+    }
+  }
+
+  return 0;
+};
+
+/**
+ * Returns runtime glibc version when Node report exposes it.
+ */
+const getRuntimeGlibcVersion = () => {
+  try {
+    const report = process.report?.getReport?.();
+    const glibcVersionRuntime = report?.header?.glibcVersionRuntime;
+    return typeof glibcVersionRuntime === 'string' ? glibcVersionRuntime : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Validates Linux build environment glibc baseline when enforcement is enabled.
+ */
+const enforceLinuxGlibcBaselineIfConfigured = () => {
+  if (process.platform !== 'linux') {
+    return;
+  }
+
+  const shouldEnforce = process.env.COSMOSH_ENFORCE_GLIBC_BASELINE === '1';
+  if (!shouldEnforce) {
+    return;
+  }
+
+  const maxGlibcVersion = process.env.COSMOSH_MAX_GLIBC_VERSION || '2.35';
+  const runtimeGlibcVersion = getRuntimeGlibcVersion();
+
+  if (!runtimeGlibcVersion) {
+    throw new Error(
+      '[main:prebuild] Unable to detect runtime glibc version. Refusing Linux release build because GLIBC baseline enforcement is enabled.',
+    );
+  }
+
+  if (compareVersionStrings(runtimeGlibcVersion, maxGlibcVersion) > 0) {
+    throw new Error(
+      `[main:prebuild] Detected glibc ${runtimeGlibcVersion}, which exceeds max baseline ${maxGlibcVersion}. Build Linux artifacts on an older runner to avoid runtime ERR_DLOPEN_FAILED on target systems.`,
+    );
+  }
+
+  console.log(`[main:prebuild] GLIBC baseline check passed (runtime=${runtimeGlibcVersion}, max=${maxGlibcVersion}).`);
+};
+
+/**
  * Walks upward from a resolved module entry until it finds package.json with expected name.
  */
 const findPackageRootFromEntry = async (entryPath, expectedPackageName) => {
@@ -133,6 +206,8 @@ const resolveNodeGypCliPath = async () => {
  * Rebuilds SQLCipher addon for current Electron ABI to prevent runtime native binding mismatch.
  */
 const ensureSqlCipherNativeAddon = async () => {
+  enforceLinuxGlibcBaselineIfConfigured();
+
   const packageEntry = require.resolve(packageName, {
     paths: [backendNodeModulesRoot, path.join(workspaceRoot, 'node_modules')],
   });

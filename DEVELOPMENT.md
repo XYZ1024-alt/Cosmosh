@@ -216,6 +216,19 @@ pnpm --filter @cosmosh/main build
 - Output: `packages/main/release/Cosmosh Setup <version>.exe`
 - Prebuild behavior: `packages/main/release` is recreated each run to avoid stale artifacts.
 
+### Linux native ABI baseline
+
+- Linux artifacts include native `better-sqlite3-multiple-ciphers` binaries.
+- To keep runtime compatibility on common distributions, release builds must target glibc `2.35` baseline (`ubuntu-22.04`).
+- CI enforces this with:
+   - `COSMOSH_ENFORCE_GLIBC_BASELINE=1`
+   - `COSMOSH_MAX_GLIBC_VERSION=2.35`
+- If you build Linux packages locally for distribution, use an environment with glibc `<=2.35` (or containerize the build) to avoid `ERR_DLOPEN_FAILED` with missing `GLIBC_2.38`/newer symbols.
+- Prisma runtime engines must include both OpenSSL target families used in Debian/Ubuntu ecosystems:
+   - `debian-openssl-1.1.x`
+   - `debian-openssl-3.0.x`
+- CI validates required Prisma engine files via `COSMOSH_REQUIRED_PRISMA_TARGETS` during Linux packaging. This prevents shipping artifacts that fail with `Prisma Client could not locate the Query Engine` on target systems.
+
 ## Code Quality
 
 ```bash

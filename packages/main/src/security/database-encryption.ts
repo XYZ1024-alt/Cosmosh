@@ -10,6 +10,7 @@ import { app, safeStorage } from 'electron';
  */
 type DatabaseSecurityConfig = {
   encryptedDbMasterKey?: string;
+  emergencyFallbackDbMasterKey?: string;
   masterPasswordHash?: string;
   masterPasswordSalt?: string;
 };
@@ -64,6 +65,7 @@ const readSecurityConfig = async (): Promise<DatabaseSecurityConfig> => {
     const parsed = JSON.parse(content) as DatabaseSecurityConfig;
     return {
       encryptedDbMasterKey: parsed.encryptedDbMasterKey,
+      emergencyFallbackDbMasterKey: parsed.emergencyFallbackDbMasterKey,
       masterPasswordHash: parsed.masterPasswordHash,
       masterPasswordSalt: parsed.masterPasswordSalt,
     };
@@ -85,6 +87,74 @@ const writeSecurityConfig = async (config: DatabaseSecurityConfig): Promise<void
 
   await fs.mkdir(configDir, { recursive: true });
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
+};
+
+/**
+ * Checks whether the current database file already exists on disk.
+ *
+ * @returns `true` when packaged runtime database file is present.
+ */
+const doesDatabaseFileExist = async (): Promise<boolean> => {
+  try {
+    await fs.access(getDatabasePath());
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Returns true when emergency fallback key exists in persisted config.
+ *
+ * @param config Persisted security config.
+ * @returns `true` when emergency fallback key is provisioned.
+ */
+const hasEmergencyFallbackKey = (config: DatabaseSecurityConfig): boolean => {
+  return (
+    typeof config.emergencyFallbackDbMasterKey === 'string' && config.emergencyFallbackDbMasterKey.trim().length > 0
+  );
+};
+
+/**
+ * Persists a plaintext emergency fallback database key for availability-first recovery.
+ *
+ * @param config Existing persisted security config.
+ * @param plainTextKey Database key to store for emergency fallback.
+ * @returns `true` when persistence succeeds.
+ */
+const persistEmergencyFallbackDatabaseKey = async (
+  config: DatabaseSecurityConfig,
+  plainTextKey: string,
+): Promise<boolean> => {
+  try {
+    await writeSecurityConfig({
+      ...config,
+      emergencyFallbackDbMasterKey: plainTextKey,
+    });
+    return true;
+  } catch (error) {
+    console.warn('[db:key] Failed to persist emergency fallback database key.', error);
+    return false;
+  }
+};
+
+/**
+ * Persists both safeStorage encrypted key and emergency fallback key in one operation.
+ *
+ * @param config Existing persisted security config.
+ * @param plainTextKey Plaintext database key to persist.
+ * @returns `true` when both persistence operations are completed.
+ */
+const persistAllDatabaseKeyMaterials = async (
+  config: DatabaseSecurityConfig,
+  plainTextKey: string,
+): Promise<boolean> => {
+  const safeStoragePersisted = safeStorage.isEncryptionAvailable()
+    ? await persistEncryptedDatabaseKeyWithSafeStorage(config, plainTextKey)
+    : false;
+  const fallbackPersisted = await persistEmergencyFallbackDatabaseKey(config, plainTextKey);
+
+  return safeStoragePersisted || fallbackPersisted;
 };
 
 /**
@@ -208,8 +278,23 @@ const resolveWithFallbackAndTrySafeStorageMigration = async (
 ): Promise<string> => {
   console.warn(`[db:key] ${reason} Falling back to master password mode.`);
 
+  const emergencyFallbackDbMasterKey = config.emergencyFallbackDbMasterKey?.trim();
+  if (emergencyFallbackDbMasterKey) {
+    console.log('[db:key] Using persisted emergency fallback database key.');
+    if (!isDev && safeStorage.isEncryptionAvailable()) {
+      const migrated = await persistEncryptedDatabaseKeyWithSafeStorage(config, emergencyFallbackDbMasterKey);
+      if (migrated) {
+        console.log('[db:key] Successfully migrated emergency fallback database key into safeStorage.');
+      }
+    }
+
+    return emergencyFallbackDbMasterKey;
+  }
+
   try {
     const fallbackKey = await resolveDatabaseKeyFromMasterPasswordFallback(config, isDev);
+
+    await persistEmergencyFallbackDatabaseKey(config, fallbackKey);
 
     if (!isDev && safeStorage.isEncryptionAvailable()) {
       const migrated = await persistEncryptedDatabaseKeyWithSafeStorage(config, fallbackKey);
@@ -224,7 +309,28 @@ const resolveWithFallbackAndTrySafeStorageMigration = async (
 
     return fallbackKey;
   } catch (fallbackError) {
-    throw new Error(`[db:key] ${reason} Fallback resolver also failed.`, { cause: fallbackError });
+    const fallbackReason = fallbackError instanceof Error ? fallbackError.message : 'unknown fallback error';
+
+    if (!isDev) {
+      const hasDatabaseFile = await doesDatabaseFileExist();
+      if (!hasDatabaseFile) {
+        console.warn(
+          '[db:key] No existing database file detected. Auto-provisioning emergency fallback database key for first-run recovery.',
+        );
+
+        const autoProvisionedKey = randomBytes(32).toString('hex');
+        const persisted = await persistAllDatabaseKeyMaterials(config, autoProvisionedKey);
+        if (persisted) {
+          return autoProvisionedKey;
+        }
+
+        throw new Error(
+          `[db:key] ${reason} Fallback resolver failed (${fallbackReason}). Auto-provisioned emergency key could not be persisted.`,
+        );
+      }
+    }
+
+    throw new Error(`[db:key] ${reason} Fallback resolver also failed: ${fallbackReason}.`, { cause: fallbackError });
   }
 };
 
@@ -239,6 +345,15 @@ const resolveWithFallbackAndTrySafeStorageMigration = async (
 const resolveDatabaseKeyFromConfig = async (config: DatabaseSecurityConfig, isDev: boolean): Promise<string> => {
   if (!safeStorage.isEncryptionAvailable()) {
     return resolveWithFallbackAndTrySafeStorageMigration(config, isDev, 'Electron safeStorage is unavailable.');
+  }
+
+  if (!config.encryptedDbMasterKey && hasEmergencyFallbackKey(config)) {
+    const emergencyKey = config.emergencyFallbackDbMasterKey?.trim();
+    if (emergencyKey) {
+      console.log('[db:key] Restoring encryptedDbMasterKey from emergency fallback key after safeStorage recovery.');
+      await persistEncryptedDatabaseKeyWithSafeStorage(config, emergencyKey);
+      return emergencyKey;
+    }
   }
 
   if (config.encryptedDbMasterKey) {
@@ -269,7 +384,7 @@ const resolveDatabaseKeyFromConfig = async (config: DatabaseSecurityConfig, isDe
   console.log('[db:key] Generating new database master key and storing encrypted payload in secure storage config.');
   const generatedMasterKey = randomBytes(32).toString('hex');
 
-  const persisted = await persistEncryptedDatabaseKeyWithSafeStorage(config, generatedMasterKey);
+  const persisted = await persistAllDatabaseKeyMaterials(config, generatedMasterKey);
   if (persisted) {
     return generatedMasterKey;
   }

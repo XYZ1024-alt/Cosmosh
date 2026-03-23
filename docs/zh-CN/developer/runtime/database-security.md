@@ -82,6 +82,7 @@ Main 会在以下任一场景进入回退解析器：
 1. `safeStorage.isEncryptionAvailable()` 为 `false`。
 2. `safeStorage` 可用，但 `encryptedDbMasterKey` 解密失败。
 3. `safeStorage` 可用，但创建新密钥时加密/持久化失败。
+4. `safeStorage` 路径不可用但应急回退密钥可用。
 
 当因 `safeStorage` 不可用进入回退时，Main 会先打印：
 
@@ -122,7 +123,21 @@ Main 会在以下任一场景进入回退解析器：
 
 - `master password verification failed in fallback mode.`
 
-### 5.4 `safeStorage` 恢复后的自动迁移
+### 5.4 应急回退密钥路径
+
+为避免 `safeStorage` 与主密码回退同时不可用导致启动死锁，Main 现在会持久化本地应急回退密钥：
+
+- `emergencyFallbackDbMasterKey?: string`
+
+运行时行为：
+
+1. 若存在应急回退密钥，直接使用。
+2. 若主密码回退成功，立即写入应急回退密钥，便于后续非交互恢复。
+3. 若不存在数据库文件且回退解析失败，首次启动会自动生成应急回退密钥并继续启动。
+
+若数据库文件已存在，且既无法通过 `safeStorage` 也无法通过回退材料恢复旧密钥，程序仍会快速失败并给出明确错误，避免静默锁库。
+
+### 5.5 `safeStorage` 恢复后的自动迁移
 
 如果回退成功拿到密钥，且此时 `safeStorage` 已恢复可用，Main 会自动：
 
@@ -132,7 +147,7 @@ Main 会在以下任一场景进入回退解析器：
 
 这样可以避免误旋转密钥，并确保此前已加密数据库在恢复后仍可读。
 
-### 5.5 该类 Linux 报错为何出现
+### 5.6 该类 Linux 报错为何出现
 
 该类日志链路通常说明：
 
@@ -154,6 +169,8 @@ Main 会在以下任一场景进入回退解析器：
 
 - `encryptedDbMasterKey?: string`
   - `safeStorage` 路径下保存的 base64 加密载荷。
+- `emergencyFallbackDbMasterKey?: string`
+  - 当 `safeStorage` 与主密码回退均不可用时用于可用性恢复的明文应急回退密钥。
 - `masterPasswordHash?: string`
   - 回退模式校验主密码的 hex 哈希。
 - `masterPasswordSalt?: string`
@@ -163,6 +180,16 @@ Main 会在以下任一场景进入回退解析器：
 
 - 同一文件可同时存在 `safeStorage` 与回退字段（迁移期可见）。
 - 只有当 `safeStorage` 不可用时，回退字段才是启动必需项。
+- `safeStorage` 恢复后，可用应急回退密钥回灌 `encryptedDbMasterKey`。
+
+## 6.1 Prisma 引擎目标兼容（Linux 打包）
+
+为避免后端在目标机器启动时报 `Prisma Client could not locate the Query Engine`，Linux 打包必须包含以下 Prisma Linux 目标：
+
+- `debian-openssl-1.1.x`
+- `debian-openssl-3.0.x`
+
+CI 会通过 `COSMOSH_REQUIRED_PRISMA_TARGETS` 在预构建阶段验证 `libquery_engine-*.so.node` 是否齐全，缺失时直接失败，防止发布后再暴露给终端用户。
 
 ## 7. Linux 打包场景行动手册
 
