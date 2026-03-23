@@ -20,5 +20,49 @@
     "windowsShell": {
       "openTerminal": "Open terminal in Cosmosh"
     }
+  },
+  "menu": {
+    "app": {
+      "about": "About {appName}",
+      "hide": "Hide {appName}",
+      "hideOthers": "Hide Others",
+      "quit": "Quit {appName}",
+      "services": "Services",
+      "settings": "Settings...",
+      "showAll": "Show All"
+    },
+    "edit": {
+      "copy": "Copy",
+      "cut": "Cut",
+      "delete": "Delete",
+      "label": "Edit",
+      "paste": "Paste",
+      "pasteAndMatchStyle": "Paste and Match Style",
+      "redo": "Redo",
+      "selectAll": "Select All",
+      "startSpeaking": "Start Speaking",
+      "stopSpeaking": "Stop Speaking",
+      "undo": "Undo"
+    },
+    "file": {
+      "closeWindow": "Close Window",
+      "label": "File"
+    },
+    "help": {
+      "documentation": "Documentation",
+      "githubRepository": "GitHub Repository",
+      "label": "Help"
+    },
+    "window": {
+      "bringAllToFront": "Bring All to Front",
+      "closeCurrentTab": "Close Current Tab",
+      "closeRightTabs": "Close Right Tabs",
+      "label": "Window",
+      "minimize": "Minimize",
+      "newTab": "New Tab",
+      "switchToTab": "Switch to Tab...",
+      "toggleFullScreen": "Toggle Full Screen",
+      "zoom": "Zoom"
+    }
   }
 }

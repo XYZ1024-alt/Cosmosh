@@ -8,7 +8,7 @@ import type { ApiErrorResponse } from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
 import { createI18n, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
 import { spawn } from 'child_process';
-import { app, BrowserWindow, dialog, nativeTheme } from 'electron';
+import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from 'electron';
 import path from 'path';
 
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
@@ -38,8 +38,226 @@ const MACOS_CLI_COMMAND_NAME = 'cosmosh';
 const MACOS_CLI_PREFERRED_LINK_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'] as const;
 const WINDOWS_TITLE_BAR_OVERLAY_COLOR = '#00000000';
 const WINDOWS_TITLE_BAR_OVERLAY_HEIGHT = 50;
+const DOCUMENTATION_URL = 'https://github.com/agoudbg/cosmosh/tree/main/docs';
+const GITHUB_REPOSITORY_URL = 'https://github.com/agoudbg/cosmosh';
 
 let windowsSystemMenuSymbolColor = nativeTheme.shouldUseDarkColors ? '#f5f7fa' : '#111827';
+
+type AppMenuAction =
+  | 'open-about'
+  | 'open-settings'
+  | 'new-tab'
+  | 'close-current-tab'
+  | 'close-right-tabs'
+  | 'show-tab-switcher';
+
+/**
+ * Sends a menu command event to renderer if a live main window exists.
+ *
+ * @param action Menu action identifier consumed by renderer command handlers.
+ * @returns void.
+ */
+const sendMenuActionToRenderer = (action: AppMenuAction): void => {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    return;
+  }
+
+  mainWindow.webContents.send('app:menu-action', action);
+};
+
+/**
+ * Builds and applies Electron application menu according to current platform.
+ *
+ * @returns void.
+ */
+const installApplicationMenu = (): void => {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
+  const i18n = getMainI18n();
+
+  const fileMenu: Electron.MenuItemConstructorOptions = {
+    label: i18n.t('menu.file.label'),
+    submenu: [
+      {
+        role: 'close',
+        label: i18n.t('menu.file.closeWindow'),
+      },
+    ],
+  };
+
+  const editMenu: Electron.MenuItemConstructorOptions = {
+    label: i18n.t('menu.edit.label'),
+    submenu: [
+      {
+        role: 'undo',
+        label: i18n.t('menu.edit.undo'),
+      },
+      {
+        role: 'redo',
+        label: i18n.t('menu.edit.redo'),
+      },
+      { type: 'separator' },
+      {
+        role: 'cut',
+        label: i18n.t('menu.edit.cut'),
+      },
+      {
+        role: 'copy',
+        label: i18n.t('menu.edit.copy'),
+      },
+      {
+        role: 'paste',
+        label: i18n.t('menu.edit.paste'),
+      },
+      {
+        role: 'pasteAndMatchStyle',
+        label: i18n.t('menu.edit.pasteAndMatchStyle'),
+      },
+      {
+        role: 'delete',
+        label: i18n.t('menu.edit.delete'),
+      },
+      {
+        role: 'selectAll',
+        label: i18n.t('menu.edit.selectAll'),
+      },
+      { type: 'separator' },
+      {
+        role: 'startSpeaking',
+        label: i18n.t('menu.edit.startSpeaking'),
+      },
+      {
+        role: 'stopSpeaking',
+        label: i18n.t('menu.edit.stopSpeaking'),
+      },
+    ],
+  };
+
+  const windowMenu: Electron.MenuItemConstructorOptions = {
+    label: i18n.t('menu.window.label'),
+    submenu: [
+      {
+        label: i18n.t('menu.window.newTab'),
+        accelerator: 'CmdOrCtrl+T',
+        click: () => {
+          sendMenuActionToRenderer('new-tab');
+        },
+      },
+      {
+        label: i18n.t('menu.window.closeCurrentTab'),
+        accelerator: 'CmdOrCtrl+W',
+        click: () => {
+          sendMenuActionToRenderer('close-current-tab');
+        },
+      },
+      {
+        label: i18n.t('menu.window.closeRightTabs'),
+        accelerator: 'Shift+CmdOrCtrl+W',
+        click: () => {
+          sendMenuActionToRenderer('close-right-tabs');
+        },
+      },
+      {
+        label: i18n.t('menu.window.switchToTab'),
+        accelerator: 'CmdOrCtrl+Shift+Tab',
+        click: () => {
+          sendMenuActionToRenderer('show-tab-switcher');
+        },
+      },
+      { type: 'separator' },
+      {
+        role: 'minimize',
+        label: i18n.t('menu.window.minimize'),
+      },
+      {
+        role: 'zoom',
+        label: i18n.t('menu.window.zoom'),
+      },
+      {
+        role: 'togglefullscreen',
+        label: i18n.t('menu.window.toggleFullScreen'),
+      },
+      ...(process.platform === 'darwin'
+        ? ([
+            { type: 'separator' },
+            {
+              role: 'front',
+              label: i18n.t('menu.window.bringAllToFront'),
+            },
+          ] as Electron.MenuItemConstructorOptions[])
+        : []),
+    ],
+  };
+
+  const helpMenu: Electron.MenuItemConstructorOptions = {
+    role: 'help',
+    label: i18n.t('menu.help.label'),
+    submenu: [
+      {
+        label: i18n.t('menu.help.documentation'),
+        click: () => {
+          void shell.openExternal(DOCUMENTATION_URL);
+        },
+      },
+      {
+        label: i18n.t('menu.help.githubRepository'),
+        click: () => {
+          void shell.openExternal(GITHUB_REPOSITORY_URL);
+        },
+      },
+    ],
+  };
+
+  const template: Electron.MenuItemConstructorOptions[] = [
+    {
+      role: 'appMenu',
+      submenu: [
+        {
+          label: i18n.t('menu.app.about', { appName: app.getName() }),
+          click: () => {
+            sendMenuActionToRenderer('open-about');
+          },
+        },
+        {
+          label: i18n.t('menu.app.settings'),
+          accelerator: 'Command+,',
+          click: () => {
+            sendMenuActionToRenderer('open-settings');
+          },
+        },
+        { type: 'separator' },
+        {
+          role: 'services',
+          label: i18n.t('menu.app.services'),
+        },
+        { type: 'separator' },
+        {
+          role: 'hide',
+          label: i18n.t('menu.app.hide', { appName: app.getName() }),
+        },
+        {
+          role: 'hideOthers',
+          label: i18n.t('menu.app.hideOthers'),
+        },
+        {
+          role: 'unhide',
+          label: i18n.t('menu.app.showAll'),
+        },
+        { type: 'separator' },
+        {
+          role: 'quit',
+          label: i18n.t('menu.app.quit', { appName: app.getName() }),
+        },
+      ],
+    },
+  ];
+
+  template.push(fileMenu, editMenu, windowMenu, helpMenu);
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+};
 
 /**
  * Validates CSS color payload passed from renderer bridge.
@@ -817,6 +1035,7 @@ if (!hasSingleInstanceLock) {
 
   app.whenReady().then(async () => {
     try {
+      installApplicationMenu();
       await ensureMacOsCliCommand();
       setPendingLaunchWorkingDirectory(await resolveWorkingDirectoryFromArgv(process.argv));
 
@@ -860,6 +1079,7 @@ registerAppUtilityIpcHandlers({
   setLocale: (nextLocale: string) => {
     appLocale = resolveLocale(nextLocale, 'en');
     mainWindow?.setTitle(`${!app.isPackaged ? '[D] ' : ''}${getMainI18n().t('app.title')}`);
+    installApplicationMenu();
     return appLocale;
   },
   getPendingLaunchWorkingDirectory: () => pendingLaunchWorkingDirectory,

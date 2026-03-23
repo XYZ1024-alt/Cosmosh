@@ -48,6 +48,7 @@ const Header: React.FC<{
   onOpenDebugTab,
 }) => {
   const { success: notifySuccess, warning: notifyWarning } = useToast();
+  const userMenuTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const openSettingsEditorByAltClickRef = React.useRef<boolean>(false);
   const devToolsEnabled = useSettingsValue('devToolsEnabled');
   const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
@@ -104,6 +105,41 @@ const Header: React.FC<{
     };
   }, [devToolsEnabled]);
 
+  React.useEffect(() => {
+    if (platform === 'darwin') {
+      return;
+    }
+
+    let altPressedWithoutModifiers = false;
+
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== 'Alt') {
+        return;
+      }
+
+      altPressedWithoutModifiers = !event.metaKey && !event.ctrlKey && !event.shiftKey;
+    };
+
+    const handleKeyUp = (event: KeyboardEvent): void => {
+      if (event.key !== 'Alt' || !altPressedWithoutModifiers) {
+        return;
+      }
+
+      altPressedWithoutModifiers = false;
+      event.preventDefault();
+      event.stopPropagation();
+      userMenuTriggerRef.current?.focus();
+    };
+
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keyup', handleKeyUp, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keyup', handleKeyUp, true);
+    };
+  }, [platform]);
+
   const onSyncSettings = React.useCallback(async () => {
     if (!accountSyncEnabled) {
       notifyWarning(t('header.syncDisabled'));
@@ -139,6 +175,9 @@ const Header: React.FC<{
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
+            ref={userMenuTriggerRef}
+            type="button"
+            aria-label={t('header.userMenu')}
             className="flex-shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline"
             // @ts-expect-error React.CSSProperties
             style={{ WebkitAppRegion: 'no-drag' }}

@@ -21,7 +21,8 @@
     "syncDisabled": "Account Sync is disabled in Settings.",
     "syncFailed": "Failed to sync settings.",
     "syncSettings": "Sync Settings",
-    "syncSuccess": "Settings synced from current account scope."
+    "syncSuccess": "Settings synced from current account scope.",
+    "userMenu": "User Menu"
   },
   "home": {
     "actionCancel": "Cancel",

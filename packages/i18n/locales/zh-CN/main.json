@@ -20,5 +20,49 @@
     "windowsShell": {
       "openTerminal": "在 Cosmosh 中打开终端"
     }
+  },
+  "menu": {
+    "app": {
+      "about": "关于 {appName}",
+      "hide": "隐藏 {appName}",
+      "hideOthers": "隐藏其他",
+      "quit": "退出 {appName}",
+      "services": "服务",
+      "settings": "设置...",
+      "showAll": "全部显示"
+    },
+    "edit": {
+      "copy": "复制",
+      "cut": "剪切",
+      "delete": "删除",
+      "label": "编辑",
+      "paste": "粘贴",
+      "pasteAndMatchStyle": "粘贴并匹配样式",
+      "redo": "重做",
+      "selectAll": "全选",
+      "startSpeaking": "开始朗读",
+      "stopSpeaking": "停止朗读",
+      "undo": "撤销"
+    },
+    "file": {
+      "closeWindow": "关闭窗口",
+      "label": "文件"
+    },
+    "help": {
+      "documentation": "文档",
+      "githubRepository": "GitHub 存储库",
+      "label": "帮助"
+    },
+    "window": {
+      "bringAllToFront": "前置全部窗口",
+      "closeCurrentTab": "关闭当前标签页",
+      "closeRightTabs": "关闭右侧标签页",
+      "label": "窗口",
+      "minimize": "最小化",
+      "newTab": "新建标签页",
+      "switchToTab": "切换到标签页...",
+      "toggleFullScreen": "切换全屏",
+      "zoom": "缩放"
+    }
   }
 }

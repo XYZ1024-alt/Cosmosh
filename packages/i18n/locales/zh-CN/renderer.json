@@ -21,7 +21,8 @@
     "syncDisabled": "设置中未启用账号同步。",
     "syncFailed": "同步设置失败。",
     "syncSettings": "同步设置",
-    "syncSuccess": "已从当前账号作用域同步设置。"
+    "syncSuccess": "已从当前账号作用域同步设置。",
+    "userMenu": "用户菜单"
   },
   "home": {
     "actionCancel": "取消",

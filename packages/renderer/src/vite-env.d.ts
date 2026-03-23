@@ -37,6 +37,13 @@ import type {
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
 type LocalTerminalCreateSessionRequest = ApiLocalTerminalCreateSessionRequest;
 type LocalTerminalCreateSessionResponse = ApiLocalTerminalCreateSessionResponse;
+type AppMenuAction =
+  | 'open-about'
+  | 'open-settings'
+  | 'new-tab'
+  | 'close-current-tab'
+  | 'close-right-tabs'
+  | 'show-tab-switcher';
 
 declare global {
   interface ImportMetaEnv {
@@ -80,6 +87,7 @@ declare global {
         fallbackReady: boolean;
       }>;
       onLaunchWorkingDirectory: (listener: (cwd: string) => void) => () => void;
+      onAppMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
       openDevTools: () => Promise<boolean>;
       restartBackendRuntime: () => Promise<boolean>;
       showInFileManager: (targetPath?: string) => Promise<boolean>;

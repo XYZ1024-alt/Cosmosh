@@ -43,6 +43,7 @@ type TabSwitcherOverlayProps = {
   applySshServerVisualStyle: boolean;
   onCloseTab: (tabId: string) => void;
   onCommitTab: (tabId: string) => void;
+  openSignal: number;
 };
 
 const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
@@ -51,6 +52,7 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
   applySshServerVisualStyle,
   onCloseTab,
   onCommitTab,
+  openSignal,
 }) => {
   const [isOpen, setIsOpen] = React.useState<boolean>(false);
   const [targetTabId, setTargetTabId] = React.useState<string>('');
@@ -94,6 +96,15 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
       setTargetTabId(activeTabId);
     }
   }, [activeTabId, isOpen, tabs, targetTabId]);
+
+  React.useEffect(() => {
+    if (openSignal <= 0 || tabs.length === 0) {
+      return;
+    }
+
+    setIsOpen(true);
+    setTargetTabId(activeTabId);
+  }, [activeTabId, openSignal, tabs.length]);
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
@@ -217,6 +228,7 @@ const App: React.FC = () => {
   const [showSystemMonitorOverlay, setShowSystemMonitorOverlay] = React.useState<boolean>(() => {
     return readShowSystemMonitorOverlayPreference();
   });
+  const [tabSwitcherOpenSignal, setTabSwitcherOpenSignal] = React.useState<number>(0);
 
   const handleShowSystemMonitorOverlayChange = React.useCallback((nextVisible: boolean): void => {
     setShowSystemMonitorOverlay(nextVisible);
@@ -352,6 +364,53 @@ const App: React.FC = () => {
       void launchWorkingDirectoryHandlerRef.current();
     });
   }, []);
+
+  React.useEffect(() => {
+    const electronBridge = window.electron;
+    if (!electronBridge) {
+      return;
+    }
+
+    const unsubscribe = electronBridge.onAppMenuAction((action) => {
+      switch (action) {
+        case 'open-about': {
+          addTab('settings', {
+            state: {
+              settingsCategory: 'about',
+            },
+          });
+          break;
+        }
+        case 'open-settings': {
+          addTab('settings');
+          break;
+        }
+        case 'new-tab': {
+          addTab('home');
+          break;
+        }
+        case 'close-current-tab': {
+          closeTab(activeTabId);
+          break;
+        }
+        case 'close-right-tabs': {
+          closeRightTabs(activeTabId);
+          break;
+        }
+        case 'show-tab-switcher': {
+          setTabSwitcherOpenSignal((previous) => previous + 1);
+          break;
+        }
+        default: {
+          break;
+        }
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [activeTabId, addTab, closeRightTabs, closeTab]);
 
   const tabContent = React.useMemo(() => {
     return (
@@ -564,6 +623,7 @@ const App: React.FC = () => {
             tabs={tabs}
             activeTabId={activeTabId}
             applySshServerVisualStyle={applySshServerVisualStyle}
+            openSignal={tabSwitcherOpenSignal}
             onCloseTab={closeTab}
             onCommitTab={setActiveTabId}
           />

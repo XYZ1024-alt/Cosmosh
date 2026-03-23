@@ -35,6 +35,23 @@ import type {
 } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 
+type AppMenuAction =
+  | 'open-about'
+  | 'open-settings'
+  | 'new-tab'
+  | 'close-current-tab'
+  | 'close-right-tabs'
+  | 'show-tab-switcher';
+
+const APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set<AppMenuAction>([
+  'open-about',
+  'open-settings',
+  'new-tab',
+  'close-current-tab',
+  'close-right-tabs',
+  'show-tab-switcher',
+]);
+
 /**
  * Typed IPC invoke helper used by all bridge methods.
  * Centralizing this adapter keeps renderer-call transport swappable in future browser builds.
@@ -78,6 +95,28 @@ const onIpcStringPayload = (channel: string, listener: (payload: string) => void
 
   return () => {
     ipcRenderer.removeListener(channel, handler);
+  };
+};
+
+/**
+ * Subscribes to validated application menu action events.
+ *
+ * @param listener Callback invoked for known app menu actions only.
+ * @returns Unsubscribe callback.
+ */
+const onIpcAppMenuActionPayload = (listener: (action: AppMenuAction) => void): (() => void) => {
+  const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
+    if (typeof action !== 'string' || !APP_MENU_ACTIONS.has(action as AppMenuAction)) {
+      return;
+    }
+
+    listener(action as AppMenuAction);
+  };
+
+  ipcRenderer.on('app:menu-action', handler);
+
+  return () => {
+    ipcRenderer.removeListener('app:menu-action', handler);
   };
 };
 
@@ -137,6 +176,9 @@ contextBridge.exposeInMainWorld('electron', {
    */
   onLaunchWorkingDirectory: (listener: (cwd: string) => void) => {
     return onIpcStringPayload('app:launch-working-directory', listener);
+  },
+  onAppMenuAction: (listener: (action: AppMenuAction) => void) => {
+    return onIpcAppMenuActionPayload(listener);
   },
   openDevTools: () => {
     return invokeIpc<boolean>('app:open-devtools');
