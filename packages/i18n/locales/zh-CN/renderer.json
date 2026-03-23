@@ -274,6 +274,10 @@
         "description": "在自动补全面板中包含文件与目录路径建议。",
         "title": "自动补全路径建议"
       },
+      "terminalBracketedPasteEnabled": {
+        "description": "将粘贴内容包装为安全粘贴格式，避免内容粘贴后被立即执行。",
+        "title": "安全粘贴"
+      },
       "terminalContextLaunchBehavior": {
         "description": "控制通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
         "title": "从上下文启动"

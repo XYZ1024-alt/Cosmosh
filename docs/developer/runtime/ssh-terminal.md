@@ -214,6 +214,9 @@ Renderer now maps terminal runtime behavior from Settings to `ITerminalOptions` 
   - `drawBoldTextInBrightColors`
   - `scrollSensitivity`, `fastScrollSensitivity`, `minimumContrastRatio`
   - `screenReaderMode`, `scrollOnUserInput`, `smoothScrollDuration`, `tabStopWidth`
+- **Terminal / Runtime**:
+  - `ignoreBracketedPasteMode` is derived from Settings `terminalBracketedPasteEnabled` (`false` when enabled, `true` when disabled).
+  - Context-menu paste, drag-and-drop text insertion, and selection-toolbar insert route through xterm `terminal.paste(...)` when enabled, so shell-side bracketed paste mode can keep multiline payloads from executing immediately.
 
 Notes:
 

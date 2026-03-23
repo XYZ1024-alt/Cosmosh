@@ -150,6 +150,7 @@ export type UseSshCoreParams = {
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
+  terminalBracketedPasteEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
   onTabTitleChange?: (title: string) => void;
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
@@ -212,6 +213,13 @@ export type SshCoreActions = {
    * @returns `true` when payload is sent to an open socket, otherwise `false`.
    */
   sendInput: (data: string) => boolean;
+  /**
+   * Pastes text into active pane input path.
+   *
+   * @param text Clipboard or dropped text payload.
+   * @returns `true` when payload is delivered, otherwise `false`.
+   */
+  pasteInput: (text: string) => boolean;
   /**
    * Sends command-history deletion request for current active session.
    *
@@ -326,6 +334,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled,
     onTabTitleChange,
     onTabVisualChange,
@@ -801,6 +810,36 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   );
 
   /**
+   * Routes pasted payload through xterm paste semantics when enabled.
+   *
+   * @param text Clipboard or dropped text payload.
+   * @returns `true` when payload is delivered, otherwise `false`.
+   */
+  const pasteInput = React.useCallback(
+    (text: string): boolean => {
+      if (!text) {
+        return false;
+      }
+
+      const socket = socketRef.current;
+      if (!socket || socket.readyState !== WebSocket.OPEN) {
+        return false;
+      }
+
+      if (terminalBracketedPasteEnabled) {
+        const terminal = terminalRef.current;
+        if (terminal) {
+          terminal.paste(text);
+          return true;
+        }
+      }
+
+      return sendInput(text);
+    },
+    [sendInput, socketRef, terminalBracketedPasteEnabled, terminalRef],
+  );
+
+  /**
    * Requests deletion of one command from active pane history source.
    *
    * @param command Command text selected in sidebar history list.
@@ -883,6 +922,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       closePane,
       retryConnection,
       sendInput,
+      pasteInput,
       deleteHistoryCommand,
       selectAll,
       getSelectionText,

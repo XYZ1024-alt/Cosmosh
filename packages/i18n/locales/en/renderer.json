@@ -274,6 +274,10 @@
         "description": "Include file and directory path suggestions in the auto-complete menu.",
         "title": "Auto Complete Path Suggestions"
       },
+      "terminalBracketedPasteEnabled": {
+        "description": "Wrap pasted text in safe paste markers so commands are not executed immediately.",
+        "title": "Safe Paste"
+      },
       "terminalContextLaunchBehavior": {
         "description": "Controls how terminals are opened from context launch or 'Open terminal in Cosmosh'.",
         "title": "Launch from Context"

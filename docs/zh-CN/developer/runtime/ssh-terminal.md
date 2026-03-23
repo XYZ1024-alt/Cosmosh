@@ -214,6 +214,9 @@ flowchart LR
   - `drawBoldTextInBrightColors`
   - `scrollSensitivity`、`fastScrollSensitivity`、`minimumContrastRatio`
   - `screenReaderMode`、`scrollOnUserInput`、`smoothScrollDuration`、`tabStopWidth`
+- **终端 / 运行时**：
+  - `ignoreBracketedPasteMode` 由设置项 `terminalBracketedPasteEnabled` 推导（开启时为 `false`，关闭时为 `true`）。
+  - 开启后，右键粘贴、拖拽文本插入、选区工具栏插入会统一走 xterm `terminal.paste(...)`，从而让 shell 侧 bracketed paste 机制避免多行内容被立即执行。
 
 说明：
 

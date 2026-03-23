@@ -71,6 +71,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteMinChars = settingsValues.terminalAutoCompleteMinChars;
   const terminalAutoCompleteMaxItems = settingsValues.terminalAutoCompleteMaxItems;
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
+  const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
       getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-terminal').trim() || '#cccccc';
@@ -105,6 +106,7 @@ const SSH: React.FC<SSHProps> = ({
       fontSize: settingsValues.terminalFontSize,
       fontWeight: resolveTerminalFontWeightSetting(settingsValues.terminalFontWeight, 'normal'),
       fontWeightBold: resolveTerminalFontWeightSetting(settingsValues.terminalFontWeightBold, 'bold'),
+      ignoreBracketedPasteMode: !terminalBracketedPasteEnabled,
       letterSpacing: settingsValues.terminalLetterSpacing,
       lineHeight: lineHeight ?? 1,
       minimumContrastRatio,
@@ -132,6 +134,7 @@ const SSH: React.FC<SSHProps> = ({
     settingsValues.terminalFontSize,
     settingsValues.terminalFontWeight,
     settingsValues.terminalFontWeightBold,
+    terminalBracketedPasteEnabled,
     settingsValues.terminalLetterSpacing,
     settingsValues.terminalLineHeight,
     settingsValues.terminalMinimumContrastRatio,
@@ -171,6 +174,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     onTabTitleChange,
     onTabVisualChange,
@@ -198,6 +202,7 @@ const SSH: React.FC<SSHProps> = ({
       closePane,
       retryConnection,
       sendInput,
+      pasteInput,
       deleteHistoryCommand,
       selectAll,
       getSelectionText,
@@ -316,9 +321,9 @@ const SSH: React.FC<SSHProps> = ({
       return;
     }
 
-    sendInput(selectionAnchor.selectionText);
+    pasteInput(selectionAnchor.selectionText);
     focusActiveTerminal();
-  }, [focusActiveTerminal, selectionAnchor, sendInput]);
+  }, [focusActiveTerminal, pasteInput, selectionAnchor]);
 
   const handleSelectionBarSearch = React.useCallback(() => {
     if (!selectionAnchor?.selectionText.trim()) {
@@ -346,14 +351,14 @@ const SSH: React.FC<SSHProps> = ({
       .readText()
       .then((text) => {
         if (text) {
-          sendInput(text);
+          pasteInput(text);
           focusActiveTerminal();
         }
       })
       .catch(() => {
         // Clipboard read permission denied or unavailable; silently ignore.
       });
-  }, [focusActiveTerminal, sendInput]);
+  }, [focusActiveTerminal, pasteInput]);
 
   const handleContextMenuSearchOnline = React.useCallback(() => {
     const selectionText = getSelectionText();
@@ -532,10 +537,10 @@ const SSH: React.FC<SSHProps> = ({
 
   const handleTerminalTextDrop = React.useCallback(
     (droppedText: string) => {
-      sendInput(droppedText);
+      pasteInput(droppedText);
       focusActiveTerminal();
     },
-    [focusActiveTerminal, sendInput],
+    [focusActiveTerminal, pasteInput],
   );
 
   const {
