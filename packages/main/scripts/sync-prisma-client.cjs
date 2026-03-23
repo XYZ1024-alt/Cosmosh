@@ -10,6 +10,55 @@ const targetPrismaClientDir = path.join(runtimeResourcesRoot, '@prisma', 'client
 const toNormalizedRelativePath = (baseDir, sourcePath) => path.relative(baseDir, sourcePath).split(path.sep).join('/');
 
 /**
+ * Parses required Prisma binary targets from env.
+ */
+const getRequiredPrismaTargetsFromEnv = () => {
+  const rawTargets = process.env.COSMOSH_REQUIRED_PRISMA_TARGETS;
+  if (typeof rawTargets !== 'string' || rawTargets.trim().length === 0) {
+    return [];
+  }
+
+  return rawTargets
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+};
+
+/**
+ * Validates that expected Linux Prisma engines are present in packaged runtime assets.
+ */
+const validateRequiredPrismaTargets = async (prismaRuntimeRoot) => {
+  const requiredTargets = getRequiredPrismaTargetsFromEnv();
+  if (requiredTargets.length === 0) {
+    return;
+  }
+
+  const clientEngineDir = path.join(prismaRuntimeRoot, 'client');
+  const missingFiles = [];
+
+  for (const target of requiredTargets) {
+    const fileName = `libquery_engine-${target}.so.node`;
+    const filePath = path.join(clientEngineDir, fileName);
+    try {
+      await fs.access(filePath);
+    } catch {
+      missingFiles.push(fileName);
+    }
+  }
+
+  if (missingFiles.length > 0) {
+    throw new Error(
+      `[main:prebuild] Prisma runtime missing required engine binaries: ${missingFiles.join(', ')}. ` +
+        'Update binaryTargets in packages/backend/prisma/schema.prisma and rerun prisma generate.',
+    );
+  }
+
+  console.log(
+    `[main:prebuild] Prisma target validation passed: ${requiredTargets.map((target) => `libquery_engine-${target}.so.node`).join(', ')}`,
+  );
+};
+
+/**
  * Skips browser/WASM/typing artifacts that are unnecessary for Electron backend runtime.
  */
 const shouldSkipPrismaArtifact = (sourcePath) => {
@@ -110,6 +159,8 @@ const syncPrismaClient = async () => {
       return !shouldSkipPrismaArtifact(sourcePath);
     },
   });
+
+  await validateRequiredPrismaTargets(targetDir);
 
   console.log(`[main:prebuild] Synced Prisma runtime: ${prismaRuntimeDir} -> ${targetDir}`);
   console.log(`[main:prebuild] Synced Prisma package: ${prismaClientDir} -> ${targetPrismaClientDir}`);

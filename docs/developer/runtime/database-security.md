@@ -182,6 +182,15 @@ Notes:
 - Fallback fields are required only when `safeStorage` is unavailable.
 - Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again.
 
+## 6.1 Prisma Engine Target Compatibility (Linux Packaging)
+
+To avoid backend startup failures such as `Prisma Client could not locate the Query Engine` on target machines, Linux packaging must include these Prisma Linux targets:
+
+- `debian-openssl-1.1.x`
+- `debian-openssl-3.0.x`
+
+CI validates required `libquery_engine-*.so.node` files via `COSMOSH_REQUIRED_PRISMA_TARGETS` during prebuild and fails fast when any required target is missing.
+
 ## 7. Action Playbook for Linux Packaging
 
 Until renderer-side “Set Master Password” flow is implemented end-to-end, use controlled operational fallback.

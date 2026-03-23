@@ -182,6 +182,15 @@ Main 会在以下任一场景进入回退解析器：
 - 只有当 `safeStorage` 不可用时，回退字段才是启动必需项。
 - `safeStorage` 恢复后，可用应急回退密钥回灌 `encryptedDbMasterKey`。
 
+## 6.1 Prisma 引擎目标兼容（Linux 打包）
+
+为避免后端在目标机器启动时报 `Prisma Client could not locate the Query Engine`，Linux 打包必须包含以下 Prisma Linux 目标：
+
+- `debian-openssl-1.1.x`
+- `debian-openssl-3.0.x`
+
+CI 会通过 `COSMOSH_REQUIRED_PRISMA_TARGETS` 在预构建阶段验证 `libquery_engine-*.so.node` 是否齐全，缺失时直接失败，防止发布后再暴露给终端用户。
+
 ## 7. Linux 打包场景行动手册
 
 在 Renderer 端“设置主密码”全链路完成前，可采用受控回退流程。

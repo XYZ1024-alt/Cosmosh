@@ -224,6 +224,10 @@ pnpm --filter @cosmosh/main build
    - `COSMOSH_ENFORCE_GLIBC_BASELINE=1`
    - `COSMOSH_MAX_GLIBC_VERSION=2.35`
 - If you build Linux packages locally for distribution, use an environment with glibc `<=2.35` (or containerize the build) to avoid `ERR_DLOPEN_FAILED` with missing `GLIBC_2.38`/newer symbols.
+- Prisma runtime engines must include both OpenSSL target families used in Debian/Ubuntu ecosystems:
+   - `debian-openssl-1.1.x`
+   - `debian-openssl-3.0.x`
+- CI validates required Prisma engine files via `COSMOSH_REQUIRED_PRISMA_TARGETS` during Linux packaging. This prevents shipping artifacts that fail with `Prisma Client could not locate the Query Engine` on target systems.
 
 ## Code Quality
 

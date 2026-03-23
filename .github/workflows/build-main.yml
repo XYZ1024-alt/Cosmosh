@@ -42,6 +42,7 @@ jobs:
         env:
           COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.platform == 'linux' && '1' || '0' }}
           COSMOSH_MAX_GLIBC_VERSION: 2.35
+          COSMOSH_REQUIRED_PRISMA_TARGETS: ${{ matrix.platform == 'linux' && 'debian-openssl-1.1.x,debian-openssl-3.0.x' || '' }}
         run: |
           pnpm --filter @cosmosh/main run prebuild
           pnpm --filter @cosmosh/main exec tsc -p tsconfig.json
