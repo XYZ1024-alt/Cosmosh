@@ -27,7 +27,7 @@ type UseSshMirrorPanesParams = {
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
   closeAutocompleteRef: React.RefObject<() => void>;
-  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual') => void>;
+  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
   handleCompletionResponse: (
     payload: Extract<ServerInboundMessage, { type: 'completion-response' }>,
     paneId: string,
@@ -229,7 +229,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
               if (payload.type === 'output') {
                 terminal.write(payload.data);
                 if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
-                  scheduleAutocompleteRequestRef.current('manual');
+                  scheduleAutocompleteRequestRef.current('secretPrompt');
                 }
                 return;
               }

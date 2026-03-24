@@ -45,7 +45,7 @@ type UseSshAutocompleteResult = {
   resolveAutocompleteAnchorRef: React.RefObject<
     (commandStartColumn: number, cursorRow: number) => TerminalAutocompleteAnchor | null
   >;
-  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual') => void>;
+  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
   latestAutocompletePaneIdRef: React.RefObject<string>;
   latestAutocompleteRequestIdRef: React.RefObject<string>;
@@ -228,7 +228,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       paneId: string;
       linePrefix: string;
       cursorRow: number;
-      trigger: 'typing' | 'manual';
+      trigger: 'typing' | 'manual' | 'secretPrompt';
       workingDirectoryHint: string | null;
     }): void => {
       const requestKey = `${params.cursorRow}:${params.linePrefix}`;
@@ -255,7 +255,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         includeBuiltInCommands: terminalAutoCompleteBuiltInCommandsEnabled,
         includePathSuggestions: terminalAutoCompletePathEnabled,
         includePasswordSuggestions: terminalAutoCompletePasswordEnabled,
-        trigger: params.trigger,
+        trigger: params.trigger === 'typing' ? 'typing' : 'manual',
       });
     },
     [
@@ -269,7 +269,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   );
 
   const requestAutocomplete = React.useCallback(
-    (trigger: 'typing' | 'manual') => {
+    (trigger: 'typing' | 'manual' | 'secretPrompt') => {
       const activePaneId = activePaneIdRef.current;
       const isPrimaryPane = activePaneId === primaryPaneIdRef.current;
       const socket = isPrimaryPane
@@ -304,6 +304,11 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       const shadowCommandPrefix = localAutocompleteCommandPrefixByPaneRef.current.get(activePaneId);
       const commandPrefix = shadowCommandPrefix ?? lineContext.commandPrefix;
       const trimmedCommandPrefix = commandPrefix.trim();
+      if (trimmedCommandPrefix.length === 0 && trigger !== 'secretPrompt') {
+        closeAutocomplete();
+        return;
+      }
+
       if (trimmedCommandPrefix.length > 0 && trimmedCommandPrefix.length < terminalAutoCompleteMinChars) {
         closeAutocomplete();
         return;
@@ -346,8 +351,14 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
    * @returns Nothing.
    */
   const scheduleAutocompleteRequest = React.useCallback(
-    (trigger: 'typing' | 'manual') => {
+    (trigger: 'typing' | 'manual' | 'secretPrompt') => {
       if (trigger === 'manual') {
+        clearScheduledAutocompleteRequest();
+        requestAutocomplete(trigger);
+        return;
+      }
+
+      if (trigger === 'secretPrompt') {
         clearScheduledAutocompleteRequest();
         requestAutocomplete(trigger);
         return;
