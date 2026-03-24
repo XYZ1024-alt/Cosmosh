@@ -104,6 +104,17 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   const [autocompleteAnchor, setAutocompleteAnchor] = React.useState<TerminalAutocompleteAnchor | null>(null);
 
   /**
+   * Determines whether xterm is currently rendering the alternate screen buffer.
+   * Full-screen TUIs/editors (vim/less/top) run in alternate buffer and should not show shell autocomplete.
+   *
+   * @param terminal Active xterm instance.
+   * @returns `true` when terminal is in alternate buffer.
+   */
+  const isAlternateScreenBufferActive = React.useCallback((terminal: Terminal): boolean => {
+    return terminal.buffer.active === terminal.buffer.alternate;
+  }, []);
+
+  /**
    * Clears pending typing debounce timer if one exists.
    *
    * @returns Nothing.
@@ -279,6 +290,11 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         return;
       }
 
+      if (isAlternateScreenBufferActive(terminal)) {
+        closeAutocomplete();
+        return;
+      }
+
       const lineContext = resolveTerminalCurrentLinePrefix(terminal);
       if (!lineContext) {
         closeAutocomplete();
@@ -317,6 +333,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       primaryPaneIdRef,
       primarySocketRef,
       primaryTerminalRef,
+      isAlternateScreenBufferActive,
       terminalAutoCompleteEnabled,
       terminalAutoCompleteMinChars,
     ],
@@ -488,6 +505,12 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         return;
       }
 
+      const activeTerminal = terminalRef.current;
+      if (activeTerminal && isAlternateScreenBufferActive(activeTerminal)) {
+        // Keep TUI/editor key handling untouched when shell prompt is not active.
+        return;
+      }
+
       if (event.key === 'Tab' && acceptsByTab) {
         event.preventDefault();
         event.stopPropagation();
@@ -534,8 +557,10 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       acceptAutocompleteAtIndex,
       autocompleteItems,
       closeAutocomplete,
+      isAlternateScreenBufferActive,
       scheduleAutocompleteRequest,
       terminalAutoCompleteAcceptKeys,
+      terminalRef,
     ],
   );
 
