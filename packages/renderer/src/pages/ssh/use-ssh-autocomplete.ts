@@ -396,7 +396,6 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       localAutocompleteCommandPrefixByPaneRef.current.set(activePaneIdRef.current, nextLinePrefix);
 
       const shouldTriggerPathChain = targetItem.kind === 'path' && targetItem.insertText.endsWith('/');
-      const shouldTriggerSecretChain = targetItem.kind === 'secret';
       if (shouldTriggerPathChain) {
         dispatchCompletionRequest({
           socket,
@@ -406,10 +405,6 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
           trigger: 'manual',
           workingDirectoryHint: latestAutocompleteWorkingDirectoryHintRef.current,
         });
-      } else if (shouldTriggerSecretChain) {
-        window.setTimeout(() => {
-          scheduleAutocompleteRequest('manual');
-        }, 180);
       }
     },
     [
@@ -418,7 +413,6 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       closeAutocomplete,
       dispatchCompletionRequest,
       localAutocompleteCommandPrefixByPaneRef,
-      scheduleAutocompleteRequest,
       socketRef,
       terminalRef,
     ],
