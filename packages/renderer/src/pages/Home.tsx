@@ -1,4 +1,4 @@
-import type { components } from '@cosmosh/api-contract';
+import type { ApiSshUpdateServerRequest, components } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import {
   ArrowDownAZ,
@@ -210,6 +210,36 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
       setIsLoading(false);
     }
   }, []);
+
+  /**
+   * Builds a safe SSH server update payload for Home actions.
+   * Home operations must preserve keychain linkage instead of inline credentials,
+   * otherwise backend validation may incorrectly require private key/password fields.
+   */
+  const buildServerUpdatePayload = React.useCallback(
+    (server: SshServerListItem, overrides: Partial<ApiSshUpdateServerRequest> = {}): ApiSshUpdateServerRequest => {
+      if (!server.keychainId) {
+        throw new Error('Server keychain reference is missing. Please refresh and try again.');
+      }
+
+      const basePayload: ApiSshUpdateServerRequest = {
+        name: server.name,
+        host: server.host,
+        port: server.port,
+        username: server.username,
+        keychainId: server.keychainId,
+        strictHostKey: server.strictHostKey,
+        note: server.note ?? undefined,
+        folderId: server.folder?.id,
+      };
+
+      return {
+        ...basePayload,
+        ...overrides,
+      };
+    },
+    [],
+  );
 
   const createFolderDialog = useCreateFolderDialog({
     onCreated: async () => {
@@ -855,15 +885,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
       }
 
       try {
-        await updateSshServer(serverId, {
-          name: targetServer.name,
-          host: targetServer.host,
-          port: targetServer.port,
-          username: targetServer.username,
-          authType: targetServer.authType,
-          note: targetServer.note ?? undefined,
-          folderId,
-        });
+        await updateSshServer(serverId, buildServerUpdatePayload(targetServer, { folderId }));
 
         await reloadHomeData();
         setActiveFolderId(folderId);
@@ -873,7 +895,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         notifyError(error instanceof Error ? error.message : t('home.dragServerToFolderFailed'));
       }
     },
-    [notifyError, notifySuccess, reloadHomeData, servers],
+    [buildServerUpdatePayload, notifyError, notifySuccess, reloadHomeData, servers],
   );
 
   /**
@@ -913,23 +935,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
           newTagIds = [...currentTags.map((tag) => tag.id), favoriteTag.id];
         }
 
-        await updateSshServer(server.id, {
-          name: server.name,
-          host: server.host,
-          port: server.port,
-          username: server.username,
-          authType: server.authType,
-          note: server.note ?? undefined,
-          folderId: server.folder?.id,
-          tagIds: newTagIds,
-        });
+        await updateSshServer(server.id, buildServerUpdatePayload(server, { tagIds: newTagIds }));
 
         await reloadHomeData();
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('home.contextFavoriteFailed'));
       }
     },
-    [isServerFavorite, notifyError, reloadHomeData],
+    [buildServerUpdatePayload, isServerFavorite, notifyError, reloadHomeData],
   );
 
   return (
