@@ -191,6 +191,14 @@ Main 会在以下任一场景进入回退解析器：
 
 CI 会通过 `COSMOSH_REQUIRED_PRISMA_TARGETS` 在预构建阶段验证 `libquery_engine-*.so.node` 是否齐全，缺失时直接失败，防止发布后再暴露给终端用户。
 
+运行时资源同步现在按目标平台过滤 Prisma 引擎：
+
+- Linux 包仅保留 Linux `*.so.node` 引擎。
+- Windows 包仅保留 Windows `*.dll.node` 引擎。
+- macOS 包仅保留 Darwin `*.dylib.node` 引擎。
+
+这样可以避免把 Linux 兼容引擎误打进 Windows/macOS 产物，同时保留 Linux 兼容性保障。
+
 ## 7. Linux 打包场景行动手册
 
 在 Renderer 端“设置主密码”全链路完成前，可采用受控回退流程。

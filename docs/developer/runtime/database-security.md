@@ -191,6 +191,14 @@ To avoid backend startup failures such as `Prisma Client could not locate the Qu
 
 CI validates required `libquery_engine-*.so.node` files via `COSMOSH_REQUIRED_PRISMA_TARGETS` during prebuild and fails fast when any required target is missing.
 
+Runtime asset sync is platform-aware:
+
+- Linux packages keep Linux `*.so.node` Prisma engines.
+- Windows packages keep Windows `*.dll.node` Prisma engines.
+- macOS packages keep Darwin `*.dylib.node` Prisma engines.
+
+This prevents Linux compatibility binaries from being copied into Windows/macOS artifacts while preserving Linux fallback coverage.
+
 ## 7. Action Playbook for Linux Packaging
 
 Until renderer-side “Set Master Password” flow is implemented end-to-end, use controlled operational fallback.

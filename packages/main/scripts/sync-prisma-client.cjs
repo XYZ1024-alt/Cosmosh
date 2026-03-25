@@ -6,8 +6,52 @@ const pnpmStoreDir = path.join(workspaceRoot, 'node_modules', '.pnpm');
 const runtimeResourcesRoot = path.join(workspaceRoot, 'packages', 'main', 'resources-runtime', 'node_modules');
 const targetDir = path.join(runtimeResourcesRoot, '.prisma');
 const targetPrismaClientDir = path.join(runtimeResourcesRoot, '@prisma', 'client');
+const supportedPackagedPlatforms = new Set(['win32', 'linux', 'darwin']);
+
+/**
+ * Resolves build target platform for runtime asset filtering.
+ */
+const resolvePackagedPlatform = () => {
+  const override = process.env.COSMOSH_PACKAGE_PLATFORM?.trim().toLowerCase();
+  if (override && supportedPackagedPlatforms.has(override)) {
+    return override;
+  }
+
+  return process.platform;
+};
+
+const packagedPlatform = resolvePackagedPlatform();
 
 const toNormalizedRelativePath = (baseDir, sourcePath) => path.relative(baseDir, sourcePath).split(path.sep).join('/');
+
+/**
+ * Returns true when a file name looks like a Prisma query engine native binary.
+ */
+const isPrismaQueryEngineBinary = (fileName) => {
+  const normalized = fileName.toLowerCase();
+  return normalized.includes('query_engine') && normalized.endsWith('.node');
+};
+
+/**
+ * Checks whether a query engine binary matches the current packaged platform.
+ */
+const shouldKeepQueryEngineForPlatform = (fileName, platform) => {
+  const normalized = fileName.toLowerCase();
+
+  if (normalized.endsWith('.dll.node')) {
+    return platform === 'win32';
+  }
+
+  if (normalized.endsWith('.so.node')) {
+    return platform === 'linux';
+  }
+
+  if (normalized.endsWith('.dylib.node')) {
+    return platform === 'darwin';
+  }
+
+  return true;
+};
 
 /**
  * Parses required Prisma binary targets from env.
@@ -28,6 +72,10 @@ const getRequiredPrismaTargetsFromEnv = () => {
  * Validates that expected Linux Prisma engines are present in packaged runtime assets.
  */
 const validateRequiredPrismaTargets = async (prismaRuntimeRoot) => {
+  if (packagedPlatform !== 'linux') {
+    return;
+  }
+
   const requiredTargets = getRequiredPrismaTargetsFromEnv();
   if (requiredTargets.length === 0) {
     return;
@@ -85,6 +133,10 @@ const shouldSkipPrismaArtifact = (sourcePath) => {
     return true;
   }
 
+  if (isPrismaQueryEngineBinary(fileName) && !shouldKeepQueryEngineForPlatform(fileName, packagedPlatform)) {
+    return true;
+  }
+
   if (fileName.endsWith('.map') || lowerFileName.endsWith('.d.ts') || lowerFileName.endsWith('.d.mts')) {
     return true;
   }
@@ -102,6 +154,19 @@ const shouldSkipPrismaArtifact = (sourcePath) => {
   }
 
   return false;
+};
+
+/**
+ * Lists synchronized Prisma query engine binaries to aid packaging diagnostics.
+ */
+const listPackagedPrismaEngines = async (prismaRuntimeRoot) => {
+  const clientEngineDir = path.join(prismaRuntimeRoot, 'client');
+  const entries = await fs.readdir(clientEngineDir, { withFileTypes: true });
+
+  return entries
+    .filter((entry) => entry.isFile() && isPrismaQueryEngineBinary(entry.name))
+    .map((entry) => entry.name)
+    .sort((left, right) => left.localeCompare(right));
 };
 
 /**
@@ -162,8 +227,13 @@ const syncPrismaClient = async () => {
 
   await validateRequiredPrismaTargets(targetDir);
 
+  const packagedEngines = await listPackagedPrismaEngines(targetDir);
+
   console.log(`[main:prebuild] Synced Prisma runtime: ${prismaRuntimeDir} -> ${targetDir}`);
   console.log(`[main:prebuild] Synced Prisma package: ${prismaClientDir} -> ${targetPrismaClientDir}`);
+  console.log(
+    `[main:prebuild] Packaged Prisma engines for ${packagedPlatform}: ${packagedEngines.length > 0 ? packagedEngines.join(', ') : 'none'}`,
+  );
 };
 
 syncPrismaClient().catch((error) => {
