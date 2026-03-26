@@ -318,7 +318,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       latestAutocompleteCursorRowRef.current = lineContext.cursorRow;
 
       const workingDirectoryHint =
-        resolvePromptWorkingDirectoryHint(lineContext.fullLinePrefix, lineContext.commandStartColumn) ?? null;
+        resolvePromptWorkingDirectoryHint(lineContext.fullLinePrefix, lineContext.commandPrefixStartOffset) ?? null;
       dispatchCompletionRequest({
         socket,
         paneId: activePaneId,

@@ -140,6 +140,7 @@ export const resolveTerminalCurrentLinePrefix = (
   fullLinePrefix: string;
   commandPrefix: string;
   commandStartColumn: number;
+  commandPrefixStartOffset: number;
   cursorRow: number;
 } | null => {
   const activeBuffer = terminal.buffer.active;
@@ -152,13 +153,35 @@ export const resolveTerminalCurrentLinePrefix = (
     return null;
   }
 
-  const fullLinePrefix = line.translateToString(true, 0, cursorX);
-  const commandStartColumn = resolveCommandStartOffset(fullLinePrefix);
+  const visualLinePrefix = line.translateToString(true, 0, cursorX);
+
+  // Reconstruct the wrapped logical line so long commands keep full context for completion.
+  const wrappedSegments: string[] = [visualLinePrefix];
+  let scanLineIndex = absoluteLineIndex;
+  while (scanLineIndex > 0) {
+    const currentLine = activeBuffer.getLine(scanLineIndex);
+    if (!currentLine?.isWrapped) {
+      break;
+    }
+
+    const previousLine = activeBuffer.getLine(scanLineIndex - 1);
+    if (!previousLine) {
+      break;
+    }
+
+    wrappedSegments.unshift(previousLine.translateToString(true));
+    scanLineIndex -= 1;
+  }
+
+  const fullLinePrefix = wrappedSegments.join('');
+  const commandPrefixStartOffset = resolveCommandStartOffset(fullLinePrefix);
+  const commandStartColumn = resolveCommandStartOffset(visualLinePrefix);
 
   return {
     fullLinePrefix,
-    commandPrefix: fullLinePrefix.slice(commandStartColumn),
+    commandPrefix: fullLinePrefix.slice(commandPrefixStartOffset),
     commandStartColumn,
+    commandPrefixStartOffset,
     cursorRow: cursorY,
   };
 };
