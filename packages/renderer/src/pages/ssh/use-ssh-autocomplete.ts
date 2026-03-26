@@ -448,6 +448,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         if (char === '\x1b') {
           // Escape sequences are frequently cursor movement/edit commands; stop shadow tracking.
           canTrackCommandPrefix = false;
+          localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
           return {
             shouldRequest: false,
             shouldClose: true,
