@@ -71,6 +71,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteMinChars = settingsValues.terminalAutoCompleteMinChars;
   const terminalAutoCompleteMaxItems = settingsValues.terminalAutoCompleteMaxItems;
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
+  const terminalAutoCompletePromptRegex = settingsValues.terminalAutoCompletePromptRegex;
   const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
@@ -174,6 +175,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     onTabTitleChange,

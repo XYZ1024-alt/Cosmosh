@@ -150,6 +150,7 @@ export type UseSshCoreParams = {
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
+  terminalAutoCompletePromptRegex: string;
   terminalBracketedPasteEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
   onTabTitleChange?: (title: string) => void;
@@ -334,6 +335,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled,
     onTabTitleChange,
@@ -466,6 +468,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     autocompleteMenuRef,
     acceptAutocompleteAtIndex,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
@@ -481,6 +484,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalAutoCompletePromptRegex,
     wrapperRef,
     terminalContainerRef,
     terminalRef,
@@ -717,6 +721,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     refreshSelectionAnchor,
     clearSelectionOverlay,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
@@ -741,6 +746,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     refreshSelectionAnchor,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
     handleCompletionResponse,

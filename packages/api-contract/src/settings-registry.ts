@@ -63,6 +63,7 @@ export interface SettingsValues {
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
+  terminalAutoCompletePromptRegex: string;
 }
 
 export type SettingKey = keyof SettingsValues;
@@ -757,6 +758,21 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.advanced.autoComplete.fuzzyMatch',
     commandActionId: 'settings.terminal.advanced.autoComplete.fuzzyMatch.toggle',
     searchTerms: ['terminal', 'autocomplete', 'fuzzy', 'fuzzy match'],
+  },
+  {
+    key: 'terminalAutoCompletePromptRegex',
+    valueType: 'string',
+    defaultValue: '',
+    nameI18nKey: 'settings.items.terminalAutoCompletePromptRegex.title',
+    descriptionI18nKey: 'settings.items.terminalAutoCompletePromptRegex.description',
+    placeholderI18nKey: 'settings.items.terminalAutoCompletePromptRegex.placeholder',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.autoComplete,
+    control: 'input',
+    path: 'terminal.runtime.autoComplete.promptRegex',
+    commandActionId: 'settings.terminal.runtime.autoComplete.promptRegex.set',
+    searchTerms: ['terminal', 'autocomplete', 'prompt', 'regex', 'prompt parser'],
+    maxLength: 300,
   },
   {
     key: 'terminalDrawBoldTextInBrightColors',

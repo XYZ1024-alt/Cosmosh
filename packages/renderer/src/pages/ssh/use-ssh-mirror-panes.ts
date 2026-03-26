@@ -26,6 +26,7 @@ type UseSshMirrorPanesParams = {
   refreshSelectionAnchor: () => void;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
   scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
   handleCompletionResponse: (
@@ -67,6 +68,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     refreshSelectionAnchor,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
     handleCompletionResponse,
@@ -150,10 +152,6 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           closeAutocompleteRef.current();
         }
 
-        if (autocompleteInputState.shouldRequest) {
-          scheduleAutocompleteRequestRef.current('typing');
-        }
-
         const socket = runtime.socket;
         if (socket) {
           sendClientMessage(socket, {
@@ -228,6 +226,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
               const payload = JSON.parse(event.data) as ServerInboundMessage;
               if (payload.type === 'output') {
                 terminal.write(payload.data);
+                notifyAutocompleteOutputEchoRef.current(paneId);
                 if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
                   scheduleAutocompleteRequestRef.current('secretPrompt');
                 }
@@ -343,6 +342,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     sshConnectionTimeoutSecRef,
     terminalInitOptionsRef,
     terminalPaneIds,
+    notifyAutocompleteOutputEchoRef,
     notifyWarning,
   ]);
 

@@ -52,6 +52,7 @@ type UseSshPrimarySessionParams = {
   refreshSelectionAnchor: () => void;
   clearSelectionOverlay: () => void;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
   scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
@@ -96,6 +97,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     refreshSelectionAnchor,
     clearSelectionOverlay,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
@@ -258,6 +260,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (payload.type === 'output') {
           terminal.write(payload.data);
+          notifyAutocompleteOutputEchoRef.current(primaryPaneIdRef.current);
           if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
             scheduleAutocompleteRequestRef.current('secretPrompt');
           }
@@ -469,10 +472,6 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         closeAutocompleteRef.current();
       }
 
-      if (autocompleteInputState.shouldRequest) {
-        scheduleAutocompleteRequestRef.current('typing');
-      }
-
       if (socket) {
         sendClientMessage(socket, {
           type: 'input',
@@ -571,6 +570,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   }, [
     activePaneIdRef,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     clearSelectionOverlay,
     closeAutocompleteRef,
     connectSessionRef,

@@ -70,6 +70,7 @@ const AUTOCOMPLETE_DEPENDENT_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>
   'terminalAutoCompleteMinChars',
   'terminalAutoCompleteMaxItems',
   'terminalAutoCompleteFuzzyMatch',
+  'terminalAutoCompletePromptRegex',
 ]);
 
 type SettingKey = keyof AppSettingsValues;

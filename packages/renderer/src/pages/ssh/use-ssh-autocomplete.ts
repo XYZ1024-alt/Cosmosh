@@ -11,7 +11,12 @@ import {
   AUTOCOMPLETE_PANEL_ESTIMATED_WIDTH,
   AUTOCOMPLETE_TYPING_DEBOUNCE_MS,
 } from './ssh-types';
-import { resolvePromptWorkingDirectoryHint, resolveTerminalCurrentLinePrefix, sendClientMessage } from './ssh-utils';
+import {
+  compilePromptPrefixRegex,
+  resolvePromptWorkingDirectoryHint,
+  resolveTerminalCurrentLinePrefix,
+  sendClientMessage,
+} from './ssh-utils';
 
 type UseSshAutocompleteParams = {
   connectionState: 'connecting' | 'connected' | 'failed';
@@ -24,6 +29,7 @@ type UseSshAutocompleteParams = {
   terminalAutoCompleteMinChars: number;
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
+  terminalAutoCompletePromptRegex: string;
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   terminalContainerRef: React.RefObject<HTMLDivElement | null>;
   terminalRef: React.RefObject<Terminal | null>;
@@ -41,6 +47,7 @@ type UseSshAutocompleteResult = {
   autocompleteMenuRef: React.RefObject<TerminalAutocompleteMenuHandle | null>;
   acceptAutocompleteAtIndex: (index: number) => void;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
   resolveAutocompleteAnchorRef: React.RefObject<
     (commandStartColumn: number, cursorRow: number) => TerminalAutocompleteAnchor | null
@@ -76,6 +83,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
     terminalAutoCompleteMinChars,
     terminalAutoCompleteMaxItems,
     terminalAutoCompleteFuzzyMatch,
+    terminalAutoCompletePromptRegex,
     wrapperRef,
     terminalContainerRef,
     terminalRef,
@@ -99,6 +107,10 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   const latestAutocompleteCursorRowRef = React.useRef<number>(0);
   const autocompleteMenuRef = React.useRef<TerminalAutocompleteMenuHandle | null>(null);
   const localAutocompleteCommandPrefixByPaneRef = React.useRef<Map<string, string>>(new Map());
+  const pendingTypingRequestPaneSetRef = React.useRef<Set<string>>(new Set());
+  const compiledPromptPrefixRegex = React.useMemo<RegExp | null>(() => {
+    return compilePromptPrefixRegex(terminalAutoCompletePromptRegex);
+  }, [terminalAutoCompletePromptRegex]);
 
   const [autocompleteItems, setAutocompleteItems] = React.useState<TerminalAutocompleteItem[]>([]);
   const [autocompleteAnchor, setAutocompleteAnchor] = React.useState<TerminalAutocompleteAnchor | null>(null);
@@ -150,6 +162,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
    */
   const closeAutocomplete = React.useCallback(() => {
     clearScheduledAutocompleteRequest();
+    pendingTypingRequestPaneSetRef.current.clear();
     setAutocompleteItems([]);
     autocompleteMenuRef.current?.reset();
     setAutocompleteAnchor(null);
@@ -295,7 +308,9 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         return;
       }
 
-      const lineContext = resolveTerminalCurrentLinePrefix(terminal);
+      const lineContext = resolveTerminalCurrentLinePrefix(terminal, {
+        promptPrefixRegex: compiledPromptPrefixRegex,
+      });
       if (!lineContext) {
         closeAutocomplete();
         return;
@@ -339,6 +354,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       primarySocketRef,
       primaryTerminalRef,
       isAlternateScreenBufferActive,
+      compiledPromptPrefixRegex,
       terminalAutoCompleteEnabled,
       terminalAutoCompleteMinChars,
     ],
@@ -449,6 +465,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
           // Escape sequences are frequently cursor movement/edit commands; stop shadow tracking.
           canTrackCommandPrefix = false;
           localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
+          pendingTypingRequestPaneSetRef.current.delete(paneId);
           return {
             shouldRequest: false,
             shouldClose: true,
@@ -487,12 +504,43 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
       }
 
+      const shouldQueueTypingRequest = shouldRequest && !shouldClose;
+      if (shouldQueueTypingRequest) {
+        pendingTypingRequestPaneSetRef.current.add(paneId);
+      }
+
+      if (shouldClose) {
+        pendingTypingRequestPaneSetRef.current.delete(paneId);
+      }
+
       return {
-        shouldRequest: shouldRequest && !shouldClose,
+        shouldRequest: shouldQueueTypingRequest,
         shouldClose,
       };
     },
     [],
+  );
+
+  /**
+   * Triggers one pending typing autocomplete request after terminal output echo arrives.
+   *
+   * @param paneId Pane id whose terminal received output.
+   * @returns Nothing.
+   */
+  const notifyAutocompleteOutputEcho = React.useCallback(
+    (paneId: string): void => {
+      if (!pendingTypingRequestPaneSetRef.current.has(paneId)) {
+        return;
+      }
+
+      if (paneId !== activePaneIdRef.current) {
+        return;
+      }
+
+      pendingTypingRequestPaneSetRef.current.delete(paneId);
+      scheduleAutocompleteRequest('typing');
+    },
+    [activePaneIdRef, scheduleAutocompleteRequest],
   );
 
   /**
@@ -574,13 +622,21 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   const resolveAutocompleteAnchorRef = React.useRef(resolveAutocompleteAnchor);
   const scheduleAutocompleteRequestRef = React.useRef(scheduleAutocompleteRequest);
   const handleAutocompleteTerminalKeyDownRef = React.useRef(handleAutocompleteTerminalKeyDown);
+  const notifyAutocompleteOutputEchoRef = React.useRef(notifyAutocompleteOutputEcho);
 
   React.useEffect(() => {
     closeAutocompleteRef.current = closeAutocomplete;
     resolveAutocompleteAnchorRef.current = resolveAutocompleteAnchor;
     scheduleAutocompleteRequestRef.current = scheduleAutocompleteRequest;
     handleAutocompleteTerminalKeyDownRef.current = handleAutocompleteTerminalKeyDown;
-  }, [closeAutocomplete, resolveAutocompleteAnchor, scheduleAutocompleteRequest, handleAutocompleteTerminalKeyDown]);
+    notifyAutocompleteOutputEchoRef.current = notifyAutocompleteOutputEcho;
+  }, [
+    closeAutocomplete,
+    resolveAutocompleteAnchor,
+    scheduleAutocompleteRequest,
+    handleAutocompleteTerminalKeyDown,
+    notifyAutocompleteOutputEcho,
+  ]);
 
   /**
    * Applies completion response payload to autocomplete UI state.
@@ -627,6 +683,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
     autocompleteMenuRef,
     acceptAutocompleteAtIndex,
     applyAutocompleteInputData,
+    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     resolveAutocompleteAnchorRef,
     scheduleAutocompleteRequestRef,

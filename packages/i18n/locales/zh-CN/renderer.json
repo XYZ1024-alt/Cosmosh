@@ -275,6 +275,11 @@
         "description": "在自动补全面板中包含文件与目录路径建议。",
         "title": "自动补全路径建议"
       },
+      "terminalAutoCompletePromptRegex": {
+        "description": "可选正则：用于在命令文本前解析 prompt 前缀。留空时使用内置启发式规则。",
+        "placeholder": "^.*[#$%>]\\s+",
+        "title": "自动补全 Prompt 正则"
+      },
       "terminalBracketedPasteEnabled": {
         "description": "将粘贴内容包装为安全粘贴格式，避免内容粘贴后被立即执行。",
         "title": "安全粘贴"

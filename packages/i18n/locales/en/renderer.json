@@ -275,6 +275,11 @@
         "description": "Include file and directory path suggestions in the auto-complete menu.",
         "title": "Auto Complete Path Suggestions"
       },
+      "terminalAutoCompletePromptRegex": {
+        "description": "Optional regex for parsing prompt prefix before command text. Leave empty to use built-in heuristics.",
+        "placeholder": "^.*[#$%>]\\s+",
+        "title": "Auto Complete Prompt Regex"
+      },
       "terminalBracketedPasteEnabled": {
         "description": "Wrap pasted text in safe paste markers so commands are not executed immediately.",
         "title": "Safe Paste"

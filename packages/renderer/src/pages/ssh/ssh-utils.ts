@@ -9,7 +9,17 @@ const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngi
   baidu: 'https://www.baidu.com/s?wd=',
 };
 
-const COMMAND_START_TOKENS = ['> ', '$ ', '# ', '❯ ', '➜ ', 'λ '];
+const PROMPT_TERMINATOR_CHARS = new Set<string>(['$', '#', '>', '%', '❯', '➜', 'λ']);
+const MAX_PROMPT_TOKENS_TO_SCAN = 12;
+
+type PromptBoundaryToken = {
+  value: string;
+  start: number;
+};
+
+type CommandStartResolveOptions = {
+  promptPrefixRegex?: RegExp | null;
+};
 
 /**
  * Detects common password/passphrase prompt endings in terminal output.
@@ -100,42 +110,315 @@ export const sendClientMessage = (socket: WebSocket, payload: ClientOutboundMess
 };
 
 /**
- * Locates where user command starts in a shell prompt line.
+ * Compiles user-configured prompt regex into a safe runtime matcher.
  *
- * @param linePrefix Visible content before cursor on current line.
- * @returns Zero-based command start column.
+ * Accepted formats:
+ * - raw pattern, e.g. `^.+[$#]\\s+`
+ * - regex literal, e.g. `/^.+[$#]\\s+/i`
+ *
+ * Stateful `g`/`y` flags are stripped to keep repeated executions deterministic.
+ *
+ * @param pattern Raw prompt regex setting.
+ * @returns Compiled regex or `null` when input is empty/invalid.
  */
-export const resolveCommandStartOffset = (linePrefix: string): number => {
-  let bestIndex = -1;
-  let bestTokenLength = 0;
+export const compilePromptPrefixRegex = (pattern: string): RegExp | null => {
+  const normalizedPattern = pattern.trim();
+  if (!normalizedPattern) {
+    return null;
+  }
 
-  for (const token of COMMAND_START_TOKENS) {
-    const index = linePrefix.lastIndexOf(token);
-    if (index < 0) {
+  const regexLiteralMatch = /^\/(.+)\/([a-z]*)$/i.exec(normalizedPattern);
+  const source = regexLiteralMatch?.[1] ?? normalizedPattern;
+  const rawFlags = regexLiteralMatch?.[2] ?? '';
+  const flagsWithoutState = rawFlags.replace(/[gy]/g, '');
+  const flags = flagsWithoutState.includes('u') ? flagsWithoutState : `${flagsWithoutState}u`;
+
+  try {
+    return new RegExp(source, flags);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Resolves whether a single character should be treated as prompt terminator.
+ *
+ * @param value Candidate character.
+ * @returns `true` when character is a known prompt terminator marker.
+ */
+const isPromptTerminatorChar = (value: string): boolean => {
+  return PROMPT_TERMINATOR_CHARS.has(value);
+};
+
+/**
+ * Checks whether a token is composed only by non-word symbols.
+ *
+ * @param token Candidate token.
+ * @returns `true` when token is symbolic-only.
+ */
+const isSymbolicToken = (token: string): boolean => {
+  return token.length > 0 && /^[^A-Za-z0-9_]+$/u.test(token);
+};
+
+/**
+ * Decides whether a token can be interpreted as prompt start context.
+ *
+ * @param token First token in current shell segment.
+ * @returns `true` when token likely belongs to prompt metadata.
+ */
+const isLikelyPromptStartToken = (token: string): boolean => {
+  if (!token) {
+    return false;
+  }
+
+  const lastChar = token[token.length - 1] ?? '';
+  if (isPromptTerminatorChar(lastChar)) {
+    return true;
+  }
+
+  if (token === 'PS') {
+    return true;
+  }
+
+  if (token.includes('@') || token.includes('~')) {
+    return true;
+  }
+
+  return isSymbolicToken(token);
+};
+
+/**
+ * Decides whether a token can be treated as one prompt terminator fragment.
+ *
+ * @param token Candidate token in prompt segment.
+ * @returns `true` when token can delimit prompt and command.
+ */
+const isPromptTerminatorToken = (token: string): boolean => {
+  if (!token) {
+    return false;
+  }
+
+  const lastChar = token[token.length - 1] ?? '';
+  if (isPromptTerminatorChar(lastChar)) {
+    return true;
+  }
+
+  return token.length <= 3 && isSymbolicToken(token);
+};
+
+/**
+ * Splits one string into whitespace-delimited tokens while preserving indexes.
+ *
+ * @param linePrefix Source text to tokenize.
+ * @returns Tokens with absolute start indexes.
+ */
+const tokenizeWhitespace = (linePrefix: string): PromptBoundaryToken[] => {
+  const tokens: PromptBoundaryToken[] = [];
+  let cursor = 0;
+
+  while (cursor < linePrefix.length) {
+    while (cursor < linePrefix.length && /\s/.test(linePrefix[cursor] ?? '')) {
+      cursor += 1;
+    }
+
+    if (cursor >= linePrefix.length) {
+      break;
+    }
+
+    const tokenStart = cursor;
+    while (cursor < linePrefix.length && !/\s/.test(linePrefix[cursor] ?? '')) {
+      cursor += 1;
+    }
+
+    tokens.push({
+      value: linePrefix.slice(tokenStart, cursor),
+      start: tokenStart,
+    });
+  }
+
+  return tokens;
+};
+
+/**
+ * Finds the start offset of current shell command segment by parsing separators.
+ *
+ * Separator parsing intentionally tracks basic shell quoting semantics so
+ * `;`, `&&`, `||`, `|` inside quotes do not split command segments.
+ *
+ * @param linePrefix Full text before cursor.
+ * @returns Segment start offset before prompt-specific trimming.
+ */
+const resolveShellSegmentStartOffset = (linePrefix: string): number => {
+  let segmentStartOffset = 0;
+  let quote: 'single' | 'double' | null = null;
+
+  for (let cursor = 0; cursor < linePrefix.length; cursor += 1) {
+    const currentChar = linePrefix[cursor] ?? '';
+    const nextChar = linePrefix[cursor + 1] ?? '';
+
+    if (quote === 'single') {
+      if (currentChar === "'") {
+        quote = null;
+      }
+
       continue;
     }
 
-    if (index > bestIndex) {
-      bestIndex = index;
-      bestTokenLength = token.length;
+    if (quote === 'double') {
+      if (currentChar === '"') {
+        quote = null;
+        continue;
+      }
+
+      if (currentChar === '\\') {
+        cursor += 1;
+      }
+
+      continue;
     }
+
+    if (currentChar === "'") {
+      quote = 'single';
+      continue;
+    }
+
+    if (currentChar === '"') {
+      quote = 'double';
+      continue;
+    }
+
+    if (currentChar === '\\') {
+      cursor += 1;
+      continue;
+    }
+
+    const isSemicolon = currentChar === ';';
+    const isPipe = currentChar === '|';
+    const isAmpersand = currentChar === '&';
+    const isLogicalAnd = isAmpersand && nextChar === '&';
+    const isLogicalOr = isPipe && nextChar === '|';
+    if (!isSemicolon && !isPipe && !isAmpersand) {
+      continue;
+    }
+
+    if (isLogicalAnd || isLogicalOr) {
+      segmentStartOffset = cursor + 2;
+      cursor += 1;
+      continue;
+    }
+
+    segmentStartOffset = cursor + 1;
   }
 
-  if (bestIndex < 0) {
+  while (segmentStartOffset < linePrefix.length && /\s/.test(linePrefix[segmentStartOffset] ?? '')) {
+    segmentStartOffset += 1;
+  }
+
+  return Math.max(0, segmentStartOffset);
+};
+
+/**
+ * Resolves command start offset from user-provided prompt regex.
+ *
+ * Regex must match prompt prefix from the start of current command segment.
+ *
+ * @param linePrefix Segment text to evaluate.
+ * @param promptPrefixRegex Compiled user regex.
+ * @returns Command start offset within segment, or `null` when no match.
+ */
+const resolveConfiguredPromptOffset = (linePrefix: string, promptPrefixRegex: RegExp | null): number | null => {
+  if (!promptPrefixRegex) {
+    return null;
+  }
+
+  const match = promptPrefixRegex.exec(linePrefix);
+  if (!match || match.index !== 0 || match[0].length === 0) {
+    return null;
+  }
+
+  return Math.max(0, Math.min(linePrefix.length, match[0].length));
+};
+
+/**
+ * Resolves command start offset by prompt heuristics around first prompt token.
+ *
+ * This fallback intentionally avoids hardcoded full prompt tokens. It first
+ * requires the leading token to look like prompt context and then scans a
+ * bounded token window for the last prompt terminator marker.
+ *
+ * @param linePrefix Segment text after shell separator parsing.
+ * @returns Command start offset within segment.
+ */
+const resolveHeuristicPromptOffset = (linePrefix: string): number => {
+  const tokens = tokenizeWhitespace(linePrefix);
+  if (tokens.length === 0) {
     return 0;
   }
 
-  return Math.max(0, bestIndex + bestTokenLength);
+  const firstToken = tokens[0]?.value ?? '';
+  if (!isLikelyPromptStartToken(firstToken)) {
+    return 0;
+  }
+
+  let lastPromptTerminatorIndex = -1;
+  const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+  for (let tokenIndex = 0; tokenIndex < scanLimit; tokenIndex += 1) {
+    const currentToken = tokens[tokenIndex]?.value ?? '';
+    if (!isPromptTerminatorToken(currentToken)) {
+      continue;
+    }
+
+    lastPromptTerminatorIndex = tokenIndex;
+  }
+
+  const nextCommandToken =
+    lastPromptTerminatorIndex >= 0 ? (tokens[lastPromptTerminatorIndex + 1] ?? null) : (tokens[1] ?? null);
+  if (lastPromptTerminatorIndex >= 0 && !nextCommandToken) {
+    // Prompt-only frame (no echoed command text yet): anchor command start at prompt end.
+    return Math.max(0, linePrefix.length);
+  }
+
+  if (tokens.length === 1 && isPromptTerminatorToken(firstToken)) {
+    return Math.max(0, linePrefix.length);
+  }
+
+  if (!nextCommandToken) {
+    return 0;
+  }
+
+  return Math.max(0, nextCommandToken.start);
+};
+
+/**
+ * Locates where user command starts in a shell prompt line.
+ *
+ * @param linePrefix Visible content before cursor on current line.
+ * @param options Optional prompt parsing configuration.
+ * @returns Zero-based command start column.
+ */
+export const resolveCommandStartOffset = (linePrefix: string, options?: CommandStartResolveOptions): number => {
+  const segmentStartOffset = resolveShellSegmentStartOffset(linePrefix);
+  const segmentPrefix = linePrefix.slice(segmentStartOffset);
+
+  const configuredOffset = resolveConfiguredPromptOffset(segmentPrefix, options?.promptPrefixRegex ?? null);
+  if (configuredOffset !== null) {
+    return Math.max(0, segmentStartOffset + configuredOffset);
+  }
+
+  const heuristicOffset = resolveHeuristicPromptOffset(segmentPrefix);
+  return Math.max(0, segmentStartOffset + heuristicOffset);
 };
 
 /**
  * Resolves current shell line prefix and extracted command-only prefix.
  *
  * @param terminal Source xterm instance.
+ * @param options Optional prompt parsing configuration.
  * @returns Cursor row and command prefix context, or `null` when unavailable.
  */
 export const resolveTerminalCurrentLinePrefix = (
   terminal: Terminal,
+  options?: CommandStartResolveOptions,
 ): {
   fullLinePrefix: string;
   commandPrefix: string;
@@ -174,8 +457,8 @@ export const resolveTerminalCurrentLinePrefix = (
   }
 
   const fullLinePrefix = wrappedSegments.join('');
-  const commandPrefixStartOffset = resolveCommandStartOffset(fullLinePrefix);
-  const commandStartColumn = resolveCommandStartOffset(visualLinePrefix);
+  const commandPrefixStartOffset = resolveCommandStartOffset(fullLinePrefix, options);
+  const commandStartColumn = resolveCommandStartOffset(visualLinePrefix, options);
 
   return {
     fullLinePrefix,
