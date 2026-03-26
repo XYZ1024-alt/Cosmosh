@@ -112,6 +112,7 @@ sequenceDiagram
   - 同步得到的 shell 历史快照会合并进补全历史缓存，保证在会话初期也能提供历史补全，
   - 来自 inshellisense/Fig 资源的命令元数据（规范信号，按完整命令路径索引生成，而非仅根命令子集），
   - 在同一排序流水线中组合的运行时 provider（路径补全 provider 与交互式密钥提示 provider）。
+- 补全引擎的 token 解析按会话 shell 类型区分：SSH 使用 POSIX 规则；本地 PowerShell/CMD 使用 Windows 友好规则，反斜杠会作为路径字面字符保留，而不是通用转义符。
 - `packages/backend/scripts/generate-inshellisense.mjs` 会生成规范数据与按语言策略处理的补全说明资源：
   - `packages/backend/src/terminal/completion/generated-inshellisense.ts` 仅保留命令结构与 `descriptionI18nKey`（不再冗余内嵌原始英文说明文本）。
   - `packages/i18n/locales/en/backend-inshellisense.json` 会根据上游说明全量重建。

@@ -36,6 +36,19 @@ const LOCAL_PROFILE_CACHE_TTL_MS = 60_000;
 
 let windowsProfilesCache: { expiresAt: number; profiles: LocalTerminalProfile[] } | null = null;
 let unixProfilesCache: { expiresAt: number; profiles: LocalTerminalProfile[] } | null = null;
+
+const resolveCompletionTokenizerMode = (profileId: string): 'posix' | 'powershell' | 'cmd' => {
+  if (profileId === 'pwsh' || profileId === 'windows-powershell') {
+    return 'powershell';
+  }
+
+  if (profileId === 'cmd') {
+    return 'cmd';
+  }
+
+  return 'posix';
+};
+
 /**
  * Describes an available local shell profile that can be launched as PTY session.
  */
@@ -507,6 +520,7 @@ export class LocalTerminalSessionService extends BaseTerminalSessionService<Loca
       },
       {
         recentCommands: session.completionRecentCommands,
+        tokenizerMode: resolveCompletionTokenizerMode(session.profileId),
         pathProvider: createLocalPathProvider(completionCwd),
         promptState: {
           shouldSuggestSecret: session.completionPromptState.shouldSuggestSecret,

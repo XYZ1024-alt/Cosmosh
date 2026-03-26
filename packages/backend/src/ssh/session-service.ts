@@ -571,6 +571,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       },
       {
         recentCommands: session.completionRecentCommands,
+        tokenizerMode: 'posix',
         pathProvider: createRemotePathProvider({
           resolveCwd: async () => {
             if (!session.completionWorkingDirectory) {

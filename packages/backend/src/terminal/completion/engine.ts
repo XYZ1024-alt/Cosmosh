@@ -20,7 +20,10 @@ type CompletionRuntimeOptions = {
   recentCommands: string[];
   pathProvider?: (context: TerminalPathCompletionContext) => Promise<TerminalPathEntry[]>;
   promptState?: TerminalRuntimePromptState;
+  tokenizerMode?: TerminalTokenizerMode;
 };
+
+type TerminalTokenizerMode = 'posix' | 'powershell' | 'cmd';
 
 type PathCompletionRule = {
   command: string;
@@ -83,9 +86,11 @@ const computeSubsequenceScore = (query: string, candidate: string, fuzzyMatch: b
   return Math.max(120, 260 - gapPenalty);
 };
 
-const parseCommandTokens = (line: string): ParsedCommandToken[] => {
+const parseCommandTokens = (line: string, mode: TerminalTokenizerMode): ParsedCommandToken[] => {
   const tokens: ParsedCommandToken[] = [];
   const input = String(line || '');
+  const isPosixMode = mode === 'posix';
+  const isPowerShellMode = mode === 'powershell';
 
   let cursor = 0;
   while (cursor < input.length) {
@@ -105,6 +110,12 @@ const parseCommandTokens = (line: string): ParsedCommandToken[] => {
       const char = input[cursor] ?? '';
 
       if (quote === 'single') {
+        if (isPowerShellMode && char === "'" && input[cursor + 1] === "'") {
+          value += "'";
+          cursor += 2;
+          continue;
+        }
+
         if (char === "'") {
           quote = null;
         } else {
@@ -121,13 +132,19 @@ const parseCommandTokens = (line: string): ParsedCommandToken[] => {
           continue;
         }
 
-        if (char === '\\' && cursor + 1 < input.length) {
+        if (isPosixMode && char === '\\' && cursor + 1 < input.length) {
           const escaped = input[cursor + 1] ?? '';
           if (escaped === '"' || escaped === '\\' || escaped === '$' || escaped === '`') {
             value += escaped;
             cursor += 2;
             continue;
           }
+        }
+
+        if (isPowerShellMode && char === '`' && cursor + 1 < input.length) {
+          value += input[cursor + 1] ?? '';
+          cursor += 2;
+          continue;
         }
 
         value += char;
@@ -139,7 +156,7 @@ const parseCommandTokens = (line: string): ParsedCommandToken[] => {
         break;
       }
 
-      if (char === "'") {
+      if (char === "'" && (isPosixMode || isPowerShellMode)) {
         quote = 'single';
         cursor += 1;
         continue;
@@ -151,7 +168,7 @@ const parseCommandTokens = (line: string): ParsedCommandToken[] => {
         continue;
       }
 
-      if (char === '\\' && cursor + 1 < input.length) {
+      if (isPosixMode && char === '\\' && cursor + 1 < input.length) {
         value += input[cursor + 1] ?? '';
         cursor += 2;
         continue;
@@ -171,8 +188,8 @@ const parseCommandTokens = (line: string): ParsedCommandToken[] => {
   return tokens;
 };
 
-const tokenizeCommand = (line: string): string[] => {
-  return parseCommandTokens(line)
+const tokenizeCommand = (line: string, mode: TerminalTokenizerMode): string[] => {
+  return parseCommandTokens(line, mode)
     .map((token) => token.value.trim())
     .filter((segment) => segment.length > 0);
 };
@@ -438,6 +455,7 @@ const toHistoryItem = (
     fuzzyMatch: boolean;
     matchedCommandTokens: string[];
   },
+  tokenizerMode: TerminalTokenizerMode,
   index: number,
   totalCommands: number,
 ): TerminalCompletionItem | null => {
@@ -446,7 +464,7 @@ const toHistoryItem = (
     return null;
   }
 
-  const historyTokens = tokenizeCommand(label);
+  const historyTokens = tokenizeCommand(label, tokenizerMode);
   if (historyTokens.length === 0) {
     return null;
   }
@@ -820,6 +838,7 @@ const resolveTerminalCompletionsAsync = async (
 
   const normalizedLinePrefix = request.linePrefix.slice(0, normalizedCursorIndex);
   const query = normalizedLinePrefix.trimStart();
+  const tokenizerMode: TerminalTokenizerMode = options.tokenizerMode ?? 'posix';
   const fuzzyMatch = request.fuzzyMatch ?? true;
   const includeHistory = request.includeHistory ?? true;
   const includeBuiltInCommands = request.includeBuiltInCommands ?? true;
@@ -834,7 +853,7 @@ const resolveTerminalCompletionsAsync = async (
     };
   }
 
-  const parsedTokens = parseCommandTokens(normalizedLinePrefix);
+  const parsedTokens = parseCommandTokens(normalizedLinePrefix, tokenizerMode);
   const tokens = parsedTokens.map((token) => token.value);
   const currentToken = resolveCurrentToken(normalizedLinePrefix, parsedTokens);
   const currentTokenValue = currentToken.token;
@@ -871,6 +890,7 @@ const resolveTerminalCompletionsAsync = async (
           fuzzyMatch,
           matchedCommandTokens,
         },
+        tokenizerMode,
         index,
         recentCommands.length,
       );

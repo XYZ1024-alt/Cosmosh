@@ -112,6 +112,7 @@ sequenceDiagram
   - synchronized shell history snapshots merged into completion history cache so completion remains available before fresh interactive input,
   - command metadata imported from inshellisense/Fig resources (spec signal), generated from full command-path index rather than root-only subset,
   - runtime providers (path provider and interactive secret-prompt provider) composed in the same ranking pipeline.
+- Token parsing is shell-aware in completion engine: SSH uses POSIX tokenization, local PowerShell/CMD sessions use Windows-friendly tokenization where backslash is preserved as a literal path character instead of generic escape.
 - `packages/backend/scripts/generate-inshellisense.mjs` generates spec dataset plus locale resources with language-specific policy:
   - `packages/backend/src/terminal/completion/generated-inshellisense.ts` keeps command structure and `descriptionI18nKey` only (no duplicated raw description text payload).
   - `packages/i18n/locales/en/backend-inshellisense.json` is fully regenerated from upstream descriptions.
