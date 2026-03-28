@@ -752,7 +752,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
       main={
         <SplitWorkbenchMainPanel
           header={
-            <div className="mx-auto flex min-h-[46px] max-w-4xl items-start justify-between gap-4 pb-1">
+            <div className="mx-auto flex min-h-[46px] max-w-4xl items-center justify-between gap-4 pb-1">
               <div className="grid gap-1">
                 <h1 className="text-home-text ps-2 text-[24px] font-semibold">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
@@ -801,7 +801,7 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
                       key={section.title}
                       className="grid gap-3"
                     >
-                      <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
+                      <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
                       {section.items.map((item) => (
                         <FormField
                           key={item.path}

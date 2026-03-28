@@ -1141,7 +1141,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
       main={
         <SplitWorkbenchMainPanel
           header={
-            <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2">
+            <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2.5">
               <h1 className="text-home-text text-[24px] font-semibold">
                 {activeServerId ? formState.name || t('ssh.untitledServer') : t('ssh.newServer')}
               </h1>
@@ -1230,7 +1230,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                   </FormField>
                 </div>
 
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionBasicConnection')}
                 </div>
 
@@ -1263,7 +1263,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
               </section>
 
               <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionAuthentication')}
                 </div>
 
@@ -1431,7 +1431,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
               </section>
 
               <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionSecurity')}
                 </div>
                 <div className="flex items-center gap-2.5 px-2.5">
@@ -1451,7 +1451,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
               </section>
 
               <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionSettings')}
                 </div>
 

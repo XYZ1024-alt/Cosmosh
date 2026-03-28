@@ -679,7 +679,7 @@ const SSHKeychains: React.FC = () => {
       main={
         <SplitWorkbenchMainPanel
           header={
-            <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2">
+            <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 pb-1 ps-2.5">
               <h1 className="text-home-text text-[24px] font-semibold">
                 {activeKeychainId ? formState.name || t('sshKeychain.untitled') : t('sshKeychain.newKeychain')}
               </h1>
@@ -771,7 +771,7 @@ const SSHKeychains: React.FC = () => {
               </section>
 
               <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionAuthentication')}
                 </div>
 
@@ -856,7 +856,7 @@ const SSHKeychains: React.FC = () => {
               </section>
 
               <section className="grid gap-3">
-                <div className="px-2 pb-1 text-[15px] font-medium text-home-text-subtle">
+                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
                   {t('ssh.sectionSettings')}
                 </div>
                 <div className="grid grid-cols-[1fr_1fr] gap-3">
