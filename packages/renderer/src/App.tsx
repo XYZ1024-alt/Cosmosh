@@ -2,6 +2,7 @@ import classNames from 'classnames';
 import { X } from 'lucide-react';
 import React from 'react';
 
+import AppCommandPaletteHost from './components/AppCommandPaletteHost';
 import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
 import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
@@ -519,6 +520,7 @@ const App: React.FC = () => {
                 <React.Suspense fallback={pageLoadingFallback}>
                   <Settings
                     initialCategoryId={tab.state?.settingsCategory}
+                    initialSearchQuery={tab.state?.settingsInitialSearch}
                     onOpenSettingInEditor={(settingKey) =>
                       addTab('settings-editor', {
                         state: {
@@ -618,6 +620,15 @@ const App: React.FC = () => {
           </div>
           {/* Content */}
           {tabContent}
+
+          <AppCommandPaletteHost
+            activeTabId={activeTabId}
+            tabs={tabs}
+            addTab={addTab}
+            closeTab={closeTab}
+            closeRightTabs={closeRightTabs}
+            setActiveTabId={setActiveTabId}
+          />
 
           <TabSwitcherOverlay
             tabs={tabs}

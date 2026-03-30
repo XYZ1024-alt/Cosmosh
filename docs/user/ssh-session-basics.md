@@ -30,6 +30,13 @@
 - Release Ctrl/Control to confirm and jump to the selected tab.
 - Mouse click on a tab in the switcher jumps immediately, even if Ctrl/Control is still held.
 
+## Command Palette
+
+- Press Ctrl+Shift+P on Windows/Linux, or Cmd+Shift+P on macOS, to open the command palette globally.
+- The shortcut works even when terminal focus or input focus is active.
+- Use it to create tabs, switch tabs, close current tab, close right tabs, and jump into Settings search.
+- Settings commands can be searched by localized label, English label, setting key, path, search terms, and command action id.
+
 ## Trust and Verification
 
 - Review host fingerprint prompts carefully.

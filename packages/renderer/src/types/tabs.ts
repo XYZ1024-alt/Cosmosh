@@ -46,6 +46,7 @@ export type TabItem = {
   closable?: boolean;
   state?: {
     settingsCategory?: string;
+    settingsInitialSearch?: string;
     settingsEditorSettingKey?: string;
     sshConnectionIntent?: SshConnectionIntent;
     sshEditor?: SshEditorState;

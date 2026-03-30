@@ -198,7 +198,9 @@ const matchesSearch = (
     t(item.nameI18nKey),
     descriptionText,
     t(item.section.labelI18nKey),
+    item.key,
     item.path,
+    item.commandActionId,
     categoryLabel,
     ...item.searchTerms,
   ]
@@ -225,16 +227,19 @@ const toDefaultFormValue = (item: SettingDefinition): string | boolean => {
   return String(item.defaultValue);
 };
 
-const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (settingKey: SettingKey) => void }> = ({
-  initialCategoryId,
-  onOpenSettingInEditor,
-}) => {
+type SettingsProps = {
+  initialCategoryId?: string;
+  initialSearchQuery?: string;
+  onOpenSettingInEditor?: (settingKey: SettingKey) => void;
+};
+
+const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQuery, onOpenSettingInEditor }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const [, setLocaleTick] = React.useState<number>(0);
   const [activeCategoryId, setActiveCategoryId] = React.useState<SettingsCategoryId>(() => {
     return initialCategoryId === 'about' ? 'about' : 'general';
   });
-  const [search, setSearch] = React.useState<string>('');
+  const [search, setSearch] = React.useState<string>(() => initialSearchQuery?.trim() ?? '');
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
   const [scope, setScope] = React.useState<AppSettingsScope>({ deviceId: 'local-device' });
@@ -258,6 +263,14 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
 
   const normalizedSearch = search.trim().toLowerCase();
   const isSearchMode = normalizedSearch.length > 0;
+  const exactSettingKeySearch = React.useMemo<SettingKey | null>(() => {
+    if (!normalizedSearch) {
+      return null;
+    }
+
+    const matchedSetting = SETTINGS_REGISTRY.find((item) => item.key.toLowerCase() === normalizedSearch);
+    return matchedSetting?.key ?? null;
+  }, [normalizedSearch]);
 
   const loadDatabaseSecurityInfo = React.useCallback(async () => {
     setIsDatabaseSecurityInfoLoading(true);
@@ -292,12 +305,16 @@ const Settings: React.FC<{ initialCategoryId?: string; onOpenSettingInEditor?: (
       return SETTINGS_REGISTRY;
     }
 
+    if (exactSettingKeySearch) {
+      return SETTINGS_REGISTRY.filter((item) => item.key === exactSettingKeySearch);
+    }
+
     return SETTINGS_REGISTRY.filter((item) => {
       const categoryLabel = resolveCategoryLabel(item.category);
       const descriptionText = t(item.descriptionI18nKey);
       return matchesSearch(item, categoryLabel, descriptionText, normalizedSearch);
     });
-  }, [normalizedSearch]);
+  }, [exactSettingKeySearch, normalizedSearch]);
 
   const visibleCategoryIds = React.useMemo(() => {
     return getVisibleCategories(visibleSettings);

@@ -30,6 +30,13 @@
 - 松开 Ctrl/Control 后会跳转到当前选中的目标标签页。
 - 在切换器中用鼠标点击标签页会立即跳转，即使 Ctrl/Control 仍按住也会生效。
 
+## 命令面板
+
+- 在 Windows/Linux 使用 Ctrl+Shift+P，在 macOS 使用 Cmd+Shift+P，可全局唤起命令面板。
+- 即使终端或输入框处于焦点状态，该快捷键也可用。
+- 可用于新建标签页、切换标签页、关闭当前标签页、关闭右侧标签页，以及跳转到设置搜索。
+- 设置命令支持多维检索：本地化标题、英文标题、setting key、path、searchTerms、commandActionId。
+
 ## 信任与校验
 
 - 认真核对主机指纹提示。

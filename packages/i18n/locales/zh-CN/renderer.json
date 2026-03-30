@@ -1,4 +1,17 @@
 {
+  "commandPalette": {
+    "commands": {
+      "tabs": {
+        "closeCurrentTab": "关闭当前标签页",
+        "closeRightTabs": "关闭右侧标签页",
+        "currentTab": "当前标签页",
+        "newTab": "新建标签页",
+        "switchToTab": "切换到标签页"
+      }
+    },
+    "empty": "未找到匹配的命令",
+    "placeholder": "输入命令或搜索设置"
+  },
   "common": {
     "click": "点击"
   },

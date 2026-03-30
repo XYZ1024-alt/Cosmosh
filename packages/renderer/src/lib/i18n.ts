@@ -64,6 +64,29 @@ const i18n = createI18n({
   scope: 'renderer',
   fallbackLocale: 'en',
 });
+const scopedTranslatorCache = new Map<Locale, ReturnType<typeof createI18n>>();
+
+/**
+ * Resolves a cached translator for a specific locale without mutating global
+ * renderer locale state.
+ *
+ * @param locale Target locale.
+ * @returns Locale-pinned translator instance.
+ */
+const getScopedTranslator = (locale: Locale): ReturnType<typeof createI18n> => {
+  const cached = scopedTranslatorCache.get(locale);
+  if (cached) {
+    return cached;
+  }
+
+  const next = createI18n({
+    locale,
+    scope: 'renderer',
+    fallbackLocale: 'en',
+  });
+  scopedTranslatorCache.set(locale, next);
+  return next;
+};
 
 export const initializeLocale = async (): Promise<Locale> => {
   const storedLocale = readStoredLocale();
@@ -77,6 +100,18 @@ export const initializeLocale = async (): Promise<Locale> => {
 
 export const t = (key: string, params?: TranslationParams): string => {
   return i18n.t(key, params);
+};
+
+/**
+ * Translates a key in a specific locale without changing the active locale.
+ *
+ * @param locale Target locale.
+ * @param key I18n key.
+ * @param params Optional interpolation params.
+ * @returns Translated string for the requested locale.
+ */
+export const tForLocale = (locale: Locale, key: string, params?: TranslationParams): string => {
+  return getScopedTranslator(locale).t(key, params);
 };
 
 export const setLocale = async (locale: string): Promise<Locale> => {

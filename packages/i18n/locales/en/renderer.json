@@ -1,4 +1,17 @@
 {
+  "commandPalette": {
+    "commands": {
+      "tabs": {
+        "closeCurrentTab": "Close Current Tab",
+        "closeRightTabs": "Close Tabs to the Right",
+        "currentTab": "Current Tab",
+        "newTab": "New Tab",
+        "switchToTab": "Switch to Tab"
+      }
+    },
+    "empty": "No matching commands",
+    "placeholder": "Type a command or search settings"
+  },
   "common": {
     "click": "Click"
   },

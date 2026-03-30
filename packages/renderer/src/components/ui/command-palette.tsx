@@ -147,6 +147,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
   const handleKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
+      if (event.key === 'Escape' && closeOnEsc) {
+        event.preventDefault();
+        onOpenChange?.(false);
+        return;
+      }
+
       if (items.length === 0) {
         return;
       }
@@ -186,17 +192,18 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         items[activeIndex]?.onSelect();
         return;
       }
-
-      if (event.key === 'Escape' && closeOnEsc) {
-        event.preventDefault();
-        onOpenChange?.(false);
-      }
     },
     [activeIndex, closeOnEsc, getActiveActionButtons, items, onOpenChange, setActiveIndex],
   );
 
   const handlePanelKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key === 'Escape' && closeOnEsc) {
+        event.preventDefault();
+        onOpenChange?.(false);
+        return;
+      }
+
       if (items.length === 0) {
         return;
       }
@@ -251,11 +258,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
         activeButtons[focusedButtonIndex + 1]?.focus({ preventScroll: true });
         return;
-      }
-
-      if (event.key === 'Escape' && closeOnEsc) {
-        event.preventDefault();
-        onOpenChange?.(false);
       }
     },
     [activeIndex, closeOnEsc, getActiveActionButtons, items, onOpenChange, setActiveIndex],
