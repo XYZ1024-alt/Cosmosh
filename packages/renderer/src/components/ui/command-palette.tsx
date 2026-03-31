@@ -66,6 +66,30 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   const [rendered, setRendered] = React.useState<boolean>(open);
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const itemRefs = React.useRef<Map<number, HTMLDivElement>>(new Map());
+  const lastMouseInteractionAtRef = React.useRef<number>(0);
+  const lastKeyboardInteractionAtRef = React.useRef<number>(0);
+
+  const markKeyboardInteraction = React.useCallback((): void => {
+    lastKeyboardInteractionAtRef.current = Date.now();
+  }, []);
+
+  const recordMouseInteraction = React.useCallback((event: React.PointerEvent): void => {
+    if (event.pointerType && event.pointerType !== 'mouse') {
+      return;
+    }
+
+    lastMouseInteractionAtRef.current = Date.now();
+    lastKeyboardInteractionAtRef.current = 0;
+  }, []);
+
+  const shouldActivateByHover = React.useCallback((): boolean => {
+    const now = Date.now();
+    const mouseRecent = now - lastMouseInteractionAtRef.current < 250;
+    const keyboardRecent = lastKeyboardInteractionAtRef.current > 0 && now - lastKeyboardInteractionAtRef.current < 250;
+
+    return mouseRecent && !keyboardRecent;
+  }, []);
 
   const activeIndex = React.useMemo(() => {
     const base = typeof activeIndexProp === 'number' ? activeIndexProp : internalActiveIndex;
@@ -145,6 +169,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
     };
   }, [getActiveActionButtons, open, rendered, showInput]);
 
+  /**
+   * Auto-scroll the active item into view when navigating with keyboard arrows
+   */
+  React.useEffect(() => {
+    const activeItemElement = itemRefs.current.get(activeIndex);
+    if (!activeItemElement || !open || !rendered) {
+      return;
+    }
+
+    activeItemElement.scrollIntoView({
+      block: 'nearest',
+    });
+  }, [activeIndex, open, rendered]);
+
   const handleKeyDown = React.useCallback(
     (event: React.KeyboardEvent<HTMLInputElement>) => {
       if (event.key === 'Escape' && closeOnEsc) {
@@ -158,12 +196,14 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
 
       if (event.key === 'ArrowDown') {
+        markKeyboardInteraction();
         event.preventDefault();
         setActiveIndex((previous) => (previous + 1) % items.length);
         return;
       }
 
       if (event.key === 'Tab') {
+        markKeyboardInteraction();
         event.preventDefault();
         const activeButtons = getActiveActionButtons();
 
@@ -182,18 +222,20 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
 
       if (event.key === 'ArrowUp') {
+        markKeyboardInteraction();
         event.preventDefault();
         setActiveIndex((previous) => (previous - 1 + items.length) % items.length);
         return;
       }
 
       if (event.key === 'Enter') {
+        markKeyboardInteraction();
         event.preventDefault();
         items[activeIndex]?.onSelect();
         return;
       }
     },
-    [activeIndex, closeOnEsc, getActiveActionButtons, items, onOpenChange, setActiveIndex],
+    [activeIndex, closeOnEsc, getActiveActionButtons, items, markKeyboardInteraction, onOpenChange, setActiveIndex],
   );
 
   const handlePanelKeyDown = React.useCallback(
@@ -209,24 +251,28 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       }
 
       if (event.key === 'ArrowDown') {
+        markKeyboardInteraction();
         event.preventDefault();
         setActiveIndex((previous) => (previous + 1) % items.length);
         return;
       }
 
       if (event.key === 'ArrowUp') {
+        markKeyboardInteraction();
         event.preventDefault();
         setActiveIndex((previous) => (previous - 1 + items.length) % items.length);
         return;
       }
 
       if (event.key === 'Enter') {
+        markKeyboardInteraction();
         event.preventDefault();
         items[activeIndex]?.onSelect();
         return;
       }
 
       if (event.key === 'Tab') {
+        markKeyboardInteraction();
         event.preventDefault();
         const activeButtons = getActiveActionButtons();
 
@@ -260,7 +306,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         return;
       }
     },
-    [activeIndex, closeOnEsc, getActiveActionButtons, items, onOpenChange, setActiveIndex],
+    [activeIndex, closeOnEsc, getActiveActionButtons, items, markKeyboardInteraction, onOpenChange, setActiveIndex],
   );
 
   const handleActionButtonKeyDown = React.useCallback(
@@ -268,6 +314,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       if (event.key !== 'Tab') {
         return;
       }
+
+      markKeyboardInteraction();
 
       event.preventDefault();
       const activeButtons = getActiveActionButtons();
@@ -304,7 +352,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
       activeButtons[actionIndex + 1]?.focus({ preventScroll: true });
     },
-    [getActiveActionButtons, showInput],
+    [getActiveActionButtons, markKeyboardInteraction, showInput],
   );
 
   if (!rendered) {
@@ -350,6 +398,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
               'overflow-y-auto p-1',
               showInput ? 'max-h-[min(420px,calc(100vh-180px))]' : 'max-h-[min(480px,calc(100vh-140px))]',
             )}
+            onPointerMoveCapture={recordMouseInteraction}
           >
             {items.length === 0 ? (
               <div className="rounded-lg px-2.5 py-2 text-sm text-command-text-muted">{emptyText}</div>
@@ -372,6 +421,13 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 return (
                   <div
                     key={item.key}
+                    ref={(el) => {
+                      if (el) {
+                        itemRefs.current.set(index, el);
+                      } else {
+                        itemRefs.current.delete(index);
+                      }
+                    }}
                     className={classNames(
                       'group flex min-h-[34px] w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none',
                       shouldUseRowColorVisual ? item.rowClassName : '',
@@ -381,7 +437,13 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                           ? 'bg-command-item-active'
                           : 'hover:bg-command-item-hover',
                     )}
-                    onMouseEnter={() => setActiveIndex(index)}
+                    onMouseEnter={() => {
+                      if (!shouldActivateByHover()) {
+                        return;
+                      }
+
+                      setActiveIndex(index);
+                    }}
                     onClick={item.onSelect}
                   >
                     <span
