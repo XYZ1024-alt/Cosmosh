@@ -10,7 +10,11 @@
       }
     },
     "empty": "未找到匹配的命令",
-    "placeholder": "输入命令或搜索设置"
+    "placeholder": "输入命令或搜索设置",
+    "scopes": {
+      "settings": "设置",
+      "tabs": "标签页"
+    }
   },
   "common": {
     "click": "点击"

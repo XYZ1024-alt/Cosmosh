@@ -10,7 +10,11 @@
       }
     },
     "empty": "No matching commands",
-    "placeholder": "Type a command or search settings"
+    "placeholder": "Type a command or search settings",
+    "scopes": {
+      "settings": "Settings",
+      "tabs": "Tabs"
+    }
   },
   "common": {
     "click": "Click"

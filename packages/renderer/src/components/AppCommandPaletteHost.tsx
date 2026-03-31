@@ -33,6 +33,8 @@ type BilingualCommandLabel = {
   secondary?: string;
 };
 
+type CommandPaletteScopeId = 'tabs' | 'settings';
+
 /**
  * Resolves localized and English labels for command rendering.
  *
@@ -81,12 +83,70 @@ const buildSearchTerms = (...groups: ReadonlyArray<string>[]): string[] => {
 };
 
 /**
+ * Resolves localized scope labels for command palette titles.
+ *
+ * @param domainId Command domain identifier.
+ * @param locale Active renderer locale.
+ * @returns Localized scope label metadata or undefined when not available.
+ */
+const resolveCommandPaletteScopeLabel = (domainId: string, locale: string): BilingualCommandLabel | undefined => {
+  const scopedDomainId = domainId as CommandPaletteScopeId;
+
+  if (scopedDomainId === 'tabs') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.tabs', locale);
+  }
+
+  if (scopedDomainId === 'settings') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.settings', locale);
+  }
+
+  return undefined;
+};
+
+/**
+ * Builds searchable tokens for a command scope label.
+ *
+ * This ensures typing a scope name (with or without a trailing separator) can
+ * match commands belonging to that domain.
+ *
+ * @param scopeLabel Scope label metadata.
+ * @returns Searchable tokens for the scope label.
+ */
+const buildScopeSearchTerms = (scopeLabel: BilingualCommandLabel): string[] => {
+  return buildSearchTerms(
+    [scopeLabel.primary, scopeLabel.english],
+    [`${scopeLabel.primary}:`],
+    [`${scopeLabel.english}:`],
+  );
+};
+
+/**
+ * Formats a command title with a localized scope prefix.
+ *
+ * @param scopeLabel Localized label shown as prefix.
+ * @param title Command title.
+ * @returns Scoped title string.
+ */
+const formatScopedCommandTitle = (scopeLabel: string, title: string): string => {
+  const prefix = `${scopeLabel}: `;
+
+  if (title.startsWith(prefix)) {
+    return title;
+  }
+
+  return `${prefix}${title}`;
+};
+
+/**
  * Creates the tab-domain provider for command palette actions.
  *
  * @returns Provider with new/switch/close tab commands.
  */
 const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
   return createCommandPaletteProvider('tabs', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.tabs', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+
     const newTabLabel = resolveBilingualCommandLabel('commandPalette.commands.tabs.newTab', context.locale);
     const closeCurrentTabLabel = resolveBilingualCommandLabel(
       'commandPalette.commands.tabs.closeCurrentTab',
@@ -106,7 +166,7 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
         commandActionId: 'tabs.new',
         title: newTabLabel.primary,
         subtitle: newTabLabel.secondary,
-        searchTerms: buildSearchTerms(['tabs.new', 'tab.create', 'tab.home'], [newTabLabel.english]),
+        searchTerms: buildSearchTerms(['tabs.new', 'tab.create', 'tab.home'], scopeSearchTerms, [newTabLabel.english]),
         run: () => {
           context.addTab('home');
         },
@@ -117,7 +177,9 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
         commandActionId: 'tabs.close.current',
         title: closeCurrentTabLabel.primary,
         subtitle: closeCurrentTabLabel.secondary,
-        searchTerms: buildSearchTerms(['close tab', 'close current tab'], [closeCurrentTabLabel.english]),
+        searchTerms: buildSearchTerms(['close tab', 'close current tab'], scopeSearchTerms, [
+          closeCurrentTabLabel.english,
+        ]),
         run: () => {
           context.closeTab(context.activeTabId);
         },
@@ -128,7 +190,9 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
         commandActionId: 'tabs.close.right',
         title: closeRightTabsLabel.primary,
         subtitle: closeRightTabsLabel.secondary,
-        searchTerms: buildSearchTerms(['close right tabs', 'close tabs right'], [closeRightTabsLabel.english]),
+        searchTerms: buildSearchTerms(['close right tabs', 'close tabs right'], scopeSearchTerms, [
+          closeRightTabsLabel.english,
+        ]),
         run: () => {
           context.closeRightTabs(context.activeTabId);
         },
@@ -142,10 +206,10 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
       title: tab.title,
       subtitle: tab.id === context.activeTabId ? currentTabLabel.secondary : switchToTabLabel.secondary,
       icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, true),
-      searchTerms: buildSearchTerms(
-        [tab.id, tab.page, tab.title, 'tabs.switch', 'tab.activate'],
-        [currentTabLabel.english, switchToTabLabel.english],
-      ),
+      searchTerms: buildSearchTerms([tab.id, tab.page, tab.title, 'tabs.switch', 'tab.activate'], scopeSearchTerms, [
+        currentTabLabel.english,
+        switchToTabLabel.english,
+      ]),
       run: () => {
         context.setActiveTabId(tab.id);
       },
@@ -165,6 +229,9 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
  */
 const createSettingsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
   return createCommandPaletteProvider('settings', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.settings', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+
     return SETTINGS_REGISTRY.map((item): CommandPaletteCommand => {
       const categoryId = resolveCategoryId(item.category);
       const settingLabel = resolveBilingualCommandLabel(item.nameI18nKey, context.locale);
@@ -178,6 +245,7 @@ const createSettingsCommandPaletteProvider = (): CommandPaletteProvider<AppComma
         icon: <Settings2 className="h-4 w-4" />,
         searchTerms: buildSearchTerms(
           [item.key, item.path, item.commandActionId, ...item.searchTerms],
+          scopeSearchTerms,
           [settingLabel.english],
         ),
         run: () => {
@@ -271,17 +339,24 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
   }, [commandPaletteCommands, query]);
 
   const commandPaletteItems = React.useMemo<CommandPaletteItem[]>(() => {
-    return filteredCommandPaletteCommands.map((command) => ({
-      key: command.key,
-      title: command.title,
-      subtitle: command.subtitle,
-      icon: command.icon,
-      onSelect: () => {
-        executeCommandPaletteCommand(command);
-        closeCommandPalette();
-      },
-    }));
-  }, [closeCommandPalette, filteredCommandPaletteCommands]);
+    return filteredCommandPaletteCommands.map((command) => {
+      const scopeLabel = resolveCommandPaletteScopeLabel(command.domainId, locale);
+
+      return {
+        key: command.key,
+        title: scopeLabel ? formatScopedCommandTitle(scopeLabel.primary, command.title) : command.title,
+        subtitle:
+          scopeLabel && command.subtitle
+            ? formatScopedCommandTitle(scopeLabel.english, command.subtitle)
+            : command.subtitle,
+        icon: command.icon,
+        onSelect: () => {
+          executeCommandPaletteCommand(command);
+          closeCommandPalette();
+        },
+      };
+    });
+  }, [closeCommandPalette, filteredCommandPaletteCommands, locale]);
 
   React.useEffect(() => {
     const handleGlobalCommandPaletteShortcut = (event: KeyboardEvent): void => {
