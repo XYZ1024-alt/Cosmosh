@@ -5,9 +5,8 @@ import React from 'react';
 
 import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
-import EntityIcon from '../components/home/EntityIcon';
-import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
+import SSHKeychainEditorForm from '../components/ssh/SSHKeychainEditorForm';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -26,21 +25,9 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { Form, FormControl, FormField, FormLabel, FormMessage } from '../components/ui/form';
 import { Input } from '../components/ui/input';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
-import { PasswordField } from '../components/ui/password-field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { TagInput } from '../components/ui/tag-input';
-import { Textarea } from '../components/ui/textarea';
 import {
   createSshKeychain,
   createSshTag,
@@ -53,7 +40,6 @@ import {
 } from '../lib/backend';
 import {
   createEntityIconNode,
-  getEntityColorClassName,
   isEntityColorKey,
   pickRandomEntityVisual,
   renderEntityIcon,
@@ -89,8 +75,50 @@ type KeychainCredentialCache = {
   privateKeyPassphrase: string;
 };
 
-const NO_FOLDER_SELECT_VALUE = '__none__';
-const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
+/**
+ * Normalizes a keychain credential snapshot from backend responses.
+ *
+ * @param snapshot Backend credential snapshot.
+ * @returns Normalized credential cache shape used by the editor state.
+ */
+const mapCredentialSnapshotToCache = (snapshot: {
+  authType: SshAuthType;
+  password?: string | null;
+  privateKey?: string | null;
+  privateKeyPassphrase?: string | null;
+}): KeychainCredentialCache => {
+  return {
+    authType: snapshot.authType,
+    password: snapshot.password ?? '',
+    privateKey: snapshot.privateKey ?? '',
+    privateKeyPassphrase: snapshot.privateKeyPassphrase ?? '',
+  };
+};
+
+/**
+ * Applies submitted credential fields to the local cache while preserving existing values
+ * for fields intentionally omitted from update payloads.
+ *
+ * @param previousCredentials The last cached credentials for the keychain.
+ * @param submittedPayload The credential fields sent to the backend.
+ * @returns The next cache snapshot that matches submitted intent.
+ */
+const applySubmittedCredentialsToCache = (
+  previousCredentials: KeychainCredentialCache | undefined,
+  submittedPayload: {
+    authType: SshAuthType;
+    password?: string;
+    privateKey?: string;
+    privateKeyPassphrase?: string;
+  },
+): KeychainCredentialCache => {
+  return {
+    authType: submittedPayload.authType,
+    password: submittedPayload.password ?? previousCredentials?.password ?? '',
+    privateKey: submittedPayload.privateKey ?? previousCredentials?.privateKey ?? '',
+    privateKeyPassphrase: submittedPayload.privateKeyPassphrase ?? previousCredentials?.privateKeyPassphrase ?? '',
+  };
+};
 
 const createInitialFormState = (): KeychainFormState => {
   const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
@@ -276,12 +304,7 @@ const SSHKeychains: React.FC = () => {
           return;
         }
 
-        const nextCredentials: KeychainCredentialCache = {
-          authType: response.data.authType,
-          password: response.data.password ?? '',
-          privateKey: response.data.privateKey ?? '',
-          privateKeyPassphrase: response.data.privateKeyPassphrase ?? '',
-        };
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
 
         credentialsCacheRef.current[requestedKeychainId] = nextCredentials;
         setFormState((previous) => ({
@@ -306,6 +329,32 @@ const SSHKeychains: React.FC = () => {
       canceled = true;
     };
   }, [activeKeychainId, notifyError]);
+
+  /**
+   * Re-fetches credentials after a successful save to guarantee cache/state match persisted backend values.
+   *
+   * @param keychainId The saved keychain id.
+   * @returns Resolves once the refresh attempt finishes.
+   */
+  const refreshKeychainCredentialsAfterSave = React.useCallback(
+    async (keychainId: string): Promise<void> => {
+      try {
+        const response = await getSshKeychainCredentials(keychainId);
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
+
+        credentialsCacheRef.current[keychainId] = nextCredentials;
+        if (activeKeychainIdRef.current === keychainId) {
+          setFormState((previous) => ({
+            ...previous,
+            ...nextCredentials,
+          }));
+        }
+      } catch {
+        notifyWarning(t('sshKeychain.loadCredentialsFailed'));
+      }
+    },
+    [notifyWarning],
+  );
 
   const sortKeychains = React.useCallback((items: SshKeychainListItem[], mode: SortMode): SshKeychainListItem[] => {
     return [...items].sort((left, right) => {
@@ -510,10 +559,17 @@ const SSHKeychains: React.FC = () => {
 
         if (activeKeychainId) {
           const response = await updateSshKeychain(activeKeychainId, payload);
+          credentialsCacheRef.current[activeKeychainId] = applySubmittedCredentialsToCache(
+            credentialsCacheRef.current[activeKeychainId],
+            payload,
+          );
+          await refreshKeychainCredentialsAfterSave(response.data.item.id);
           resetDirtyFieldKeys();
           await reloadData(response.data.item.id);
         } else {
           const response = await createSshKeychain(payload);
+          credentialsCacheRef.current[response.data.item.id] = applySubmittedCredentialsToCache(undefined, payload);
+          await refreshKeychainCredentialsAfterSave(response.data.item.id);
           resetDirtyFieldKeys();
           setActiveKeychainId(response.data.item.id);
           await reloadData(response.data.item.id);
@@ -533,6 +589,7 @@ const SSHKeychains: React.FC = () => {
       notifyError,
       notifySuccess,
       notifyWarning,
+      refreshKeychainCredentialsAfterSave,
       reloadData,
       requiresPassword,
       requiresPrivateKey,
@@ -715,216 +772,19 @@ const SSHKeychains: React.FC = () => {
             </div>
           }
           body={
-            <Form
-              id="ssh-keychain-form"
-              className="mx-auto grid max-w-4xl gap-4 pb-4"
+            <SSHKeychainEditorForm
+              formState={formState}
+              activeKeychain={activeKeychain}
+              isSubmitting={isSubmitting}
+              requiresPassword={requiresPassword}
+              requiresPrivateKey={requiresPrivateKey}
+              folders={folders}
+              tags={tags}
               onSubmit={(event) => void onSubmit(event)}
-            >
-              <section className="grid gap-3">
-                <div className="flex items-end justify-between gap-4">
-                  <EntityVisualPicker
-                    visual={{
-                      iconKey: formState.iconKey,
-                      colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : 'emerald',
-                    }}
-                    label={t('home.iconSearchPlaceholder')}
-                    onChange={(nextVisual) => {
-                      onChangeForm('iconKey', nextVisual.iconKey);
-                      onChangeForm('colorKey', nextVisual.colorKey);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      aria-label={t('home.editVisual')}
-                    >
-                      <EntityIcon
-                        icon={
-                          <span
-                            className={classNames(
-                              'inline-flex h-full w-full items-center justify-center rounded-md',
-                              getEntityColorClassName(
-                                isEntityColorKey(formState.colorKey) ? formState.colorKey : 'emerald',
-                              ),
-                            )}
-                          >
-                            {renderEntityIcon(formState.iconKey)}
-                          </span>
-                        }
-                        tone="flat"
-                      />
-                    </button>
-                  </EntityVisualPicker>
-
-                  <FormField className="flex-1">
-                    <FormLabel htmlFor="ssh-keychain-name">{t('ssh.columnName')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        id="ssh-keychain-name"
-                        value={formState.name}
-                        placeholder={t('ssh.serverNamePlaceholder')}
-                        className="w-[280px]"
-                        onChange={(event) => onChangeForm('name', event.target.value)}
-                      />
-                    </FormControl>
-                  </FormField>
-                </div>
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionAuthentication')}
-                </div>
-
-                <div className="grid grid-cols-[1fr_1fr] gap-3">
-                  <FormField>
-                    <FormLabel htmlFor="ssh-keychain-auth-type">{t('ssh.columnAuth')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={formState.authType}
-                        onValueChange={(value) => {
-                          if (value === 'password' || value === 'key' || value === 'both') {
-                            onChangeForm('authType', value);
-                          }
-                        }}
-                      >
-                        <SelectTrigger id="ssh-keychain-auth-type">
-                          <SelectValue placeholder={t('ssh.authTypePlaceholder')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="password">{t('ssh.authTypePassword')}</SelectItem>
-                          <SelectItem value="key">{t('ssh.authTypeKey')}</SelectItem>
-                          <SelectItem value="both">{t('ssh.authTypeBoth')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormField>
-                </div>
-
-                {requiresPassword ? (
-                  <FormField>
-                    <FormLabel htmlFor="ssh-keychain-password">{t('ssh.passwordLabel')}</FormLabel>
-                    <FormControl>
-                      <PasswordField
-                        id="ssh-keychain-password"
-                        value={formState.password}
-                        placeholder={
-                          activeKeychain?.hasPassword ? t('ssh.passwordSavedPlaceholder') : t('ssh.passwordPlaceholder')
-                        }
-                        onChange={(event) => onChangeForm('password', event.target.value)}
-                      />
-                    </FormControl>
-                    {activeKeychain?.hasPassword && !formState.password.trim() ? (
-                      <FormMessage>{t('ssh.passwordSavedHint')}</FormMessage>
-                    ) : null}
-                  </FormField>
-                ) : null}
-
-                {requiresPrivateKey ? (
-                  <>
-                    <FormField>
-                      <FormLabel htmlFor="ssh-keychain-private-key">{t('ssh.privateKeyLabel')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          id="ssh-keychain-private-key"
-                          rows={6}
-                          value={formState.privateKey}
-                          placeholder={
-                            activeKeychain?.hasPrivateKey
-                              ? t('ssh.privateKeySavedPlaceholder')
-                              : t('ssh.privateKeyPlaceholder')
-                          }
-                          onChange={(event) => onChangeForm('privateKey', event.target.value)}
-                        />
-                      </FormControl>
-                    </FormField>
-
-                    <FormField>
-                      <FormLabel htmlFor="ssh-keychain-private-key-passphrase">
-                        {t('ssh.privateKeyPassphraseLabel')}
-                      </FormLabel>
-                      <FormControl>
-                        <PasswordField
-                          id="ssh-keychain-private-key-passphrase"
-                          value={formState.privateKeyPassphrase}
-                          placeholder={t('ssh.optionalPlaceholder')}
-                          onChange={(event) => onChangeForm('privateKeyPassphrase', event.target.value)}
-                        />
-                      </FormControl>
-                    </FormField>
-                  </>
-                ) : null}
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionSettings')}
-                </div>
-                <div className="grid grid-cols-[1fr_1fr] gap-3">
-                  <FormField>
-                    <FormLabel htmlFor="ssh-keychain-folder">{t('sshKeychain.folderLabel')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={formState.folderId || NO_FOLDER_SELECT_VALUE}
-                        onValueChange={(value) => {
-                          if (value === CREATE_FOLDER_SELECT_VALUE) {
-                            onCreateFolder({ selectOnCreate: true });
-                            return;
-                          }
-
-                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value);
-                        }}
-                      >
-                        <SelectTrigger id="ssh-keychain-folder">
-                          <SelectValue placeholder={t('sshKeychain.folderPlaceholder')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('sshKeychain.noFolder')}</SelectItem>
-                          {folders.map((folder) => (
-                            <SelectItem
-                              key={folder.id}
-                              value={folder.id}
-                            >
-                              {folder.name}
-                            </SelectItem>
-                          ))}
-                          <SelectSeparator />
-                          <SelectItem value={CREATE_FOLDER_SELECT_VALUE}>
-                            {t('sshKeychain.createFolderAction')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormField>
-
-                  <FormField>
-                    <FormLabel htmlFor="ssh-keychain-tags">{t('sshKeychain.tagsLabel')}</FormLabel>
-                    <FormControl>
-                      <TagInput
-                        tags={tags}
-                        selectedTagIds={formState.tagIds}
-                        menuTitle={t('sshKeychain.tagsLabel')}
-                        inputPlaceholder={t('sshKeychain.tagPlaceholder')}
-                        emptyText={t('ssh.emptyTags')}
-                        onCreateTag={onCreateTag}
-                        onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
-                      />
-                    </FormControl>
-                  </FormField>
-                </div>
-                <FormField>
-                  <FormLabel htmlFor="ssh-keychain-note">{t('ssh.noteLabel')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      id="ssh-keychain-note"
-                      rows={4}
-                      value={formState.note}
-                      placeholder={t('ssh.notePlaceholder')}
-                      onChange={(event) => onChangeForm('note', event.target.value)}
-                    />
-                  </FormControl>
-                </FormField>
-              </section>
-            </Form>
+              onCreateFolder={onCreateFolder}
+              onCreateTag={onCreateTag}
+              onChangeForm={onChangeForm}
+            />
           }
         />
       }

@@ -5,9 +5,7 @@ import {
   ArrowUpAZ,
   ArrowUpDown,
   CalendarPlus,
-  Edit,
   FileUp,
-  Folder,
   FolderPlus,
   Plus,
   RefreshCcw,
@@ -20,9 +18,11 @@ import React from 'react';
 
 import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
-import EntityIcon from '../components/home/EntityIcon';
-import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
+import SSHServerEditorForm, {
+  SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE,
+  SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE,
+} from '../components/ssh/SSHServerEditorForm';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -43,25 +43,10 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { Form, FormControl, FormField, FormLabel, FormMessage } from '../components/ui/form';
-import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import type { InputContextMenuItem } from '../components/ui/input-context-menu-registry';
-import { LabelWithTooltip } from '../components/ui/label-with-tooltip';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
-import { PasswordField } from '../components/ui/password-field';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-} from '../components/ui/select';
-import { Switch } from '../components/ui/switch';
-import { TagInput } from '../components/ui/tag-input';
-import { Textarea } from '../components/ui/textarea';
 import {
   createSshKeychain,
   createSshServer,
@@ -75,14 +60,7 @@ import {
   listSshTags,
   updateSshServer,
 } from '../lib/backend';
-import {
-  createEntityIconNode,
-  EntityColorKey,
-  getEntityColorClassName,
-  isEntityColorKey,
-  pickRandomEntityVisual,
-  renderEntityIcon,
-} from '../lib/entity-visuals';
+import { createEntityIconNode, EntityColorKey, isEntityColorKey, pickRandomEntityVisual } from '../lib/entity-visuals';
 import { t } from '../lib/i18n';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
@@ -124,10 +102,50 @@ type ServerCredentialCache = {
   privateKeyPassphrase: string;
 };
 
-const NO_FOLDER_SELECT_VALUE = '__none__';
-const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
-const INLINE_KEYCHAIN_SELECT_VALUE = '__inline_keychain__';
-const ADD_KEYCHAIN_SELECT_VALUE = '__add_keychain__';
+/**
+ * Normalizes a server credential snapshot from backend responses.
+ *
+ * @param snapshot Backend credential snapshot.
+ * @returns Normalized credential cache shape used by the editor state.
+ */
+const mapCredentialSnapshotToCache = (snapshot: {
+  authType: SshAuthType;
+  password?: string | null;
+  privateKey?: string | null;
+  privateKeyPassphrase?: string | null;
+}): ServerCredentialCache => {
+  return {
+    authType: snapshot.authType,
+    password: snapshot.password ?? '',
+    privateKey: snapshot.privateKey ?? '',
+    privateKeyPassphrase: snapshot.privateKeyPassphrase ?? '',
+  };
+};
+
+/**
+ * Applies submitted credential fields to the local cache while preserving existing values
+ * for fields intentionally omitted from update payloads.
+ *
+ * @param previousCredentials The last cached credentials for the server.
+ * @param submittedPayload The credential fields sent to the backend.
+ * @returns The next cache snapshot that matches submitted intent.
+ */
+const applySubmittedCredentialsToCache = (
+  previousCredentials: ServerCredentialCache | undefined,
+  submittedPayload: {
+    authType: SshAuthType;
+    password?: string;
+    privateKey?: string;
+    privateKeyPassphrase?: string;
+  },
+): ServerCredentialCache => {
+  return {
+    authType: submittedPayload.authType,
+    password: submittedPayload.password ?? previousCredentials?.password ?? '',
+    privateKey: submittedPayload.privateKey ?? previousCredentials?.privateKey ?? '',
+    privateKeyPassphrase: submittedPayload.privateKeyPassphrase ?? previousCredentials?.privateKeyPassphrase ?? '',
+  };
+};
 
 const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFormState => {
   const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
@@ -247,6 +265,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   const activeServerIdRef = React.useRef<string | null>(null);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
+  const serverCredentialsRequestVersionRef = React.useRef<number>(0);
   const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
   const preferCreateModeRef = React.useRef<boolean>(preferCreateMode);
 
@@ -274,88 +293,93 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     dirtyFieldKeysRef.current = new Set();
   }, []);
 
-  const reloadData = React.useCallback(async () => {
-    setIsLoading(true);
+  const reloadData = React.useCallback(
+    async (preferredServerIdOverride?: string) => {
+      setIsLoading(true);
 
-    try {
-      const [foldersResponse, serversResponse, tagsResponse, keychainsResponse] = await Promise.all([
-        listSshFolders(),
-        listSshServers(),
-        listSshTags(),
-        listSshKeychains(),
-      ]);
-      const nextFolders = foldersResponse.data.items;
-      const nextServers = serversResponse.data.items;
-      const nextTags = tagsResponse.data.items;
-      const nextKeychains = keychainsResponse.data.items;
-      const nextDefaultServerNoteTemplate = defaultServerNoteTemplate;
-      const currentActiveServerId = activeServerIdRef.current;
-      const currentFormState = formStateRef.current;
-      const dirtyFieldKeys = dirtyFieldKeysRef.current;
+      try {
+        const [foldersResponse, serversResponse, tagsResponse, keychainsResponse] = await Promise.all([
+          listSshFolders(),
+          listSshServers(),
+          listSshTags(),
+          listSshKeychains(),
+        ]);
+        const nextFolders = foldersResponse.data.items;
+        const nextServers = serversResponse.data.items;
+        const nextTags = tagsResponse.data.items;
+        const nextKeychains = keychainsResponse.data.items;
+        const nextDefaultServerNoteTemplate = defaultServerNoteTemplate;
+        const currentActiveServerId = activeServerIdRef.current;
+        const currentFormState = formStateRef.current;
+        const dirtyFieldKeys = dirtyFieldKeysRef.current;
 
-      setFolders(nextFolders);
-      setServers(nextServers);
-      setTags(nextTags);
-      setKeychains(nextKeychains);
+        setFolders(nextFolders);
+        setServers(nextServers);
+        setTags(nextTags);
+        setKeychains(nextKeychains);
 
-      if (consumeSshEditorCreateMode()) {
-        preferCreateModeRef.current = true;
-      }
-
-      if (preferCreateModeRef.current) {
-        setActiveServerId(null);
-        if (currentActiveServerId === null) {
-          setFormState(currentFormState);
-        } else {
-          resetDirtyFieldKeys();
-          setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        if (consumeSshEditorCreateMode()) {
+          preferCreateModeRef.current = true;
         }
-        return;
-      }
 
-      if (nextServers.length === 0) {
-        preferCreateModeRef.current = true;
-        setActiveServerId(null);
-        if (currentActiveServerId === null) {
-          setFormState(currentFormState);
-        } else {
-          resetDirtyFieldKeys();
-          setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+        if (preferCreateModeRef.current) {
+          setActiveServerId(null);
+          if (currentActiveServerId === null) {
+            setFormState(currentFormState);
+          } else {
+            resetDirtyFieldKeys();
+            setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+          }
+          return;
         }
-        return;
+
+        if (nextServers.length === 0) {
+          preferCreateModeRef.current = true;
+          setActiveServerId(null);
+          if (currentActiveServerId === null) {
+            setFormState(currentFormState);
+          } else {
+            resetDirtyFieldKeys();
+            setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+          }
+          return;
+        }
+
+        const currentId =
+          preferredServerIdOverride && nextServers.some((server) => server.id === preferredServerIdOverride)
+            ? preferredServerIdOverride
+            : currentActiveServerId && nextServers.some((server) => server.id === currentActiveServerId)
+              ? currentActiveServerId
+              : preferredServerId && nextServers.some((server) => server.id === preferredServerId)
+                ? preferredServerId
+                : nextServers[0].id;
+        const targetServer = nextServers.find((server) => server.id === currentId) ?? nextServers[0];
+        const cachedCredentials = credentialsCacheRef.current[targetServer.id];
+        const nextFormState = {
+          ...mapServerToFormState(targetServer),
+          ...(cachedCredentials ?? {}),
+        };
+        const shouldPreserveLocalChanges = currentActiveServerId === targetServer.id && dirtyFieldKeys.size > 0;
+
+        preferCreateModeRef.current = false;
+        setActiveServerId(targetServer.id);
+        setFormState(
+          shouldPreserveLocalChanges
+            ? mergeFormStatePreservingDirtyFields(currentFormState, nextFormState, dirtyFieldKeys)
+            : nextFormState,
+        );
+
+        if (!shouldPreserveLocalChanges) {
+          resetDirtyFieldKeys();
+        }
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('ssh.editorLoadFailed'));
+      } finally {
+        setIsLoading(false);
       }
-
-      const currentId =
-        currentActiveServerId && nextServers.some((server) => server.id === currentActiveServerId)
-          ? currentActiveServerId
-          : preferredServerId && nextServers.some((server) => server.id === preferredServerId)
-            ? preferredServerId
-            : nextServers[0].id;
-      const targetServer = nextServers.find((server) => server.id === currentId) ?? nextServers[0];
-      const cachedCredentials = credentialsCacheRef.current[targetServer.id];
-      const nextFormState = {
-        ...mapServerToFormState(targetServer),
-        ...(cachedCredentials ?? {}),
-      };
-      const shouldPreserveLocalChanges = currentActiveServerId === targetServer.id && dirtyFieldKeys.size > 0;
-
-      preferCreateModeRef.current = false;
-      setActiveServerId(targetServer.id);
-      setFormState(
-        shouldPreserveLocalChanges
-          ? mergeFormStatePreservingDirtyFields(currentFormState, nextFormState, dirtyFieldKeys)
-          : nextFormState,
-      );
-
-      if (!shouldPreserveLocalChanges) {
-        resetDirtyFieldKeys();
-      }
-    } catch (error: unknown) {
-      notifyError(error instanceof Error ? error.message : t('ssh.editorLoadFailed'));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [defaultServerNoteTemplate, notifyError, preferredServerId, resetDirtyFieldKeys]);
+    },
+    [defaultServerNoteTemplate, notifyError, preferredServerId, resetDirtyFieldKeys],
+  );
 
   React.useEffect(() => {
     void reloadData();
@@ -367,21 +391,18 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     }
 
     let cancelled = false;
+    const requestVersion = serverCredentialsRequestVersionRef.current + 1;
+    serverCredentialsRequestVersionRef.current = requestVersion;
     const requestedServerId = activeServerId;
 
     const loadCredentials = async () => {
       try {
         const response = await getSshServerCredentials(requestedServerId);
-        if (cancelled) {
+        if (cancelled || requestVersion !== serverCredentialsRequestVersionRef.current) {
           return;
         }
 
-        const nextCredentials: ServerCredentialCache = {
-          authType: response.data.authType,
-          password: response.data.password ?? '',
-          privateKey: response.data.privateKey ?? '',
-          privateKeyPassphrase: response.data.privateKeyPassphrase ?? '',
-        };
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
 
         credentialsCacheRef.current[requestedServerId] = nextCredentials;
         setFormState((previous) => ({
@@ -422,16 +443,14 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
           return;
         }
 
-        const nextCredentials: ServerCredentialCache = {
-          authType: response.data.authType,
-          password: response.data.password ?? '',
-          privateKey: response.data.privateKey ?? '',
-          privateKeyPassphrase: response.data.privateKeyPassphrase ?? '',
-        };
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
 
         setFormState((previous) => ({
-          ...previous,
-          ...nextCredentials,
+          ...mergeFormStatePreservingDirtyFields(
+            previous,
+            { ...previous, ...nextCredentials },
+            dirtyFieldKeysRef.current,
+          ),
         }));
       } catch {
         if (!cancelled) {
@@ -447,6 +466,37 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     };
   }, [formState.keychainId, notifyError]);
 
+  /**
+   * Re-fetches credentials after a successful save to guarantee cache/state match persisted backend values.
+   *
+   * @param serverId The saved server id.
+   * @returns Resolves once the refresh attempt finishes.
+   */
+  const refreshServerCredentialsAfterSave = React.useCallback(
+    async (serverId: string): Promise<void> => {
+      try {
+        const requestVersion = serverCredentialsRequestVersionRef.current + 1;
+        serverCredentialsRequestVersionRef.current = requestVersion;
+        const response = await getSshServerCredentials(serverId);
+        if (requestVersion !== serverCredentialsRequestVersionRef.current) {
+          return;
+        }
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
+
+        credentialsCacheRef.current[serverId] = nextCredentials;
+        if (activeServerIdRef.current === serverId) {
+          setFormState((previous) => ({
+            ...previous,
+            ...nextCredentials,
+          }));
+        }
+      } catch {
+        notifyWarning(t('ssh.credentialsLoadFailed'));
+      }
+    },
+    [notifyWarning],
+  );
+
   const selectedKeychain = React.useMemo(() => {
     if (!formState.keychainId) {
       return null;
@@ -461,7 +511,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
 
   const isUsingHiddenKeychain = selectedKeychain?.visibility === 'hidden';
   const isUsingInlineCredentials = !formState.keychainId || isUsingHiddenKeychain || !selectedKeychain;
-  const keychainSelectValue = isUsingInlineCredentials ? INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
+  const keychainSelectValue = isUsingInlineCredentials ? SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
 
   const requiresPassword =
     isUsingInlineCredentials && (formState.authType === 'password' || formState.authType === 'both');
@@ -884,6 +934,13 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
       setIsSubmitting(true);
       try {
         let successMessage = t('ssh.serverCreatedSuccessfully');
+        const selectedKeychainId = isUsingInlineCredentials ? undefined : formState.keychainId || undefined;
+        const submittedCredentialPayload = {
+          authType: formState.authType,
+          password: formState.password.trim() || undefined,
+          privateKey: formState.privateKey.trim() || undefined,
+          privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
+        };
 
         if (activeServerId) {
           const targetServer = servers.find((server) => server.id === activeServerId);
@@ -907,32 +964,44 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             host: formState.host.trim(),
             port,
             username: formState.username.trim(),
-            keychainId: formState.keychainId || undefined,
-            authType: formState.authType,
+            keychainId: selectedKeychainId,
+            authType: isUsingInlineCredentials ? submittedCredentialPayload.authType : undefined,
             iconKey: formState.iconKey,
             colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
-            password: formState.password.trim() || undefined,
-            privateKey: formState.privateKey.trim() || undefined,
-            privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
+            password: isUsingInlineCredentials ? submittedCredentialPayload.password : undefined,
+            privateKey: isUsingInlineCredentials ? submittedCredentialPayload.privateKey : undefined,
+            privateKeyPassphrase: isUsingInlineCredentials
+              ? submittedCredentialPayload.privateKeyPassphrase
+              : undefined,
             folderId: formState.folderId || undefined,
             note: formState.note.trim() || undefined,
             strictHostKey: formState.strictHostKey,
           });
+          if (isUsingInlineCredentials) {
+            credentialsCacheRef.current[activeServerId] = applySubmittedCredentialsToCache(
+              credentialsCacheRef.current[activeServerId],
+              submittedCredentialPayload,
+            );
+          }
+          await refreshServerCredentialsAfterSave(activeServerId);
           resetDirtyFieldKeys();
           successMessage = t('ssh.serverUpdatedSuccessfully');
+          await reloadData(activeServerId);
         } else {
           const created = await createSshServer({
             name: formState.name.trim(),
             host: formState.host.trim(),
             port,
             username: formState.username.trim(),
-            keychainId: formState.keychainId || undefined,
-            authType: formState.authType,
+            keychainId: selectedKeychainId,
+            authType: isUsingInlineCredentials ? submittedCredentialPayload.authType : undefined,
             iconKey: formState.iconKey,
             colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
-            password: formState.password.trim() || undefined,
-            privateKey: formState.privateKey.trim() || undefined,
-            privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
+            password: isUsingInlineCredentials ? submittedCredentialPayload.password : undefined,
+            privateKey: isUsingInlineCredentials ? submittedCredentialPayload.privateKey : undefined,
+            privateKeyPassphrase: isUsingInlineCredentials
+              ? submittedCredentialPayload.privateKeyPassphrase
+              : undefined,
             folderId: formState.folderId || undefined,
             tagIds: formState.tagIds,
             note: formState.note.trim() || undefined,
@@ -940,12 +1009,18 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
           });
 
           const createdServerId = created.data.item.id;
+          if (isUsingInlineCredentials) {
+            credentialsCacheRef.current[createdServerId] = applySubmittedCredentialsToCache(
+              undefined,
+              submittedCredentialPayload,
+            );
+          }
+          await refreshServerCredentialsAfterSave(createdServerId);
           resetDirtyFieldKeys();
           preferCreateModeRef.current = false;
           setActiveServerId(createdServerId);
+          await reloadData(createdServerId);
         }
-
-        await reloadData();
         notifySuccess(successMessage);
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('ssh.saveServerFailed'));
@@ -959,6 +1034,8 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
       notifyError,
       notifySuccess,
       notifyWarning,
+      refreshServerCredentialsAfterSave,
+      isUsingInlineCredentials,
       reloadData,
       resetDirtyFieldKeys,
       requiresPassword,
@@ -1177,356 +1254,36 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             </div>
           }
           body={
-            <Form
-              id="ssh-editor-form"
-              className="mx-auto grid max-w-4xl gap-4 pb-4"
+            <SSHServerEditorForm
+              formState={formState}
+              activeServer={activeServer}
+              isSubmitting={isSubmitting}
+              sharedKeychains={sharedKeychains}
+              folders={folders}
+              tags={tags}
+              keychainSelectValue={keychainSelectValue}
+              isUsingInlineCredentials={isUsingInlineCredentials}
+              requiresPassword={requiresPassword}
+              requiresPrivateKey={requiresPrivateKey}
+              privateKeyContextMenuItems={privateKeyContextMenuItems}
               onSubmit={(event) => void onSubmit(event)}
-            >
-              <section className="grid gap-3">
-                <div className="flex items-end justify-between gap-4">
-                  <EntityVisualPicker
-                    visual={{
-                      iconKey: formState.iconKey,
-                      colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
-                    }}
-                    label={t('home.iconSearchPlaceholder')}
-                    onChange={(nextVisual) => {
-                      onChangeForm('iconKey', nextVisual.iconKey);
-                      onChangeForm('colorKey', nextVisual.colorKey);
-                    }}
-                  >
-                    <button
-                      type="button"
-                      aria-label={t('home.editVisual')}
-                    >
-                      <EntityIcon
-                        icon={
-                          <span
-                            className={classNames(
-                              'inline-flex h-full w-full items-center justify-center rounded-md',
-                              getEntityColorClassName(
-                                isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
-                              ),
-                            )}
-                          >
-                            {renderEntityIcon(formState.iconKey)}
-                          </span>
-                        }
-                        tone="flat"
-                      />
-                    </button>
-                  </EntityVisualPicker>
-                  <FormField className="flex-1">
-                    <FormLabel htmlFor="ssh-editor-name">{t('ssh.columnName')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        id="ssh-editor-name"
-                        value={formState.name}
-                        placeholder={t('ssh.serverNamePlaceholder')}
-                        className="w-[280px]"
-                        onChange={(event) => onChangeForm('name', event.target.value)}
-                      />
-                    </FormControl>
-                  </FormField>
-                </div>
+              onHostChange={onHostChange}
+              onCreateFolder={onCreateFolder}
+              onCreateTag={onCreateTag}
+              onOpenSelectedKeychainEditor={openSelectedKeychainEditor}
+              onSaveInlineCredentialsToSharedKeychain={() => {
+                void saveInlineCredentialsToSharedKeychain();
+              }}
+              onKeychainSelectValueChange={(value) => {
+                if (value === SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE) {
+                  notifyWarning(t('ssh.keychainCreateComingSoon'));
+                  return;
+                }
 
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionBasicConnection')}
-                </div>
-
-                <div className="grid grid-cols-[5fr_2fr] gap-3">
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-host">{t('ssh.columnHost')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        id="ssh-editor-host"
-                        value={formState.host}
-                        placeholder={t('ssh.hostPlaceholder')}
-                        onChange={(event) => onHostChange(event.target.value)}
-                      />
-                    </FormControl>
-                  </FormField>
-
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-port">{t('ssh.columnPort')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        id="ssh-editor-port"
-                        value={formState.port}
-                        placeholder={t('ssh.portPlaceholder')}
-                        inputMode="numeric"
-                        onChange={(event) => onChangeForm('port', event.target.value)}
-                      />
-                    </FormControl>
-                  </FormField>
-                </div>
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionAuthentication')}
-                </div>
-
-                <div className="grid grid-cols-[2fr_2fr_1fr] gap-3">
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-username">{t('ssh.columnUser')}</FormLabel>
-                    <FormControl>
-                      <Input
-                        id="ssh-editor-username"
-                        value={formState.username}
-                        placeholder={t('ssh.usernamePlaceholder')}
-                        onChange={(event) => onChangeForm('username', event.target.value)}
-                      />
-                    </FormControl>
-                  </FormField>
-
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-keychain">{t('ssh.keychainLabel')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={keychainSelectValue}
-                        onValueChange={(value) => {
-                          if (value === ADD_KEYCHAIN_SELECT_VALUE) {
-                            notifyWarning(t('ssh.keychainCreateComingSoon'));
-                            return;
-                          }
-
-                          onChangeForm('keychainId', value === INLINE_KEYCHAIN_SELECT_VALUE ? '' : value);
-                        }}
-                      >
-                        <SelectTrigger id="ssh-editor-keychain">
-                          <SelectValue placeholder={t('ssh.keychainSelectPlaceholder')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={INLINE_KEYCHAIN_SELECT_VALUE}>{t('ssh.keychainOptionInline')}</SelectItem>
-                          {sharedKeychains.length > 0 && <SelectSeparator />}
-                          {sharedKeychains.map((keychain) => (
-                            <SelectItem
-                              key={keychain.id}
-                              value={keychain.id}
-                            >
-                              {keychain.name}
-                            </SelectItem>
-                          ))}
-                          <SelectSeparator />
-                          <SelectItem value={ADD_KEYCHAIN_SELECT_VALUE}>{t('ssh.keychainOptionCreate')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormField>
-
-                  {!isUsingInlineCredentials ? (
-                    <FormField>
-                      <FormLabel>&nbsp;</FormLabel>
-                      <FormControl>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={openSelectedKeychainEditor}
-                        >
-                          <Edit size={16} />
-                          {t('ssh.keychainEditCredentials')}
-                        </Button>
-                      </FormControl>
-                    </FormField>
-                  ) : isUsingInlineCredentials ? (
-                    <FormField>
-                      <FormLabel>&nbsp;</FormLabel>
-                      <FormControl>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          disabled={isSubmitting}
-                          onClick={() => {
-                            void saveInlineCredentialsToSharedKeychain();
-                          }}
-                        >
-                          {t('ssh.saveInlineCredentialsToKeychain')}
-                        </Button>{' '}
-                      </FormControl>
-                    </FormField>
-                  ) : null}
-                </div>
-
-                {isUsingInlineCredentials ? (
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-auth-type">{t('ssh.columnAuth')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={formState.authType}
-                        onValueChange={(value) => onChangeForm('authType', value as SshAuthType)}
-                      >
-                        <SelectTrigger id="ssh-editor-auth-type">
-                          <SelectValue placeholder={t('ssh.authTypePlaceholder')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="password">{t('ssh.authTypePassword')}</SelectItem>
-                          <SelectItem value="key">{t('ssh.authTypeKey')}</SelectItem>
-                          <SelectItem value="both">{t('ssh.authTypeBoth')}</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormField>
-                ) : null}
-
-                {requiresPassword ? (
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-password">{t('ssh.passwordLabel')}</FormLabel>
-                    <FormControl>
-                      <PasswordField
-                        id="ssh-editor-password"
-                        value={formState.password}
-                        placeholder={
-                          activeServer?.hasPassword ? t('ssh.passwordSavedPlaceholder') : t('ssh.passwordPlaceholder')
-                        }
-                        onChange={(event) => onChangeForm('password', event.target.value)}
-                      />
-                    </FormControl>
-                    {activeServer?.hasPassword && !formState.password.trim() ? (
-                      <FormMessage>{t('ssh.passwordSavedHint')}</FormMessage>
-                    ) : null}
-                  </FormField>
-                ) : null}
-
-                {requiresPrivateKey ? (
-                  <>
-                    <FormField>
-                      <FormLabel htmlFor="ssh-editor-private-key">{t('ssh.privateKeyLabel')}</FormLabel>
-                      <FormControl>
-                        <Textarea
-                          id="ssh-editor-private-key"
-                          value={formState.privateKey}
-                          placeholder={
-                            activeServer?.hasPrivateKey
-                              ? t('ssh.privateKeySavedPlaceholder')
-                              : t('ssh.privateKeyPlaceholder')
-                          }
-                          rows={5}
-                          contextMenuItems={privateKeyContextMenuItems}
-                          onChange={(event) => onChangeForm('privateKey', event.target.value)}
-                        />
-                      </FormControl>
-                      <FormMessage>
-                        {formState.privateKey.length > 0 && formState.privateKey.length < 32
-                          ? t('ssh.privateKeyTooShort')
-                          : ''}
-                      </FormMessage>
-                    </FormField>
-
-                    <FormField>
-                      <FormLabel htmlFor="ssh-editor-private-key-passphrase">
-                        {t('ssh.privateKeyPassphraseLabel')}
-                      </FormLabel>
-                      <FormControl>
-                        <PasswordField
-                          id="ssh-editor-private-key-passphrase"
-                          value={formState.privateKeyPassphrase}
-                          placeholder={t('ssh.optionalPlaceholder')}
-                          onChange={(event) => onChangeForm('privateKeyPassphrase', event.target.value)}
-                        />
-                      </FormControl>
-                    </FormField>
-                  </>
-                ) : null}
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionSecurity')}
-                </div>
-                <div className="flex items-center gap-2.5 px-2.5">
-                  <Switch
-                    id="ssh-editor-strict-host-key"
-                    checked={formState.strictHostKey}
-                    onCheckedChange={(checkedState) => onChangeForm('strictHostKey', checkedState)}
-                  />
-                  <LabelWithTooltip
-                    htmlFor="ssh-editor-strict-host-key"
-                    tooltip={t('ssh.strictHostKeyCheckingTooltip')}
-                    labelClassName={formStyles.inlineLabel}
-                  >
-                    {t('ssh.strictHostKeyChecking')}
-                  </LabelWithTooltip>
-                </div>
-              </section>
-
-              <section className="grid gap-3">
-                <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">
-                  {t('ssh.sectionSettings')}
-                </div>
-
-                <div className="grid grid-cols-[1fr_1fr] gap-3">
-                  <FormField>
-                    <FormLabel htmlFor="ssh-editor-folder">{t('ssh.columnFolder')}</FormLabel>
-                    <FormControl>
-                      <Select
-                        value={formState.folderId || NO_FOLDER_SELECT_VALUE}
-                        onValueChange={(value) => {
-                          if (value === CREATE_FOLDER_SELECT_VALUE) {
-                            onCreateFolder({ selectOnCreate: true });
-                            return;
-                          }
-
-                          onChangeForm('folderId', value === NO_FOLDER_SELECT_VALUE ? '' : value);
-                        }}
-                      >
-                        <SelectTrigger id="ssh-editor-folder">
-                          <SelectValue placeholder={t('ssh.noFolder')} />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('ssh.noFolder')}</SelectItem>
-                          {folders.map((folder) => (
-                            <SelectItem
-                              key={folder.id}
-                              value={folder.id}
-                              icon={Folder}
-                            >
-                              {folder.name}
-                            </SelectItem>
-                          ))}
-                          <SelectSeparator />
-                          <SelectItem
-                            value={CREATE_FOLDER_SELECT_VALUE}
-                            icon={FolderPlus}
-                          >
-                            {t('home.quickAddFolder')}
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </FormControl>
-                  </FormField>
-
-                  <FormField>
-                    <FormLabel>{t('ssh.tagsLegend')}</FormLabel>
-                    <FormControl>
-                      <TagInput
-                        tags={tags}
-                        selectedTagIds={formState.tagIds}
-                        menuTitle={t('ssh.tagsLegend')}
-                        inputPlaceholder={t('ssh.tagNamePlaceholder')}
-                        emptyText={t('ssh.emptyTags')}
-                        disabled={isSubmitting}
-                        onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
-                        onCreateTag={onCreateTag}
-                      />
-                    </FormControl>
-                  </FormField>
-                </div>
-
-                <FormField>
-                  <FormLabel htmlFor="ssh-editor-note">{t('ssh.noteLabel')}</FormLabel>
-                  <FormControl>
-                    <Textarea
-                      id="ssh-editor-note"
-                      value={formState.note}
-                      placeholder={t('ssh.notePlaceholder')}
-                      rows={4}
-                      onChange={(event) => onChangeForm('note', event.target.value)}
-                    />
-                  </FormControl>
-                </FormField>
-              </section>
-            </Form>
+                onChangeForm('keychainId', value === SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE ? '' : value);
+              }}
+              onChangeForm={onChangeForm}
+            />
           }
         />
       }
