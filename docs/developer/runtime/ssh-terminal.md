@@ -134,6 +134,7 @@ sequenceDiagram
   - built-in path rules currently cover `cd` (directory-only), `cat`, `vim`, and direct executable-style path prefixes (`./`, `../`, `/`, `~`) at command position,
   - relative-path partial input (for example, `cd ../../c`) is resolved against tracked session working directory and ranked with "prefix first, contains fallback" matching,
   - typing-trigger requests apply a short path-provider timeout budget so command/history/spec candidates are not blocked by slow filesystem probes; manual `Tab` trigger still uses full provider results,
+  - remote SSH path scans use POSIX parameter expansion (`${p##*/}`) instead of GNU-specific `basename --`, so path completion remains portable across GNU/Linux, BSD/macOS, and BusyBox environments,
   - typing-trigger history scoring is bounded to a recent history window to keep completion latency stable when shell history snapshots are large,
   - when current token starts with `-`, option/value suggestions keep priority and path provider is gated off for that token.
 - Interactive secret prompt detection is output-driven:

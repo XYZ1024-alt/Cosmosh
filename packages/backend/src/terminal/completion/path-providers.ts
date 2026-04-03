@@ -227,7 +227,7 @@ export const createRemotePathProvider = (options: {
     }
 
     const escapedDirectory = escapeSingleQuotedForSh(lookup.lookupDirectory);
-    const command = `sh -lc 'set +e; dir='"'"'${escapedDirectory}'"'"'; count=0; for p in "$dir"/* "$dir"/.*; do [ -e "$p" ] || continue; name=$(basename -- "$p" 2>/dev/null || basename "$p"); [ "$name" = "." ] && continue; [ "$name" = ".." ] && continue; if [ -d "$p" ]; then printf "D\t%s\n" "$name"; else printf "F\t%s\n" "$name"; fi; count=$((count+1)); if [ "$count" -ge ${MAX_REMOTE_SCAN_ENTRIES} ]; then break; fi; done'`;
+    const command = `sh -lc 'set +e; dir='"'"'${escapedDirectory}'"'"'; count=0; for p in "$dir"/* "$dir"/.*; do [ -e "$p" ] || continue; name=\${p##*/}; [ "$name" = "." ] && continue; [ "$name" = ".." ] && continue; if [ -d "$p" ]; then printf "D\t%s\n" "$name"; else printf "F\t%s\n" "$name"; fi; count=$((count+1)); if [ "$count" -ge ${MAX_REMOTE_SCAN_ENTRIES} ]; then break; fi; done'`;
 
     try {
       const output = await options.executeCommand(command);
