@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import type { PrismaClient as PrismaClientType } from '@prisma/client';
 import prismaClientPackage from '@prisma/client';
 
-const { PrismaClient } = prismaClientPackage;
+const { PrismaClient, Prisma } = prismaClientPackage;
 const require = createRequire(import.meta.url);
 
 /**
@@ -522,15 +522,15 @@ const applyPragmas = async (
   sqlCipherEnabled: boolean,
 ): Promise<void> => {
   if (!isDevelopmentRuntime() && sqlCipherEnabled) {
-    await client.$queryRawUnsafe(`PRAGMA key = '${escapeSqliteLiteral(databaseKey)}';`);
+    await client.$executeRaw`PRAGMA key = ${databaseKey};`;
   }
-  await client.$queryRawUnsafe('PRAGMA foreign_keys = ON;');
-  await client.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
-  await client.$queryRawUnsafe('PRAGMA synchronous = NORMAL;');
-  await client.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
+  await client.$executeRaw`PRAGMA foreign_keys = ON;`;
+  await client.$executeRaw`PRAGMA journal_mode = WAL;`;
+  await client.$executeRaw`PRAGMA synchronous = NORMAL;`;
+  await client.$executeRaw`PRAGMA busy_timeout = 5000;`;
 
   if (runtimeMode === 'electron-main' && !isDevelopmentRuntime() && sqlCipherEnabled) {
-    await client.$queryRawUnsafe('PRAGMA locking_mode = EXCLUSIVE;');
+    await client.$executeRaw`PRAGMA locking_mode = EXCLUSIVE;`;
   }
 };
 
@@ -642,9 +642,8 @@ const readAppliedMigrationSet = async (client: PrismaClientType): Promise<Set<st
  * @returns True when required schema tables already exist.
  */
 const hasRequiredSchemaTables = async (client: PrismaClientType): Promise<boolean> => {
-  const tableNameLiterals = requiredSchemaTables.map((table) => `'${escapeSqliteLiteral(table)}'`).join(', ');
-  const foundRows = (await client.$queryRawUnsafe(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${tableNameLiterals});`,
+  const foundRows = (await client.$queryRaw(
+    Prisma.sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${Prisma.join(requiredSchemaTables)});`,
   )) as Array<{ name: string }>;
 
   return foundRows.length === requiredSchemaTables.length;
@@ -790,9 +789,8 @@ const ensureSchema = async (client: PrismaClientType): Promise<void> => {
     );
   }
 
-  const tableNameLiterals = requiredSchemaTables.map((table) => `'${escapeSqliteLiteral(table)}'`).join(', ');
-  const foundRows = (await client.$queryRawUnsafe(
-    `SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${tableNameLiterals});`,
+  const foundRows = (await client.$queryRaw(
+    Prisma.sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN (${Prisma.join(requiredSchemaTables)});`,
   )) as Array<{ name: string }>;
 
   const existingTableSet = new Set(foundRows.map((row) => row.name));
