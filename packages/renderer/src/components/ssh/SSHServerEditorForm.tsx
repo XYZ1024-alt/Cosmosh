@@ -1,6 +1,6 @@
 import type { components } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { Edit, Folder, FolderPlus } from 'lucide-react';
+import { Edit, Folder, FolderPlus, Save } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
@@ -259,6 +259,7 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
                     void onSaveInlineCredentialsToSharedKeychain();
                   }}
                 >
+                  <Save size={16} />
                   {t('ssh.saveInlineCredentialsToKeychain')}
                 </Button>
               </FormControl>
