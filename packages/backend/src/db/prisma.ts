@@ -507,6 +507,21 @@ const connectPrismaClient = async (
 };
 
 /**
+ * Runs a SQLite PRAGMA statement through Prisma query mode.
+ *
+ * Prisma `$executeRaw` rejects SQLite statements that return result rows.
+ * Several PRAGMA statements (for example `journal_mode` and `locking_mode`)
+ * always return values, so this helper keeps PRAGMA execution stable.
+ *
+ * @param client Active Prisma client.
+ * @param statement Complete PRAGMA SQL statement.
+ * @returns Promise that resolves after Prisma has executed the statement.
+ */
+const runPragma = async (client: PrismaClientType, statement: string): Promise<void> => {
+  await client.$queryRawUnsafe(statement);
+};
+
+/**
  * Applies required SQLite pragmas for reliability and runtime locking behavior.
  *
  * @param client Active Prisma client.
@@ -522,15 +537,15 @@ const applyPragmas = async (
   sqlCipherEnabled: boolean,
 ): Promise<void> => {
   if (!isDevelopmentRuntime() && sqlCipherEnabled) {
-    await client.$executeRaw`PRAGMA key = ${databaseKey};`;
+    await runPragma(client, `PRAGMA key = '${escapeSqliteLiteral(databaseKey)}';`);
   }
-  await client.$executeRaw`PRAGMA foreign_keys = ON;`;
-  await client.$executeRaw`PRAGMA journal_mode = WAL;`;
-  await client.$executeRaw`PRAGMA synchronous = NORMAL;`;
-  await client.$executeRaw`PRAGMA busy_timeout = 5000;`;
+  await runPragma(client, 'PRAGMA foreign_keys = ON;');
+  await runPragma(client, 'PRAGMA journal_mode = WAL;');
+  await runPragma(client, 'PRAGMA synchronous = NORMAL;');
+  await runPragma(client, 'PRAGMA busy_timeout = 5000;');
 
   if (runtimeMode === 'electron-main' && !isDevelopmentRuntime() && sqlCipherEnabled) {
-    await client.$executeRaw`PRAGMA locking_mode = EXCLUSIVE;`;
+    await runPragma(client, 'PRAGMA locking_mode = EXCLUSIVE;');
   }
 };
 
