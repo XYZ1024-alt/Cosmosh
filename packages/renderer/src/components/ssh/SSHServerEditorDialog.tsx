@@ -72,16 +72,27 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   const [formState, setFormState] = React.useState<ServerEditorFormState>(() =>
     createInitialServerFormState(defaultServerNoteTemplate),
   );
+  const stableServerIdRef = React.useRef<string | null>(serverId);
+  const initializedEditorTargetRef = React.useRef<string | null | undefined>(undefined);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
+  const displayServerId = open ? serverId : stableServerIdRef.current;
+
+  React.useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    stableServerIdRef.current = serverId;
+  }, [open, serverId]);
 
   const activeServer = React.useMemo(() => {
-    if (!serverId) {
+    if (!displayServerId) {
       return null;
     }
 
-    return servers.find((server) => server.id === serverId) ?? null;
-  }, [serverId, servers]);
+    return servers.find((server) => server.id === displayServerId) ?? null;
+  }, [displayServerId, servers]);
 
   React.useEffect(() => {
     formStateRef.current = formState;
@@ -89,8 +100,19 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
 
   React.useEffect(() => {
     if (!open) {
+      initializedEditorTargetRef.current = undefined;
       return;
     }
+
+    /**
+     * During one open session, keep user edits stable.
+     * Parent list refreshes (servers/folders) may happen while the dialog is open
+     * or closing, and should not rehydrate the form unless the edit target changes.
+     */
+    if (initializedEditorTargetRef.current === serverId) {
+      return;
+    }
+    initializedEditorTargetRef.current = serverId;
 
     setEditorFolders(folders);
 
@@ -461,7 +483,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           className="max-h-[92vh] !max-w-4xl gap-0 p-0"
         >
           <DialogHeader className="px-2.5">
-            <DialogTitle>{serverId ? t('home.contextEdit') : t('home.quickAddServer')}</DialogTitle>
+            <DialogTitle>{displayServerId ? t('home.contextEdit') : t('home.quickAddServer')}</DialogTitle>
           </DialogHeader>
 
           <div className="max-h-[calc(92vh-136px)] overflow-auto">
@@ -520,7 +542,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
                   className="animate-spin"
                 />
               ) : null}
-              {isSubmitting ? t('ssh.saving') : serverId ? t('ssh.saveChanges') : t('ssh.createServerButton')}
+              {isSubmitting ? t('ssh.saving') : displayServerId ? t('ssh.saveChanges') : t('ssh.createServerButton')}
             </DialogPrimaryButton>
           </DialogFooter>
         </DialogContent>

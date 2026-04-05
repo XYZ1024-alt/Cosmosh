@@ -62,9 +62,12 @@ export const useServerEditorDialogState = ({
   );
 
   const closeServerEditorDialog = React.useCallback(() => {
+    /**
+     * Keep editor target state intact until the dialog fully exits.
+     * Clearing ids immediately can make closing animations render with
+     * create-mode labels/content for a single frame.
+     */
     setIsServerEditorDialogOpen(false);
-    setActiveServerEditorId(null);
-    setServerEditorInitialFolderId(undefined);
   }, []);
 
   return {
