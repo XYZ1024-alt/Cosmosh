@@ -48,126 +48,44 @@ import type { InputContextMenuItem } from '../components/ui/input-context-menu-r
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import {
-  createSshKeychain,
   createSshServer,
-  createSshTag,
   deleteSshServer,
-  getSshKeychainCredentials,
-  getSshServerCredentials,
   listSshFolders,
   listSshKeychains,
   listSshServers,
   listSshTags,
   updateSshServer,
 } from '../lib/backend';
-import { createEntityIconNode, EntityColorKey, isEntityColorKey, pickRandomEntityVisual } from '../lib/entity-visuals';
+import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/entity-visuals';
 import { t } from '../lib/i18n';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
+import {
+  createServerEditorTag,
+  importServerEditorPrivateKeyFromFile,
+  saveInlineCredentialsToSharedKeychain as saveInlineCredentialsToSharedKeychainAction,
+} from '../lib/ssh-server-editor-actions';
+import {
+  applySubmittedCredentialsToCache,
+  createInitialServerFormState,
+  deriveServerEditorCredentialMode,
+  mapServerToFormState,
+  parsePort,
+  type ServerCredentialCache,
+  type ServerEditorFormState,
+  type SshServerListItem,
+} from '../lib/ssh-server-editor-shared';
 import { consumeSshEditorCreateMode } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
+import { useKeychainCredentials, useServerCredentialsRefresh } from '../lib/use-server-credentials';
 
-type SshServerListItem = components['schemas']['SshServerListItem'];
 type SshFolder = components['schemas']['SshFolder'];
 type SshTag = components['schemas']['SshTag'];
-type SshAuthType = components['schemas']['SshAuthType'];
 type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 
 type SortMode = 'default' | 'nameAsc' | 'nameDesc' | 'lastUsed' | 'createdAt';
-
-type ServerEditorFormState = {
-  name: string;
-  iconKey: string;
-  colorKey: string;
-  note: string;
-  host: string;
-  port: string;
-  username: string;
-  authType: SshAuthType;
-  keychainId: string;
-  password: string;
-  privateKey: string;
-  privateKeyPassphrase: string;
-  folderId: string;
-  tagIds: string[];
-  strictHostKey: boolean;
-};
-
-type ServerCredentialCache = {
-  authType: SshAuthType;
-  password: string;
-  privateKey: string;
-  privateKeyPassphrase: string;
-};
-
-/**
- * Normalizes a server credential snapshot from backend responses.
- *
- * @param snapshot Backend credential snapshot.
- * @returns Normalized credential cache shape used by the editor state.
- */
-const mapCredentialSnapshotToCache = (snapshot: {
-  authType: SshAuthType;
-  password?: string | null;
-  privateKey?: string | null;
-  privateKeyPassphrase?: string | null;
-}): ServerCredentialCache => {
-  return {
-    authType: snapshot.authType,
-    password: snapshot.password ?? '',
-    privateKey: snapshot.privateKey ?? '',
-    privateKeyPassphrase: snapshot.privateKeyPassphrase ?? '',
-  };
-};
-
-/**
- * Applies submitted credential fields to the local cache while preserving existing values
- * for fields intentionally omitted from update payloads.
- *
- * @param previousCredentials The last cached credentials for the server.
- * @param submittedPayload The credential fields sent to the backend.
- * @returns The next cache snapshot that matches submitted intent.
- */
-const applySubmittedCredentialsToCache = (
-  previousCredentials: ServerCredentialCache | undefined,
-  submittedPayload: {
-    authType: SshAuthType;
-    password?: string;
-    privateKey?: string;
-    privateKeyPassphrase?: string;
-  },
-): ServerCredentialCache => {
-  return {
-    authType: submittedPayload.authType,
-    password: submittedPayload.password ?? previousCredentials?.password ?? '',
-    privateKey: submittedPayload.privateKey ?? previousCredentials?.privateKey ?? '',
-    privateKeyPassphrase: submittedPayload.privateKeyPassphrase ?? previousCredentials?.privateKeyPassphrase ?? '',
-  };
-};
-
-const createInitialFormState = (defaultServerNoteTemplate = ''): ServerEditorFormState => {
-  const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
-
-  return {
-    name: '',
-    iconKey: visual.iconKey,
-    colorKey: visual.colorKey,
-    note: defaultServerNoteTemplate,
-    host: '',
-    port: '22',
-    username: '',
-    authType: 'password',
-    keychainId: '',
-    password: '',
-    privateKey: '',
-    privateKeyPassphrase: '',
-    folderId: '',
-    tagIds: [],
-    strictHostKey: true,
-  };
-};
 
 /**
  * Merges a refreshed server snapshot into the current editor state without discarding locally edited fields.
@@ -201,41 +119,12 @@ const mergeFormStatePreservingDirtyFields = (
   return mergedFormState;
 };
 
-const parsePort = (value: string): number | null => {
-  const parsed = Number(value);
-  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
-    return null;
-  }
-
-  return parsed;
-};
-
 const getServerSortTimestamp = (server: SshServerListItem, mode: 'lastUsed' | 'createdAt'): number => {
   if (mode === 'createdAt') {
     return new Date(server.createdAt).getTime();
   }
 
   return new Date(server.lastLoginAudit?.attemptedAt ?? server.createdAt).getTime();
-};
-
-const mapServerToFormState = (server: SshServerListItem): ServerEditorFormState => {
-  return {
-    name: server.name,
-    iconKey: server.iconKey,
-    colorKey: server.colorKey,
-    note: server.note ?? '',
-    host: server.host,
-    port: String(server.port),
-    username: server.username,
-    authType: server.authType,
-    keychainId: server.keychainId,
-    password: '',
-    privateKey: '',
-    privateKeyPassphrase: '',
-    folderId: server.folder?.id ?? '',
-    tagIds: (server.tags ?? []).map((tag) => tag.id),
-    strictHostKey: server.strictHostKey ?? true,
-  };
 };
 
 type SSHEditorProps = {
@@ -257,7 +146,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   const [sortMode, setSortMode] = React.useState<SortMode>('default');
   const [activeServerId, setActiveServerId] = React.useState<string | null>(null);
   const [formState, setFormState] = React.useState<ServerEditorFormState>(
-    createInitialFormState(defaultServerNoteTemplate),
+    createInitialServerFormState(defaultServerNoteTemplate),
   );
   const [isDeleteServerDialogOpen, setIsDeleteServerDialogOpen] = React.useState<boolean>(false);
   const [isDeletingServer, setIsDeletingServer] = React.useState<boolean>(false);
@@ -265,7 +154,6 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   const activeServerIdRef = React.useRef<string | null>(null);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
-  const serverCredentialsRequestVersionRef = React.useRef<number>(0);
   const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
   const preferCreateModeRef = React.useRef<boolean>(preferCreateMode);
 
@@ -328,7 +216,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             setFormState(currentFormState);
           } else {
             resetDirtyFieldKeys();
-            setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+            setFormState(createInitialServerFormState(nextDefaultServerNoteTemplate));
           }
           return;
         }
@@ -340,7 +228,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
             setFormState(currentFormState);
           } else {
             resetDirtyFieldKeys();
-            setFormState(createInitialFormState(nextDefaultServerNoteTemplate));
+            setFormState(createInitialServerFormState(nextDefaultServerNoteTemplate));
           }
           return;
         }
@@ -385,86 +273,45 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     void reloadData();
   }, [reloadData]);
 
-  React.useEffect(() => {
-    if (!activeServerId) {
-      return;
-    }
-
-    let cancelled = false;
-    const requestVersion = serverCredentialsRequestVersionRef.current + 1;
-    serverCredentialsRequestVersionRef.current = requestVersion;
-    const requestedServerId = activeServerId;
-
-    const loadCredentials = async () => {
-      try {
-        const response = await getSshServerCredentials(requestedServerId);
-        if (cancelled || requestVersion !== serverCredentialsRequestVersionRef.current) {
-          return;
-        }
-
-        const nextCredentials = mapCredentialSnapshotToCache(response.data);
-
-        credentialsCacheRef.current[requestedServerId] = nextCredentials;
-        setFormState((previous) => ({
-          ...(activeServerIdRef.current === requestedServerId
-            ? mergeFormStatePreservingDirtyFields(
-                previous,
-                { ...previous, ...nextCredentials },
-                dirtyFieldKeysRef.current,
-              )
-            : previous),
-        }));
-      } catch {
-        if (!cancelled) {
-          notifyError(t('ssh.credentialsLoadFailed'));
-        }
+  const { refreshServerCredentials } = useServerCredentialsRefresh({
+    enabled: Boolean(activeServerId),
+    serverId: activeServerId,
+    onCredentialsLoaded: (nextCredentials) => {
+      if (!activeServerId) {
+        return;
       }
-    };
 
-    void loadCredentials();
+      credentialsCacheRef.current[activeServerId] = nextCredentials;
+      setFormState((previous) => ({
+        ...(activeServerIdRef.current === activeServerId
+          ? mergeFormStatePreservingDirtyFields(
+              previous,
+              { ...previous, ...nextCredentials },
+              dirtyFieldKeysRef.current,
+            )
+          : previous),
+      }));
+    },
+    onLoadFailed: () => {
+      notifyError(t('ssh.credentialsLoadFailed'));
+    },
+  });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [activeServerId, notifyError]);
-
-  React.useEffect(() => {
-    if (!formState.keychainId) {
-      return;
-    }
-
-    let cancelled = false;
-    const requestedKeychainId = formState.keychainId;
-
-    const loadKeychainCredentials = async () => {
-      try {
-        const response = await getSshKeychainCredentials(requestedKeychainId);
-        if (cancelled) {
-          return;
-        }
-
-        const nextCredentials = mapCredentialSnapshotToCache(response.data);
-
-        setFormState((previous) => ({
-          ...mergeFormStatePreservingDirtyFields(
-            previous,
-            { ...previous, ...nextCredentials },
-            dirtyFieldKeysRef.current,
-          ),
-        }));
-      } catch {
-        if (!cancelled) {
-          notifyError(t('ssh.credentialsLoadFailed'));
-        }
-      }
-    };
-
-    void loadKeychainCredentials();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [formState.keychainId, notifyError]);
+  useKeychainCredentials({
+    keychainId: formState.keychainId || null,
+    onCredentialsLoaded: (nextCredentials) => {
+      setFormState((previous) => ({
+        ...mergeFormStatePreservingDirtyFields(
+          previous,
+          { ...previous, ...nextCredentials },
+          dirtyFieldKeysRef.current,
+        ),
+      }));
+    },
+    onLoadFailed: () => {
+      notifyError(t('ssh.credentialsLoadFailed'));
+    },
+  });
 
   /**
    * Re-fetches credentials after a successful save to guarantee cache/state match persisted backend values.
@@ -474,49 +321,34 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
    */
   const refreshServerCredentialsAfterSave = React.useCallback(
     async (serverId: string): Promise<void> => {
-      try {
-        const requestVersion = serverCredentialsRequestVersionRef.current + 1;
-        serverCredentialsRequestVersionRef.current = requestVersion;
-        const response = await getSshServerCredentials(serverId);
-        if (requestVersion !== serverCredentialsRequestVersionRef.current) {
-          return;
-        }
-        const nextCredentials = mapCredentialSnapshotToCache(response.data);
-
-        credentialsCacheRef.current[serverId] = nextCredentials;
-        if (activeServerIdRef.current === serverId) {
-          setFormState((previous) => ({
-            ...previous,
-            ...nextCredentials,
-          }));
-        }
-      } catch {
-        notifyWarning(t('ssh.credentialsLoadFailed'));
-      }
+      await refreshServerCredentials(serverId, {
+        onCredentialsLoaded: (nextCredentials) => {
+          credentialsCacheRef.current[serverId] = nextCredentials;
+          if (activeServerIdRef.current === serverId) {
+            setFormState((previous) => ({
+              ...previous,
+              ...nextCredentials,
+            }));
+          }
+        },
+        onLoadFailed: () => {
+          notifyWarning(t('ssh.credentialsLoadFailed'));
+        },
+      });
     },
-    [notifyWarning],
+    [notifyWarning, refreshServerCredentials],
   );
 
-  const selectedKeychain = React.useMemo(() => {
-    if (!formState.keychainId) {
-      return null;
-    }
+  const { selectedKeychain, sharedKeychains, isUsingInlineCredentials, requiresPassword, requiresPrivateKey } =
+    React.useMemo(() => {
+      return deriveServerEditorCredentialMode({
+        keychainId: formState.keychainId,
+        keychains,
+        authType: formState.authType,
+      });
+    }, [formState.authType, formState.keychainId, keychains]);
 
-    return keychains.find((item) => item.id === formState.keychainId) ?? null;
-  }, [formState.keychainId, keychains]);
-
-  const sharedKeychains = React.useMemo(() => {
-    return keychains.filter((item) => item.visibility === 'shared');
-  }, [keychains]);
-
-  const isUsingHiddenKeychain = selectedKeychain?.visibility === 'hidden';
-  const isUsingInlineCredentials = !formState.keychainId || isUsingHiddenKeychain || !selectedKeychain;
   const keychainSelectValue = isUsingInlineCredentials ? SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
-
-  const requiresPassword =
-    isUsingInlineCredentials && (formState.authType === 'password' || formState.authType === 'both');
-  const requiresPrivateKey =
-    isUsingInlineCredentials && (formState.authType === 'key' || formState.authType === 'both');
 
   const openSelectedKeychainEditor = React.useCallback(() => {
     if (!selectedKeychain) {
@@ -527,61 +359,25 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
   }, [notifyWarning, selectedKeychain]);
 
   const saveInlineCredentialsToSharedKeychain = React.useCallback(async () => {
-    if (!isUsingInlineCredentials) {
-      return;
-    }
-
-    if (!formState.name.trim()) {
-      notifyWarning(t('ssh.validationRequiredFields'));
-      return;
-    }
-
-    const shouldUsePassword = formState.authType === 'password' || formState.authType === 'both';
-    const shouldUsePrivateKey = formState.authType === 'key' || formState.authType === 'both';
-
-    if (shouldUsePassword && !formState.password.trim()) {
-      notifyWarning(t('ssh.validationPasswordRequired'));
-      return;
-    }
-
-    if (shouldUsePrivateKey && !formState.privateKey.trim()) {
-      notifyWarning(t('ssh.validationPrivateKeyRequired'));
-      return;
-    }
-
-    setIsSubmitting(true);
-    try {
-      const created = await createSshKeychain({
-        name: `${formState.name.trim()} Keychain`,
-        authType: formState.authType,
-        visibility: 'shared',
-        password: formState.password.trim() || undefined,
-        privateKey: formState.privateKey.trim() || undefined,
-        privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
-      });
-
-      const createdKeychainId = created.data.item.id;
-      await reloadData();
-      dirtyFieldKeysRef.current.add('keychainId');
-      setFormState((previous) => ({ ...previous, keychainId: createdKeychainId }));
-      notifySuccess(t('ssh.saveInlineCredentialsToKeychainSuccess'));
-    } catch (error: unknown) {
-      notifyError(error instanceof Error ? error.message : t('ssh.saveInlineCredentialsToKeychainFailed'));
-    } finally {
-      setIsSubmitting(false);
-    }
-  }, [
-    formState.authType,
-    formState.name,
-    formState.password,
-    formState.privateKey,
-    formState.privateKeyPassphrase,
-    isUsingInlineCredentials,
-    notifyError,
-    notifySuccess,
-    notifyWarning,
-    reloadData,
-  ]);
+    await saveInlineCredentialsToSharedKeychainAction({
+      isUsingInlineCredentials,
+      formState,
+      setIsSubmitting,
+      onKeychainCreated: async (createdKeychain) => {
+        await reloadData();
+        dirtyFieldKeysRef.current.add('keychainId');
+        setFormState((previous) => ({ ...previous, keychainId: createdKeychain.id }));
+      },
+      onWarning: notifyWarning,
+      onSuccess: notifySuccess,
+      onError: notifyError,
+      validationRequiredFieldsMessage: t('ssh.validationRequiredFields'),
+      validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
+      validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
+      saveSuccessMessage: t('ssh.saveInlineCredentialsToKeychainSuccess'),
+      saveFailedMessage: t('ssh.saveInlineCredentialsToKeychainFailed'),
+    });
+  }, [formState, isUsingInlineCredentials, notifyError, notifySuccess, notifyWarning, reloadData]);
 
   const sortServers = React.useCallback((items: SshServerListItem[], mode: SortMode): SshServerListItem[] => {
     return [...items].sort((left, right) => {
@@ -806,47 +602,29 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
 
   const onCreateTag = React.useCallback(
     async (name: string): Promise<SshTag | null> => {
-      const normalizedName = name.trim();
-      if (!normalizedName) {
-        return null;
-      }
-
-      const existingTag = tags.find((tag) => tag.name.toLowerCase() === normalizedName.toLowerCase());
-      if (existingTag) {
-        return existingTag;
-      }
-
-      try {
-        const createdResponse = await createSshTag({ name: normalizedName });
-        const createdTag = createdResponse.data.item;
-
-        setTags((previous) => [...previous, createdTag]);
-        return createdTag;
-      } catch (error: unknown) {
-        notifyError(error instanceof Error ? error.message : t('ssh.createTagFailed'));
-        return null;
-      }
+      return createServerEditorTag({
+        name,
+        tags,
+        onTagCreated: (createdTag) => {
+          setTags((previous) => [...previous, createdTag]);
+        },
+        onError: notifyError,
+        createTagFailedMessage: t('ssh.createTagFailed'),
+      });
     },
     [notifyError, tags],
   );
 
   const importPrivateKeyFromFile = React.useCallback(async () => {
-    try {
-      const result = await window.electron?.importPrivateKeyFromFile?.();
-      if (!result || result.canceled) {
-        return;
-      }
-
-      if (typeof result.content !== 'string') {
-        notifyError(t('ssh.privateKeyImportFailed'));
-        return;
-      }
-
-      onChangeForm('privateKey', result.content);
-      notifySuccess(t('ssh.privateKeyImportSuccess'));
-    } catch (error: unknown) {
-      notifyError(error instanceof Error ? error.message : t('ssh.privateKeyImportFailed'));
-    }
+    await importServerEditorPrivateKeyFromFile({
+      onPrivateKeyImported: (privateKey) => {
+        onChangeForm('privateKey', privateKey);
+      },
+      onSuccess: notifySuccess,
+      onError: notifyError,
+      importSuccessMessage: t('ssh.privateKeyImportSuccess'),
+      importFailedMessage: t('ssh.privateKeyImportFailed'),
+    });
   }, [notifyError, notifySuccess, onChangeForm]);
 
   const privateKeyContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
@@ -866,7 +644,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     preferCreateModeRef.current = true;
     resetDirtyFieldKeys();
     setActiveServerId(null);
-    setFormState(createInitialFormState(defaultServerNoteTemplate));
+    setFormState(createInitialServerFormState(defaultServerNoteTemplate));
   }, [defaultServerNoteTemplate, resetDirtyFieldKeys]);
 
   const onCreateFolder = React.useCallback(

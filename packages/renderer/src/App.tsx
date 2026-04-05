@@ -14,7 +14,6 @@ import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
 import { createSshConnectionIntent, toLocalTerminalTargetId } from './lib/ssh-connection-intent';
-import { requestSshEditorCreateMode } from './lib/ssh-target';
 import { renderTabIconByKey } from './lib/tab-icon';
 import { AppToastProvider } from './lib/toast';
 import { resolvePageDefaults, useTabs } from './lib/useTabs';
@@ -448,23 +447,6 @@ const App: React.FC = () => {
                       state: {
                         ...(tab.state ?? {}),
                         sshConnectionIntent: createSshConnectionIntent(serverId),
-                      },
-                    });
-                  }}
-                  onOpenSshEditor={(serverId) => {
-                    const trimmedServerId = serverId.trim();
-                    if (trimmedServerId.length === 0) {
-                      requestSshEditorCreateMode();
-                    }
-
-                    openPageInTab(tab.id, 'ssh-editor');
-                    updateTab(tab.id, {
-                      state: {
-                        ...(tab.state ?? {}),
-                        sshEditor: {
-                          preferredServerId: trimmedServerId || undefined,
-                          createMode: trimmedServerId.length === 0,
-                        },
                       },
                     });
                   }}

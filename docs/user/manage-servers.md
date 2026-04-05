@@ -2,10 +2,10 @@
 
 ## Create a Server Profile
 
-1. Open server creation.
+1. On Home, open `Add` and choose `Add Server`.
 2. Fill host, port, username.
 3. Choose authentication method (password or private key).
-4. Save and run a quick connection test.
+4. Save from the server dialog and run a quick connection test.
 
 ## Default Note Template
 
@@ -33,10 +33,11 @@
 
 ## Update or Remove Profiles
 
-1. Update profile fields immediately after host/user/auth changes.
-2. Re-run a quick test connection after edits.
-3. Remove stale entries to reduce mistaken connections.
-4. Double-check before deleting production entries.
+1. In Home, open the server context menu and choose `Edit`.
+2. Update profile fields immediately after host/user/auth changes.
+3. Re-run a quick test connection after edits.
+4. Remove stale entries to reduce mistaken connections.
+5. Double-check before deleting production entries.
 
 ## Screenshot Placeholders
 

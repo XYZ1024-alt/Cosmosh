@@ -44,6 +44,7 @@ type ServerEditorFormState = {
 };
 
 type SSHServerEditorFormProps = {
+  formId?: string;
   formState: ServerEditorFormState;
   activeServer: SshServerListItem | null;
   isSubmitting: boolean;
@@ -75,6 +76,7 @@ const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
  * @returns Server editor form element.
  */
 const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
+  formId = 'ssh-editor-form',
   formState,
   activeServer,
   isSubmitting,
@@ -97,7 +99,7 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
 }) => {
   return (
     <Form
-      id="ssh-editor-form"
+      id={formId}
       className="mx-auto grid max-w-4xl gap-4 pb-4"
       onSubmit={onSubmit}
     >

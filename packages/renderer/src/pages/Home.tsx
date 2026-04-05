@@ -32,6 +32,7 @@ import EntityIcon from '../components/home/EntityIcon';
 import EntityVisualPicker from '../components/home/EntityVisualPicker';
 import HomeEmptyState from '../components/home/HomeEmptyState';
 import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
+import SSHServerEditorDialog from '../components/ssh/SSHServerEditorDialog';
 import {
   AlertDialog,
   AlertDialogActionButton,
@@ -96,10 +97,10 @@ import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
+import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
-  onOpenSshEditor: (serverId: string) => void;
   isActive: boolean;
 };
 
@@ -159,8 +160,9 @@ const hashString = (value: string): number => {
   return hash >>> 0;
 };
 
-const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSSH, isActive }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
+  const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
@@ -735,6 +737,22 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
 
   const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
 
+  const {
+    isServerEditorDialogOpen,
+    activeServerEditorId,
+    serverEditorInitialFolderId,
+    openCreateServerDialog,
+    openEditServerDialog,
+    closeServerEditorDialog,
+  } = useServerEditorDialogState({
+    activeFolderId,
+    servers,
+    localTerminalFolderId: LOCAL_TERMINAL_FOLDER_ID,
+    onServerNotFound: () => {
+      notifyWarning(t('ssh.validationServerNotFound'));
+    },
+  });
+
   const openInNewTabShortcutLabel = React.useMemo(() => {
     const clickLabel = t('common.click');
     return isMacPlatform ? `⌘+${clickLabel}` : `Ctrl+${clickLabel}`;
@@ -1202,7 +1220,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                         <DropdownMenuContent>
                           <DropdownMenuItem
                             icon={Server}
-                            onSelect={() => onOpenSshEditor('')}
+                            onSelect={openCreateServerDialog}
                           >
                             {t('home.quickAddServer')}
                           </DropdownMenuItem>
@@ -1409,7 +1427,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
                                   <ContextMenuSeparator />
                                   <ContextMenuItem
                                     icon={Pencil}
-                                    onSelect={() => onOpenSshEditor(server.id)}
+                                    onSelect={() => openEditServerDialog(server.id)}
                                   >
                                     {t('home.contextEdit')}
                                   </ContextMenuItem>
@@ -1465,6 +1483,21 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSshEditor, isActive }) => 
         onSubmit={() => {
           void createFolderDialog.submitCreateFolder();
         }}
+      />
+
+      <SSHServerEditorDialog
+        open={isServerEditorDialogOpen}
+        serverId={activeServerEditorId}
+        initialFolderId={serverEditorInitialFolderId}
+        servers={servers}
+        folders={folders}
+        defaultServerNoteTemplate={defaultServerNoteTemplate}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeServerEditorDialog();
+          }
+        }}
+        onSaved={reloadHomeData}
       />
 
       <Dialog
