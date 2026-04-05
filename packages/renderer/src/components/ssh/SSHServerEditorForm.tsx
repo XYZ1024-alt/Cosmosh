@@ -105,39 +105,41 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
     >
       <section className="grid gap-3">
         <div className="flex items-end justify-between gap-4">
-          <EntityVisualPicker
-            visual={{
-              iconKey: formState.iconKey,
-              colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
-            }}
-            label={t('home.iconSearchPlaceholder')}
-            onChange={(nextVisual) => {
-              onChangeForm('iconKey', nextVisual.iconKey);
-              onChangeForm('colorKey', nextVisual.colorKey);
-            }}
-          >
-            <button
-              type="button"
-              aria-label={t('home.editVisual')}
-            >
-              <EntityIcon
-                icon={
-                  <span
-                    className={classNames(
-                      'inline-flex h-full w-full items-center justify-center rounded-md',
-                      getEntityColorClassName(isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue'),
-                    )}
-                  >
-                    {renderEntityIcon(formState.iconKey)}
-                  </span>
-                }
-                tone="flat"
-              />
-            </button>
-          </EntityVisualPicker>
           <FormField className="flex-1">
             <FormLabel htmlFor="ssh-editor-name">{t('ssh.columnName')}</FormLabel>
-            <FormControl>
+            <FormControl className="flex gap-2">
+              <div className="ms-2.5">
+                <EntityVisualPicker
+                  visual={{
+                    iconKey: formState.iconKey,
+                    colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue',
+                  }}
+                  label={t('home.iconSearchPlaceholder')}
+                  onChange={(nextVisual) => {
+                    onChangeForm('iconKey', nextVisual.iconKey);
+                    onChangeForm('colorKey', nextVisual.colorKey);
+                  }}
+                >
+                  <button
+                    type="button"
+                    aria-label={t('home.editVisual')}
+                  >
+                    <EntityIcon
+                      icon={
+                        <span
+                          className={classNames(
+                            'inline-flex h-full w-full items-center justify-center rounded-md',
+                            getEntityColorClassName(isEntityColorKey(formState.colorKey) ? formState.colorKey : 'blue'),
+                          )}
+                        >
+                          {renderEntityIcon(formState.iconKey)}
+                        </span>
+                      }
+                      tone="flat"
+                    />
+                  </button>
+                </EntityVisualPicker>
+              </div>
               <Input
                 id="ssh-editor-name"
                 value={formState.name}
