@@ -28,155 +28,30 @@ import {
 import { Input } from '../components/ui/input';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
-import {
-  createSshKeychain,
-  createSshTag,
-  deleteSshKeychain,
-  getSshKeychainCredentials,
-  listSshFolders,
-  listSshKeychains,
-  listSshTags,
-  updateSshKeychain,
-} from '../lib/backend';
-import {
-  createEntityIconNode,
-  isEntityColorKey,
-  pickRandomEntityVisual,
-  renderEntityIcon,
-} from '../lib/entity-visuals';
+import { deleteSshKeychain, listSshFolders, listSshKeychains, listSshTags } from '../lib/backend';
+import { createEntityIconNode, isEntityColorKey, renderEntityIcon } from '../lib/entity-visuals';
 import { t } from '../lib/i18n';
+import { createKeychainEditorTag, saveKeychainFromEditor } from '../lib/ssh-keychain-editor-actions';
+import {
+  applySubmittedCredentialsToCache,
+  createInitialKeychainFormState,
+  deriveKeychainEditorCredentialMode,
+  filterSharedKeychains,
+  getKeychainSortTimestamp,
+  type KeychainCredentialCache,
+  type KeychainFormState,
+  mapKeychainToFormState,
+  mergeKeychainFormStatePreservingDirtyFields,
+  type SshKeychainListItem,
+} from '../lib/ssh-keychain-editor-shared';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
+import { useKeychainCredentialsRefresh } from '../lib/use-server-credentials';
 
-type SshAuthType = components['schemas']['SshAuthType'];
-type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 type SshFolder = components['schemas']['SshFolder'];
 type SshTag = components['schemas']['SshTag'];
 
 type SortMode = 'default' | 'nameAsc' | 'nameDesc' | 'createdAt';
-
-type KeychainFormState = {
-  name: string;
-  iconKey: string;
-  colorKey: string;
-  authType: SshAuthType;
-  password: string;
-  privateKey: string;
-  privateKeyPassphrase: string;
-  folderId: string;
-  tagIds: string[];
-  note: string;
-};
-
-type KeychainCredentialCache = {
-  authType: SshAuthType;
-  password: string;
-  privateKey: string;
-  privateKeyPassphrase: string;
-};
-
-/**
- * Normalizes a keychain credential snapshot from backend responses.
- *
- * @param snapshot Backend credential snapshot.
- * @returns Normalized credential cache shape used by the editor state.
- */
-const mapCredentialSnapshotToCache = (snapshot: {
-  authType: SshAuthType;
-  password?: string | null;
-  privateKey?: string | null;
-  privateKeyPassphrase?: string | null;
-}): KeychainCredentialCache => {
-  return {
-    authType: snapshot.authType,
-    password: snapshot.password ?? '',
-    privateKey: snapshot.privateKey ?? '',
-    privateKeyPassphrase: snapshot.privateKeyPassphrase ?? '',
-  };
-};
-
-/**
- * Applies submitted credential fields to the local cache while preserving existing values
- * for fields intentionally omitted from update payloads.
- *
- * @param previousCredentials The last cached credentials for the keychain.
- * @param submittedPayload The credential fields sent to the backend.
- * @returns The next cache snapshot that matches submitted intent.
- */
-const applySubmittedCredentialsToCache = (
-  previousCredentials: KeychainCredentialCache | undefined,
-  submittedPayload: {
-    authType: SshAuthType;
-    password?: string;
-    privateKey?: string;
-    privateKeyPassphrase?: string;
-  },
-): KeychainCredentialCache => {
-  return {
-    authType: submittedPayload.authType,
-    password: submittedPayload.password ?? previousCredentials?.password ?? '',
-    privateKey: submittedPayload.privateKey ?? previousCredentials?.privateKey ?? '',
-    privateKeyPassphrase: submittedPayload.privateKeyPassphrase ?? previousCredentials?.privateKeyPassphrase ?? '',
-  };
-};
-
-const createInitialFormState = (): KeychainFormState => {
-  const visual = pickRandomEntityVisual('server', `${Date.now()}:${Math.random()}`);
-
-  return {
-    name: '',
-    iconKey: visual.iconKey,
-    colorKey: visual.colorKey,
-    authType: 'password',
-    password: '',
-    privateKey: '',
-    privateKeyPassphrase: '',
-    folderId: '',
-    tagIds: [],
-    note: '',
-  };
-};
-
-const mapKeychainToFormState = (keychain: SshKeychainListItem): KeychainFormState => ({
-  name: keychain.name,
-  iconKey: keychain.iconKey,
-  colorKey: keychain.colorKey,
-  authType: keychain.authType,
-  password: '',
-  privateKey: '',
-  privateKeyPassphrase: '',
-  folderId: keychain.folder?.id ?? '',
-  tagIds: (keychain.tags ?? []).map((tag) => tag.id),
-  note: keychain.note ?? '',
-});
-
-const mergeFormStatePreservingDirtyFields = (
-  currentFormState: KeychainFormState,
-  nextFormState: KeychainFormState,
-  dirtyFields: ReadonlySet<keyof KeychainFormState>,
-): KeychainFormState => {
-  if (dirtyFields.size === 0) {
-    return nextFormState;
-  }
-
-  const mergedFormState: KeychainFormState = { ...currentFormState };
-  const mutableFormState = mergedFormState as Record<
-    keyof KeychainFormState,
-    KeychainFormState[keyof KeychainFormState]
-  >;
-
-  (Object.keys(nextFormState) as Array<keyof KeychainFormState>).forEach((fieldKey) => {
-    if (!dirtyFields.has(fieldKey)) {
-      mutableFormState[fieldKey] = nextFormState[fieldKey];
-    }
-  });
-
-  return mergedFormState;
-};
-
-const getKeychainSortTimestamp = (keychain: SshKeychainListItem): number => {
-  return new Date(keychain.createdAt).getTime();
-};
 
 const SSHKeychains: React.FC = () => {
   const { success: notifySuccess, error: notifyError, warning: notifyWarning } = useToast();
@@ -188,7 +63,7 @@ const SSHKeychains: React.FC = () => {
   const [search, setSearch] = React.useState<string>('');
   const [sortMode, setSortMode] = React.useState<SortMode>('default');
   const [activeKeychainId, setActiveKeychainId] = React.useState<string | null>(null);
-  const [formState, setFormState] = React.useState<KeychainFormState>(() => createInitialFormState());
+  const [formState, setFormState] = React.useState<KeychainFormState>(() => createInitialKeychainFormState());
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState<boolean>(false);
   const [isDeletingKeychain, setIsDeletingKeychain] = React.useState<boolean>(false);
   const [deleteKeychainDraft, setDeleteKeychainDraft] = React.useState<{ id: string; name: string } | null>(null);
@@ -198,8 +73,9 @@ const SSHKeychains: React.FC = () => {
   const dirtyFieldKeysRef = React.useRef<Set<keyof KeychainFormState>>(new Set());
   const credentialsCacheRef = React.useRef<Record<string, KeychainCredentialCache>>({});
 
-  const requiresPassword = formState.authType === 'password' || formState.authType === 'both';
-  const requiresPrivateKey = formState.authType === 'key' || formState.authType === 'both';
+  const { requiresPassword, requiresPrivateKey } = React.useMemo(() => {
+    return deriveKeychainEditorCredentialMode(formState.authType);
+  }, [formState.authType]);
 
   const activeKeychain = React.useMemo(() => {
     if (!activeKeychainId) {
@@ -231,7 +107,7 @@ const SSHKeychains: React.FC = () => {
           listSshFolders(),
           listSshTags(),
         ]);
-        const nextKeychains = keychainsResponse.data.items.filter((item) => item.visibility === 'shared');
+        const nextKeychains = filterSharedKeychains(keychainsResponse.data.items);
         const currentKeychainId = activeKeychainIdRef.current;
         const currentFormState = formStateRef.current;
         const dirtyFieldKeys = dirtyFieldKeysRef.current;
@@ -246,7 +122,7 @@ const SSHKeychains: React.FC = () => {
             setFormState(currentFormState);
           } else {
             resetDirtyFieldKeys();
-            setFormState(createInitialFormState());
+            setFormState(createInitialKeychainFormState());
           }
           return;
         }
@@ -269,7 +145,7 @@ const SSHKeychains: React.FC = () => {
         setActiveKeychainId(targetKeychain.id);
         setFormState(
           shouldPreserveLocalChanges
-            ? mergeFormStatePreservingDirtyFields(currentFormState, nextFormState, dirtyFieldKeys)
+            ? mergeKeychainFormStatePreservingDirtyFields(currentFormState, nextFormState, dirtyFieldKeys)
             : nextFormState,
         );
 
@@ -289,46 +165,29 @@ const SSHKeychains: React.FC = () => {
     void reloadData();
   }, [reloadData]);
 
-  React.useEffect(() => {
-    if (!activeKeychainId) {
-      return;
-    }
-
-    let canceled = false;
-    const requestedKeychainId = activeKeychainId;
-
-    const loadCredentials = async () => {
-      try {
-        const response = await getSshKeychainCredentials(requestedKeychainId);
-        if (canceled) {
-          return;
-        }
-
-        const nextCredentials = mapCredentialSnapshotToCache(response.data);
-
-        credentialsCacheRef.current[requestedKeychainId] = nextCredentials;
-        setFormState((previous) => ({
-          ...(activeKeychainIdRef.current === requestedKeychainId
-            ? mergeFormStatePreservingDirtyFields(
-                previous,
-                { ...previous, ...nextCredentials },
-                dirtyFieldKeysRef.current,
-              )
-            : previous),
-        }));
-      } catch {
-        if (!canceled) {
-          notifyError(t('sshKeychain.loadCredentialsFailed'));
-        }
+  const { refreshKeychainCredentials } = useKeychainCredentialsRefresh({
+    enabled: Boolean(activeKeychainId),
+    keychainId: activeKeychainId,
+    onCredentialsLoaded: (nextCredentials) => {
+      if (!activeKeychainId) {
+        return;
       }
-    };
 
-    void loadCredentials();
-
-    return () => {
-      canceled = true;
-    };
-  }, [activeKeychainId, notifyError]);
+      credentialsCacheRef.current[activeKeychainId] = nextCredentials;
+      setFormState((previous) => ({
+        ...(activeKeychainIdRef.current === activeKeychainId
+          ? mergeKeychainFormStatePreservingDirtyFields(
+              previous,
+              { ...previous, ...nextCredentials },
+              dirtyFieldKeysRef.current,
+            )
+          : previous),
+      }));
+    },
+    onLoadFailed: () => {
+      notifyError(t('sshKeychain.loadCredentialsFailed'));
+    },
+  });
 
   /**
    * Re-fetches credentials after a successful save to guarantee cache/state match persisted backend values.
@@ -338,22 +197,22 @@ const SSHKeychains: React.FC = () => {
    */
   const refreshKeychainCredentialsAfterSave = React.useCallback(
     async (keychainId: string): Promise<void> => {
-      try {
-        const response = await getSshKeychainCredentials(keychainId);
-        const nextCredentials = mapCredentialSnapshotToCache(response.data);
-
-        credentialsCacheRef.current[keychainId] = nextCredentials;
-        if (activeKeychainIdRef.current === keychainId) {
-          setFormState((previous) => ({
-            ...previous,
-            ...nextCredentials,
-          }));
-        }
-      } catch {
-        notifyWarning(t('sshKeychain.loadCredentialsFailed'));
-      }
+      await refreshKeychainCredentials(keychainId, {
+        onCredentialsLoaded: (nextCredentials) => {
+          credentialsCacheRef.current[keychainId] = nextCredentials;
+          if (activeKeychainIdRef.current === keychainId) {
+            setFormState((previous) => ({
+              ...previous,
+              ...nextCredentials,
+            }));
+          }
+        },
+        onLoadFailed: () => {
+          notifyWarning(t('sshKeychain.loadCredentialsFailed'));
+        },
+      });
     },
-    [notifyWarning],
+    [notifyWarning, refreshKeychainCredentials],
   );
 
   const sortKeychains = React.useCallback((items: SshKeychainListItem[], mode: SortMode): SshKeychainListItem[] => {
@@ -426,7 +285,7 @@ const SSHKeychains: React.FC = () => {
   const onAddKeychain = React.useCallback(() => {
     resetDirtyFieldKeys();
     setActiveKeychainId(null);
-    setFormState(createInitialFormState());
+    setFormState(createInitialKeychainFormState());
   }, [resetDirtyFieldKeys]);
 
   const createFolderDialog = useCreateFolderDialog({
@@ -449,26 +308,15 @@ const SSHKeychains: React.FC = () => {
 
   const onCreateTag = React.useCallback(
     async (name: string): Promise<SshTag | null> => {
-      const normalizedName = name.trim();
-      if (!normalizedName) {
-        return null;
-      }
-
-      const existingTag = tags.find((tag) => tag.name.toLowerCase() === normalizedName.toLowerCase());
-      if (existingTag) {
-        return existingTag;
-      }
-
-      try {
-        const createdResponse = await createSshTag({ name: normalizedName });
-        const createdTag = createdResponse.data.item;
-
-        setTags((previous) => [...previous, createdTag]);
-        return createdTag;
-      } catch (error: unknown) {
-        notifyError(error instanceof Error ? error.message : t('sshKeychain.createTagFailed'));
-        return null;
-      }
+      return createKeychainEditorTag({
+        name,
+        tags,
+        onTagCreated: (createdTag) => {
+          setTags((previous) => [...previous, createdTag]);
+        },
+        onError: notifyError,
+        createTagFailedMessage: t('sshKeychain.createTagFailed'),
+      });
     },
     [notifyError, tags],
   );
@@ -526,54 +374,33 @@ const SSHKeychains: React.FC = () => {
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      if (!formState.name.trim()) {
-        notifyWarning(t('ssh.validationRequiredFields'));
-        return;
-      }
-
-      if (requiresPassword && !formState.password.trim() && !activeKeychain?.hasPassword) {
-        notifyWarning(t('ssh.validationPasswordRequired'));
-        return;
-      }
-
-      if (requiresPrivateKey && !formState.privateKey.trim() && !activeKeychain?.hasPrivateKey) {
-        notifyWarning(t('ssh.validationPrivateKeyRequired'));
-        return;
-      }
-
       setIsSubmitting(true);
       try {
-        const payload = {
-          name: formState.name.trim(),
-          iconKey: formState.iconKey,
-          colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
-          authType: formState.authType,
-          visibility: 'shared' as const,
-          password: formState.password.trim() || undefined,
-          privateKey: formState.privateKey.trim() || undefined,
-          privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
-          folderId: formState.folderId || undefined,
-          tagIds: formState.tagIds,
-          note: formState.note.trim() || undefined,
-        };
-
-        if (activeKeychainId) {
-          const response = await updateSshKeychain(activeKeychainId, payload);
-          credentialsCacheRef.current[activeKeychainId] = applySubmittedCredentialsToCache(
-            credentialsCacheRef.current[activeKeychainId],
-            payload,
-          );
-          await refreshKeychainCredentialsAfterSave(response.data.item.id);
-          resetDirtyFieldKeys();
-          await reloadData(response.data.item.id);
-        } else {
-          const response = await createSshKeychain(payload);
-          credentialsCacheRef.current[response.data.item.id] = applySubmittedCredentialsToCache(undefined, payload);
-          await refreshKeychainCredentialsAfterSave(response.data.item.id);
-          resetDirtyFieldKeys();
-          setActiveKeychainId(response.data.item.id);
-          await reloadData(response.data.item.id);
+        const saveResult = await saveKeychainFromEditor({
+          keychainId: activeKeychainId,
+          activeKeychain,
+          formState,
+          requiresPassword,
+          requiresPrivateKey,
+          onWarning: notifyWarning,
+          validationRequiredFieldsMessage: t('ssh.validationRequiredFields'),
+          validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
+          validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
+        });
+        if (!saveResult) {
+          return;
         }
+
+        const previousCredentials = activeKeychainId ? credentialsCacheRef.current[activeKeychainId] : undefined;
+        credentialsCacheRef.current[saveResult.savedKeychain.id] = applySubmittedCredentialsToCache(
+          previousCredentials,
+          saveResult.submittedCredentialPayload,
+        );
+
+        await refreshKeychainCredentialsAfterSave(saveResult.savedKeychain.id);
+        resetDirtyFieldKeys();
+        setActiveKeychainId(saveResult.savedKeychain.id);
+        await reloadData(saveResult.savedKeychain.id);
 
         notifySuccess(t('sshKeychain.saveSuccess'));
       } catch (error: unknown) {

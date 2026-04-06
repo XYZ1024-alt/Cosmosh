@@ -5,10 +5,11 @@ import React from 'react';
 import { createSshServer, listSshKeychains, listSshTags, updateSshServer } from '../../lib/backend';
 import { isEntityColorKey } from '../../lib/entity-visuals';
 import { t } from '../../lib/i18n';
+import { upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
 import {
+  buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
   importServerEditorPrivateKeyFromFile,
-  saveInlineCredentialsToSharedKeychain as saveInlineCredentialsToSharedKeychainAction,
 } from '../../lib/ssh-server-editor-actions';
 import {
   applySubmittedCredentialsToCache,
@@ -22,6 +23,7 @@ import {
 } from '../../lib/ssh-server-editor-shared';
 import { useToast } from '../../lib/toast-context';
 import { useCreateFolderDialog } from '../../lib/use-create-folder-dialog';
+import { useKeychainEditorDialogState } from '../../lib/use-keychain-editor-dialog-state';
 import { useKeychainCredentials, useServerCredentialsRefresh } from '../../lib/use-server-credentials';
 import CreateFolderDialog from '../home/CreateFolderDialog';
 import {
@@ -34,6 +36,7 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
+import SSHKeychainEditorDialog from './SSHKeychainEditorDialog';
 import SSHServerEditorForm, {
   SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE,
   SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE,
@@ -211,6 +214,20 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
 
   const keychainSelectValue = isUsingInlineCredentials ? SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
 
+  const {
+    isKeychainEditorDialogOpen,
+    activeKeychainEditorId,
+    keychainEditorInitialFormState,
+    openCreateKeychainDialog,
+    openEditKeychainDialog,
+    closeKeychainEditorDialog,
+  } = useKeychainEditorDialogState({
+    keychains: sharedKeychains,
+    onKeychainNotFound: () => {
+      notifyWarning(t('ssh.validationKeychainNotFound'));
+    },
+  });
+
   const createFolderDialog = useCreateFolderDialog({
     onCreated: (createdFolder, options) => {
       setEditorFolders((previous) => {
@@ -292,31 +309,16 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   }, [importPrivateKeyFromFile]);
 
   const openSelectedKeychainEditor = React.useCallback(() => {
-    notifyWarning(t('ssh.keychainEditComingSoon'));
-  }, [notifyWarning]);
+    if (!formState.keychainId) {
+      return;
+    }
 
-  const saveInlineCredentialsToSharedKeychain = React.useCallback(async () => {
-    await saveInlineCredentialsToSharedKeychainAction({
-      isUsingInlineCredentials,
-      formState,
-      setIsSubmitting,
-      onKeychainCreated: (createdKeychain) => {
-        setKeychains((previous) => [...previous, createdKeychain]);
-        setFormState((previous) => ({
-          ...previous,
-          keychainId: createdKeychain.id,
-        }));
-      },
-      onWarning: notifyWarning,
-      onSuccess: notifySuccess,
-      onError: notifyError,
-      validationRequiredFieldsMessage: t('ssh.validationRequiredFields'),
-      validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
-      validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
-      saveSuccessMessage: t('ssh.saveInlineCredentialsToKeychainSuccess'),
-      saveFailedMessage: t('ssh.saveInlineCredentialsToKeychainFailed'),
-    });
-  }, [formState, isUsingInlineCredentials, notifyError, notifySuccess, notifyWarning]);
+    openEditKeychainDialog(formState.keychainId);
+  }, [formState.keychainId, openEditKeychainDialog]);
+
+  const saveInlineCredentialsToSharedKeychain = React.useCallback(() => {
+    openCreateKeychainDialog(buildInlineCredentialKeychainEditorFormState(formState));
+  }, [formState, openCreateKeychainDialog]);
 
   const refreshServerCredentialsAfterSave = React.useCallback(
     async (savedServerId: string): Promise<void> => {
@@ -509,12 +511,10 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
               }}
               onCreateTag={onCreateTag}
               onOpenSelectedKeychainEditor={openSelectedKeychainEditor}
-              onSaveInlineCredentialsToSharedKeychain={() => {
-                void saveInlineCredentialsToSharedKeychain();
-              }}
+              onSaveInlineCredentialsToSharedKeychain={saveInlineCredentialsToSharedKeychain}
               onKeychainSelectValueChange={(value) => {
                 if (value === SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE) {
-                  notifyWarning(t('ssh.keychainCreateComingSoon'));
+                  openCreateKeychainDialog();
                   return;
                 }
 
@@ -547,6 +547,21 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <SSHKeychainEditorDialog
+        open={isKeychainEditorDialogOpen}
+        keychainId={activeKeychainEditorId}
+        initialFormState={keychainEditorInitialFormState}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeKeychainEditorDialog();
+          }
+        }}
+        onSaved={(savedKeychain) => {
+          setKeychains((previous) => upsertKeychainListItem(previous, savedKeychain));
+          onChangeForm('keychainId', savedKeychain.id);
+        }}
+      />
 
       <CreateFolderDialog
         open={createFolderDialog.isOpen}

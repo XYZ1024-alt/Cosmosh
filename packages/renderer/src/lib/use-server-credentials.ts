@@ -120,6 +120,113 @@ type UseKeychainCredentialsParams = {
   onLoadFailed: CredentialsLoadFailedHandler;
 };
 
+type LoadKeychainCredentialsOptions = {
+  shouldCancel?: () => boolean;
+  onCredentialsLoaded?: CredentialsLoadedHandler;
+  onLoadFailed?: CredentialsLoadFailedHandler;
+};
+
+type UseKeychainCredentialsRefreshParams = {
+  enabled?: boolean;
+  keychainId: string | null;
+  onCredentialsLoaded: CredentialsLoadedHandler;
+  onLoadFailed: CredentialsLoadFailedHandler;
+};
+
+type RefreshKeychainCredentials = (
+  keychainId: string,
+  options?: Omit<LoadKeychainCredentialsOptions, 'shouldCancel'>,
+) => Promise<void>;
+
+/**
+ * Shares keychain-credential loading for both effect-driven hydration and post-save refresh.
+ *
+ * @param params Hook configuration for target keychain and callbacks.
+ * @param params.enabled Whether automatic loading is enabled.
+ * @param params.keychainId Active keychain id to auto-load.
+ * @param params.onCredentialsLoaded Callback when credentials are loaded.
+ * @param params.onLoadFailed Callback when credentials loading fails.
+ * @returns A refresh function that can be called after save operations.
+ */
+export const useKeychainCredentialsRefresh = ({
+  enabled = true,
+  keychainId,
+  onCredentialsLoaded,
+  onLoadFailed,
+}: UseKeychainCredentialsRefreshParams): { refreshKeychainCredentials: RefreshKeychainCredentials } => {
+  const requestVersionRef = React.useRef<number>(0);
+  const onCredentialsLoadedRef = React.useRef<CredentialsLoadedHandler>(onCredentialsLoaded);
+  const onLoadFailedRef = React.useRef<CredentialsLoadFailedHandler>(onLoadFailed);
+
+  React.useEffect(() => {
+    onCredentialsLoadedRef.current = onCredentialsLoaded;
+  }, [onCredentialsLoaded]);
+
+  React.useEffect(() => {
+    onLoadFailedRef.current = onLoadFailed;
+  }, [onLoadFailed]);
+
+  /**
+   * Loads credentials for a specific keychain id while guarding against stale responses.
+   *
+   * @param targetKeychainId The keychain id to load credentials for.
+   * @param options Optional per-call overrides.
+   * @param options.shouldCancel Predicate for local cancellation checks.
+   * @param options.onCredentialsLoaded Optional callback overriding default success handler.
+   * @param options.onLoadFailed Optional callback overriding default failure handler.
+   * @returns Resolves when the request is completed or ignored as stale/cancelled.
+   */
+  const loadKeychainCredentials = React.useCallback(
+    async (targetKeychainId: string, options: LoadKeychainCredentialsOptions = {}): Promise<void> => {
+      const requestVersion = requestVersionRef.current + 1;
+      requestVersionRef.current = requestVersion;
+
+      try {
+        const response = await getSshKeychainCredentials(targetKeychainId);
+        if (requestVersion !== requestVersionRef.current || options.shouldCancel?.()) {
+          return;
+        }
+
+        const nextCredentials = mapCredentialSnapshotToCache(response.data);
+        (options.onCredentialsLoaded ?? onCredentialsLoadedRef.current)(nextCredentials);
+      } catch {
+        if (requestVersion !== requestVersionRef.current || options.shouldCancel?.()) {
+          return;
+        }
+
+        (options.onLoadFailed ?? onLoadFailedRef.current)();
+      }
+    },
+    [],
+  );
+
+  React.useEffect(() => {
+    if (!enabled || !keychainId) {
+      return;
+    }
+
+    let cancelled = false;
+    void loadKeychainCredentials(keychainId, {
+      shouldCancel: () => cancelled,
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, keychainId, loadKeychainCredentials]);
+
+  const refreshKeychainCredentials = React.useCallback<RefreshKeychainCredentials>(
+    async (targetKeychainId, options) => {
+      await loadKeychainCredentials(targetKeychainId, options);
+    },
+    [loadKeychainCredentials],
+  );
+
+  return {
+    refreshKeychainCredentials,
+  };
+};
+
 /**
  * Loads credentials of the selected keychain and applies cancellation when dependencies change.
  *
@@ -136,43 +243,10 @@ export const useKeychainCredentials = ({
   onCredentialsLoaded,
   onLoadFailed,
 }: UseKeychainCredentialsParams): void => {
-  const onCredentialsLoadedRef = React.useRef<CredentialsLoadedHandler>(onCredentialsLoaded);
-  const onLoadFailedRef = React.useRef<CredentialsLoadFailedHandler>(onLoadFailed);
-
-  React.useEffect(() => {
-    onCredentialsLoadedRef.current = onCredentialsLoaded;
-  }, [onCredentialsLoaded]);
-
-  React.useEffect(() => {
-    onLoadFailedRef.current = onLoadFailed;
-  }, [onLoadFailed]);
-
-  React.useEffect(() => {
-    if (!enabled || !keychainId) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const loadKeychainCredentials = async () => {
-      try {
-        const response = await getSshKeychainCredentials(keychainId);
-        if (cancelled) {
-          return;
-        }
-
-        onCredentialsLoadedRef.current(mapCredentialSnapshotToCache(response.data));
-      } catch {
-        if (!cancelled) {
-          onLoadFailedRef.current();
-        }
-      }
-    };
-
-    void loadKeychainCredentials();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [enabled, keychainId]);
+  useKeychainCredentialsRefresh({
+    enabled,
+    keychainId,
+    onCredentialsLoaded,
+    onLoadFailed,
+  });
 };

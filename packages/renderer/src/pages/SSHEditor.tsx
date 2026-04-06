@@ -19,6 +19,7 @@ import React from 'react';
 import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
 import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
+import SSHKeychainEditorDialog from '../components/ssh/SSHKeychainEditorDialog';
 import SSHServerEditorForm, {
   SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE,
   SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE,
@@ -60,10 +61,11 @@ import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/e
 import { t } from '../lib/i18n';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
+import { upsertKeychainListItem } from '../lib/ssh-keychain-editor-shared';
 import {
+  buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
   importServerEditorPrivateKeyFromFile,
-  saveInlineCredentialsToSharedKeychain as saveInlineCredentialsToSharedKeychainAction,
 } from '../lib/ssh-server-editor-actions';
 import {
   applySubmittedCredentialsToCache,
@@ -79,6 +81,7 @@ import { consumeSshEditorCreateMode } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
+import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useKeychainCredentials, useServerCredentialsRefresh } from '../lib/use-server-credentials';
 
 type SshFolder = components['schemas']['SshFolder'];
@@ -339,45 +342,45 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
     [notifyWarning, refreshServerCredentials],
   );
 
-  const { selectedKeychain, sharedKeychains, isUsingInlineCredentials, requiresPassword, requiresPrivateKey } =
-    React.useMemo(() => {
-      return deriveServerEditorCredentialMode({
-        keychainId: formState.keychainId,
-        keychains,
-        authType: formState.authType,
-      });
-    }, [formState.authType, formState.keychainId, keychains]);
+  const { sharedKeychains, isUsingInlineCredentials, requiresPassword, requiresPrivateKey } = React.useMemo(() => {
+    return deriveServerEditorCredentialMode({
+      keychainId: formState.keychainId,
+      keychains,
+      authType: formState.authType,
+    });
+  }, [formState.authType, formState.keychainId, keychains]);
 
   const keychainSelectValue = isUsingInlineCredentials ? SSH_SERVER_INLINE_KEYCHAIN_SELECT_VALUE : formState.keychainId;
 
+  const {
+    isKeychainEditorDialogOpen,
+    activeKeychainEditorId,
+    keychainEditorInitialFormState,
+    openCreateKeychainDialog,
+    openEditKeychainDialog,
+    closeKeychainEditorDialog,
+  } = useKeychainEditorDialogState({
+    keychains: sharedKeychains,
+    onKeychainNotFound: () => {
+      notifyWarning(t('ssh.validationKeychainNotFound'));
+    },
+  });
+
   const openSelectedKeychainEditor = React.useCallback(() => {
-    if (!selectedKeychain) {
+    if (!formState.keychainId) {
       return;
     }
 
-    notifyWarning(t('ssh.keychainEditComingSoon'));
-  }, [notifyWarning, selectedKeychain]);
+    openEditKeychainDialog(formState.keychainId);
+  }, [formState.keychainId, openEditKeychainDialog]);
 
-  const saveInlineCredentialsToSharedKeychain = React.useCallback(async () => {
-    await saveInlineCredentialsToSharedKeychainAction({
-      isUsingInlineCredentials,
-      formState,
-      setIsSubmitting,
-      onKeychainCreated: async (createdKeychain) => {
-        await reloadData();
-        dirtyFieldKeysRef.current.add('keychainId');
-        setFormState((previous) => ({ ...previous, keychainId: createdKeychain.id }));
-      },
-      onWarning: notifyWarning,
-      onSuccess: notifySuccess,
-      onError: notifyError,
-      validationRequiredFieldsMessage: t('ssh.validationRequiredFields'),
-      validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
-      validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
-      saveSuccessMessage: t('ssh.saveInlineCredentialsToKeychainSuccess'),
-      saveFailedMessage: t('ssh.saveInlineCredentialsToKeychainFailed'),
-    });
-  }, [formState, isUsingInlineCredentials, notifyError, notifySuccess, notifyWarning, reloadData]);
+  const saveInlineCredentialsToSharedKeychain = React.useCallback(() => {
+    if (!isUsingInlineCredentials) {
+      return;
+    }
+
+    openCreateKeychainDialog(buildInlineCredentialKeychainEditorFormState(formState));
+  }, [formState, isUsingInlineCredentials, openCreateKeychainDialog]);
 
   const sortServers = React.useCallback((items: SshServerListItem[], mode: SortMode): SshServerListItem[] => {
     return [...items].sort((left, right) => {
@@ -1049,12 +1052,10 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
               onCreateFolder={onCreateFolder}
               onCreateTag={onCreateTag}
               onOpenSelectedKeychainEditor={openSelectedKeychainEditor}
-              onSaveInlineCredentialsToSharedKeychain={() => {
-                void saveInlineCredentialsToSharedKeychain();
-              }}
+              onSaveInlineCredentialsToSharedKeychain={saveInlineCredentialsToSharedKeychain}
               onKeychainSelectValueChange={(value) => {
                 if (value === SSH_SERVER_ADD_KEYCHAIN_SELECT_VALUE) {
-                  notifyWarning(t('ssh.keychainCreateComingSoon'));
+                  openCreateKeychainDialog();
                   return;
                 }
 
@@ -1076,6 +1077,21 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
         onVisualChange={createFolderDialog.setFolderVisual}
         onSubmit={() => {
           void createFolderDialog.submitCreateFolder();
+        }}
+      />
+
+      <SSHKeychainEditorDialog
+        open={isKeychainEditorDialogOpen}
+        keychainId={activeKeychainEditorId}
+        initialFormState={keychainEditorInitialFormState}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) {
+            closeKeychainEditorDialog();
+          }
+        }}
+        onSaved={(savedKeychain) => {
+          setKeychains((previous) => upsertKeychainListItem(previous, savedKeychain));
+          onChangeForm('keychainId', savedKeychain.id);
         }}
       />
 

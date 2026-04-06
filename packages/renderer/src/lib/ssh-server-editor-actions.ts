@@ -1,10 +1,10 @@
 import type { components } from '@cosmosh/api-contract';
 
-import { createSshKeychain, createSshTag } from './backend';
+import { createSshTag } from './backend';
+import type { KeychainEditorInitialFormState } from './ssh-keychain-editor-shared';
 import type { ServerEditorFormState } from './ssh-server-editor-shared';
 
 type SshTag = components['schemas']['SshTag'];
-type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 
 type CreateServerEditorTagParams = {
   name: string;
@@ -97,96 +97,37 @@ export const importServerEditorPrivateKeyFromFile = async ({
   }
 };
 
-type InlineCredentialFormState = Pick<
+type InlineCredentialKeychainDraftSource = Pick<
   ServerEditorFormState,
-  'authType' | 'name' | 'password' | 'privateKey' | 'privateKeyPassphrase'
+  | 'name'
+  | 'iconKey'
+  | 'colorKey'
+  | 'authType'
+  | 'password'
+  | 'privateKey'
+  | 'privateKeyPassphrase'
+  | 'folderId'
+  | 'tagIds'
 >;
 
-type SaveInlineCredentialsParams = {
-  isUsingInlineCredentials: boolean;
-  formState: InlineCredentialFormState;
-  setIsSubmitting: (isSubmitting: boolean) => void;
-  onKeychainCreated: (keychain: SshKeychainListItem) => Promise<void> | void;
-  onWarning: (message: string) => void;
-  onSuccess: (message: string) => void;
-  onError: (message: string) => void;
-  validationRequiredFieldsMessage: string;
-  validationPasswordRequiredMessage: string;
-  validationPrivateKeyRequiredMessage: string;
-  saveSuccessMessage: string;
-  saveFailedMessage: string;
-};
-
 /**
- * Saves inline credentials into a newly created shared keychain with validation.
+ * Builds keychain editor draft values from inline server credential fields.
  *
- * @param params Save parameters.
- * @param params.isUsingInlineCredentials Whether current editor mode is inline credentials.
- * @param params.formState Current credential-related form values.
- * @param params.setIsSubmitting State setter used by the caller.
- * @param params.onKeychainCreated Callback invoked with created keychain.
- * @param params.onWarning Warning notifier callback.
- * @param params.onSuccess Success notifier callback.
- * @param params.onError Error notifier callback.
- * @param params.validationRequiredFieldsMessage Localized required-fields message.
- * @param params.validationPasswordRequiredMessage Localized password-required message.
- * @param params.validationPrivateKeyRequiredMessage Localized private-key-required message.
- * @param params.saveSuccessMessage Localized success message.
- * @param params.saveFailedMessage Localized failure message.
- * @returns Resolves when save flow is completed.
+ * @param formState Source server form values.
+ * @returns Initial keychain dialog form state.
  */
-export const saveInlineCredentialsToSharedKeychain = async ({
-  isUsingInlineCredentials,
-  formState,
-  setIsSubmitting,
-  onKeychainCreated,
-  onWarning,
-  onSuccess,
-  onError,
-  validationRequiredFieldsMessage,
-  validationPasswordRequiredMessage,
-  validationPrivateKeyRequiredMessage,
-  saveSuccessMessage,
-  saveFailedMessage,
-}: SaveInlineCredentialsParams): Promise<void> => {
-  if (!isUsingInlineCredentials) {
-    return;
-  }
-
-  if (!formState.name.trim()) {
-    onWarning(validationRequiredFieldsMessage);
-    return;
-  }
-
-  const shouldUsePassword = formState.authType === 'password' || formState.authType === 'both';
-  const shouldUsePrivateKey = formState.authType === 'key' || formState.authType === 'both';
-
-  if (shouldUsePassword && !formState.password.trim()) {
-    onWarning(validationPasswordRequiredMessage);
-    return;
-  }
-
-  if (shouldUsePrivateKey && !formState.privateKey.trim()) {
-    onWarning(validationPrivateKeyRequiredMessage);
-    return;
-  }
-
-  setIsSubmitting(true);
-  try {
-    const created = await createSshKeychain({
-      name: `${formState.name.trim()} Keychain`,
-      authType: formState.authType,
-      visibility: 'shared',
-      password: formState.password.trim() || undefined,
-      privateKey: formState.privateKey.trim() || undefined,
-      privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
-    });
-
-    await onKeychainCreated(created.data.item);
-    onSuccess(saveSuccessMessage);
-  } catch (error: unknown) {
-    onError(error instanceof Error ? error.message : saveFailedMessage);
-  } finally {
-    setIsSubmitting(false);
-  }
+export const buildInlineCredentialKeychainEditorFormState = (
+  formState: InlineCredentialKeychainDraftSource,
+): KeychainEditorInitialFormState => {
+  return {
+    name: formState.name.trim() ? `${formState.name.trim()} Keychain` : '',
+    iconKey: formState.iconKey,
+    colorKey: formState.colorKey,
+    authType: formState.authType,
+    password: formState.password,
+    privateKey: formState.privateKey,
+    privateKeyPassphrase: formState.privateKeyPassphrase,
+    folderId: formState.folderId,
+    tagIds: [...formState.tagIds],
+  };
 };

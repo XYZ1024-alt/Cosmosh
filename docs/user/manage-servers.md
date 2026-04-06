@@ -7,6 +7,13 @@
 3. Choose authentication method (password or private key).
 4. Save from the server dialog and run a quick connection test.
 
+## Manage Keychains in Server Dialog
+
+1. In the server dialog, open `Keychain` and choose `Create Keychain` to open the keychain editor dialog.
+2. When using inline credentials, click `Save as Keychain` to open a prefilled keychain editor dialog.
+3. Save the keychain dialog and Cosmosh will auto-select that keychain for the current server form.
+4. Use `Edit Credentials` to reopen the selected shared keychain in the same dialog flow.
+
 ## Default Note Template
 
 - Settings > Advanced > Default Server Note Template pre-fills the Note field when creating a new server profile.

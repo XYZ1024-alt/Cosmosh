@@ -4,6 +4,7 @@ import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
 import { t } from '../../lib/i18n';
+import type { KeychainFormState } from '../../lib/ssh-keychain-editor-shared';
 import EntityIcon from '../home/EntityIcon';
 import EntityVisualPicker from '../home/EntityVisualPicker';
 import { Form, FormControl, FormField, FormLabel, FormMessage } from '../ui/form';
@@ -13,25 +14,12 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { TagInput } from '../ui/tag-input';
 import { Textarea } from '../ui/textarea';
 
-type SshAuthType = components['schemas']['SshAuthType'];
 type SshFolder = components['schemas']['SshFolder'];
 type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 type SshTag = components['schemas']['SshTag'];
 
-type KeychainFormState = {
-  name: string;
-  iconKey: string;
-  colorKey: string;
-  authType: SshAuthType;
-  password: string;
-  privateKey: string;
-  privateKeyPassphrase: string;
-  folderId: string;
-  tagIds: string[];
-  note: string;
-};
-
 type SSHKeychainEditorFormProps = {
+  formId?: string;
   formState: KeychainFormState;
   activeKeychain: SshKeychainListItem | null;
   isSubmitting: boolean;
@@ -55,6 +43,7 @@ const CREATE_FOLDER_SELECT_VALUE = '__create_folder__';
  * @returns Keychain editor form element.
  */
 const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
+  formId = 'ssh-keychain-form',
   formState,
   activeKeychain,
   isSubmitting,
@@ -69,7 +58,7 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
 }) => {
   return (
     <Form
-      id="ssh-keychain-form"
+      id={formId}
       className="mx-auto grid max-w-4xl gap-4 pb-4"
       onSubmit={onSubmit}
     >

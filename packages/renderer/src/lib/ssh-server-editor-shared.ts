@@ -40,6 +40,11 @@ export type ServerEditorCredentialMode = {
   requiresPrivateKey: boolean;
 };
 
+export type CredentialRequirementMode = {
+  requiresPassword: boolean;
+  requiresPrivateKey: boolean;
+};
+
 /**
  * Normalizes a server credential snapshot from backend responses.
  *
@@ -137,6 +142,19 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
 };
 
 /**
+ * Derives auth-type-only credential requirements.
+ *
+ * @param authType Authentication type selected in form state.
+ * @returns Credential requirement flags independent of keychain selection.
+ */
+export const deriveCredentialMode = (authType: SshAuthType): CredentialRequirementMode => {
+  return {
+    requiresPassword: authType === 'password' || authType === 'both',
+    requiresPrivateKey: authType === 'key' || authType === 'both',
+  };
+};
+
+/**
  * Derives credential mode flags from keychain selection and auth type.
  *
  * @param params Derivation input values.
@@ -150,6 +168,7 @@ export const deriveServerEditorCredentialMode = (params: {
   keychains: SshKeychainListItem[];
   authType: SshAuthType;
 }): ServerEditorCredentialMode => {
+  const credentialMode = deriveCredentialMode(params.authType);
   const selectedKeychain = params.keychainId
     ? (params.keychains.find((item) => item.id === params.keychainId) ?? null)
     : null;
@@ -162,7 +181,7 @@ export const deriveServerEditorCredentialMode = (params: {
     sharedKeychains,
     isUsingHiddenKeychain,
     isUsingInlineCredentials,
-    requiresPassword: isUsingInlineCredentials && (params.authType === 'password' || params.authType === 'both'),
-    requiresPrivateKey: isUsingInlineCredentials && (params.authType === 'key' || params.authType === 'both'),
+    requiresPassword: isUsingInlineCredentials && credentialMode.requiresPassword,
+    requiresPrivateKey: isUsingInlineCredentials && credentialMode.requiresPrivateKey,
   };
 };
