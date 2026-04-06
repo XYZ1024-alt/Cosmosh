@@ -23,6 +23,8 @@ flowchart TB
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | Pushes context-launch working directory when a second instance is invoked |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | Dispatches validated app-menu commands from the macOS system menu to renderer tab/state handlers |
 | `app:open-devtools` | `invoke` | none | `Promise<boolean>` | Opens devtools for the current main window when available |
+| `app:toggle-devtools` | `invoke` | none | `Promise<boolean>` | Toggles detached DevTools for the current main window (open when closed, close when open) |
+| `app:reload-webview` | `invoke` | none | `Promise<boolean>` | Reloads the active renderer webContents and bypasses cache for deterministic debug refresh |
 | `app:restart-backend-runtime` | `invoke` | none | `Promise<boolean>` | Restarts backend runtime in-place during development without full app restart |
 | `app:show-in-file-manager` | `invoke` | `targetPath?: string` | `Promise<boolean>` | Opens file/folder in OS file manager |
 | `app:open-external-url` | `invoke` | `targetUrl: string` | `Promise<boolean>` | Opens trusted HTTP(S) URL with system default browser |

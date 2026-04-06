@@ -89,6 +89,8 @@ declare global {
       onLaunchWorkingDirectory: (listener: (cwd: string) => void) => () => void;
       onAppMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
       openDevTools: () => Promise<boolean>;
+      toggleDevTools: () => Promise<boolean>;
+      reloadWebView: () => Promise<boolean>;
       restartBackendRuntime: () => Promise<boolean>;
       showInFileManager: (targetPath?: string) => Promise<boolean>;
       openExternalUrl: (targetUrl: string) => Promise<boolean>;

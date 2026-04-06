@@ -23,6 +23,8 @@ flowchart TB
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | 当第二实例触发时，向渲染层推送上下文启动工作目录 |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | 将 macOS 系统菜单触发的应用菜单命令以受控枚举形式分发到渲染层标签页/状态处理器 |
 | `app:open-devtools` | `invoke` | none | `Promise<boolean>` | 为当前主窗口打开 DevTools（窗口可用时） |
+| `app:toggle-devtools` | `invoke` | none | `Promise<boolean>` | 切换当前主窗口的分离式 DevTools（已打开则关闭，已关闭则打开） |
+| `app:reload-webview` | `invoke` | none | `Promise<boolean>` | 重新加载当前活动 renderer webContents，并忽略缓存以保证调试刷新可预测 |
 | `app:restart-backend-runtime` | `invoke` | none | `Promise<boolean>` | 在开发环境中原位重启 backend 运行时，无需重启整个应用 |
 | `app:show-in-file-manager` | `invoke` | `targetPath?: string` | `Promise<boolean>` | Opens file/folder in OS file manager |
 | `app:open-external-url` | `invoke` | `targetUrl: string` | `Promise<boolean>` | 使用系统默认浏览器打开受信任的 HTTP(S) 链接 |

@@ -1,6 +1,14 @@
 {
   "commandPalette": {
     "commands": {
+      "developer": {
+        "captureMainHeapSnapshot": "拍摄主进程堆快照",
+        "reloadBackend": "重新加载后端",
+        "reloadWebView": "重新加载 WebView",
+        "toggleDevTools": "切换 DevTools",
+        "toggleMainHeapSnapshotExport": "切换启用主进程堆快照",
+        "toggleSystemMonitorOverlay": "切换系统监视器浮层"
+      },
       "tabs": {
         "closeCurrentTab": "关闭当前标签页",
         "closeRightTabs": "关闭右侧标签页",
@@ -10,8 +18,21 @@
       }
     },
     "empty": "未找到匹配的命令",
+    "feedback": {
+      "mainHeapSnapshotDisabled": "请先启用主进程堆快照导出。",
+      "mainHeapSnapshotExportCompleted": "主进程堆快照已拍摄。",
+      "mainHeapSnapshotExportDisabled": "主进程堆快照导出已禁用。",
+      "mainHeapSnapshotExported": "主进程堆快照已拍摄：{filePath}",
+      "mainHeapSnapshotExportEnabled": "主进程堆快照导出已启用。",
+      "mainHeapSnapshotExportFailed": "拍摄主进程堆快照失败。",
+      "mainHeapSnapshotUnavailable": "当前运行时不可用主进程堆快照导出能力。",
+      "reloadWebViewFailed": "重新加载当前 WebView 失败。",
+      "systemMonitorOverlayDisabled": "系统监视器浮层已隐藏。",
+      "systemMonitorOverlayEnabled": "系统监视器浮层已显示。"
+    },
     "placeholder": "输入命令或搜索设置",
     "scopes": {
+      "developer": "开发者",
       "settings": "设置",
       "tabs": "标签页"
     }

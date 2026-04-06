@@ -183,6 +183,12 @@ contextBridge.exposeInMainWorld('electron', {
   openDevTools: () => {
     return invokeIpc<boolean>('app:open-devtools');
   },
+  toggleDevTools: () => {
+    return invokeIpc<boolean>('app:toggle-devtools');
+  },
+  reloadWebView: () => {
+    return invokeIpc<boolean>('app:reload-webview');
+  },
   restartBackendRuntime: () => {
     return invokeIpc<boolean>('app:restart-backend-runtime');
   },

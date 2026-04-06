@@ -145,6 +145,34 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     return true;
   });
 
+  ipcMain.handle('app:toggle-devtools', () => {
+    const targetWindow = resolveTargetWindow(options);
+
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return false;
+    }
+
+    const { webContents } = targetWindow;
+    if (webContents.isDevToolsOpened()) {
+      webContents.closeDevTools();
+      return true;
+    }
+
+    webContents.openDevTools({ mode: 'detach' });
+    return true;
+  });
+
+  ipcMain.handle('app:reload-webview', () => {
+    const targetWindow = resolveTargetWindow(options);
+
+    if (!targetWindow || targetWindow.isDestroyed()) {
+      return false;
+    }
+
+    targetWindow.webContents.reloadIgnoringCache();
+    return true;
+  });
+
   ipcMain.handle('app:restart-backend-runtime', async (): Promise<boolean> => {
     if (app.isPackaged) {
       return false;

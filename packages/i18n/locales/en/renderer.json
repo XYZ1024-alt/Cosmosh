@@ -1,6 +1,14 @@
 {
   "commandPalette": {
     "commands": {
+      "developer": {
+        "captureMainHeapSnapshot": "Capture Main Process Heap Snapshot",
+        "reloadBackend": "Reload Backend Runtime",
+        "reloadWebView": "Reload WebView",
+        "toggleDevTools": "Toggle DevTools",
+        "toggleMainHeapSnapshotExport": "Toggle Enable Main Process Heap Snapshot",
+        "toggleSystemMonitorOverlay": "Toggle System Monitor Overlay"
+      },
       "tabs": {
         "closeCurrentTab": "Close Current Tab",
         "closeRightTabs": "Close Tabs to the Right",
@@ -10,8 +18,21 @@
       }
     },
     "empty": "No matching commands",
+    "feedback": {
+      "mainHeapSnapshotDisabled": "Enable main heap snapshot export first.",
+      "mainHeapSnapshotExportCompleted": "Main process heap snapshot captured.",
+      "mainHeapSnapshotExportDisabled": "Main process heap snapshot export disabled.",
+      "mainHeapSnapshotExported": "Main process heap snapshot captured: {filePath}",
+      "mainHeapSnapshotExportEnabled": "Main process heap snapshot export enabled.",
+      "mainHeapSnapshotExportFailed": "Failed to capture main process heap snapshot.",
+      "mainHeapSnapshotUnavailable": "Main process heap snapshot export is unavailable in this runtime.",
+      "reloadWebViewFailed": "Failed to reload current WebView.",
+      "systemMonitorOverlayDisabled": "System monitor overlay hidden.",
+      "systemMonitorOverlayEnabled": "System monitor overlay shown."
+    },
     "placeholder": "Type a command or search settings",
     "scopes": {
+      "developer": "Developer",
       "settings": "Settings",
       "tabs": "Tabs"
     }

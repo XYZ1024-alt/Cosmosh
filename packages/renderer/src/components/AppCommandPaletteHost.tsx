@@ -1,4 +1,4 @@
-import { Settings2 } from 'lucide-react';
+import { Bug, RefreshCcw, Settings2 } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -10,7 +10,9 @@ import {
   filterCommandPaletteCommands,
 } from '../lib/command-palette';
 import { getLocale, onLocaleChange, t, tForLocale } from '../lib/i18n';
+import { useSettingsValue } from '../lib/settings-store';
 import { renderTabIconByKey } from '../lib/tab-icon';
+import { useToast } from '../lib/toast-context';
 import { resolveCategoryId, SETTINGS_REGISTRY } from '../pages/settings-registry';
 import type { TabItem } from '../types/tabs';
 import { CommandPalette, type CommandPaletteItem } from './ui/command-palette';
@@ -23,9 +25,21 @@ type AppCommandPaletteContext = {
   closeTab: (tabId: string) => void;
   closeRightTabs: (tabId: string) => void;
   setActiveTabId: (tabId: string) => void;
+  showSystemMonitorOverlay: boolean;
+  onShowSystemMonitorOverlayChange: (nextVisible: boolean) => void;
+  enableMainHeapSnapshotExport: boolean;
+  onEnableMainHeapSnapshotExportChange: (nextEnabled: boolean) => void;
+  isDevBuild: boolean;
+  devToolsEnabled: boolean;
+  userMenuDebugEntryEnabled: boolean;
+  notifySuccess: (message: string) => void;
+  notifyWarning: (message: string) => void;
 };
 
-type AppCommandPaletteHostProps = Omit<AppCommandPaletteContext, 'locale'>;
+type AppCommandPaletteHostProps = Omit<
+  AppCommandPaletteContext,
+  'locale' | 'isDevBuild' | 'devToolsEnabled' | 'userMenuDebugEntryEnabled' | 'notifySuccess' | 'notifyWarning'
+>;
 
 type BilingualCommandLabel = {
   primary: string;
@@ -33,7 +47,7 @@ type BilingualCommandLabel = {
   secondary?: string;
 };
 
-type CommandPaletteScopeId = 'tabs' | 'settings';
+type CommandPaletteScopeId = 'tabs' | 'settings' | 'developer';
 
 /**
  * Resolves localized and English labels for command rendering.
@@ -100,6 +114,10 @@ const resolveCommandPaletteScopeLabel = (domainId: string, locale: string): Bili
     return resolveBilingualCommandLabel('commandPalette.scopes.settings', locale);
   }
 
+  if (scopedDomainId === 'developer') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.developer', locale);
+  }
+
   return undefined;
 };
 
@@ -128,7 +146,8 @@ const buildScopeSearchTerms = (scopeLabel: BilingualCommandLabel): string[] => {
  * @returns Scoped title string.
  */
 const formatScopedCommandTitle = (scopeLabel: string, title: string): string => {
-  const prefix = `${scopeLabel}: `;
+  const hasNonAscii = Array.from(scopeLabel).some((character) => character.charCodeAt(0) > 0x7f);
+  const prefix = hasNonAscii ? `${scopeLabel}：` : `${scopeLabel}: `;
 
   if (title.startsWith(prefix)) {
     return title;
@@ -262,6 +281,249 @@ const createSettingsCommandPaletteProvider = (): CommandPaletteProvider<AppComma
 };
 
 /**
+ * Creates the developer-domain provider for runtime/debug commands.
+ *
+ * @returns Provider with command-palette developer actions.
+ */
+const createDeveloperCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
+  return createCommandPaletteProvider('developer', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.developer', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+
+    const reloadBackendLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.reloadBackend',
+      context.locale,
+    );
+    const reloadWebViewLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.reloadWebView',
+      context.locale,
+    );
+    const toggleDevToolsLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.toggleDevTools',
+      context.locale,
+    );
+    const toggleSystemMonitorOverlayLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.toggleSystemMonitorOverlay',
+      context.locale,
+    );
+    const toggleMainHeapSnapshotExportLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.toggleMainHeapSnapshotExport',
+      context.locale,
+    );
+    const captureMainHeapSnapshotLabel = resolveBilingualCommandLabel(
+      'commandPalette.commands.developer.captureMainHeapSnapshot',
+      context.locale,
+    );
+
+    const commands: CommandPaletteCommand[] = [];
+
+    if (context.isDevBuild) {
+      commands.push({
+        kind: 'action',
+        id: 'reload-backend',
+        commandActionId: 'developer.reloadBackend',
+        title: reloadBackendLabel.primary,
+        subtitle: reloadBackendLabel.secondary,
+        icon: <RefreshCcw className="h-4 w-4" />,
+        searchTerms: buildSearchTerms(
+          ['developer.reload-backend', 'reload backend', 'restart backend runtime'],
+          scopeSearchTerms,
+          [reloadBackendLabel.english],
+        ),
+        run: () => {
+          void (async () => {
+            try {
+              const restarted = await window.electron?.restartBackendRuntime?.();
+              if (restarted) {
+                context.notifySuccess(t('header.restartBackendSuccess'));
+                return;
+              }
+            } catch {
+              // Fall through to warning toast so command failures stay visible.
+            }
+
+            context.notifyWarning(t('header.restartBackendFailed'));
+          })();
+        },
+      });
+    }
+
+    if (context.isDevBuild || context.userMenuDebugEntryEnabled) {
+      commands.push({
+        kind: 'action',
+        id: 'reload-webview',
+        commandActionId: 'developer.reloadWebView',
+        title: reloadWebViewLabel.primary,
+        subtitle: reloadWebViewLabel.secondary,
+        icon: <RefreshCcw className="h-4 w-4" />,
+        searchTerms: buildSearchTerms(
+          ['developer.reload-webview', 'reload webview', 'reload renderer'],
+          scopeSearchTerms,
+          [reloadWebViewLabel.english],
+        ),
+        run: () => {
+          const electronBridge = window.electron;
+          if (!electronBridge?.reloadWebView) {
+            window.location.reload();
+            return;
+          }
+
+          void (async () => {
+            try {
+              const reloaded = await electronBridge.reloadWebView();
+              if (!reloaded) {
+                context.notifyWarning(t('commandPalette.feedback.reloadWebViewFailed'));
+              }
+            } catch {
+              context.notifyWarning(t('commandPalette.feedback.reloadWebViewFailed'));
+            }
+          })();
+        },
+      });
+    }
+
+    if (context.isDevBuild || context.devToolsEnabled) {
+      commands.push({
+        kind: 'action',
+        id: 'toggle-devtools',
+        commandActionId: 'developer.toggleDevTools',
+        title: toggleDevToolsLabel.primary,
+        subtitle: toggleDevToolsLabel.secondary,
+        icon: <Bug className="h-4 w-4" />,
+        searchTerms: buildSearchTerms(
+          ['developer.toggle-devtools', 'toggle devtools', 'open devtools'],
+          scopeSearchTerms,
+          [toggleDevToolsLabel.english],
+        ),
+        run: () => {
+          const electronBridge = window.electron;
+          if (!electronBridge) {
+            return;
+          }
+
+          if (electronBridge.toggleDevTools) {
+            void electronBridge.toggleDevTools();
+            return;
+          }
+
+          void electronBridge.openDevTools?.();
+        },
+      });
+    }
+
+    if (context.isDevBuild || context.userMenuDebugEntryEnabled) {
+      commands.push(
+        {
+          kind: 'action',
+          id: 'toggle-system-monitor-overlay',
+          commandActionId: 'developer.toggleSystemMonitorOverlay',
+          title: toggleSystemMonitorOverlayLabel.primary,
+          subtitle: toggleSystemMonitorOverlayLabel.secondary,
+          icon: <Bug className="h-4 w-4" />,
+          searchTerms: buildSearchTerms(
+            ['developer.toggle-system-monitor-overlay', 'toggle system monitor overlay', 'debug overlay'],
+            scopeSearchTerms,
+            [toggleSystemMonitorOverlayLabel.english],
+          ),
+          run: () => {
+            const nextVisible = !context.showSystemMonitorOverlay;
+            context.onShowSystemMonitorOverlayChange(nextVisible);
+            context.notifySuccess(
+              t(
+                nextVisible
+                  ? 'commandPalette.feedback.systemMonitorOverlayEnabled'
+                  : 'commandPalette.feedback.systemMonitorOverlayDisabled',
+              ),
+            );
+          },
+        },
+        {
+          kind: 'action',
+          id: 'toggle-main-heap-snapshot-export',
+          commandActionId: 'developer.toggleMainHeapSnapshotExport',
+          title: toggleMainHeapSnapshotExportLabel.primary,
+          subtitle: toggleMainHeapSnapshotExportLabel.secondary,
+          icon: <Bug className="h-4 w-4" />,
+          searchTerms: buildSearchTerms(
+            ['developer.toggle-main-heap-snapshot-export', 'toggle heap snapshot', 'main heap snapshot export'],
+            scopeSearchTerms,
+            [toggleMainHeapSnapshotExportLabel.english],
+          ),
+          run: () => {
+            const nextEnabled = !context.enableMainHeapSnapshotExport;
+            context.onEnableMainHeapSnapshotExportChange(nextEnabled);
+            context.notifySuccess(
+              t(
+                nextEnabled
+                  ? 'commandPalette.feedback.mainHeapSnapshotExportEnabled'
+                  : 'commandPalette.feedback.mainHeapSnapshotExportDisabled',
+              ),
+            );
+          },
+        },
+        {
+          kind: 'action',
+          id: 'capture-main-heap-snapshot',
+          commandActionId: 'developer.captureMainHeapSnapshot',
+          title: captureMainHeapSnapshotLabel.primary,
+          subtitle: captureMainHeapSnapshotLabel.secondary,
+          icon: <Bug className="h-4 w-4" />,
+          searchTerms: buildSearchTerms(
+            ['developer.capture-main-heap-snapshot', 'capture main heap snapshot', 'export main heap snapshot'],
+            scopeSearchTerms,
+            [captureMainHeapSnapshotLabel.english],
+          ),
+          run: () => {
+            if (!context.enableMainHeapSnapshotExport) {
+              context.notifyWarning(t('commandPalette.feedback.mainHeapSnapshotDisabled'));
+              return;
+            }
+
+            const electronBridge = window.electron;
+            if (!electronBridge?.exportMainHeapSnapshot) {
+              context.notifyWarning(t('commandPalette.feedback.mainHeapSnapshotUnavailable'));
+              return;
+            }
+
+            void (async () => {
+              try {
+                const result = await electronBridge.exportMainHeapSnapshot();
+                if (result.ok) {
+                  if (result.filePath) {
+                    context.notifySuccess(
+                      t('commandPalette.feedback.mainHeapSnapshotExported', {
+                        filePath: result.filePath,
+                      }),
+                    );
+                    return;
+                  }
+
+                  context.notifySuccess(t('commandPalette.feedback.mainHeapSnapshotExportCompleted'));
+                  return;
+                }
+
+                if (result.message) {
+                  context.notifyWarning(result.message);
+                  return;
+                }
+
+                context.notifyWarning(t('commandPalette.feedback.mainHeapSnapshotExportFailed'));
+              } catch (error) {
+                context.notifyWarning(
+                  error instanceof Error ? error.message : t('commandPalette.feedback.mainHeapSnapshotExportFailed'),
+                );
+              }
+            })();
+          },
+        },
+      );
+    }
+
+    return commands;
+  });
+};
+
+/**
  * Resolves whether the keyboard event carries the supported platform modifier
  * for opening command palette.
  *
@@ -290,7 +552,15 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
   closeTab,
   closeRightTabs,
   setActiveTabId,
+  showSystemMonitorOverlay,
+  onShowSystemMonitorOverlayChange,
+  enableMainHeapSnapshotExport,
+  onEnableMainHeapSnapshotExportChange,
 }) => {
+  const { success: notifySuccess, warning: notifyWarning } = useToast();
+  const devToolsEnabled = useSettingsValue('devToolsEnabled');
+  const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
+  const isDevBuild = import.meta.env.DEV;
   const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
   const [isOpen, setIsOpen] = React.useState<boolean>(false);
   const [query, setQuery] = React.useState<string>('');
@@ -321,12 +591,42 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
       closeTab,
       closeRightTabs,
       setActiveTabId,
+      showSystemMonitorOverlay,
+      onShowSystemMonitorOverlayChange,
+      enableMainHeapSnapshotExport,
+      onEnableMainHeapSnapshotExportChange,
+      isDevBuild,
+      devToolsEnabled,
+      userMenuDebugEntryEnabled,
+      notifySuccess,
+      notifyWarning,
     }),
-    [activeTabId, addTab, closeRightTabs, closeTab, locale, setActiveTabId, tabs],
+    [
+      activeTabId,
+      addTab,
+      closeRightTabs,
+      closeTab,
+      devToolsEnabled,
+      enableMainHeapSnapshotExport,
+      isDevBuild,
+      locale,
+      notifySuccess,
+      notifyWarning,
+      onEnableMainHeapSnapshotExportChange,
+      onShowSystemMonitorOverlayChange,
+      setActiveTabId,
+      showSystemMonitorOverlay,
+      tabs,
+      userMenuDebugEntryEnabled,
+    ],
   );
 
   const commandPaletteProviders = React.useMemo<ReadonlyArray<CommandPaletteProvider<AppCommandPaletteContext>>>(
-    () => [createTabsCommandPaletteProvider(), createSettingsCommandPaletteProvider()],
+    () => [
+      createTabsCommandPaletteProvider(),
+      createSettingsCommandPaletteProvider(),
+      createDeveloperCommandPaletteProvider(),
+    ],
     [],
   );
 

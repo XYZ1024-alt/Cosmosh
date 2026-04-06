@@ -8,7 +8,12 @@ import Header from './components/header/Header';
 import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
 import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { listLocalTerminalProfiles } from './lib/backend';
-import { readShowSystemMonitorOverlayPreference, writeShowSystemMonitorOverlayPreference } from './lib/debug-tools';
+import {
+  readEnableHeapSnapshotPreference,
+  readShowSystemMonitorOverlayPreference,
+  writeEnableHeapSnapshotPreference,
+  writeShowSystemMonitorOverlayPreference,
+} from './lib/debug-tools';
 import { getEntityColorClassName } from './lib/entity-visuals';
 import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
@@ -228,11 +233,19 @@ const App: React.FC = () => {
   const [showSystemMonitorOverlay, setShowSystemMonitorOverlay] = React.useState<boolean>(() => {
     return readShowSystemMonitorOverlayPreference();
   });
+  const [enableMainHeapSnapshotExport, setEnableMainHeapSnapshotExport] = React.useState<boolean>(() => {
+    return readEnableHeapSnapshotPreference();
+  });
   const [tabSwitcherOpenSignal, setTabSwitcherOpenSignal] = React.useState<number>(0);
 
   const handleShowSystemMonitorOverlayChange = React.useCallback((nextVisible: boolean): void => {
     setShowSystemMonitorOverlay(nextVisible);
     writeShowSystemMonitorOverlayPreference(nextVisible);
+  }, []);
+
+  const handleEnableMainHeapSnapshotExportChange = React.useCallback((nextEnabled: boolean): void => {
+    setEnableMainHeapSnapshotExport(nextEnabled);
+    writeEnableHeapSnapshotPreference(nextEnabled);
   }, []);
 
   const handleLastTabClose = React.useCallback(() => {
@@ -528,8 +541,6 @@ const App: React.FC = () => {
                   <Debug
                     activeTabTitle={tab.title}
                     activeTabIcon={tab.iconKey}
-                    showSystemMonitorOverlay={showSystemMonitorOverlay}
-                    onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
                     onOpenSSH={(openInNewTab) => (openInNewTab ? addTab('ssh') : openPageInTab(tab.id, 'ssh'))}
                     onOpenSettings={(openInNewTab) =>
                       openInNewTab ? addTab('settings') : openPageInTab(tab.id, 'settings')
@@ -556,16 +567,7 @@ const App: React.FC = () => {
         })}
       </div>
     );
-  }, [
-    activeTabId,
-    addTab,
-    contentTabOrder,
-    handleShowSystemMonitorOverlayChange,
-    openPageInTab,
-    showSystemMonitorOverlay,
-    tabsById,
-    updateTab,
-  ]);
+  }, [activeTabId, addTab, contentTabOrder, openPageInTab, tabsById, updateTab]);
 
   return (
     <AppToastProvider>
@@ -610,6 +612,10 @@ const App: React.FC = () => {
             closeTab={closeTab}
             closeRightTabs={closeRightTabs}
             setActiveTabId={setActiveTabId}
+            showSystemMonitorOverlay={showSystemMonitorOverlay}
+            enableMainHeapSnapshotExport={enableMainHeapSnapshotExport}
+            onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
+            onEnableMainHeapSnapshotExportChange={handleEnableMainHeapSnapshotExportChange}
           />
 
           <TabSwitcherOverlay
