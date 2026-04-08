@@ -27,7 +27,7 @@ export const registerI18nMiddleware = (app: BackendHttpApp): void => {
   app.use('*', async (c, next) => {
     const localeHeader = c.req.header(API_HEADERS.locale) ?? c.req.header('accept-language');
     const locale = resolveLocale(localeHeader, 'en');
-    const i18n = createI18n({ locale, scope: 'backend', fallbackLocale: 'en' });
+    const i18n = createI18n({ locale, fallbackLocale: 'en' });
 
     c.set('locale', locale);
     c.set('i18n', i18n);

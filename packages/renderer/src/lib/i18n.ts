@@ -1,8 +1,15 @@
 import type { Locale, TranslationParams } from '@cosmosh/i18n';
-import { createI18n, createLocaleHeaders, resolveLocale } from '@cosmosh/i18n';
+import { createI18n, createLocaleHeaders, createMessages, resolveLocale } from '@cosmosh/i18n';
+import rendererEn from '@cosmosh/i18n/locales/en/renderer.json';
+import rendererZhCN from '@cosmosh/i18n/locales/zh-CN/renderer.json';
 
 let currentLocale: Locale = 'en';
 export const LOCALE_CHANGE_EVENT = 'cosmosh:locale-change';
+
+const rendererMessages = createMessages({
+  en: { renderer: rendererEn },
+  'zh-CN': { renderer: rendererZhCN },
+});
 
 const LOCALE_STORAGE_KEY = 'cosmosh.renderer.locale';
 
@@ -63,6 +70,7 @@ const i18n = createI18n({
   locale: currentLocale,
   scope: 'renderer',
   fallbackLocale: 'en',
+  resources: rendererMessages,
 });
 const scopedTranslatorCache = new Map<Locale, ReturnType<typeof createI18n>>();
 
@@ -83,6 +91,7 @@ const getScopedTranslator = (locale: Locale): ReturnType<typeof createI18n> => {
     locale,
     scope: 'renderer',
     fallbackLocale: 'en',
+    resources: rendererMessages,
   });
   scopedTranslatorCache.set(locale, next);
   return next;

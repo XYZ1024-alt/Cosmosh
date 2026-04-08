@@ -7,6 +7,7 @@ import themeWatcher from './scripts/vite-theme-watcher.js';
 
 const workspaceRoot = path.resolve(__dirname, '../..');
 const i18nSourceEntry = path.resolve(workspaceRoot, 'packages/i18n/src/index.ts');
+const i18nLocalesRoot = path.resolve(workspaceRoot, 'packages/i18n/locales');
 const DEFAULT_RENDERER_DEV_PORT = 2767;
 
 const resolveRendererDevPort = (): number => {
@@ -59,7 +60,13 @@ export default defineConfig(({ command, mode }) => {
     plugins: [themeWatcher(), react(), createCspHtmlPlugin(cspPolicy)],
     base: './',
     resolve: {
-      alias: command === 'serve' ? { '@cosmosh/i18n': i18nSourceEntry } : undefined,
+      alias:
+        command === 'serve'
+          ? [
+              { find: /^@cosmosh\/i18n$/, replacement: i18nSourceEntry },
+              { find: '@cosmosh/i18n/locales', replacement: i18nLocalesRoot },
+            ]
+          : undefined,
     },
     optimizeDeps: {
       exclude: ['@cosmosh/i18n'],

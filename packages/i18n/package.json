@@ -24,7 +24,8 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.mjs",
       "require": "./dist/index.js"
-    }
+    },
+    "./locales/*": "./locales/*"
   },
   "dependencies": {
     "intl-messageformat": "^11.1.2"

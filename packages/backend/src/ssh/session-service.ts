@@ -217,7 +217,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   }
 
   public async createSession(input: CreateSshSessionInput): Promise<CreateSshSessionResult> {
-    const i18n = createI18n({ locale: input.locale, scope: 'backend', fallbackLocale: 'en' });
+    const i18n = createI18n({ locale: input.locale, fallbackLocale: 'en' });
     const db = this.getDbClient();
     const server = await db.sshServer.findUnique({
       where: {

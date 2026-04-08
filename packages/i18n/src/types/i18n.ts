@@ -20,6 +20,8 @@ export type MessagesByScope = {
 
 export type Messages = Record<Locale, MessagesByScope>;
 
+export type MessagesRegistration = Record<Locale, Partial<Record<Scope, TranslationTree>>>;
+
 export type Locale = 'en' | 'zh-CN';
 
 export type Scope = keyof MessagesByScope;
@@ -36,10 +38,13 @@ export type CreateI18nOptions = {
   scope: Scope;
   fallbackLocale?: Locale;
   onMissingKey?: (payload: MissingKeyPayload) => void;
-  resources?: Messages;
+  resources: Messages;
 };
 
 export type EnableI18nDevHotReloadOptions = {
   localeRootDir: string;
+  resources: Messages;
+  scopes?: Scope[];
+  additionalScopeLocaleFiles?: Partial<Record<Scope, string[]>>;
   debounceMs?: number;
 };

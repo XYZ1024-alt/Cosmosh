@@ -63,7 +63,6 @@ export abstract class BaseTerminalSessionService<
     this.websocketServer.on('connection', (socket, request) => {
       const requestTranslator = createI18n({
         locale: String(request.headers['accept-language'] ?? 'en'),
-        scope: 'backend',
         fallbackLocale: 'en',
       }).t;
       const requestUrl = new URL(request.url ?? '', this.websocketBaseUrl);

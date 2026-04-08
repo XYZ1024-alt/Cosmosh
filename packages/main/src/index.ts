@@ -6,7 +6,9 @@ import os from 'node:os';
 
 import type { ApiErrorResponse } from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
-import { createI18n, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
+import { createI18n, createMessages, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
+import mainEn from '@cosmosh/i18n/locales/en/main.json';
+import mainZhCN from '@cosmosh/i18n/locales/zh-CN/main.json';
 import { spawn } from 'child_process';
 import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from 'electron';
 import path from 'path';
@@ -33,6 +35,10 @@ let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 
 let appLocale = resolveLocale(process.env.COSMOSH_LOCALE, 'en');
+const mainProcessMessages = createMessages({
+  en: { main: mainEn },
+  'zh-CN': { main: mainZhCN },
+});
 const DEFAULT_RENDERER_DEV_PORT = 2767;
 const MACOS_CLI_COMMAND_NAME = 'cosmosh';
 const MACOS_CLI_PREFERRED_LINK_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'] as const;
@@ -316,7 +322,7 @@ const resolveRendererDevPort = (): number => {
  * Creates the i18n instance used by main-process UI surfaces.
  */
 const getMainI18n = () => {
-  return createI18n({ locale: appLocale, scope: 'main', fallbackLocale: 'en' });
+  return createI18n({ locale: appLocale, scope: 'main', fallbackLocale: 'en', resources: mainProcessMessages });
 };
 
 /**
@@ -1042,6 +1048,8 @@ if (!hasSingleInstanceLock) {
       if (!app.isPackaged) {
         disableI18nHotReload = await enableI18nDevHotReload({
           localeRootDir: path.join(resolveWorkspaceRoot(), 'packages', 'i18n', 'locales'),
+          resources: mainProcessMessages,
+          scopes: ['main'],
         });
       }
 

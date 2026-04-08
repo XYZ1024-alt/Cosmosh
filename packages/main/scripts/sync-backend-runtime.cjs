@@ -276,6 +276,75 @@ const syncPackageRecursively = async (packageName, resolvePaths) => {
   }
 };
 
+const collectExportTargetPaths = (exportsField, collectedPaths) => {
+  if (!exportsField) {
+    return;
+  }
+
+  if (typeof exportsField === 'string') {
+    if (exportsField.startsWith('./')) {
+      collectedPaths.add(exportsField.slice(2));
+    }
+    return;
+  }
+
+  if (Array.isArray(exportsField)) {
+    exportsField.forEach((entry) => {
+      collectExportTargetPaths(entry, collectedPaths);
+    });
+    return;
+  }
+
+  if (typeof exportsField === 'object') {
+    Object.values(exportsField).forEach((entry) => {
+      collectExportTargetPaths(entry, collectedPaths);
+    });
+  }
+};
+
+const normalizeExportAssetPath = (exportPath) => {
+  const withoutQuery = exportPath.split('?')[0];
+  const wildcardIndex = withoutQuery.indexOf('*');
+  const pathBeforeWildcard = wildcardIndex >= 0 ? withoutQuery.slice(0, wildcardIndex) : withoutQuery;
+  const normalized = pathBeforeWildcard.replace(/\/+/g, '/').replace(/\/+$/, '');
+  return normalized;
+};
+
+const copyExportedRuntimeAssets = async (sourcePackageDir, targetPackageDir, packageJsonObject) => {
+  const exportTargetPaths = new Set();
+  collectExportTargetPaths(packageJsonObject.exports, exportTargetPaths);
+
+  for (const exportTargetPath of exportTargetPaths) {
+    const normalizedAssetPath = normalizeExportAssetPath(exportTargetPath);
+    if (!normalizedAssetPath) {
+      continue;
+    }
+
+    const topLevelSegment = normalizedAssetPath.split('/')[0];
+    if (!topLevelSegment || topLevelSegment === 'dist' || topLevelSegment === 'package.json') {
+      continue;
+    }
+
+    const sourceAssetPath = path.join(sourcePackageDir, normalizedAssetPath);
+    const targetAssetPath = path.join(targetPackageDir, normalizedAssetPath);
+
+    try {
+      const stats = await fs.stat(sourceAssetPath);
+      if (stats.isDirectory()) {
+        await fs.cp(sourceAssetPath, targetAssetPath, {
+          recursive: true,
+          force: true,
+        });
+      } else {
+        await fs.mkdir(path.dirname(targetAssetPath), { recursive: true });
+        await fs.copyFile(sourceAssetPath, targetAssetPath);
+      }
+    } catch {
+      // Ignore unresolved export placeholders and keep sync resilient.
+    }
+  }
+};
+
 /**
  * Starts recursion from a curated list of backend entry dependencies.
  */
@@ -304,6 +373,9 @@ const syncWorkspaceRuntimePackages = async () => {
 
     await fs.access(sourceDistDir);
     await fs.access(sourcePackageJsonPath);
+    const sourcePackageJsonRaw = await fs.readFile(sourcePackageJsonPath, 'utf8');
+    const sourcePackageJsonObject = JSON.parse(sourcePackageJsonRaw);
+
     await fs.rm(targetPackageDir, { recursive: true, force: true });
     await fs.mkdir(targetPackageDir, { recursive: true });
     await fs.cp(sourceDistDir, targetDistDir, {
@@ -323,6 +395,8 @@ const syncWorkspaceRuntimePackages = async () => {
         return true;
       },
     });
+
+    await copyExportedRuntimeAssets(sourcePackageDir, targetPackageDir, sourcePackageJsonObject);
     await fs.copyFile(sourcePackageJsonPath, targetPackageJsonPath);
 
     if (packageName === 'backend') {

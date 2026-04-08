@@ -1,12 +1,12 @@
 import { IntlMessageFormat } from 'intl-messageformat';
 
-import { messages } from './messages';
 import type {
   CreateI18nOptions,
   EnableI18nDevHotReloadOptions,
   I18nInstance,
   Locale,
   Messages,
+  MessagesRegistration,
   Scope,
   TranslationParams,
   TranslationPrimitive,
@@ -14,11 +14,87 @@ import type {
 } from './types/i18n';
 
 const supportedLocales: Locale[] = ['en', 'zh-CN'];
+const supportedScopes: Scope[] = ['main', 'renderer', 'backend'];
 const formatterCache = new Map<string, IntlMessageFormat>();
 const intlMessageFormatOptions = { ignoreTag: true } as const;
-const supportedScopes: Scope[] = ['main', 'renderer', 'backend'];
-const additionalScopeLocaleFiles: Partial<Record<Scope, string[]>> = {
-  backend: ['backend-inshellisense.json'],
+
+const createEmptyTranslationTree = (): TranslationTree => {
+  return {};
+};
+
+const createEmptyMessages = (): Messages => {
+  return {
+    en: {
+      main: createEmptyTranslationTree(),
+      renderer: createEmptyTranslationTree(),
+      backend: createEmptyTranslationTree(),
+    },
+    'zh-CN': {
+      main: createEmptyTranslationTree(),
+      renderer: createEmptyTranslationTree(),
+      backend: createEmptyTranslationTree(),
+    },
+  };
+};
+
+const cloneMessages = (source: Messages): Messages => {
+  return {
+    en: {
+      main: source.en.main,
+      renderer: source.en.renderer,
+      backend: source.en.backend,
+    },
+    'zh-CN': {
+      main: source['zh-CN'].main,
+      renderer: source['zh-CN'].renderer,
+      backend: source['zh-CN'].backend,
+    },
+  };
+};
+
+/**
+ * Deep-merges translation trees while preserving scalar leaves from the extension tree.
+ */
+export const mergeTranslationTrees = (baseTree: TranslationTree, extensionTree: TranslationTree): TranslationTree => {
+  const mergedTree: TranslationTree = {
+    ...baseTree,
+  };
+
+  Object.entries(extensionTree).forEach(([key, value]) => {
+    const currentValue = mergedTree[key];
+
+    if (
+      currentValue &&
+      typeof currentValue === 'object' &&
+      !Array.isArray(currentValue) &&
+      value &&
+      typeof value === 'object' &&
+      !Array.isArray(value)
+    ) {
+      mergedTree[key] = mergeTranslationTrees(currentValue as TranslationTree, value as TranslationTree);
+      return;
+    }
+
+    mergedTree[key] = value;
+  });
+
+  return mergedTree;
+};
+
+/**
+ * Builds a complete `Messages` object from partial scope registrations.
+ */
+export const createMessages = (registration: MessagesRegistration): Messages => {
+  const nextMessages = createEmptyMessages();
+
+  for (const locale of supportedLocales) {
+    for (const scope of supportedScopes) {
+      const candidate = registration[locale]?.[scope];
+      nextMessages[locale][scope] = candidate ?? createEmptyTranslationTree();
+    }
+  }
+
+  return nextMessages;
 };
 
 type NodeFsModule = typeof import('node:fs');
@@ -36,52 +112,23 @@ const loadNodeRuntimeModules = async (): Promise<{ fs: NodeFsModule; path: NodeP
   }
 };
 
-const tryReloadMessagesFromDisk = (localeRootDir: string, fs: NodeFsModule, path: NodePathModule): boolean => {
+const tryReloadMessagesFromDisk = (
+  localeRootDir: string,
+  fs: NodeFsModule,
+  path: NodePathModule,
+  resources: Messages,
+  scopes: Scope[],
+  additionalScopeLocaleFiles: Partial<Record<Scope, string[]>>,
+): boolean => {
   if (!fs || !path) {
     return false;
   }
 
-  const nextMessages: Messages = {
-    en: {
-      main: messages.en.main,
-      renderer: messages.en.renderer,
-      backend: messages.en.backend,
-    },
-    'zh-CN': {
-      main: messages['zh-CN'].main,
-      renderer: messages['zh-CN'].renderer,
-      backend: messages['zh-CN'].backend,
-    },
-  };
+  const nextMessages = cloneMessages(resources);
 
   try {
-    const mergeTranslationTrees = (baseTree: TranslationTree, extensionTree: TranslationTree): TranslationTree => {
-      const mergedTree: TranslationTree = {
-        ...baseTree,
-      };
-
-      Object.entries(extensionTree).forEach(([key, value]) => {
-        const currentValue = mergedTree[key];
-        if (
-          currentValue &&
-          typeof currentValue === 'object' &&
-          !Array.isArray(currentValue) &&
-          value &&
-          typeof value === 'object' &&
-          !Array.isArray(value)
-        ) {
-          mergedTree[key] = mergeTranslationTrees(currentValue as TranslationTree, value as TranslationTree);
-          return;
-        }
-
-        mergedTree[key] = value;
-      });
-
-      return mergedTree;
-    };
-
     for (const locale of supportedLocales) {
-      for (const scope of supportedScopes) {
+      for (const scope of scopes) {
         const filePath = path.resolve(localeRootDir, locale, `${scope}.json`);
 
         if (!fs.existsSync(filePath)) {
@@ -111,8 +158,8 @@ const tryReloadMessagesFromDisk = (localeRootDir: string, fs: NodeFsModule, path
   }
 
   for (const locale of supportedLocales) {
-    for (const scope of supportedScopes) {
-      messages[locale][scope] = nextMessages[locale][scope];
+    for (const scope of scopes) {
+      resources[locale][scope] = nextMessages[locale][scope];
     }
   }
 
@@ -122,6 +169,9 @@ const tryReloadMessagesFromDisk = (localeRootDir: string, fs: NodeFsModule, path
 
 export const enableI18nDevHotReload = async ({
   localeRootDir,
+  resources,
+  scopes = supportedScopes,
+  additionalScopeLocaleFiles = {},
   debounceMs = 60,
 }: EnableI18nDevHotReloadOptions): Promise<() => void> => {
   if (process.env.NODE_ENV === 'production') {
@@ -135,13 +185,19 @@ export const enableI18nDevHotReload = async ({
 
   const { fs, path } = runtimeModules;
   const resolvedLocaleRootDir = path.resolve(localeRootDir);
+  const effectiveScopes = scopes.filter((scope) => supportedScopes.includes(scope));
+
+  if (effectiveScopes.length === 0) {
+    console.warn('[i18n] Dev hot reload skipped because no supported scopes were provided.');
+    return () => undefined;
+  }
 
   if (!fs.existsSync(resolvedLocaleRootDir)) {
     console.warn(`[i18n] Locale directory not found: ${resolvedLocaleRootDir}`);
     return () => undefined;
   }
 
-  tryReloadMessagesFromDisk(resolvedLocaleRootDir, fs, path);
+  tryReloadMessagesFromDisk(resolvedLocaleRootDir, fs, path, resources, effectiveScopes, additionalScopeLocaleFiles);
 
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
   const watcher = fs.watch(resolvedLocaleRootDir, { recursive: true }, (_event, filename) => {
@@ -154,7 +210,14 @@ export const enableI18nDevHotReload = async ({
     }
 
     debounceTimer = setTimeout(() => {
-      tryReloadMessagesFromDisk(resolvedLocaleRootDir, fs, path);
+      tryReloadMessagesFromDisk(
+        resolvedLocaleRootDir,
+        fs,
+        path,
+        resources,
+        effectiveScopes,
+        additionalScopeLocaleFiles,
+      );
     }, debounceMs);
   });
 
@@ -286,8 +349,7 @@ export const createI18n = ({
   onMissingKey,
   resources,
 }: CreateI18nOptions): I18nInstance => {
-  // Optional resource injection makes tests independent from product translation keys.
-  const sourceMessages = resources ?? messages;
+  const sourceMessages = resources;
   let currentLocale = resolveLocale(locale, fallbackLocale);
 
   const t = (key: string, params?: TranslationParams): string => {
@@ -327,6 +389,7 @@ export type {
   I18nInstance,
   Locale,
   Messages,
+  MessagesRegistration,
   MissingKeyPayload,
   Scope,
   TranslationParams,

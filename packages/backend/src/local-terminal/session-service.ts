@@ -323,7 +323,7 @@ export class LocalTerminalSessionService extends BaseTerminalSessionService<Loca
   }
 
   public async createSession(input: CreateLocalTerminalSessionInput): Promise<CreateLocalTerminalSessionResult> {
-    const i18n = createI18n({ locale: input.locale, scope: 'backend', fallbackLocale: 'en' });
+    const i18n = createI18n({ locale: input.locale, fallbackLocale: 'en' });
     const profiles = await this.listProfiles();
     const targetProfile = profiles.find((profile) => profile.id === input.profileId);
 

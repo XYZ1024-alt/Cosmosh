@@ -1,10 +1,66 @@
 import { createRequire } from 'node:module';
 
+import type { CreateI18nOptions, EnableI18nDevHotReloadOptions, I18nInstance, Locale } from '@cosmosh/i18n';
+
 const require = createRequire(import.meta.url);
 const i18nRuntime = require('@cosmosh/i18n') as typeof import('@cosmosh/i18n');
 
-export const createI18n = i18nRuntime.createI18n;
-export const enableI18nDevHotReload = i18nRuntime.enableI18nDevHotReload;
+type JsonTranslationTree = {
+  [key: string]: string | JsonTranslationTree;
+};
+
+const backendEn = require('@cosmosh/i18n/locales/en/backend.json') as JsonTranslationTree;
+const backendInshellisenseEn = require('@cosmosh/i18n/locales/en/backend-inshellisense.json') as JsonTranslationTree;
+const backendZhCN = require('@cosmosh/i18n/locales/zh-CN/backend.json') as JsonTranslationTree;
+const backendInshellisenseZhCN =
+  require('@cosmosh/i18n/locales/zh-CN/backend-inshellisense.json') as JsonTranslationTree;
+
+const backendMessages = i18nRuntime.createMessages({
+  en: {
+    backend: i18nRuntime.mergeTranslationTrees(backendEn, backendInshellisenseEn),
+  },
+  'zh-CN': {
+    backend: i18nRuntime.mergeTranslationTrees(backendZhCN, backendInshellisenseZhCN),
+  },
+});
+
+type BackendCreateI18nOptions = Omit<CreateI18nOptions, 'resources' | 'scope'>;
+
+type BackendEnableI18nDevHotReloadOptions = Omit<
+  EnableI18nDevHotReloadOptions,
+  'resources' | 'scopes' | 'additionalScopeLocaleFiles'
+> & {
+  additionalScopeLocaleFiles?: string[];
+};
+
+export const createI18n = ({ locale, fallbackLocale, onMissingKey }: BackendCreateI18nOptions): I18nInstance => {
+  return i18nRuntime.createI18n({
+    locale,
+    scope: 'backend',
+    fallbackLocale,
+    onMissingKey,
+    resources: backendMessages,
+  });
+};
+
+export const enableI18nDevHotReload = ({
+  localeRootDir,
+  debounceMs,
+  additionalScopeLocaleFiles,
+}: BackendEnableI18nDevHotReloadOptions): Promise<() => void> => {
+  const extensionFiles = Array.from(new Set(['backend-inshellisense.json', ...(additionalScopeLocaleFiles ?? [])]));
+
+  return i18nRuntime.enableI18nDevHotReload({
+    localeRootDir,
+    debounceMs,
+    resources: backendMessages,
+    scopes: ['backend'],
+    additionalScopeLocaleFiles: {
+      backend: extensionFiles,
+    },
+  });
+};
+
 export const resolveLocale = i18nRuntime.resolveLocale;
 
-export type { I18nInstance, Locale } from '@cosmosh/i18n';
+export type { I18nInstance, Locale };
