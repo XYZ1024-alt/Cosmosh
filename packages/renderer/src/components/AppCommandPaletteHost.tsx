@@ -224,7 +224,7 @@ const createTabsCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPa
       commandActionId: 'tabs.switch',
       title: tab.title,
       subtitle: tab.id === context.activeTabId ? currentTabLabel.secondary : switchToTabLabel.secondary,
-      icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, true),
+      icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, false),
       searchTerms: buildSearchTerms([tab.id, tab.page, tab.title, 'tabs.switch', 'tab.activate'], scopeSearchTerms, [
         currentTabLabel.english,
         switchToTabLabel.english,
