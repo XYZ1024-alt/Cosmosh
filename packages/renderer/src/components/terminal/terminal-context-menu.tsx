@@ -6,6 +6,7 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from '../ui/context-menu';
 
@@ -22,6 +23,8 @@ type TerminalContextMenuProps = {
   searchOnlineLabel: string;
   /** Label for the "Find" menu item. */
   findLabel: string;
+  /** Optional shortcut hint shown on the "Find" menu item. */
+  findShortcutLabel?: string;
   /** Label for the "Select All" menu item. */
   selectAllLabel: string;
   /** Label for the "Clear Terminal" menu item. */
@@ -37,7 +40,11 @@ type TerminalContextMenuProps = {
   onCopy: () => void;
   onPaste: () => void;
   onSearchOnline: () => void;
-  /** Called when "Find" is selected. Expected to be a no-op or coming-soon handler until the feature is implemented. */
+  /**
+   * Called when "Find" is selected.
+   * Parent may defer opening to next macrotask so menu-close focus restore
+   * does not steal focus from the search panel input.
+   */
   onFind: () => void;
   onSelectAll: () => void;
   onClearTerminal: () => void;
@@ -53,6 +60,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   pasteLabel,
   searchOnlineLabel,
   findLabel,
+  findShortcutLabel,
   selectAllLabel,
   clearTerminalLabel,
   splitTerminalLabel,
@@ -71,6 +79,12 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
 }) => {
   const triggerHostRef = React.useRef<HTMLDivElement | null>(null);
   const menuContentRef = React.useRef<HTMLDivElement | null>(null);
+  /**
+   * Tracks whether menu close should skip focus restoration to trigger host.
+   * This is set by the Find action so the terminal does not reclaim focus while
+   * the command-palette search input is opening.
+   */
+  const preventCloseAutoFocusRef = React.useRef<boolean>(false);
 
   // Track whether the system clipboard contains text. Checked lazily on each
   // menu open to avoid polling. Defaults to true so that the item renders
@@ -83,6 +97,8 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
       return;
     }
 
+    preventCloseAutoFocusRef.current = false;
+
     void navigator.clipboard
       .readText()
       .then((text) => {
@@ -93,6 +109,32 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
         // rather than falsely disabling the item.
         setClipboardHasContent(true);
       });
+  }, []);
+
+  /**
+   * Handles Find selection and marks this menu close cycle to skip trigger
+   * auto-focus restoration so focus can remain on search input.
+   *
+   * @returns Nothing.
+   */
+  const handleFindSelect = React.useCallback((): void => {
+    preventCloseAutoFocusRef.current = true;
+    onFind();
+  }, [onFind]);
+
+  /**
+   * Suppresses Radix trigger auto-focus restoration after Find selection.
+   *
+   * @param event Focus event emitted during menu close.
+   * @returns Nothing.
+   */
+  const handleCloseAutoFocus = React.useCallback((event: Event): void => {
+    if (!preventCloseAutoFocusRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    preventCloseAutoFocusRef.current = false;
   }, []);
 
   React.useEffect(() => {
@@ -141,7 +183,10 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           {children}
         </div>
       </ContextMenuTrigger>
-      <ContextMenuContent ref={menuContentRef}>
+      <ContextMenuContent
+        ref={menuContentRef}
+        onCloseAutoFocus={handleCloseAutoFocus}
+      >
         {/* Copy is only useful when there is an active terminal selection. */}
         <ContextMenuItem
           icon={Copy}
@@ -171,13 +216,12 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           {searchOnlineLabel}
         </ContextMenuItem>
 
-        {/* Find is not yet implemented; disabled to signal coming-soon state. */}
         <ContextMenuItem
           icon={ScanSearch}
-          disabled={true}
-          onSelect={onFind}
+          onSelect={handleFindSelect}
         >
           {findLabel}
+          {findShortcutLabel ? <ContextMenuShortcut>{findShortcutLabel}</ContextMenuShortcut> : null}
         </ContextMenuItem>
 
         <ContextMenuSeparator />

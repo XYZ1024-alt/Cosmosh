@@ -12,6 +12,7 @@ type SSHTerminalPaneLayoutProps = {
   hasSelection: boolean;
   isConnected: boolean;
   canSplitTerminal: boolean;
+  findShortcutLabel: string;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
@@ -56,6 +57,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   hasSelection,
   isConnected,
   canSplitTerminal,
+  findShortcutLabel,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
@@ -78,6 +80,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           pasteLabel={t('ssh.contextMenuPaste')}
           searchOnlineLabel={t('ssh.contextMenuSearchOnline')}
           findLabel={t('ssh.contextMenuFind')}
+          findShortcutLabel={findShortcutLabel}
           selectAllLabel={t('ssh.contextMenuSelectAll')}
           clearTerminalLabel={t('ssh.contextMenuClearTerminal')}
           splitTerminalLabel={t('ssh.contextMenuSplitTerminal')}

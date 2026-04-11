@@ -2,13 +2,14 @@ import '@xterm/xterm/css/xterm.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
-import { RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, RefreshCw, ScanSearch, TextSelect } from 'lucide-react';
 import React from 'react';
 
 import { TerminalAutocompleteMenu } from '../components/terminal/terminal-autocomplete-menu';
 import { TerminalSelectionBar } from '../components/terminal/terminal-selection-bar';
 import { TerminalTextDropZone } from '../components/terminal/terminal-text-drop-zone';
 import { Button } from '../components/ui/button';
+import { CommandPalette } from '../components/ui/command-palette';
 import {
   Dialog,
   DialogContent,
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { Menubar } from '../components/ui/menubar';
+import { Toggle } from '../components/ui/toggle';
 import { t } from '../lib/i18n';
 import { useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
@@ -29,7 +31,7 @@ import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from
 import { parseOptionalNumberSetting, resolveSearchUrl, resolveTerminalFontWeightSetting } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
-import { useSshCore } from './ssh/use-ssh-core';
+import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 
 /**
  * SSH page props.
@@ -42,6 +44,13 @@ type SSHProps = {
   onTabTitleChange?: (title: string) => void;
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
 };
+
+/** Delay used to debounce query-driven xterm search jumps while typing. */
+const TERMINAL_SEARCH_DEBOUNCE_MS = 80;
+/** macOS find shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_FIND_SHORTCUT_LABEL_MAC = '⇧⌘F';
+/** Non-macOS find shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+F';
 
 /**
  * SSH page that orchestrates terminal lifecycle, websocket sessions,
@@ -210,6 +219,8 @@ const SSH: React.FC<SSHProps> = ({
       getSelectionText,
       focusActiveTerminal,
       clearTerminalScreen,
+      findActiveTerminalText,
+      clearActiveTerminalSearch,
       setPaneContainerElement,
       setPrimaryPaneContainer,
       resolveHostFingerprintPrompt,
@@ -219,6 +230,25 @@ const SSH: React.FC<SSHProps> = ({
     refs: { wrapperRef, terminalContainerRef, selectionBarRef, autocompleteMenuRef },
   } = sshCore;
   const terminalPaneIdsRef = React.useRef<string[]>(terminalPaneIds);
+  const [terminalSearchOpen, setTerminalSearchOpen] = React.useState<boolean>(false);
+  const [terminalSearchQuery, setTerminalSearchQuery] = React.useState<string>('');
+  const [terminalSearchCaseSensitive, setTerminalSearchCaseSensitive] = React.useState<boolean>(false);
+  const [terminalSearchRegex, setTerminalSearchRegex] = React.useState<boolean>(false);
+  /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
+  const isMacOS = window.electron?.platform === 'darwin';
+  /** Platform-resolved find shortcut label shown in terminal context menus. */
+  const terminalFindShortcutLabel = isMacOS ? TERMINAL_FIND_SHORTCUT_LABEL_MAC : TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT;
+  /** Tracks last auto-search key to prevent debounce-triggered first-match resets. */
+  const lastAutoSearchKeyRef = React.useRef<string>('');
+  /** Holds deferred find-open timer id so pending callbacks can be canceled on unmount. */
+  const deferredFindOpenTimeoutRef = React.useRef<number | null>(null);
+  const terminalSearchOptions = React.useMemo(
+    () => ({
+      caseSensitive: terminalSearchCaseSensitive,
+      regex: terminalSearchRegex,
+    }),
+    [terminalSearchCaseSensitive, terminalSearchRegex],
+  );
 
   React.useEffect(() => {
     terminalPaneIdsRef.current = terminalPaneIds;
@@ -371,9 +401,114 @@ const SSH: React.FC<SSHProps> = ({
     openSearchForText(selectionText);
   }, [getSelectionText, openSearchForText]);
 
+  /**
+   * Opens in-terminal search palette and optionally seeds query text.
+   *
+   * @param seedQuery Optional initial query from selection/context menu.
+   * @returns Nothing.
+   */
+  const openTerminalSearchPalette = React.useCallback(
+    (seedQuery?: string): void => {
+      if (seedQuery && seedQuery.trim()) {
+        setTerminalSearchQuery(seedQuery);
+      }
+
+      dismissSelectionBar();
+      setTerminalSearchOpen(true);
+    },
+    [dismissSelectionBar],
+  );
+
+  /**
+   * Executes one in-terminal search action.
+   *
+   * @param direction Search direction or boundary jump.
+   * @returns `true` when a match is found.
+   */
+  const runTerminalSearch = React.useCallback(
+    (direction: TerminalSearchDirection): boolean => {
+      const didMatch = findActiveTerminalText(terminalSearchQuery, direction, terminalSearchOptions);
+      dismissSelectionBar();
+
+      return didMatch;
+    },
+    [dismissSelectionBar, findActiveTerminalText, terminalSearchOptions, terminalSearchQuery],
+  );
+
+  /**
+   * Stable key prefix for query-driven auto-search dedupe across toggle/open state changes.
+   */
+  const terminalSearchAutoKeyPrefix = React.useMemo((): string => {
+    const openToken = terminalSearchOpen ? 'open' : 'closed';
+    const caseToken = terminalSearchCaseSensitive ? 'case' : 'nocase';
+    const regexToken = terminalSearchRegex ? 'regex' : 'plain';
+    return [openToken, caseToken, regexToken].join(':');
+  }, [terminalSearchCaseSensitive, terminalSearchOpen, terminalSearchRegex]);
+
+  /**
+   * Determines whether keyboard event target is an editable text surface.
+   *
+   * @param target Native keyboard event target.
+   * @returns `true` when the target can receive free-form text input.
+   */
+  const isEditableKeyboardTarget = React.useCallback((target: EventTarget | null): boolean => {
+    return (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    );
+  }, []);
+
+  /**
+   * Detects whether keyboard target is xterm's hidden capture textarea.
+   *
+   * @param target Native keyboard event target.
+   * @returns `true` when target is the terminal input capture textarea.
+   */
+  const isTerminalKeyboardCaptureTarget = React.useCallback((target: EventTarget | null): boolean => {
+    return target instanceof HTMLTextAreaElement && target.classList.contains('xterm-helper-textarea');
+  }, []);
+
+  /**
+   * Detects whether keyboard target belongs to the active terminal surface.
+   *
+   * @param target Native keyboard event target.
+   * @returns `true` when target is inside the terminal container subtree.
+   */
+  const isTerminalKeyboardTarget = React.useCallback(
+    (target: EventTarget | null): boolean => {
+      return target instanceof Node && Boolean(terminalContainerRef.current?.contains(target));
+    },
+    [terminalContainerRef],
+  );
+
+  /**
+   * Resolves whether keyboard event contains the Cmd/Ctrl modifier for find shortcut.
+   *
+   * @param event Native keyboard event.
+   * @returns `true` when Cmd or Ctrl is pressed.
+   */
+  const hasFindShortcutModifier = React.useCallback(
+    (event: KeyboardEvent): boolean => {
+      return isMacOS ? event.metaKey : event.ctrlKey;
+    },
+    [isMacOS],
+  );
+
   const handleContextMenuFind = React.useCallback(() => {
-    notifyWarning(t('ssh.contextMenuFindComingSoon'));
-  }, [notifyWarning]);
+    const seedQuery = getSelectionText();
+    // Defer opening via macrotask so Radix context-menu focus restoration has
+    // completed first; this keeps focus on the find palette input.
+    if (deferredFindOpenTimeoutRef.current !== null) {
+      window.clearTimeout(deferredFindOpenTimeoutRef.current);
+    }
+
+    deferredFindOpenTimeoutRef.current = window.setTimeout(() => {
+      // Clear ref first so cleanup logic remains source-of-truth for pending timer state.
+      deferredFindOpenTimeoutRef.current = null;
+      openTerminalSearchPalette(seedQuery);
+    }, 0);
+  }, [getSelectionText, openTerminalSearchPalette]);
 
   const handleContextMenuSelectAll = React.useCallback(() => {
     selectAll();
@@ -383,6 +518,95 @@ const SSH: React.FC<SSHProps> = ({
     clearTerminalScreen();
     focusActiveTerminal();
   }, [clearTerminalScreen, focusActiveTerminal]);
+
+  /**
+   * Keeps query-driven search responsive by debouncing first-match jump with
+   * `TERMINAL_SEARCH_DEBOUNCE_MS` while users are typing in the palette input.
+   */
+  React.useEffect(() => {
+    const normalizedQuery = terminalSearchQuery.trim();
+    if (!terminalSearchOpen || !normalizedQuery) {
+      lastAutoSearchKeyRef.current = '';
+      return;
+    }
+
+    const autoSearchKey = `${terminalSearchAutoKeyPrefix}:${normalizedQuery}`;
+    if (lastAutoSearchKeyRef.current === autoSearchKey) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      lastAutoSearchKeyRef.current = autoSearchKey;
+      runTerminalSearch('first');
+    }, TERMINAL_SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [runTerminalSearch, terminalSearchAutoKeyPrefix, terminalSearchOpen, terminalSearchQuery]);
+
+  /**
+   * Clears search highlights when query is empty or palette is closed.
+   */
+  React.useEffect(() => {
+    const hasQuery = terminalSearchQuery.trim().length > 0;
+    if (terminalSearchOpen && hasQuery) {
+      return;
+    }
+
+    clearActiveTerminalSearch();
+  }, [clearActiveTerminalSearch, terminalSearchOpen, terminalSearchQuery]);
+
+  /**
+   * Registers Cmd/Ctrl+Shift+F shortcut to open in-terminal search for the active SSH page.
+   */
+  React.useEffect(() => {
+    const handleSearchShortcut = (event: KeyboardEvent): void => {
+      const isTerminalCaptureTarget = isTerminalKeyboardCaptureTarget(event.target);
+      const isTerminalTarget = isTerminalKeyboardTarget(event.target);
+      const isEditableTarget = isEditableKeyboardTarget(event.target);
+      if (isEditableTarget && !isTerminalCaptureTarget && !isTerminalTarget) {
+        return;
+      }
+
+      const isFindKey = event.code === 'KeyF' || event.key.toLowerCase() === 'f';
+      if (!isActive || event.repeat || event.altKey || !event.shiftKey || !isFindKey) {
+        return;
+      }
+
+      const hasModifier = hasFindShortcutModifier(event);
+      if (!hasModifier) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      openTerminalSearchPalette(getSelectionText());
+    };
+
+    window.addEventListener('keydown', handleSearchShortcut, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleSearchShortcut, true);
+    };
+  }, [
+    getSelectionText,
+    hasFindShortcutModifier,
+    isActive,
+    isEditableKeyboardTarget,
+    isTerminalKeyboardCaptureTarget,
+    isTerminalKeyboardTarget,
+    openTerminalSearchPalette,
+  ]);
+
+  React.useEffect(() => {
+    return () => {
+      if (deferredFindOpenTimeoutRef.current !== null) {
+        window.clearTimeout(deferredFindOpenTimeoutRef.current);
+        deferredFindOpenTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const handleDeleteRecentCommand = React.useCallback(
     (command: string) => {
@@ -537,6 +761,73 @@ const SSH: React.FC<SSHProps> = ({
     notifyWarning(t('ssh.selectionBarAskAiComingSoon'));
   }, [notifyWarning]);
 
+  const handleTerminalSearchPrevious = React.useCallback(() => {
+    runTerminalSearch('previous');
+  }, [runTerminalSearch]);
+
+  const handleTerminalSearchNext = React.useCallback(() => {
+    runTerminalSearch('next');
+  }, [runTerminalSearch]);
+
+  const handleTerminalSearchFirst = React.useCallback(() => {
+    runTerminalSearch('first');
+  }, [runTerminalSearch]);
+
+  const handleTerminalSearchLast = React.useCallback(() => {
+    runTerminalSearch('last');
+  }, [runTerminalSearch]);
+
+  const terminalSearchFooter = (
+    <div className="flex w-full items-center gap-2">
+      <div className="flex items-center gap-1.5">
+        <Toggle
+          pressed={terminalSearchCaseSensitive}
+          onPressedChange={setTerminalSearchCaseSensitive}
+        >
+          <TextSelect className="h-4 w-4" />
+          {t('ssh.terminalSearchCaseSensitive')}
+        </Toggle>
+        <Toggle
+          pressed={terminalSearchRegex}
+          onPressedChange={setTerminalSearchRegex}
+        >
+          <ScanSearch className="h-4 w-4" />
+          {t('ssh.terminalSearchRegex')}
+        </Toggle>
+      </div>
+      <div className="ml-auto flex items-center gap-1">
+        <Button
+          aria-label={t('ssh.terminalSearchFirst')}
+          variant="ghostIcon"
+          onClick={handleTerminalSearchFirst}
+        >
+          <ChevronsUp className="h-4 w-4" />
+        </Button>
+        <Button
+          aria-label={t('ssh.terminalSearchPrevious')}
+          variant="ghostIcon"
+          onClick={handleTerminalSearchPrevious}
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+        <Button
+          aria-label={t('ssh.terminalSearchNext')}
+          variant="ghostIcon"
+          onClick={handleTerminalSearchNext}
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+        <Button
+          aria-label={t('ssh.terminalSearchLast')}
+          variant="ghostIcon"
+          onClick={handleTerminalSearchLast}
+        >
+          <ChevronsDown className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
+
   const handleTerminalTextDrop = React.useCallback(
     (droppedText: string) => {
       pasteInput(droppedText);
@@ -568,6 +859,7 @@ const SSH: React.FC<SSHProps> = ({
 
   // Card style
   const cardStyle = 'bg-ssh-card-bg-terminal h-full w-full flex-1 overflow-hidden rounded-[18px] p-1';
+  const shouldSuppressOrbitBar = terminalSearchOpen;
 
   return (
     <div
@@ -586,6 +878,7 @@ const SSH: React.FC<SSHProps> = ({
           hasSelection={!!selectionAnchor?.selectionText}
           isConnected={connectionState === 'connected'}
           canSplitTerminal={canSplitTerminal}
+          findShortcutLabel={terminalFindShortcutLabel}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
@@ -640,10 +933,32 @@ const SSH: React.FC<SSHProps> = ({
         onItemSelect={acceptAutocompleteAtIndex}
       />
 
+      {connectionState === 'connected' ? (
+        <CommandPalette
+          closeOnEsc
+          hideItemList
+          open={terminalSearchOpen}
+          query={terminalSearchQuery}
+          placeholder={t('ssh.terminalSearchPlaceholder')}
+          items={[]}
+          footer={terminalSearchFooter}
+          onInputArrowUp={handleTerminalSearchPrevious}
+          onInputArrowDown={handleTerminalSearchNext}
+          onOpenChange={(open) => {
+            setTerminalSearchOpen(open);
+            if (!open) {
+              setTerminalSearchQuery('');
+            }
+          }}
+          onQueryChange={setTerminalSearchQuery}
+        />
+      ) : null}
+
       {connectionState === 'connected' &&
       terminalSelectionSettings.enabled &&
       selectionAnchor &&
       selectionBarPosition &&
+      !shouldSuppressOrbitBar &&
       dismissedSelectionText !== selectionAnchor.selectionText ? (
         <div
           className="pointer-events-none absolute z-40"
