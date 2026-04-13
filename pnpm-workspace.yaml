@@ -2,4 +2,13 @@ packages:
   - packages/*
   - docs
 onlyBuiltDependencies:
+  - '@prisma/client'
+  - '@prisma/engines'
+  - better-sqlite3-multiple-ciphers
+  - cpu-features
+  - electron-winstaller
   - electron
+  - esbuild
+  - node-pty
+  - prisma
+  - ssh2
