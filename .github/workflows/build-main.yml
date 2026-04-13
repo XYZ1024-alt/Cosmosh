@@ -28,11 +28,11 @@ jobs:
             buildArgs: --mac dmg zip --arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: "pnpm"
@@ -50,7 +50,7 @@ jobs:
 
       - name: Upload Windows portable zip
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-windows-portable-zip
           retention-days: 14
@@ -60,7 +60,7 @@ jobs:
 
       - name: Upload Windows installer exe
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-windows-installer-exe
           retention-days: 14
@@ -71,7 +71,7 @@ jobs:
 
       - name: Upload Linux portable zip
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-linux-portable-zip
           retention-days: 14
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload Linux AppImage installer
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-linux-installer-appimage
           retention-days: 14
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload Linux deb installer
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-linux-installer-deb
           retention-days: 14
@@ -101,7 +101,7 @@ jobs:
 
       - name: Upload macOS x64 artifacts
         if: matrix.platform == 'mac-x64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-macos-x64
           retention-days: 14
@@ -112,7 +112,7 @@ jobs:
 
       - name: Upload macOS arm64 artifacts
         if: matrix.platform == 'mac-arm64'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: cosmosh-main-macos-arm64
           retention-days: 14
