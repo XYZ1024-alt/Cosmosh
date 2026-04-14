@@ -31,8 +31,11 @@ let backendProcess: ChildProcessWithoutNullStreams | null = null;
 let backendPort: number | null = null;
 let backendToken: string | null = null;
 let backendStartupPromise: Promise<void> | null = null;
+let backendShutdownPromise: Promise<void> | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
+
+let isAppShutdownInProgress = false;
 
 let appLocale = resolveLocale(process.env.COSMOSH_LOCALE, 'en');
 const mainProcessMessages = createMessages({
@@ -446,6 +449,125 @@ const wait = (ms: number): Promise<void> => {
   });
 };
 
+/**
+ * Waits for a child process to exit or times out.
+ *
+ * @param child Child process instance.
+ * @param timeoutMs Timeout in milliseconds.
+ * @returns Promise resolving to true when the process exited within the timeout.
+ */
+const waitForChildExit = async (child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> => {
+  if (child.exitCode !== null) {
+    return true;
+  }
+
+  return await new Promise<boolean>((resolve) => {
+    const timeout = setTimeout(() => {
+      resolve(false);
+    }, timeoutMs);
+
+    child.once('exit', () => {
+      clearTimeout(timeout);
+      resolve(true);
+    });
+  });
+};
+
+/**
+ * Best-effort Windows process-tree termination using `taskkill`.
+ *
+ * @param pid Target process id.
+ * @returns Promise that resolves when `taskkill` completes.
+ */
+const taskkillProcessTree = async (pid: number): Promise<void> => {
+  await new Promise<void>((resolve) => {
+    const killer = spawn('taskkill', ['/PID', String(pid), '/T', '/F'], {
+      stdio: ['ignore', 'ignore', 'ignore'],
+      windowsHide: true,
+    });
+
+    killer.once('error', (error) => {
+      console.warn(`[backend:stop] Failed to spawn taskkill (pid=${pid}).`, error);
+      resolve();
+    });
+
+    killer.once('exit', (code) => {
+      if (code !== 0) {
+        console.warn(`[backend:stop] taskkill exited with code=${code} (pid=${pid}).`);
+      }
+      resolve();
+    });
+  });
+};
+
+/**
+ * Stops backend runtime and releases any database locks held by backend Prisma.
+ *
+ * This is intentionally defensive on Windows: when backend is launched via a tool
+ * runner (pnpm/tsx), killing only the parent process can orphan the actual Node
+ * runtime and keep SQLite locked. The shutdown path tries graceful termination
+ * first and falls back to killing the entire process tree.
+ *
+ * @param origin Human-readable shutdown origin for logs.
+ * @returns Promise that resolves once backend is no longer running.
+ */
+const stopBackendService = async (origin: string): Promise<void> => {
+  if (!backendProcess) {
+    return;
+  }
+
+  if (backendShutdownPromise) {
+    await backendShutdownPromise;
+    return;
+  }
+
+  const processToStop = backendProcess;
+  const pid = processToStop.pid ?? null;
+
+  backendShutdownPromise = (async () => {
+    console.log(`[backend:stop] Stopping backend process (pid=${pid ?? 'unknown'}, origin=${origin})...`);
+
+    try {
+      const signal = process.platform === 'win32' ? 'SIGINT' : 'SIGTERM';
+      processToStop.kill(signal);
+    } catch (error) {
+      console.warn(`[backend:stop] Failed to send graceful signal (pid=${pid ?? 'unknown'}).`, error);
+    }
+
+    const exitedGracefully = await waitForChildExit(processToStop, 4000);
+    if (exitedGracefully) {
+      console.log(`[backend:stop] Backend stopped gracefully (pid=${pid ?? 'unknown'}).`);
+      return;
+    }
+
+    console.warn(`[backend:stop] Backend did not exit in time. Forcing termination (pid=${pid ?? 'unknown'})...`);
+
+    if (process.platform === 'win32') {
+      if (typeof pid === 'number') {
+        await taskkillProcessTree(pid);
+        await waitForChildExit(processToStop, 2000);
+      }
+      return;
+    }
+
+    try {
+      processToStop.kill('SIGKILL');
+    } catch (error) {
+      console.warn(`[backend:stop] Failed to send SIGKILL (pid=${pid ?? 'unknown'}).`, error);
+    }
+  })();
+
+  try {
+    await backendShutdownPromise;
+  } finally {
+    backendShutdownPromise = null;
+    backendProcess = null;
+    backendPort = null;
+    backendToken = null;
+    backendStartupPromise = null;
+  }
+};
+
 const formatStartupError = (error: unknown): string => {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`;
@@ -807,9 +929,17 @@ const startBackendService = async (): Promise<void> => {
         );
       }
 
-      command = 'pnpm --filter @cosmosh/backend run dev:runtime';
-      args = [];
-      shell = true;
+      const backendDevEntryPath = path.join(workspaceRoot, 'packages', 'backend', 'src', 'index.ts');
+      await fs.access(backendDevEntryPath);
+      backendProcessCwd = path.join(workspaceRoot, 'packages', 'backend');
+
+      // Launch backend as a direct child process to guarantee deterministic shutdown on Windows.
+      // Using `pnpm run` with `shell: true` can orphan the actual runtime after app quit.
+      command = process.execPath;
+      args = ['--import', 'tsx', backendDevEntryPath];
+      shell = false;
+      backendEnv.ELECTRON_RUN_AS_NODE = '1';
+      backendEnv.NODE_ENV = 'development';
     } else {
       await fs.access(packagedBackendEntryPath);
       command = process.execPath;
@@ -866,24 +996,12 @@ const startBackendService = async (): Promise<void> => {
   }
 };
 
-const stopBackendService = (): void => {
-  if (!backendProcess) {
-    return;
-  }
-
-  backendProcess.kill();
-  backendProcess = null;
-  backendPort = null;
-  backendToken = null;
-  backendStartupPromise = null;
-};
-
 /**
  * Restarts backend runtime in-place and refreshes active connection metadata.
  */
 const restartBackendService = async (): Promise<boolean> => {
   try {
-    stopBackendService();
+    await stopBackendService('restart');
     await startBackendService();
     return true;
   } catch (error) {
@@ -1109,10 +1227,40 @@ registerBackendIpcHandlers({
 // -----------------------------------------------------------------------------
 // Shutdown hooks
 // -----------------------------------------------------------------------------
-app.on('before-quit', () => {
-  disableI18nHotReload?.();
-  disableI18nHotReload = null;
-  stopBackendService();
+app.on('before-quit', (event) => {
+  if (isAppShutdownInProgress) {
+    return;
+  }
+
+  event.preventDefault();
+  isAppShutdownInProgress = true;
+
+  void (async () => {
+    disableI18nHotReload?.();
+    disableI18nHotReload = null;
+    await stopBackendService('electron:before-quit');
+  })()
+    .catch((error) => {
+      console.error('[shutdown] Failed during shutdown cleanup.', error);
+    })
+    .finally(() => {
+      app.quit();
+    });
+});
+
+process.once('SIGINT', () => {
+  console.warn('[shutdown] SIGINT received. Quitting application...');
+  app.quit();
+});
+
+process.once('SIGTERM', () => {
+  console.warn('[shutdown] SIGTERM received. Quitting application...');
+  app.quit();
+});
+
+process.once('SIGBREAK', () => {
+  console.warn('[shutdown] SIGBREAK received. Quitting application...');
+  app.quit();
 });
 
 app.on('window-all-closed', () => {
