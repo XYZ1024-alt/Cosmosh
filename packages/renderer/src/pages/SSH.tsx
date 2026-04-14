@@ -365,6 +365,26 @@ const SSH: React.FC<SSHProps> = ({
     openSearchForText(selectionAnchor.selectionText);
   }, [openSearchForText, selectionAnchor]);
 
+  /**
+   * Keeps terminal as the default keyboard target even if the selection bar gains focus.
+   *
+   * @param event Key event originating from within the selection bar subtree.
+   * @returns Nothing.
+   */
+  const handleSelectionBarKeyDownCapture = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      dismissSelectionBar();
+      focusActiveTerminal();
+    },
+    [dismissSelectionBar, focusActiveTerminal],
+  );
+
   // ---------------------------------------------------------------------------
   // Context menu handlers
   // ---------------------------------------------------------------------------
@@ -745,8 +765,11 @@ const SSH: React.FC<SSHProps> = ({
       event.dataTransfer.setData('text', selectionAnchor.selectionText);
       event.dataTransfer.setData('text/unicode', selectionAnchor.selectionText);
       event.dataTransfer.setData('text/html', `<pre>${escapedHtml}</pre>`);
+
+      // Dragging the handle can steal focus from xterm; restore it so keyboard shortcuts keep working.
+      focusActiveTerminal();
     },
-    [selectionAnchor],
+    [focusActiveTerminal, selectionAnchor],
   );
 
   const handleSelectionBarClose = React.useCallback(() => {
@@ -966,6 +989,8 @@ const SSH: React.FC<SSHProps> = ({
             top: `${selectionBarPosition.top}px`,
             left: `${selectionBarPosition.left}px`,
           }}
+          onClick={focusActiveTerminal}
+          onKeyDownCapture={handleSelectionBarKeyDownCapture}
         >
           <TerminalSelectionBar
             ref={selectionBarRef}
