@@ -123,17 +123,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
     [activeIndex, activeIndexProp, items.length, onActiveIndexChange],
   );
 
-  const getActiveActionButtons = React.useCallback((): HTMLButtonElement[] => {
-    const panelNode = panelRef.current;
-    if (!panelNode) {
-      return [];
-    }
-
-    return Array.from(
-      panelNode.querySelectorAll<HTMLButtonElement>('button[data-command-action="true"][data-command-active="true"]'),
-    );
-  }, []);
-
   React.useEffect(() => {
     if (open) {
       setRendered(true);
@@ -175,7 +164,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [getActiveActionButtons, open, rendered, showInput]);
+  }, [open, rendered, showInput]);
 
   /**
    * Auto-scroll the active item into view when navigating with keyboard arrows
@@ -222,25 +211,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         return;
       }
 
-      if (event.key === 'Tab') {
-        markKeyboardInteraction();
-        event.preventDefault();
-        const activeButtons = getActiveActionButtons();
-
-        if (activeButtons.length === 0) {
-          inputRef.current?.focus({ preventScroll: true });
-          return;
-        }
-
-        if (event.shiftKey) {
-          activeButtons[activeButtons.length - 1]?.focus({ preventScroll: true });
-          return;
-        }
-
-        activeButtons[0]?.focus({ preventScroll: true });
-        return;
-      }
-
       if (event.key === 'Enter') {
         markKeyboardInteraction();
         event.preventDefault();
@@ -251,7 +221,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
     [
       activeIndex,
       closeOnEsc,
-      getActiveActionButtons,
       items,
       markKeyboardInteraction,
       onInputArrowDown,
@@ -293,89 +262,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         items[activeIndex]?.onSelect();
         return;
       }
-
-      if (event.key === 'Tab') {
-        markKeyboardInteraction();
-        event.preventDefault();
-        const activeButtons = getActiveActionButtons();
-
-        if (activeButtons.length === 0) {
-          panelRef.current?.focus({ preventScroll: true });
-          return;
-        }
-
-        const focusedButtonIndex = activeButtons.findIndex((button) => button === document.activeElement);
-        if (event.shiftKey) {
-          if (focusedButtonIndex <= 0) {
-            panelRef.current?.focus({ preventScroll: true });
-            return;
-          }
-
-          activeButtons[focusedButtonIndex - 1]?.focus({ preventScroll: true });
-          return;
-        }
-
-        if (focusedButtonIndex === -1) {
-          activeButtons[0]?.focus({ preventScroll: true });
-          return;
-        }
-
-        if (focusedButtonIndex >= activeButtons.length - 1) {
-          panelRef.current?.focus({ preventScroll: true });
-          return;
-        }
-
-        activeButtons[focusedButtonIndex + 1]?.focus({ preventScroll: true });
-        return;
-      }
     },
-    [activeIndex, closeOnEsc, getActiveActionButtons, items, markKeyboardInteraction, onOpenChange, setActiveIndex],
-  );
-
-  const handleActionButtonKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLButtonElement>, actionIndex: number) => {
-      if (event.key !== 'Tab') {
-        return;
-      }
-
-      markKeyboardInteraction();
-
-      event.preventDefault();
-      const activeButtons = getActiveActionButtons();
-
-      if (activeButtons.length === 0) {
-        inputRef.current?.focus({ preventScroll: true });
-        return;
-      }
-
-      if (event.shiftKey) {
-        if (actionIndex <= 0) {
-          if (showInput) {
-            inputRef.current?.focus({ preventScroll: true });
-            return;
-          }
-
-          activeButtons[activeButtons.length - 1]?.focus({ preventScroll: true });
-          return;
-        }
-
-        activeButtons[actionIndex - 1]?.focus({ preventScroll: true });
-        return;
-      }
-
-      if (actionIndex >= activeButtons.length - 1) {
-        if (showInput) {
-          inputRef.current?.focus({ preventScroll: true });
-          return;
-        }
-
-        activeButtons[0]?.focus({ preventScroll: true });
-        return;
-      }
-
-      activeButtons[actionIndex + 1]?.focus({ preventScroll: true });
-    },
-    [getActiveActionButtons, markKeyboardInteraction, showInput],
+    [activeIndex, closeOnEsc, items, markKeyboardInteraction, onOpenChange, setActiveIndex],
   );
 
   if (!rendered) {
@@ -418,6 +306,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         {!hideItemList ? (
           <TooltipProvider delayDuration={180}>
             <div
+              tabIndex={-1}
               className={classNames(
                 'overflow-y-auto p-1',
                 showInput ? 'max-h-[min(420px,calc(100vh-180px))]' : 'max-h-[min(480px,calc(100vh-140px))]',
@@ -518,7 +407,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                         <span
                           className={classNames('-me-1 ml-auto flex items-center gap-1', contentForegroundClassName)}
                         >
-                          {item.actions.map((action, actionIndex) => (
+                          {item.actions.map((action) => (
                             <Tooltip key={action.key}>
                               <TooltipTrigger asChild>
                                 <button
@@ -534,7 +423,6 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                                     event.stopPropagation();
                                     action.onSelect();
                                   }}
-                                  onKeyDown={(event) => handleActionButtonKeyDown(event, actionIndex)}
                                 >
                                   {action.icon}
                                 </button>
