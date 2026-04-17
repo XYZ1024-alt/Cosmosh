@@ -239,6 +239,7 @@ Notes:
   4. right-most pane split into two stacked panes.
 - Split action is exposed from the terminal context menu (`Split Terminal`), and close action is exposed as `Close Terminal`.
 - Terminal context menu renders platform-resolved shortcut hints for `Copy`, `Paste`, `Find...`, and `Clear Terminal`, and matching keyboard handling is wired for these actions (`⌘C`/`⌘V`/`⇧⌘F`/`⌃L` on macOS hints, `Ctrl+Shift+C`/`Ctrl+Shift+V`/`Ctrl+Shift+F`/`Ctrl+L` on non-macOS with active handlers).
+- When an SSH tab becomes active, renderer restores keyboard focus to the active xterm instance so typing lands in the terminal immediately after tab switching.
 - Maximum visible panes are capped at 4 in current implementation.
 - Each split pane creates its own backend terminal session against the same resolved target (same SSH server/local profile), so panes can run independent commands.
 - Mirror panes always reuse the primary pane's resolved target snapshot semantics on retries.

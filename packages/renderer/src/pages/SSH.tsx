@@ -272,6 +272,21 @@ const SSH: React.FC<SSHProps> = ({
     [terminalSearchCaseSensitive, terminalSearchRegex],
   );
 
+  // Restore keyboard focus after the SSH tab becomes active so xterm can receive input again.
+  React.useEffect(() => {
+    if (!isActive) {
+      return;
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      focusActiveTerminal();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [connectionState, focusActiveTerminal, isActive]);
+
   React.useEffect(() => {
     terminalPaneIdsRef.current = terminalPaneIds;
   }, [terminalPaneIds]);
