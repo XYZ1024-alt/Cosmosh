@@ -47,10 +47,22 @@ type SSHProps = {
 
 /** Delay used to debounce query-driven xterm search jumps while typing. */
 const TERMINAL_SEARCH_DEBOUNCE_MS = 80;
+/** macOS copy shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_COPY_SHORTCUT_LABEL_MAC = '⌘C';
+/** Non-macOS copy shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_COPY_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+C';
+/** macOS paste shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_PASTE_SHORTCUT_LABEL_MAC = '⌘V';
+/** Non-macOS paste shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_PASTE_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+V';
 /** macOS find shortcut label rendered in terminal context-menu hint slot. */
 const TERMINAL_FIND_SHORTCUT_LABEL_MAC = '⇧⌘F';
 /** Non-macOS find shortcut label rendered in terminal context-menu hint slot. */
 const TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+F';
+/** macOS clear-screen shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_CLEAR_SHORTCUT_LABEL_MAC = '⌃L';
+/** Non-macOS clear-screen shortcut label rendered in terminal context-menu hint slot. */
+const TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT = 'Ctrl+L';
 
 /**
  * SSH page that orchestrates terminal lifecycle, websocket sessions,
@@ -236,8 +248,18 @@ const SSH: React.FC<SSHProps> = ({
   const [terminalSearchRegex, setTerminalSearchRegex] = React.useState<boolean>(false);
   /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
   const isMacOS = window.electron?.platform === 'darwin';
+  /** Platform-resolved copy shortcut label shown in terminal context menus. */
+  const terminalCopyShortcutLabel = isMacOS ? TERMINAL_COPY_SHORTCUT_LABEL_MAC : TERMINAL_COPY_SHORTCUT_LABEL_DEFAULT;
+  /** Platform-resolved paste shortcut label shown in terminal context menus. */
+  const terminalPasteShortcutLabel = isMacOS
+    ? TERMINAL_PASTE_SHORTCUT_LABEL_MAC
+    : TERMINAL_PASTE_SHORTCUT_LABEL_DEFAULT;
   /** Platform-resolved find shortcut label shown in terminal context menus. */
   const terminalFindShortcutLabel = isMacOS ? TERMINAL_FIND_SHORTCUT_LABEL_MAC : TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT;
+  /** Platform-resolved clear-screen shortcut label shown in terminal context menus. */
+  const terminalClearShortcutLabel = isMacOS
+    ? TERMINAL_CLEAR_SHORTCUT_LABEL_MAC
+    : TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT;
   /** Tracks last auto-search key to prevent debounce-triggered first-match resets. */
   const lastAutoSearchKeyRef = React.useRef<string>('');
   /** Holds deferred find-open timer id so pending callbacks can be canceled on unmount. */
@@ -619,6 +641,66 @@ const SSH: React.FC<SSHProps> = ({
     openTerminalSearchPalette,
   ]);
 
+  /**
+   * Registers Ctrl+Shift+C/V terminal clipboard shortcuts on non-macOS platforms.
+   */
+  React.useEffect(() => {
+    if (isMacOS) {
+      return;
+    }
+
+    const handleTerminalClipboardShortcut = (event: KeyboardEvent): void => {
+      const isTerminalCaptureTarget = isTerminalKeyboardCaptureTarget(event.target);
+      const isTerminalTarget = isTerminalKeyboardTarget(event.target);
+      const isEditableTarget = isEditableKeyboardTarget(event.target);
+      if (isEditableTarget && !isTerminalCaptureTarget && !isTerminalTarget) {
+        return;
+      }
+
+      if (!isActive || event.repeat || event.altKey || event.metaKey || !event.ctrlKey || !event.shiftKey) {
+        return;
+      }
+
+      const normalizedKey = event.key.toLowerCase();
+      const isCopyKey = normalizedKey === 'c' || event.code === 'KeyC';
+      if (isCopyKey) {
+        const selectionText = getSelectionText();
+        if (!selectionText) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        void copyTextToClipboard(selectionText);
+        return;
+      }
+
+      const isPasteKey = normalizedKey === 'v' || event.code === 'KeyV';
+      if (!isPasteKey) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      handleContextMenuPaste();
+    };
+
+    window.addEventListener('keydown', handleTerminalClipboardShortcut, true);
+
+    return () => {
+      window.removeEventListener('keydown', handleTerminalClipboardShortcut, true);
+    };
+  }, [
+    copyTextToClipboard,
+    getSelectionText,
+    handleContextMenuPaste,
+    isActive,
+    isEditableKeyboardTarget,
+    isMacOS,
+    isTerminalKeyboardCaptureTarget,
+    isTerminalKeyboardTarget,
+  ]);
+
   React.useEffect(() => {
     return () => {
       if (deferredFindOpenTimeoutRef.current !== null) {
@@ -901,7 +983,10 @@ const SSH: React.FC<SSHProps> = ({
           hasSelection={!!selectionAnchor?.selectionText}
           isConnected={connectionState === 'connected'}
           canSplitTerminal={canSplitTerminal}
+          copyShortcutLabel={terminalCopyShortcutLabel}
+          pasteShortcutLabel={terminalPasteShortcutLabel}
           findShortcutLabel={terminalFindShortcutLabel}
+          clearTerminalShortcutLabel={terminalClearShortcutLabel}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}

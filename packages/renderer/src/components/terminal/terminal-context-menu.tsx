@@ -17,8 +17,12 @@ type TerminalContextMenuProps = {
   isConnected: boolean;
   /** Label for the "Copy" menu item. */
   copyLabel: string;
+  /** Optional shortcut hint shown on the "Copy" menu item. */
+  copyShortcutLabel?: string;
   /** Label for the "Paste" menu item. */
   pasteLabel: string;
+  /** Optional shortcut hint shown on the "Paste" menu item. */
+  pasteShortcutLabel?: string;
   /** Label for the "Search Online" menu item. */
   searchOnlineLabel: string;
   /** Label for the "Find" menu item. */
@@ -29,6 +33,8 @@ type TerminalContextMenuProps = {
   selectAllLabel: string;
   /** Label for the "Clear Terminal" menu item. */
   clearTerminalLabel: string;
+  /** Optional shortcut hint shown on the "Clear Terminal" menu item. */
+  clearTerminalShortcutLabel?: string;
   /** Label for the "Split Terminal" menu item. */
   splitTerminalLabel?: string;
   /** Label for the "Close Terminal" menu item. */
@@ -57,12 +63,15 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   hasSelection,
   isConnected,
   copyLabel,
+  copyShortcutLabel,
   pasteLabel,
+  pasteShortcutLabel,
   searchOnlineLabel,
   findLabel,
   findShortcutLabel,
   selectAllLabel,
   clearTerminalLabel,
+  clearTerminalShortcutLabel,
   splitTerminalLabel,
   closeTerminalLabel,
   canSplitTerminal = false,
@@ -194,6 +203,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           onSelect={onCopy}
         >
           {copyLabel}
+          {copyShortcutLabel ? <ContextMenuShortcut>{copyShortcutLabel}</ContextMenuShortcut> : null}
         </ContextMenuItem>
 
         {/* Paste reads from the system clipboard and sends to the terminal input stream. */}
@@ -203,6 +213,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           onSelect={onPaste}
         >
           {pasteLabel}
+          {pasteShortcutLabel ? <ContextMenuShortcut>{pasteShortcutLabel}</ContextMenuShortcut> : null}
         </ContextMenuItem>
 
         <ContextMenuSeparator />
@@ -240,6 +251,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           onSelect={onClearTerminal}
         >
           {clearTerminalLabel}
+          {clearTerminalShortcutLabel ? <ContextMenuShortcut>{clearTerminalShortcutLabel}</ContextMenuShortcut> : null}
         </ContextMenuItem>
 
         {splitTerminalLabel && onSplitTerminal ? (

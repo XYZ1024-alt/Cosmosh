@@ -12,7 +12,10 @@ type SSHTerminalPaneLayoutProps = {
   hasSelection: boolean;
   isConnected: boolean;
   canSplitTerminal: boolean;
+  copyShortcutLabel: string;
+  pasteShortcutLabel: string;
   findShortcutLabel: string;
+  clearTerminalShortcutLabel: string;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
@@ -38,6 +41,10 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.hasSelection Whether active pane has selected text.
  * @param props.isConnected Whether terminal transport is connected.
  * @param props.canSplitTerminal Whether split action is currently allowed.
+ * @param props.copyShortcutLabel Platform-resolved copy shortcut label.
+ * @param props.pasteShortcutLabel Platform-resolved paste shortcut label.
+ * @param props.findShortcutLabel Platform-resolved find shortcut label.
+ * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
@@ -57,7 +64,10 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   hasSelection,
   isConnected,
   canSplitTerminal,
+  copyShortcutLabel,
+  pasteShortcutLabel,
   findShortcutLabel,
+  clearTerminalShortcutLabel,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
@@ -77,12 +87,15 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           hasSelection={activePaneId === paneId && hasSelection}
           isConnected={isConnected}
           copyLabel={t('ssh.contextMenuCopy')}
+          copyShortcutLabel={copyShortcutLabel}
           pasteLabel={t('ssh.contextMenuPaste')}
+          pasteShortcutLabel={pasteShortcutLabel}
           searchOnlineLabel={t('ssh.contextMenuSearchOnline')}
           findLabel={t('ssh.contextMenuFind')}
           findShortcutLabel={findShortcutLabel}
           selectAllLabel={t('ssh.contextMenuSelectAll')}
           clearTerminalLabel={t('ssh.contextMenuClearTerminal')}
+          clearTerminalShortcutLabel={clearTerminalShortcutLabel}
           splitTerminalLabel={t('ssh.contextMenuSplitTerminal')}
           closeTerminalLabel={t('ssh.contextMenuCloseTerminal')}
           canSplitTerminal={canSplitTerminal}
