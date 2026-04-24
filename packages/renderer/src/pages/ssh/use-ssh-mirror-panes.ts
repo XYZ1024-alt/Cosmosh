@@ -351,7 +351,8 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   ]);
 
   React.useEffect(() => {
-    if (connectionState === 'connected' && isActive) {
+    // Keep mirror sessions alive while tab is inactive so split panes resume instantly.
+    if (connectionState === 'connected') {
       return;
     }
 
