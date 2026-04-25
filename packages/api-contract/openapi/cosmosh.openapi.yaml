@@ -100,6 +100,115 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/audit/events:
+    get:
+      tags:
+        - audit
+      summary: List audit events.
+      operationId: auditListEvents
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+        - name: startAt
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: endAt
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: category
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: outcome
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entityType
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: entityId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: keyword
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit events listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventListSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/audit/events/{eventId}:
+    get:
+      tags:
+        - audit
+      summary: Get one audit event detail.
+      operationId: auditGetEventById
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: eventId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit event detail fetched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditEventDetailSuccess'
+        '404':
+          description: Audit event not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/ssh/servers:
     get:
       tags:
@@ -898,6 +1007,8 @@ components:
                   'SSH_HOST_UNTRUSTED',
                   'SSH_SESSION_NOT_FOUND',
                   'SSH_KEYCHAIN_IN_USE',
+                  'AUDIT_VALIDATION_FAILED',
+                  'AUDIT_EVENT_NOT_FOUND',
                   'LOCAL_TERMINAL_VALIDATION_FAILED',
                   'LOCAL_TERMINAL_PROFILE_NOT_FOUND',
                 ]
@@ -1010,6 +1121,105 @@ components:
       properties:
         item:
           $ref: '#/components/schemas/SettingsResource'
+    AuditEventOutcome:
+      type: string
+      enum: ['success', 'failure']
+    AuditEventSeverity:
+      type: string
+      enum: ['info', 'warning', 'critical']
+    AuditEventListItem:
+      type: object
+      required:
+        - eventId
+        - occurredAt
+        - category
+        - action
+        - outcome
+        - severity
+        - scopeAccountId
+        - scopeDeviceId
+      properties:
+        eventId:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        category:
+          type: string
+        action:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/AuditEventOutcome'
+        severity:
+          $ref: '#/components/schemas/AuditEventSeverity'
+        scopeAccountId:
+          type: string
+        scopeDeviceId:
+          type: string
+        entityType:
+          type: string
+        entityId:
+          type: string
+        sessionId:
+          type: string
+        requestId:
+          type: string
+        correlationId:
+          type: string
+        relatedRecordId:
+          type: string
+    AuditEventDetailItem:
+      allOf:
+        - $ref: '#/components/schemas/AuditEventListItem'
+        - type: object
+          required:
+            - metadata
+            - retentionUntilAt
+          properties:
+            metadata:
+              type: object
+              additionalProperties: true
+            retentionUntilAt:
+              type: string
+              format: date-time
+    AuditEventPagination:
+      type: object
+      required:
+        - page
+        - pageSize
+        - total
+        - hasMore
+      properties:
+        page:
+          type: integer
+          minimum: 1
+        pageSize:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          minimum: 0
+        hasMore:
+          type: boolean
+    AuditEventListData:
+      type: object
+      required:
+        - items
+        - pagination
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditEventListItem'
+        pagination:
+          $ref: '#/components/schemas/AuditEventPagination'
+    AuditEventDetailData:
+      type: object
+      required:
+        - item
+      properties:
+        item:
+          $ref: '#/components/schemas/AuditEventDetailItem'
     SshFolder:
       type: object
       required:
@@ -1684,6 +1894,40 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SettingsUpdateData'
+    AuditEventListSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['AUDIT_EVENT_LIST_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/AuditEventListData'
+    AuditEventDetailSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['AUDIT_EVENT_DETAIL_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/AuditEventDetailData'
     SshServerListSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'

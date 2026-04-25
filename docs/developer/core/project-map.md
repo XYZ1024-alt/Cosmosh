@@ -40,6 +40,7 @@ flowchart TB
 - **Role**: Internal API + session orchestration runtime.
 - **Key folders**:
   - `src/http/routes`: REST endpoints for settings, SSH entities, and local terminal actions.
+  - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution).
   - `src/settings`: settings payload defaults and validation parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
@@ -106,10 +107,36 @@ flowchart TD
 1. Add route under `packages/backend/src/http/routes`.
 2. Add service logic in domain module (`ssh`, `local-terminal`, or new module).
 3. Add validation/parser layer for input boundaries.
-4. Expose consumption path to renderer via main bridge.
-5. Sync architecture/runtime docs.
+4. For security-core operations, emit `AuditEventService` events with redacted metadata.
+5. Expose consumption path to renderer via main bridge.
+6. Sync architecture/runtime docs.
 
-## 7. SSH Keychain Ownership Map (2026-03)
+### Add New Application Setting
+
+1. In `packages/api-contract/src/settings-registry.ts`:
+  - Add the key and its type to the `SettingsValues` interface.
+  - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+2. Add i18n keys in `packages/i18n/locales/en/*.json` and `zh-CN/*.json`.
+3. No other files need changes — validation, defaults, and UI rendering are derived from the registry automatically.
+
+## 7. Local-First Audit Ownership Map (2026-03)
+
+- Data model owner:
+  - `packages/backend/prisma/schema.prisma` (`AuditEvent`, `AuditSyncCursor`).
+  - `packages/backend/prisma/migrations/*` for runtime schema convergence.
+- Runtime owner:
+  - `packages/backend/src/audit/service.ts` for write/query/retention flow.
+  - `packages/backend/src/audit/sanitizer.ts` for metadata redaction and size caps.
+  - `packages/backend/src/http/routes/audit.ts` for list/detail API surface.
+- Bridge owner:
+  - `packages/main/src/ipc/register-backend-ipc.ts` and `packages/main/src/preload.ts` for audit IPC channels.
+- Renderer owner:
+  - `packages/renderer/src/pages/AuditLogs.tsx` for operator-facing list/detail experience.
+  - `packages/renderer/src/lib/api/*` for typed transport/client mapping.
+- Documentation owner:
+  - `docs/developer/runtime/audit-events.md` and `docs/zh-CN/developer/runtime/audit-events.md` as runtime source pages.
+
+## 8. SSH Keychain Ownership Map (2026-03)
 
 - Data model owner:
   - `packages/backend/prisma/schema.prisma` for `SshKeychain` and `SshServer.keychainId` relation.
@@ -122,11 +149,3 @@ flowchart TD
 - Renderer owner:
   - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
   - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
-
-### Add New Application Setting
-
-1. In `packages/api-contract/src/settings-registry.ts`:
-   - Add the key and its type to the `SettingsValues` interface.
-   - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
-2. Add i18n keys in `packages/i18n/locales/en/*.json` and `zh-CN/*.json`.
-3. No other files need changes — validation, defaults, and UI rendering are derived from the registry automatically.

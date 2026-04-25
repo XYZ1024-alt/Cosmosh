@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { serve } from '@hono/node-server';
 import type { PrismaClient } from '@prisma/client';
 
+import { AuditEventService } from './audit/service.js';
 import { DatabaseInitError, initializeDatabase, shutdownDatabase } from './db/prisma.js';
 import { createBackendApp } from './http/create-app.js';
 import { enableI18nDevHotReload } from './i18n-bridge.js';
@@ -72,6 +73,7 @@ const i18nLocaleRootDir = path.join(workspaceRoot, 'packages', 'i18n', 'locales'
 let disableI18nHotReload: (() => void) | null = null;
 let sshSessionService: SshSessionService | null = null;
 let localTerminalSessionService: LocalTerminalSessionService | null = null;
+let auditEventService: AuditEventService | null = null;
 let httpServer: ReturnType<typeof serve> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 
@@ -203,6 +205,10 @@ const bootstrap = async (): Promise<void> => {
   // Database initialization is intentionally done before starting the HTTP server,
   // so runtime fails fast when persistence is not ready.
   dbClient = await initializeDatabase({ runtimeMode });
+  auditEventService = new AuditEventService({
+    getDbClient,
+  });
+
   const sshWebSocketPort = await findAvailablePort();
   const localTerminalWebSocketPort = await findAvailablePort();
 
@@ -210,6 +216,7 @@ const bootstrap = async (): Promise<void> => {
     host: '127.0.0.1',
     port: sshWebSocketPort,
     getDbClient,
+    auditEventService,
     credentialEncryptionKey,
   });
 
@@ -224,6 +231,7 @@ const bootstrap = async (): Promise<void> => {
     internalToken,
     credentialEncryptionKey,
     getDbClient,
+    auditEventService,
     sshSessionService,
     localTerminalSessionService,
   });
@@ -259,6 +267,8 @@ void bootstrap().catch(async (error: unknown) => {
     });
     sshSessionService = null;
   }
+
+  auditEventService = null;
 
   if (localTerminalSessionService) {
     await localTerminalSessionService.stop().catch((serviceError: unknown) => {

@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiErrorResponse,
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
@@ -123,6 +126,8 @@ declare global {
       backendSettingsUpdate: (
         payload: ApiSettingsUpdateRequest,
       ) => Promise<ApiSettingsUpdateResponse | ApiErrorResponse>;
+      backendAuditListEvents: (query?: ApiAuditEventListQuery) => Promise<ApiAuditEventListResponse | ApiErrorResponse>;
+      backendAuditGetEventById: (eventId: string) => Promise<ApiAuditEventDetailResponse | ApiErrorResponse>;
       backendSshListServers: () => Promise<ApiSshListServersResponse | ApiErrorResponse>;
       backendSshCreateServer: (
         payload: ApiSshCreateServerRequest,

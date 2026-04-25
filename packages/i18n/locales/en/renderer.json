@@ -1,4 +1,56 @@
 {
+  "auditLogs": {
+    "actions": {
+      "refresh": "Refresh"
+    },
+    "categories": {
+      "hostTrust": "Host Trust",
+      "settings": "Settings",
+      "sshKeychain": "SSH Keychain",
+      "sshServer": "SSH Server",
+      "sshSession": "SSH Session"
+    },
+    "columns": {
+      "device": "Device",
+      "event": "Event",
+      "noneTarget": "(none)",
+      "outcome": "Outcome",
+      "target": "Target",
+      "time": "Time"
+    },
+    "countSummary": "{count} events",
+    "detailEmpty": "Select an event to inspect details.",
+    "detailLoadFailed": "Failed to load audit event detail.",
+    "detailLoading": "Loading event detail...",
+    "detailTitle": "Event Detail",
+    "empty": "No audit events found in this range.",
+    "filters": {
+      "allCategories": "All Categories",
+      "allOutcomes": "All Outcomes",
+      "category": "Category",
+      "keywordPlaceholder": "Search event, target, or correlation id",
+      "outcome": "Outcome",
+      "timeRange": "Time Range"
+    },
+    "loadFailed": "Failed to load audit events.",
+    "loading": "Loading audit events...",
+    "metadata": "Metadata",
+    "outcomes": {
+      "failure": "Failure",
+      "success": "Success"
+    },
+    "pagination": {
+      "page": "Page {page}"
+    },
+    "retentionHint": "Default retention policy keeps events for 180 days.",
+    "timeRange": {
+      "last180d": "Last 180 Days",
+      "last24h": "Last 24 Hours",
+      "last30d": "Last 30 Days",
+      "last7d": "Last 7 Days"
+    },
+    "title": "Audit Logs"
+  },
   "commandPalette": {
     "commands": {
       "developer": {
@@ -733,6 +785,7 @@
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Right Tabs",
     "page": {
+      "auditLogs": "Audit Logs",
       "componentsField": "Components Playground",
       "debug": "Debug",
       "home": "Home",

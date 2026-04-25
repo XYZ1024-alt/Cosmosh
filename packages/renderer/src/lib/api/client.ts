@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -40,6 +43,8 @@ import {
 export type BackendClient = {
   runtimeTarget: 'electron' | 'browser';
   testPing: () => Promise<ApiTestPingResponse>;
+  listAuditEvents: (query?: ApiAuditEventListQuery) => Promise<ApiAuditEventListResponse>;
+  getAuditEventById: (eventId: string) => Promise<ApiAuditEventDetailResponse>;
   getSettings: () => Promise<ApiSettingsGetResponse>;
   updateSettings: (payload: ApiSettingsUpdateRequest) => Promise<ApiSettingsUpdateResponse>;
   listSshServers: () => Promise<ApiSshListServersResponse>;
@@ -80,6 +85,24 @@ export const createBackendClient = (): BackendClient => {
     runtimeTarget: transport.target,
     testPing: async () => {
       const payload = await transport.testPing();
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    listAuditEvents: async (query) => {
+      const payload = await transport.listAuditEvents(query);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    getAuditEventById: async (eventId) => {
+      const payload = await transport.getAuditEventById(eventId);
 
       if (!payload.success) {
         throw new Error(payload.message);

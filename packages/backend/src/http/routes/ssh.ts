@@ -22,6 +22,7 @@ import prismaClientPackage from '@prisma/client';
 
 const { Prisma } = prismaClientPackage;
 
+import type { AuditEventInput } from '../../audit/types.js';
 import { decryptSensitiveValue, encryptSensitiveValue } from '../../ssh/crypto.js';
 import { mapServerToListItem, serverQueryInclude } from '../../ssh/mappers.js';
 import {
@@ -101,6 +102,13 @@ const cleanupUnusedHiddenKeychains = async (db: ReturnType<BackendAppContext['ge
       },
     },
   });
+};
+
+/**
+ * Emits one SSH-domain audit event without blocking HTTP request flow.
+ */
+const logSshAuditEvent = (context: BackendAppContext, input: AuditEventInput): void => {
+  void context.auditEventService.logEvent(input);
 };
 
 type KeychainWithRelations = PrismaTypes.SshKeychainGetPayload<{
@@ -477,6 +485,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.post(API_PATHS.sshCreateKeychain, async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const payload = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
     const name = typeof payload?.name === 'string' ? payload.name.trim() : '';
     const authType = payload?.authType;
@@ -589,6 +598,23 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         },
       });
 
+      logSshAuditEvent(context, {
+        category: 'ssh-keychain',
+        action: 'create',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-keychain',
+        entityId: keychain.id,
+        requestId,
+        metadata: {
+          name: keychain.name,
+          authType: keychain.authType,
+          visibility: keychain.visibility,
+          folderId: keychain.folder?.id,
+          tagCount: keychain.tags.length,
+        },
+      });
+
       return c.json(
         createApiSuccess({
           code: API_CODES.sshKeychainCreateOk,
@@ -609,6 +635,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.put(API_PATHS.sshUpdateKeychain.replace('{keychainId}', ':keychainId'), async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const keychainId = c.req.param('keychainId');
     const payload = (await c.req.json().catch(() => undefined)) as Record<string, unknown> | undefined;
 
@@ -753,6 +780,23 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       },
     });
 
+    logSshAuditEvent(context, {
+      category: 'ssh-keychain',
+      action: 'update',
+      outcome: 'success',
+      severity: 'warning',
+      entityType: 'ssh-keychain',
+      entityId: keychain.id,
+      requestId,
+      metadata: {
+        name: keychain.name,
+        authType: keychain.authType,
+        visibility: keychain.visibility,
+        folderId: keychain.folder?.id,
+        tagCount: keychain.tags.length,
+      },
+    });
+
     return c.json(
       createApiSuccess({
         code: API_CODES.sshKeychainUpdateOk,
@@ -766,6 +810,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.delete(API_PATHS.sshDeleteKeychain.replace('{keychainId}', ':keychainId'), async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const keychainId = c.req.param('keychainId');
     if (!keychainId) {
       return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverIdRequired')), 400);
@@ -784,6 +829,20 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
     try {
       await db.sshKeychain.delete({ where: { id: keychainId } });
+
+      logSshAuditEvent(context, {
+        category: 'ssh-keychain',
+        action: 'delete',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-keychain',
+        entityId: keychainId,
+        requestId,
+        metadata: {
+          deleted: true,
+        },
+      });
+
       return c.body(null, 204);
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
@@ -862,6 +921,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.post(API_PATHS.sshCreateServer, async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const parsed = parseCreateServerRequest(await c.req.json().catch(() => undefined));
     if (!parsed.value) {
       return c.json(
@@ -970,6 +1030,26 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         },
       });
 
+      logSshAuditEvent(context, {
+        category: 'ssh-server',
+        action: 'create',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: server.id,
+        requestId,
+        metadata: {
+          name: server.name,
+          host: server.host,
+          port: server.port,
+          username: server.username,
+          keychainId: server.keychainId,
+          strictHostKey: server.strictHostKey,
+          folderId: server.folder?.id,
+          tagCount: server.tags.length,
+        },
+      });
+
       return c.json(payload);
     } catch (error: unknown) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -982,6 +1062,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.put(API_PATHS.sshUpdateServer.replace('{serverId}', ':serverId'), async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const serverId = c.req.param('serverId');
     if (!serverId) {
       return c.json(buildErrorPayload(API_CODES.sshValidationFailed, t('errors.validation.serverIdRequired')), 400);
@@ -1134,6 +1215,27 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         },
       });
 
+      logSshAuditEvent(context, {
+        category: 'ssh-server',
+        action: 'update',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: server.id,
+        requestId,
+        metadata: {
+          name: server.name,
+          host: server.host,
+          port: server.port,
+          username: server.username,
+          keychainId: server.keychainId,
+          strictHostKey: server.strictHostKey,
+          folderId: server.folder?.id,
+          tagCount: server.tags.length,
+          keychainReplaced: existingServer.keychainId !== keychainId,
+        },
+      });
+
       if (tagIds) {
         await cleanupUnusedSshTags(db);
       }
@@ -1154,6 +1256,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.delete(API_PATHS.sshDeleteServer.replace('{serverId}', ':serverId'), async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const serverId = c.req.param('serverId');
 
     if (!serverId) {
@@ -1171,6 +1274,19 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
       await cleanupUnusedSshTags(db);
       await cleanupUnusedHiddenKeychains(db);
+
+      logSshAuditEvent(context, {
+        category: 'ssh-server',
+        action: 'delete',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: serverId,
+        requestId,
+        metadata: {
+          deleted: true,
+        },
+      });
 
       return c.body(null, 204);
     } catch (error: unknown) {
@@ -1261,6 +1377,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.post(API_PATHS.sshCreateSession, async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const parsed = parseCreateSessionRequest(await c.req.json().catch(() => undefined));
     if (!parsed.value) {
       return c.json(
@@ -1275,6 +1392,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
     const result = await context.sshSessionService.createSession({
       ...parsed.value,
       locale: c.get('locale'),
+      requestId,
     });
 
     if (result.type === 'not-found') {
@@ -1286,7 +1404,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         success: false,
         code: API_CODES.sshHostUntrusted,
         message: t('errors.ssh.hostFingerprintUntrusted'),
-        requestId: crypto.randomUUID(),
+        requestId,
         timestamp: new Date().toISOString(),
         data: {
           serverId: result.serverId,
@@ -1317,6 +1435,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
     const payload: ApiSshCreateSessionResponse = createApiSuccess({
       code: API_CODES.sshSessionCreateOk,
       message: t('success.ssh.sessionCreated'),
+      requestId,
       data: {
         sessionId: result.sessionId,
         serverId: result.serverId,
@@ -1330,6 +1449,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
 
   app.post(API_PATHS.sshTrustFingerprint, async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const parsed = parseTrustFingerprintRequest(await c.req.json().catch(() => undefined));
     if (!parsed.value) {
       return c.json(
@@ -1341,7 +1461,10 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       );
     }
 
-    const result = await context.sshSessionService.trustFingerprint(parsed.value);
+    const result = await context.sshSessionService.trustFingerprint({
+      ...parsed.value,
+      requestId,
+    });
 
     if (result.type === 'not-found') {
       return c.json(buildErrorPayload(API_CODES.sshNotFound, t('errors.ssh.serverNotFound')), 404);
@@ -1350,6 +1473,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
     const payload: ApiSshTrustFingerprintResponse = createApiSuccess({
       code: API_CODES.sshTrustFingerprintOk,
       message: t('success.ssh.hostFingerprintTrusted'),
+      requestId,
       data: {
         trusted: true,
       },

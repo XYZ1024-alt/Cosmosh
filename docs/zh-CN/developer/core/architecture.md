@@ -144,6 +144,23 @@ sequenceDiagram
   UI->>UI: 应用 language + theme
 ```
 
+## 5.2 本地优先审计运行时（已实现）
+
+- 安全核心操作会写入 `AuditEvent`，并保留稳定关联字段（`requestId`、`sessionId`、`entityId`、`relatedRecordId`）以支持取证追踪。
+- 现有 `SshLoginAudit` 继续保留用于 SSH 最近使用排序兼容；`AuditEvent` 作为跨领域统一审计流。
+- 审计写入契约为“尽力而为且不阻塞主链路”：写入失败仅在后端记录日志，不会导致上层请求/会话动作失败。
+- metadata 在落库前会执行脱敏（敏感键替换为占位符）并受序列化大小上限约束，防止异常膨胀。
+- 保留策略由本地运行时驱动（默认 180 天），并由审计服务周期清理过期记录。
+- 为未来同步预留 `AuditSyncCursor` 游标模型，但当前不引入强制远端依赖。
+
+当前已接入的事件分类：
+
+- `ssh-session`
+- `ssh-host-trust`
+- `ssh-server`
+- `ssh-keychain`
+- `settings`
+
 ## 6. 核心数据流视图
 
 ### 6.1 会话启动数据流

@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiErrorResponse,
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
@@ -242,6 +245,12 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSettingsUpdate: (payload: ApiSettingsUpdateRequest) => {
     return invokeIpc<ApiSettingsUpdateResponse | ApiErrorResponse>('backend:settings-update', payload);
+  },
+  backendAuditListEvents: (query?: ApiAuditEventListQuery) => {
+    return invokeIpc<ApiAuditEventListResponse | ApiErrorResponse>('backend:audit-list-events', query);
+  },
+  backendAuditGetEventById: (eventId: string) => {
+    return invokeIpc<ApiAuditEventDetailResponse | ApiErrorResponse>('backend:audit-get-event-by-id', eventId);
   },
   backendSshListServers: () => {
     return invokeIpc<ApiSshListServersResponse | ApiErrorResponse>('backend:ssh-list-servers');

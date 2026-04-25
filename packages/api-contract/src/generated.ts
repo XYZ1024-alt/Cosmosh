@@ -56,6 +56,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/audit/events': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List audit events. */
+    get: operations['auditListEvents'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/audit/events/{eventId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get one audit event detail. */
+    get: operations['auditGetEventById'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/ssh/servers': {
     parameters: {
       query?: never;
@@ -350,6 +384,8 @@ export interface components {
         | 'SSH_HOST_UNTRUSTED'
         | 'SSH_SESSION_NOT_FOUND'
         | 'SSH_KEYCHAIN_IN_USE'
+        | 'AUDIT_VALIDATION_FAILED'
+        | 'AUDIT_EVENT_NOT_FOUND'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
         | 'LOCAL_TERMINAL_PROFILE_NOT_FOUND';
       /** @enum {boolean} */
@@ -398,6 +434,47 @@ export interface components {
     };
     SettingsUpdateData: {
       item: components['schemas']['SettingsResource'];
+    };
+    /** @enum {string} */
+    AuditEventOutcome: 'success' | 'failure';
+    /** @enum {string} */
+    AuditEventSeverity: 'info' | 'warning' | 'critical';
+    AuditEventListItem: {
+      eventId: string;
+      /** Format: date-time */
+      occurredAt: string;
+      category: string;
+      action: string;
+      outcome: components['schemas']['AuditEventOutcome'];
+      severity: components['schemas']['AuditEventSeverity'];
+      scopeAccountId: string;
+      scopeDeviceId: string;
+      entityType?: string;
+      entityId?: string;
+      sessionId?: string;
+      requestId?: string;
+      correlationId?: string;
+      relatedRecordId?: string;
+    };
+    AuditEventDetailItem: components['schemas']['AuditEventListItem'] & {
+      metadata: {
+        [key: string]: unknown;
+      };
+      /** Format: date-time */
+      retentionUntilAt: string;
+    };
+    AuditEventPagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      hasMore: boolean;
+    };
+    AuditEventListData: {
+      items: components['schemas']['AuditEventListItem'][];
+      pagination: components['schemas']['AuditEventPagination'];
+    };
+    AuditEventDetailData: {
+      item: components['schemas']['AuditEventDetailItem'];
     };
     SshFolder: {
       id: string;
@@ -662,6 +739,20 @@ export interface components {
       success: true;
       data: components['schemas']['SettingsUpdateData'];
     };
+    AuditEventListSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'AUDIT_EVENT_LIST_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['AuditEventListData'];
+    };
+    AuditEventDetailSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'AUDIT_EVENT_DETAIL_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['AuditEventDetailData'];
+    };
     SshServerListSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
       code: 'SSH_SERVER_LIST_OK';
@@ -895,6 +986,98 @@ export interface operations {
       };
       /** @description Authentication failed. */
       401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  auditListEvents: {
+    parameters: {
+      query?: {
+        page?: number;
+        pageSize?: number;
+        startAt?: string;
+        endAt?: string;
+        category?: string;
+        outcome?: string;
+        entityType?: string;
+        entityId?: string;
+        keyword?: string;
+      };
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Audit events listed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditEventListSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  auditGetEventById: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        eventId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Audit event detail fetched. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['AuditEventDetailSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Audit event not found. */
+      404: {
         headers: {
           [name: string]: unknown;
         };

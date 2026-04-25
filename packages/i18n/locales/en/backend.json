@@ -12,6 +12,9 @@
     }
   },
   "errors": {
+    "audit": {
+      "eventNotFound": "Audit event was not found."
+    },
     "common": {
       "internalServerError": "Internal server error.",
       "invalidInternalAuthToken": "Invalid internal authentication token."
@@ -81,6 +84,10 @@
     }
   },
   "success": {
+    "audit": {
+      "eventFetched": "Audit event fetched successfully.",
+      "eventsFetched": "Audit events fetched successfully."
+    },
     "localTerminal": {
       "profilesFetched": "Local terminal profiles fetched successfully.",
       "sessionCreated": "Local terminal session created successfully."

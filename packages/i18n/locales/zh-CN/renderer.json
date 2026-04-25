@@ -1,4 +1,56 @@
 {
+  "auditLogs": {
+    "actions": {
+      "refresh": "刷新"
+    },
+    "categories": {
+      "hostTrust": "主机信任",
+      "settings": "设置",
+      "sshKeychain": "SSH 钥匙链",
+      "sshServer": "SSH 服务器",
+      "sshSession": "SSH 会话"
+    },
+    "columns": {
+      "device": "设备",
+      "event": "事件",
+      "noneTarget": "（无）",
+      "outcome": "结果",
+      "target": "对象",
+      "time": "时间"
+    },
+    "countSummary": "共 {count} 条事件",
+    "detailEmpty": "请选择一个事件查看详情。",
+    "detailLoadFailed": "加载审计事件详情失败。",
+    "detailLoading": "正在加载事件详情...",
+    "detailTitle": "事件详情",
+    "empty": "当前范围内没有审计事件。",
+    "filters": {
+      "allCategories": "全部类别",
+      "allOutcomes": "全部结果",
+      "category": "类别",
+      "keywordPlaceholder": "搜索事件、对象或关联链路 ID",
+      "outcome": "结果",
+      "timeRange": "时间范围"
+    },
+    "loadFailed": "加载审计事件失败。",
+    "loading": "正在加载审计事件...",
+    "metadata": "元数据",
+    "outcomes": {
+      "failure": "失败",
+      "success": "成功"
+    },
+    "pagination": {
+      "page": "第 {page} 页"
+    },
+    "retentionHint": "默认保留策略会保存最近 180 天的事件。",
+    "timeRange": {
+      "last180d": "最近 180 天",
+      "last24h": "最近 24 小时",
+      "last30d": "最近 30 天",
+      "last7d": "最近 7 天"
+    },
+    "title": "审计日志"
+  },
   "commandPalette": {
     "commands": {
       "developer": {
@@ -733,6 +785,7 @@
     "closeOthers": "关闭其他标签页",
     "closeRight": "关闭右侧标签页",
     "page": {
+      "auditLogs": "审计日志",
       "componentsField": "组件实验场",
       "debug": "调试",
       "home": "主页",

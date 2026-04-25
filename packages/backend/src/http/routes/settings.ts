@@ -79,6 +79,26 @@ const toIsoTimestamp = (value: Date | string): string => {
 };
 
 /**
+ * Returns changed settings keys without exposing any setting values.
+ */
+const collectChangedSettingKeys = (previousValues: object, nextValues: object): string[] => {
+  const changedKeys: string[] = [];
+
+  const previousRecord = previousValues as Record<string, unknown>;
+  const nextRecord = nextValues as Record<string, unknown>;
+
+  for (const [key, nextValue] of Object.entries(nextRecord)) {
+    const previousSerialized = JSON.stringify(previousRecord[key]);
+    const nextSerialized = JSON.stringify(nextValue);
+    if (previousSerialized !== nextSerialized) {
+      changedKeys.push(key);
+    }
+  }
+
+  return changedKeys.sort();
+};
+
+/**
  * Registers settings read/update routes.
  */
 export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppContext): void => {
@@ -105,6 +125,7 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
 
   app.put(API_PATHS.settingsUpdate, async (c) => {
     const t = getTranslator(c);
+    const requestId = crypto.randomUUID();
     const parsed = parseSettingsUpdateRequest(await c.req.json().catch(() => undefined));
     if (!parsed.value) {
       return c.json(
@@ -119,6 +140,9 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
     const scopeColumns = toScopeColumns(parsed.value.scope ?? DEFAULT_SETTINGS_SCOPE);
     const payloadJson = JSON.stringify(parsed.value.values);
     const db = context.getDbClient();
+    const previousRow = await findSettingsRow(context, scopeColumns);
+    const previousValues = parseStoredSettingsValues(previousRow?.payloadJson);
+    const changedKeys = collectChangedSettingKeys(previousValues, parsed.value.values);
 
     await db.$executeRaw`
       INSERT INTO "AppSettings" (
@@ -154,6 +178,7 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
     const payload: ApiSettingsUpdateResponse = createApiSuccess({
       code: API_CODES.settingsUpdateOk,
       message: t('success.settings.updated'),
+      requestId,
       data: {
         item: {
           scope: toScopePayload(row.scopeAccountId, row.scopeDeviceId),
@@ -161,6 +186,21 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
           updatedAt: toIsoTimestamp(row.updatedAt),
           values: parseStoredSettingsValues(row.payloadJson),
         },
+      },
+    });
+
+    void context.auditEventService.logEvent({
+      category: 'settings',
+      action: 'update',
+      outcome: 'success',
+      severity: changedKeys.length > 0 ? 'warning' : 'info',
+      entityType: 'app-settings',
+      entityId: `${row.scopeAccountId}:${row.scopeDeviceId}`,
+      requestId,
+      metadata: {
+        changedKeys,
+        changedCount: changedKeys.length,
+        revision: row.revision,
       },
     });
 

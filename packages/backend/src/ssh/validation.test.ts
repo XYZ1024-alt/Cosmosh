@@ -22,6 +22,7 @@ test('strictHostKey validates and flows through server/session payload parsing',
     port: 22,
     username: 'root',
     authType: 'password',
+    password: 'secret',
     strictHostKey: true,
   });
 

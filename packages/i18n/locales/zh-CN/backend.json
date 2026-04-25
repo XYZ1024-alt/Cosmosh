@@ -12,6 +12,9 @@
     }
   },
   "errors": {
+    "audit": {
+      "eventNotFound": "未找到审计事件。"
+    },
     "common": {
       "internalServerError": "服务器内部错误。",
       "invalidInternalAuthToken": "内部鉴权令牌无效。"
@@ -81,6 +84,10 @@
     }
   },
   "success": {
+    "audit": {
+      "eventFetched": "审计事件详情获取成功。",
+      "eventsFetched": "审计事件获取成功。"
+    },
     "localTerminal": {
       "profilesFetched": "本地终端配置获取成功。",
       "sessionCreated": "本地终端会话创建成功。"

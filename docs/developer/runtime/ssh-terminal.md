@@ -66,6 +66,20 @@ sequenceDiagram
 - This keeps "sort by last used" aligned with actual successful connections instead of failed attempts.
 - Failed attempts are still persisted in `SshLoginAudit` for future query/audit features.
 
+## 2.2 Local-First Security Audit Integration
+
+- SSH runtime now emits additional local-first `AuditEvent` records for security-core operations while preserving `SshLoginAudit` compatibility.
+- Current SSH-adjacent audit categories include:
+  - `ssh-session`: connect success/failure and close lifecycle events.
+  - `ssh-host-trust`: explicit trust-fingerprint confirmation events.
+  - `ssh-server` / `ssh-keychain`: server/keychain entity mutations in route layer.
+- Correlation strategy:
+  - `requestId` tracks request-scope action chains.
+  - `sessionId` tracks runtime session continuity.
+  - `relatedRecordId` links compatible records (for example existing login-audit IDs where applicable).
+- Metadata is sanitized before persistence, so secret-like fields are redacted by key policy and size-capped.
+- Audit emission is best-effort and does not fail SSH session creation/close flows when logging fails.
+
 ## 3. Data Stream Protocol
 
 ### Client → Server

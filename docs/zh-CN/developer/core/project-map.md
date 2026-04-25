@@ -40,6 +40,7 @@ flowchart TB
 - **角色**：内部 API + 会话编排运行时。
 - **关键目录**：
   - `src/http/routes`：设置、SSH 实体与本地终端动作 REST 路由。
+  - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测）。
   - `src/settings`：设置默认值与请求校验解析。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
@@ -106,18 +107,36 @@ flowchart TD
 1. 在 `packages/backend/src/http/routes` 新增路由。
 2. 在对应领域模块（`ssh`、`local-terminal` 或新模块）新增 service 逻辑。
 3. 增加输入边界校验/解析层。
-4. 通过 main bridge 暴露给 renderer。
-5. 同步架构与运行时文档。
+4. 若属于安全核心操作，调用 `AuditEventService` 写入脱敏后的审计事件。
+5. 通过 main bridge 暴露给 renderer。
+6. 同步架构与运行时文档。
 
 ### 新增应用设置项
 
 1. 在 `packages/api-contract/src/settings-registry.ts` 中：
-   - 在 `SettingsValues` 接口中添加 key 及其类型。
-   - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
+  - 在 `SettingsValues` 接口中添加 key 及其类型。
+  - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
 2. 在 `packages/i18n/locales/en/*.json` 和 `zh-CN/*.json` 中添加 i18n key。
 3. 无需修改其他文件——校验、默认值与 UI 渲染均从注册表自动派生。
 
-## 7. SSH 钥匙链模块归属（2026-03）
+## 7. 本地优先审计模块归属（2026-03）
+
+- 数据模型归属：
+  - `packages/backend/prisma/schema.prisma`（`AuditEvent`、`AuditSyncCursor`）。
+  - `packages/backend/prisma/migrations/*` 负责运行时 schema 收敛。
+- 运行时归属：
+  - `packages/backend/src/audit/service.ts` 负责写入、查询与保留清理。
+  - `packages/backend/src/audit/sanitizer.ts` 负责 metadata 脱敏与大小限制。
+  - `packages/backend/src/http/routes/audit.ts` 负责审计列表/详情 API。
+- Bridge 归属：
+  - `packages/main/src/ipc/register-backend-ipc.ts` 与 `packages/main/src/preload.ts` 负责审计 IPC 通道。
+- Renderer 归属：
+  - `packages/renderer/src/pages/AuditLogs.tsx` 负责审计列表/详情界面。
+  - `packages/renderer/src/lib/api/*` 负责类型化 transport/client 映射。
+- 文档归属：
+  - `docs/developer/runtime/audit-events.md` 与 `docs/zh-CN/developer/runtime/audit-events.md` 为运行时主文档。
+
+## 8. SSH 钥匙链模块归属（2026-03）
 
 - 数据模型归属：
   - `packages/backend/prisma/schema.prisma` 定义 `SshKeychain` 与 `SshServer.keychainId` 关系。

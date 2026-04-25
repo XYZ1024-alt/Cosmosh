@@ -71,6 +71,7 @@ export default defineConfig({
           text: 'Developer Runtime Features',
           items: [
             { text: 'SSH Terminal', link: '/developer/runtime/ssh-terminal' },
+            { text: 'Local-First Audit Events', link: '/developer/runtime/audit-events' },
             { text: 'Database Security', link: '/developer/runtime/database-security' },
             { text: 'SFTP File System', link: '/developer/runtime/sftp-file-system' },
           ],
@@ -150,6 +151,7 @@ export default defineConfig({
               text: '开发运行时能力',
               items: [
                 { text: 'SSH 终端实现', link: '/zh-CN/developer/runtime/ssh-terminal' },
+                { text: '本地优先审计事件', link: '/zh-CN/developer/runtime/audit-events' },
                 { text: '数据库安全', link: '/zh-CN/developer/runtime/database-security' },
                 { text: 'SFTP 文件系统', link: '/zh-CN/developer/runtime/sftp-file-system' },
               ],

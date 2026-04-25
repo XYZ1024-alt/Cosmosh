@@ -68,6 +68,11 @@ export type ApiSettingsUpdateResponse = ApiSuccessBase & {
 
 export type ApiErrorResponse = components['schemas']['ApiError'];
 export type ApiTestPingResponse = paths['/api/v1/test/ping']['get']['responses']['200']['content']['application/json'];
+export type ApiAuditEventListQuery = paths['/api/v1/audit/events']['get']['parameters']['query'];
+export type ApiAuditEventListResponse =
+  paths['/api/v1/audit/events']['get']['responses']['200']['content']['application/json'];
+export type ApiAuditEventDetailResponse =
+  paths['/api/v1/audit/events/{eventId}']['get']['responses']['200']['content']['application/json'];
 export type ApiSshListServersResponse =
   paths['/api/v1/ssh/servers']['get']['responses']['200']['content']['application/json'];
 export type ApiSshCreateServerRequest =

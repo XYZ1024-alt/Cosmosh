@@ -4,6 +4,8 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
 import { type RawData } from 'ws';
 
+import type { AuditEventService } from '../audit/service.js';
+import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import {
   BaseTerminalSessionService,
@@ -43,6 +45,7 @@ type SshServerWithKeychain = Prisma.SshServerGetPayload<{
 
 type CreateSshSessionInput = {
   locale: Locale;
+  requestId?: string;
   serverId: string;
   cols: number;
   rows: number;
@@ -80,6 +83,7 @@ type CreateSshSessionResult =
   | CreateSshSessionFailure;
 
 type TrustSshFingerprintInput = {
+  requestId?: string;
   serverId: string;
   fingerprintSha256: string;
   algorithm: string;
@@ -203,9 +207,17 @@ const REMOTE_HISTORY_FETCH_COMMAND =
 export class SshSessionService extends BaseTerminalSessionService<SshLiveSession, ServerOutboundMessage> {
   private readonly getDbClient: GetDbClient;
 
+  private readonly auditEventService: AuditEventService;
+
   private readonly credentialEncryptionKey: Buffer;
 
-  constructor(options: { host: string; port: number; getDbClient: GetDbClient; credentialEncryptionKey: Buffer }) {
+  constructor(options: {
+    host: string;
+    port: number;
+    getDbClient: GetDbClient;
+    auditEventService: AuditEventService;
+    credentialEncryptionKey: Buffer;
+  }) {
     super({
       host: options.host,
       port: options.port,
@@ -213,6 +225,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     });
 
     this.getDbClient = options.getDbClient;
+    this.auditEventService = options.auditEventService;
     this.credentialEncryptionKey = options.credentialEncryptionKey;
   }
 
@@ -302,10 +315,28 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     });
 
     if (shellResult.type === 'host-untrusted') {
-      await this.createLoginAudit({
+      const loginAuditId = await this.createLoginAudit({
         serverId: server.id,
         result: 'failed',
         failureReason: shellResult.message || 'Host fingerprint is not trusted.',
+      });
+
+      this.logAuditEvent({
+        category: 'ssh-session',
+        action: 'connect',
+        outcome: 'failure',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: server.id,
+        requestId: input.requestId,
+        relatedRecordId: loginAuditId ?? undefined,
+        metadata: {
+          host: server.host,
+          port: server.port,
+          strictHostKey,
+          fingerprint: shellResult.fingerprint,
+          reason: shellResult.message || 'Host fingerprint is not trusted.',
+        },
       });
 
       return {
@@ -319,10 +350,27 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     }
 
     if (shellResult.type === 'failed') {
-      await this.createLoginAudit({
+      const loginAuditId = await this.createLoginAudit({
         serverId: server.id,
         result: 'failed',
         failureReason: shellResult.message,
+      });
+
+      this.logAuditEvent({
+        category: 'ssh-session',
+        action: 'connect',
+        outcome: 'failure',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: server.id,
+        requestId: input.requestId,
+        relatedRecordId: loginAuditId ?? undefined,
+        metadata: {
+          host: server.host,
+          port: server.port,
+          strictHostKey,
+          reason: shellResult.message,
+        },
       });
 
       return {
@@ -343,6 +391,23 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       result: 'success',
       sessionId,
       sessionStartedAt: new Date(),
+    });
+
+    this.logAuditEvent({
+      category: 'ssh-session',
+      action: 'connect',
+      outcome: 'success',
+      severity: 'info',
+      entityType: 'ssh-server',
+      entityId: server.id,
+      sessionId,
+      requestId: input.requestId,
+      relatedRecordId: loginAuditId ?? undefined,
+      metadata: {
+        host: server.host,
+        port: server.port,
+        strictHostKey,
+      },
     });
 
     liveSession = {
@@ -462,6 +527,24 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           keyType: input.algorithm,
         },
       });
+
+      this.logAuditEvent({
+        category: 'ssh-host-trust',
+        action: 'trust-fingerprint',
+        outcome: 'success',
+        severity: 'warning',
+        entityType: 'ssh-server',
+        entityId: server.id,
+        requestId: input.requestId,
+        metadata: {
+          host: server.host,
+          port: server.port,
+          algorithm: input.algorithm,
+          fingerprint: input.fingerprintSha256,
+          reusedRecord: true,
+        },
+      });
+
       return { type: 'success' };
     }
 
@@ -473,6 +556,23 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         keyType: input.algorithm,
         fingerprint: input.fingerprintSha256,
         trusted: true,
+      },
+    });
+
+    this.logAuditEvent({
+      category: 'ssh-host-trust',
+      action: 'trust-fingerprint',
+      outcome: 'success',
+      severity: 'warning',
+      entityType: 'ssh-server',
+      entityId: server.id,
+      requestId: input.requestId,
+      metadata: {
+        host: server.host,
+        port: server.port,
+        algorithm: input.algorithm,
+        fingerprint: input.fingerprintSha256,
+        reusedRecord: false,
       },
     });
 
@@ -627,9 +727,9 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     reasonParams?: Record<string, string | number | boolean>,
   ): void {
     this.disposeSessionWithCommonLifecycle(sessionId, reasonKey, reasonParams, {
-      beforeExit: (session) => {
+      beforeExit: (session, reason) => {
         // Persist audit metadata before underlying transport is torn down.
-        void this.finalizeLoginAudit(session);
+        void this.finalizeLoginAudit(session, reason);
       },
       createExitMessage: (reason) => ({
         type: 'exit',
@@ -916,6 +1016,13 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     };
   }
 
+  /**
+   * Emits one audit event without blocking SSH runtime flow.
+   */
+  private logAuditEvent(input: AuditEventInput): void {
+    void this.auditEventService.logEvent(input);
+  }
+
   private async createLoginAudit(input: {
     serverId: string;
     result: 'success' | 'failed';
@@ -946,25 +1053,38 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     }
   }
 
-  private async finalizeLoginAudit(session: SshLiveSession): Promise<void> {
-    if (!session.loginAuditId) {
-      return;
+  private async finalizeLoginAudit(session: SshLiveSession, reason: string): Promise<void> {
+    if (session.loginAuditId) {
+      try {
+        const db = this.getDbClient();
+        await db.sshLoginAudit.update({
+          where: {
+            id: session.loginAuditId,
+          },
+          data: {
+            sessionEndedAt: new Date(),
+            commandCount: session.commandCount,
+          },
+        });
+      } catch (error: unknown) {
+        console.error('[ssh][audit] Failed to finalize SSH login audit record.', error);
+      }
     }
 
-    try {
-      const db = this.getDbClient();
-      await db.sshLoginAudit.update({
-        where: {
-          id: session.loginAuditId,
-        },
-        data: {
-          sessionEndedAt: new Date(),
-          commandCount: session.commandCount,
-        },
-      });
-    } catch (error: unknown) {
-      console.error('[ssh][audit] Failed to finalize SSH login audit record.', error);
-    }
+    this.logAuditEvent({
+      category: 'ssh-session',
+      action: 'session-close',
+      outcome: 'success',
+      severity: 'info',
+      entityType: 'ssh-server',
+      entityId: session.serverId,
+      sessionId: session.sessionId,
+      relatedRecordId: session.loginAuditId ?? undefined,
+      metadata: {
+        commandCount: session.commandCount,
+        reason,
+      },
+    });
   }
 
   private async openShell(

@@ -144,6 +144,23 @@ sequenceDiagram
   UI->>UI: apply language + theme
 ```
 
+## 5.2 Local-First Audit Runtime (Implemented)
+
+- Security-core operations are persisted to `AuditEvent` with stable correlation fields (`requestId`, `sessionId`, `entityId`, `relatedRecordId`) for forensic traceability.
+- Existing `SshLoginAudit` remains active for backward-compatible SSH last-used sorting, while `AuditEvent` is used as the cross-domain audit stream.
+- Audit writes are best-effort and non-blocking by contract: failures are logged in backend runtime and do not fail parent request/session flows.
+- Metadata persistence is sanitized before storage (secret-like keys are redacted) and capped by serialized size limits to prevent payload inflation.
+- Retention is local policy-driven (default 180 days) with periodic sweeps in audit service runtime.
+- Future sync checkpoint state is pre-modeled by `AuditSyncCursor` without introducing current mandatory remote dependency.
+
+Current event categories in runtime wiring include:
+
+- `ssh-session`
+- `ssh-host-trust`
+- `ssh-server`
+- `ssh-keychain`
+- `settings`
+
 ## 6. Core Data-Flow Views
 
 ### 6.1 Session Bootstrap Data Flow

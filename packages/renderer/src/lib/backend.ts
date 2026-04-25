@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -39,6 +42,14 @@ import type {
 
 export const testBackendPing = async (): Promise<ApiTestPingResponse> => {
   return backendClient.testPing();
+};
+
+export const listAuditEvents = async (query?: ApiAuditEventListQuery): Promise<ApiAuditEventListResponse> => {
+  return backendClient.listAuditEvents(query);
+};
+
+export const getAuditEventById = async (eventId: string): Promise<ApiAuditEventDetailResponse> => {
+  return backendClient.getAuditEventById(eventId);
 };
 
 export const getBackendRuntimeTarget = (): 'electron' | 'browser' => {

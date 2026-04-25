@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiErrorResponse,
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
@@ -46,6 +49,8 @@ export type LocalTerminalCreateSessionResponse = ApiLocalTerminalCreateSessionRe
 type ApiResponse =
   | ApiErrorResponse
   | ApiTestPingResponse
+  | ApiAuditEventListResponse
+  | ApiAuditEventDetailResponse
   | ApiSettingsGetResponse
   | ApiSettingsUpdateResponse
   | ApiSshListServersResponse
@@ -70,6 +75,8 @@ type ApiResponse =
 export type ApiTransport = {
   target: RuntimeTarget;
   testPing: () => Promise<ApiTestPingResponse | ApiErrorResponse>;
+  listAuditEvents: (query?: ApiAuditEventListQuery) => Promise<ApiAuditEventListResponse | ApiErrorResponse>;
+  getAuditEventById: (eventId: string) => Promise<ApiAuditEventDetailResponse | ApiErrorResponse>;
   getSettings: () => Promise<ApiSettingsGetResponse | ApiErrorResponse>;
   updateSettings: (payload: ApiSettingsUpdateRequest) => Promise<ApiSettingsUpdateResponse | ApiErrorResponse>;
   listSshServers: () => Promise<ApiSshListServersResponse | ApiErrorResponse>;
@@ -145,6 +152,14 @@ const createElectronTransport = (): ApiTransport => {
     target: 'electron',
     testPing: async () => {
       return (await window.electron!.backendTestPing()) as ApiTestPingResponse | ApiErrorResponse;
+    },
+    listAuditEvents: async (query) => {
+      return (await window.electron!.backendAuditListEvents(query)) as ApiAuditEventListResponse | ApiErrorResponse;
+    },
+    getAuditEventById: async (eventId) => {
+      return (await window.electron!.backendAuditGetEventById(eventId)) as
+        | ApiAuditEventDetailResponse
+        | ApiErrorResponse;
     },
     getSettings: async () => {
       return (await window.electron!.backendSettingsGet()) as ApiSettingsGetResponse | ApiErrorResponse;
@@ -276,6 +291,24 @@ const createBrowserTransport = (): ApiTransport => {
     target: 'browser',
     testPing: async () => {
       return (await callBrowserApi(API_PATHS.testPing, 'GET')) as ApiTestPingResponse | ApiErrorResponse;
+    },
+    listAuditEvents: async (query) => {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(query ?? {})) {
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+
+        searchParams.set(key, String(value));
+      }
+
+      const queryString = searchParams.toString();
+      const path = queryString.length > 0 ? `${API_PATHS.auditListEvents}?${queryString}` : API_PATHS.auditListEvents;
+      return (await callBrowserApi(path, 'GET')) as ApiAuditEventListResponse | ApiErrorResponse;
+    },
+    getAuditEventById: async (eventId) => {
+      const path = API_PATHS.auditGetEventById.replace('{eventId}', encodeURIComponent(eventId));
+      return (await callBrowserApi(path, 'GET')) as ApiAuditEventDetailResponse | ApiErrorResponse;
     },
     getSettings: async () => {
       return (await callBrowserApi(API_PATHS.settingsGet, 'GET')) as ApiSettingsGetResponse | ApiErrorResponse;

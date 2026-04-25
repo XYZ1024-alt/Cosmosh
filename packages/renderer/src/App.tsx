@@ -26,6 +26,7 @@ import Home from './pages/Home';
 import type { TabItem } from './types/tabs';
 
 const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
+const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
 const Debug = React.lazy(() => import('./pages/Debug'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const SettingsEditor = React.lazy(() => import('./pages/SettingsEditor'));
@@ -526,6 +527,11 @@ const App: React.FC = () => {
                   />
                 </React.Suspense>
               )}
+              {tab.page === 'audit-logs' && (
+                <React.Suspense fallback={pageLoadingFallback}>
+                  <AuditLogs />
+                </React.Suspense>
+              )}
               {tab.page === 'settings-editor' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <SettingsEditor initialSettingKey={tab.state?.settingsEditorSettingKey} />
@@ -591,6 +597,7 @@ const App: React.FC = () => {
               onReorderTabs={reorderTabs}
               onOpenSSHEditorTab={() => addTab('ssh-editor')}
               onOpenSSHKeychainsTab={() => addTab('ssh-keychains')}
+              onOpenAuditLogsTab={() => addTab('audit-logs')}
               onOpenSettingsTab={(options) =>
                 addTab('settings', {
                   state: {

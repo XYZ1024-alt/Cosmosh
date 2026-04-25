@@ -66,6 +66,20 @@ sequenceDiagram
 - 这样“按上次使用排序”将基于真实成功连接，而不是失败尝试。
 - 失败连接仍会写入 `SshLoginAudit`，用于后续日志查询/审计能力。
 
+## 2.2 本地优先安全审计接入
+
+- SSH 运行时在保留 `SshLoginAudit` 兼容能力的同时，新增写入本地优先 `AuditEvent`，覆盖安全核心操作。
+- 当前与 SSH 相关的审计分类包括：
+  - `ssh-session`：连接成功/失败与会话关闭生命周期事件。
+  - `ssh-host-trust`：主机指纹信任确认事件。
+  - `ssh-server` / `ssh-keychain`：路由层的服务器/钥匙链实体变更事件。
+- 关联策略：
+  - `requestId` 用于串联同一请求链路。
+  - `sessionId` 用于串联同一运行时会话。
+  - `relatedRecordId` 用于关联兼容记录（例如可关联已有登录审计记录 ID）。
+- metadata 在落库前会脱敏，敏感键按策略替换，占位后再执行大小上限控制。
+- 审计写入采用 best-effort，不会因为日志写入失败而中断 SSH 会话创建或关闭流程。
+
 ## 3. 数据流协议
 
 ### Client → Server

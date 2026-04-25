@@ -1,4 +1,7 @@
 import type {
+  ApiAuditEventDetailResponse,
+  ApiAuditEventListQuery,
+  ApiAuditEventListResponse,
   ApiErrorResponse,
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
@@ -102,6 +105,31 @@ const replacePathToken = (templatePath: string, token: string, value: string): s
 };
 
 /**
+ * Appends URL query parameters while skipping undefined/empty values.
+ *
+ * @param path Path without query string.
+ * @param query Query key-value object.
+ * @returns Path with encoded query string when parameters exist.
+ */
+const appendQueryParams = (path: string, query: Record<string, unknown> | undefined): string => {
+  if (!query) {
+    return path;
+  }
+
+  const searchParams = new URLSearchParams();
+  for (const [key, value] of Object.entries(query)) {
+    if (value === undefined || value === null || value === '') {
+      continue;
+    }
+
+    searchParams.set(key, String(value));
+  }
+
+  const queryString = searchParams.toString();
+  return queryString.length > 0 ? `${path}?${queryString}` : path;
+};
+
+/**
  * Registers a DELETE-based backend IPC handler that maps HTTP 204 to success response.
  *
  * @param options Backend runtime dependencies.
@@ -149,6 +177,26 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       return options.requestBackend<ApiSettingsUpdateResponse>(API_PATHS.settingsUpdate, {
         method: 'PUT',
         body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:audit-list-events',
+    async (_event, query?: ApiAuditEventListQuery): Promise<ApiAuditEventListResponse | ApiErrorResponse> => {
+      const path = appendQueryParams(API_PATHS.auditListEvents, query as Record<string, unknown> | undefined);
+      return options.requestBackend<ApiAuditEventListResponse>(path, {
+        method: 'GET',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:audit-get-event-by-id',
+    async (_event, eventId: string): Promise<ApiAuditEventDetailResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.auditGetEventById, 'eventId', eventId);
+      return options.requestBackend<ApiAuditEventDetailResponse>(path, {
+        method: 'GET',
       });
     },
   );

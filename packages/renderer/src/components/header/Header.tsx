@@ -1,6 +1,6 @@
 import * as RadixAvatar from '@radix-ui/react-avatar';
 import classNames from 'classnames';
-import { Bug, Info, KeyRound, RefreshCcw, Server, Settings } from 'lucide-react';
+import { Bug, Info, KeyRound, RefreshCcw, ScrollText, Server, Settings } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -28,6 +28,7 @@ const Header: React.FC<{
   onReorderTabs?: (nextTabs: TabItem[]) => void;
   onOpenSSHEditorTab?: () => void;
   onOpenSSHKeychainsTab?: () => void;
+  onOpenAuditLogsTab?: () => void;
   onOpenSettingsTab?: (options?: { categoryId?: 'about' }) => void;
   onOpenSettingsEditorTab?: () => void;
   onOpenDebugTab?: () => void;
@@ -43,6 +44,7 @@ const Header: React.FC<{
   onReorderTabs,
   onOpenSSHEditorTab,
   onOpenSSHKeychainsTab,
+  onOpenAuditLogsTab,
   onOpenSettingsTab,
   onOpenSettingsEditorTab,
   onOpenDebugTab,
@@ -256,6 +258,14 @@ const Header: React.FC<{
             }}
           >
             {t('tabs.page.sshKeychains')}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            icon={ScrollText}
+            onSelect={() => {
+              void onOpenAuditLogsTab?.();
+            }}
+          >
+            {t('tabs.page.auditLogs')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem

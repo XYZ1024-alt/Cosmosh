@@ -4,6 +4,7 @@ import { Hono } from 'hono';
 import { buildErrorPayload } from './errors.js';
 import { type BackendHttpApp, type BackendHttpEnv, getTranslator } from './i18n.js';
 import { registerCommonMiddleware } from './middleware.js';
+import { registerAuditRoutes } from './routes/audit.js';
 import { registerLocalTerminalRoutes } from './routes/local-terminal.js';
 import { registerSettingsRoutes } from './routes/settings.js';
 import { registerSshRoutes } from './routes/ssh.js';
@@ -20,6 +21,7 @@ export const createBackendApp = (context: BackendAppContext): BackendHttpApp => 
   registerSystemRoutes(app, context);
   registerSettingsRoutes(app, context);
   registerSshRoutes(app, context);
+  registerAuditRoutes(app, context);
   registerLocalTerminalRoutes(app, context);
 
   app.onError((error, c) => {

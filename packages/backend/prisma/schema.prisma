@@ -158,3 +158,41 @@ model SshLoginAudit {
 
   @@index([serverId, attemptedAt])
 }
+
+model AuditEvent {
+  eventId          String   @id
+  occurredAt       DateTime @default(now())
+  category         String
+  action           String
+  outcome          String
+  severity         String
+  scopeAccountId   String   @default("")
+  scopeDeviceId    String
+  entityType       String?
+  entityId         String?
+  sessionId        String?
+  requestId        String?
+  correlationId    String?
+  metadataJson     String
+  relatedRecordId  String?
+  retentionUntilAt DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([occurredAt])
+  @@index([category, occurredAt])
+  @@index([entityType, entityId, occurredAt])
+  @@index([scopeAccountId, scopeDeviceId, occurredAt])
+}
+
+model AuditSyncCursor {
+  id               String   @id @default(cuid())
+  scopeAccountId   String   @default("")
+  scopeDeviceId    String
+  lastSyncedEventId String?
+  syncedAt         DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([scopeAccountId, scopeDeviceId])
+  @@index([scopeDeviceId])
+}
