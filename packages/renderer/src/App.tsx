@@ -547,6 +547,8 @@ const App: React.FC = () => {
                   <Debug
                     activeTabTitle={tab.title}
                     activeTabIcon={tab.iconKey}
+                    showSystemMonitorOverlay={showSystemMonitorOverlay}
+                    onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
                     onOpenSSH={(openInNewTab) => (openInNewTab ? addTab('ssh') : openPageInTab(tab.id, 'ssh'))}
                     onOpenSettings={(openInNewTab) =>
                       openInNewTab ? addTab('settings') : openPageInTab(tab.id, 'settings')
