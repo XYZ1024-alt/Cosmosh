@@ -23,7 +23,7 @@ type TerminalContextMenuProps = {
   pasteLabel: string;
   /** Optional shortcut hint shown on the "Paste" menu item. */
   pasteShortcutLabel?: string;
-  /** Label for the "Search Online" menu item. */
+  /** Label for the selection-driven search/open menu item. */
   searchOnlineLabel: string;
   /** Label for the "Find" menu item. */
   findLabel: string;
@@ -218,7 +218,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
 
         <ContextMenuSeparator />
 
-        {/* Search online is selection-dependent; disabled when there is nothing to query. */}
+        {/* Search/open is selection-dependent; disabled when there is nothing to query. */}
         <ContextMenuItem
           icon={Globe}
           disabled={!hasSelection}

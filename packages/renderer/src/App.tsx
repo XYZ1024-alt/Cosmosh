@@ -575,7 +575,16 @@ const App: React.FC = () => {
         })}
       </div>
     );
-  }, [activeTabId, addTab, contentTabOrder, openPageInTab, tabsById, updateTab]);
+  }, [
+    activeTabId,
+    addTab,
+    contentTabOrder,
+    handleShowSystemMonitorOverlayChange,
+    openPageInTab,
+    showSystemMonitorOverlay,
+    tabsById,
+    updateTab,
+  ]);
 
   return (
     <AppToastProvider>

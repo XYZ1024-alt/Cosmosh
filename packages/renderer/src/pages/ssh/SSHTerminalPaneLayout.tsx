@@ -14,6 +14,7 @@ type SSHTerminalPaneLayoutProps = {
   canSplitTerminal: boolean;
   copyShortcutLabel: string;
   pasteShortcutLabel: string;
+  searchOnlineLabel: string;
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
@@ -43,6 +44,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.canSplitTerminal Whether split action is currently allowed.
  * @param props.copyShortcutLabel Platform-resolved copy shortcut label.
  * @param props.pasteShortcutLabel Platform-resolved paste shortcut label.
+ * @param props.searchOnlineLabel Label for selection-based search/open action.
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
  * @param props.setPaneContainerElement Ref callback for pane containers.
@@ -66,6 +68,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   canSplitTerminal,
   copyShortcutLabel,
   pasteShortcutLabel,
+  searchOnlineLabel,
   findShortcutLabel,
   clearTerminalShortcutLabel,
   setPaneContainerElement,
@@ -90,7 +93,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           copyShortcutLabel={copyShortcutLabel}
           pasteLabel={t('ssh.contextMenuPaste')}
           pasteShortcutLabel={pasteShortcutLabel}
-          searchOnlineLabel={t('ssh.contextMenuSearchOnline')}
+          searchOnlineLabel={searchOnlineLabel}
           findLabel={t('ssh.contextMenuFind')}
           findShortcutLabel={findShortcutLabel}
           selectAllLabel={t('ssh.contextMenuSelectAll')}

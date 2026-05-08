@@ -63,6 +63,27 @@ const TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+F';
 const TERMINAL_CLEAR_SHORTCUT_LABEL_MAC = '⌃L';
 /** Non-macOS clear-screen shortcut label rendered in terminal context-menu hint slot. */
 const TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT = 'Ctrl+L';
+/** Matches selection strings that should open as external links. */
+const TERMINAL_SELECTION_LINK_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
+
+/**
+ * Resolves selection text into an external link when it is already a URL.
+ *
+ * @param text Raw selection text.
+ * @returns Trimmed link string when the selection is a supported link, otherwise `null`.
+ */
+const resolveSelectionLink = (text: string): string | null => {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (!TERMINAL_SELECTION_LINK_PATTERN.test(trimmed)) {
+    return null;
+  }
+
+  return trimmed;
+};
 
 /**
  * SSH page that orchestrates terminal lifecycle, websocket sessions,
@@ -342,6 +363,39 @@ const SSH: React.FC<SSHProps> = ({
     [notifyError, notifySuccess],
   );
 
+  /**
+   * Opens an external URL via Electron shell or browser fallback.
+   *
+   * @param targetUrl External URL to open.
+   * @param failureMessage Localized error message shown when open fails.
+   * @returns Nothing.
+   */
+  const openExternalTarget = React.useCallback(
+    (targetUrl: string, failureMessage: string): void => {
+      try {
+        if (window.electron?.openExternalUrl) {
+          void window.electron.openExternalUrl(targetUrl).then((opened) => {
+            if (!opened) {
+              notifyError(failureMessage);
+            }
+          });
+          return;
+        }
+
+        const openedWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        if (!openedWindow) {
+          notifyError(failureMessage);
+          return;
+        }
+
+        openedWindow.opener = null;
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : failureMessage);
+      }
+    },
+    [notifyError],
+  );
+
   const openSearchForText = React.useCallback(
     (text: string): void => {
       try {
@@ -350,27 +404,17 @@ const SSH: React.FC<SSHProps> = ({
           text,
           terminalSelectionSettings.searchUrlTemplate,
         );
-        if (window.electron?.openExternalUrl) {
-          void window.electron.openExternalUrl(resolvedSearchUrl).then((opened) => {
-            if (!opened) {
-              notifyError(t('ssh.selectionBarSearchFailed'));
-            }
-          });
-          return;
-        }
-
-        const openedWindow = window.open(resolvedSearchUrl, '_blank', 'noopener,noreferrer');
-        if (!openedWindow) {
-          notifyError(t('ssh.selectionBarSearchFailed'));
-          return;
-        }
-
-        openedWindow.opener = null;
+        openExternalTarget(resolvedSearchUrl, t('ssh.selectionBarSearchFailed'));
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('ssh.selectionBarSearchFailed'));
       }
     },
-    [notifyError, terminalSelectionSettings.searchEngine, terminalSelectionSettings.searchUrlTemplate],
+    [
+      notifyError,
+      openExternalTarget,
+      terminalSelectionSettings.searchEngine,
+      terminalSelectionSettings.searchUrlTemplate,
+    ],
   );
 
   // ---------------------------------------------------------------------------
@@ -395,12 +439,19 @@ const SSH: React.FC<SSHProps> = ({
   }, [focusActiveTerminal, pasteInput, selectionAnchor]);
 
   const handleSelectionBarSearch = React.useCallback(() => {
-    if (!selectionAnchor?.selectionText.trim()) {
+    const selectionText = selectionAnchor?.selectionText ?? '';
+    if (!selectionText.trim()) {
       return;
     }
 
-    openSearchForText(selectionAnchor.selectionText);
-  }, [openSearchForText, selectionAnchor]);
+    const selectionLink = resolveSelectionLink(selectionText);
+    if (selectionLink) {
+      openExternalTarget(selectionLink, t('ssh.selectionBarOpenLinkFailed'));
+      return;
+    }
+
+    openSearchForText(selectionText);
+  }, [openExternalTarget, openSearchForText, selectionAnchor]);
 
   /**
    * Keeps terminal as the default keyboard target even if the selection bar gains focus.
@@ -455,8 +506,14 @@ const SSH: React.FC<SSHProps> = ({
       return;
     }
 
+    const selectionLink = resolveSelectionLink(selectionText);
+    if (selectionLink) {
+      openExternalTarget(selectionLink, t('ssh.selectionBarOpenLinkFailed'));
+      return;
+    }
+
     openSearchForText(selectionText);
-  }, [getSelectionText, openSearchForText]);
+  }, [getSelectionText, openExternalTarget, openSearchForText]);
 
   /**
    * Opens in-terminal search palette and optionally seeds query text.
@@ -475,6 +532,10 @@ const SSH: React.FC<SSHProps> = ({
     },
     [dismissSelectionBar],
   );
+
+  const handleSelectionBarFind = React.useCallback(() => {
+    openTerminalSearchPalette(selectionAnchor?.selectionText);
+  }, [openTerminalSearchPalette, selectionAnchor]);
 
   /**
    * Executes one in-terminal search action.
@@ -956,6 +1017,11 @@ const SSH: React.FC<SSHProps> = ({
     [focusActiveTerminal, pasteInput],
   );
 
+  const selectionText = selectionAnchor?.selectionText ?? '';
+  const selectionLink = resolveSelectionLink(selectionText);
+  const selectionBarSearchLabel = selectionLink ? t('ssh.selectionBarOpenLink') : t('ssh.selectionBarSearch');
+  const contextMenuSearchLabel = selectionLink ? t('ssh.contextMenuOpenLink') : t('ssh.contextMenuSearchOnline');
+
   const {
     isVisible: isTextDropZoneVisible,
     isActive: isTextDropZoneActive,
@@ -1002,6 +1068,7 @@ const SSH: React.FC<SSHProps> = ({
           pasteShortcutLabel={terminalPasteShortcutLabel}
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
+          searchOnlineLabel={contextMenuSearchLabel}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
@@ -1099,7 +1166,8 @@ const SSH: React.FC<SSHProps> = ({
             copyLabel={t('ssh.selectionBarCopy')}
             insertLabel={t('ssh.selectionBarInsert')}
             openDirectoryLabel={t('ssh.selectionBarOpenDirectory')}
-            searchLabel={t('ssh.selectionBarSearch')}
+            searchLabel={selectionBarSearchLabel}
+            findLabel={t('ssh.selectionBarFind')}
             askAiLabel={t('ssh.selectionBarAskAiLabel')}
             closeLabel={t('ssh.selectionBarClose')}
             onDragStart={handleSelectionBarDragStart}
@@ -1109,6 +1177,7 @@ const SSH: React.FC<SSHProps> = ({
             onInsert={handleSelectionBarInsert}
             onOpenDirectory={handleSelectionOpenDirectory}
             onSearch={handleSelectionBarSearch}
+            onFind={handleSelectionBarFind}
             onAskAi={handleSelectionAskAi}
             onClose={handleSelectionBarClose}
           />

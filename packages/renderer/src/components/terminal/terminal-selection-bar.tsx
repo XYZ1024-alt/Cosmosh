@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import { Copy, FolderOpen, GripVertical, Search, Sparkles, TextCursorInput, X } from 'lucide-react';
+import { Copy, FolderOpen, Globe, GripVertical, Search, Sparkles, TextCursorInput, X } from 'lucide-react';
 import React from 'react';
 
 import { Button } from '../ui/button';
@@ -15,6 +15,7 @@ type TerminalSelectionBarProps = {
   insertLabel: string;
   openDirectoryLabel: string;
   searchLabel: string;
+  findLabel: string;
   askAiLabel: string;
   closeLabel: string;
   selectedText: string;
@@ -23,6 +24,7 @@ type TerminalSelectionBarProps = {
   onInsert: () => void;
   onOpenDirectory: () => void;
   onSearch: () => void;
+  onFind: () => void;
   onAskAi: () => void;
   onClose: () => void;
 };
@@ -73,6 +75,7 @@ const TerminalSelectionBar = React.forwardRef<HTMLDivElement, TerminalSelectionB
       insertLabel,
       openDirectoryLabel,
       searchLabel,
+      findLabel,
       askAiLabel,
       closeLabel,
       selectedText,
@@ -81,6 +84,7 @@ const TerminalSelectionBar = React.forwardRef<HTMLDivElement, TerminalSelectionB
       onInsert,
       onOpenDirectory,
       onSearch,
+      onFind,
       onAskAi,
       onClose,
     },
@@ -122,6 +126,12 @@ const TerminalSelectionBar = React.forwardRef<HTMLDivElement, TerminalSelectionB
             <ActionButton
               label={searchLabel}
               onClick={onSearch}
+            >
+              <Globe className="h-4 w-4" />
+            </ActionButton>
+            <ActionButton
+              label={findLabel}
+              onClick={onFind}
             >
               <Search className="h-4 w-4" />
             </ActionButton>
