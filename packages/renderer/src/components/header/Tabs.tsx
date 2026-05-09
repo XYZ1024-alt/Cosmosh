@@ -115,6 +115,13 @@ const SortableTab = React.forwardRef<
       {...listeners}
       tabIndex={-1}
       onContextMenu={onContextMenu}
+      onAuxClick={(e) => {
+        if (e.button === 1 && tab.closable) {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose(tab.id);
+        }
+      }}
     >
       <RadixTabs.Trigger
         asChild
