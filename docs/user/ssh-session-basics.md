@@ -18,7 +18,7 @@
 
 - Select terminal text to show Orbit Bar near the current selection.
 - Use Orbit Bar actions for quick copy, open link, and in-terminal find workflows.
-- When the selection is a link (http/https/mailto), Orbit Bar shows Open Link instead of Search Online; Search Online follows the Settings search engine configuration.
+- When the selection looks like a link (any URL scheme, including custom schemes), Orbit Bar shows Open Link instead of Search Online; Search Online follows the Settings search engine configuration.
 - If Orbit Bar is not needed, disable it from Settings > Terminal.
 
 ## Tab Switching

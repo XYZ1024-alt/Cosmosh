@@ -63,8 +63,10 @@ const TERMINAL_FIND_SHORTCUT_LABEL_DEFAULT = 'Ctrl+Shift+F';
 const TERMINAL_CLEAR_SHORTCUT_LABEL_MAC = '⌃L';
 /** Non-macOS clear-screen shortcut label rendered in terminal context-menu hint slot. */
 const TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT = 'Ctrl+L';
-/** Matches selection strings that should open as external links. */
-const TERMINAL_SELECTION_LINK_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
+/** Matches URL-looking selection strings with any scheme (including custom ones). */
+const TERMINAL_SELECTION_LINK_PATTERN = /^[a-z][a-z0-9+.-]*:\S+$/i;
+/** Matches Windows absolute paths that should not be treated as URLs. */
+const TERMINAL_WINDOWS_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;
 
 /**
  * Resolves selection text into an external link when it is already a URL.
@@ -75,6 +77,10 @@ const TERMINAL_SELECTION_LINK_PATTERN = /^(https?:\/\/|mailto:)\S+$/i;
 const resolveSelectionLink = (text: string): string | null => {
   const trimmed = text.trim();
   if (!trimmed) {
+    return null;
+  }
+
+  if (TERMINAL_WINDOWS_PATH_PATTERN.test(trimmed)) {
     return null;
   }
 
