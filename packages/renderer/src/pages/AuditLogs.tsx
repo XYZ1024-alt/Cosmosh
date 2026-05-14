@@ -4,13 +4,16 @@ import type {
   ApiAuditEventListResponse,
 } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { ChevronLeft, ChevronRight, RefreshCcw, Search } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ClipboardList, RefreshCcw, Search } from 'lucide-react';
 import React from 'react';
 
+import HomeEmptyState from '../components/home/HomeEmptyState';
 import SplitWorkbenchLayout, { SplitWorkbenchMainPanel } from '../components/layout/SplitWorkbenchLayout';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
+import { menuStyles } from '../components/ui/menu-styles';
+import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { getAuditEventById, listAuditEvents } from '../lib/backend';
 import { t } from '../lib/i18n';
@@ -24,6 +27,9 @@ type AuditEventDetailItem = ApiAuditEventDetailResponse['data']['item'];
 const DEFAULT_PAGE_SIZE = 50;
 const ALL_CATEGORY_FILTER_VALUE = '__all_categories__';
 const ALL_OUTCOME_FILTER_VALUE = '__all_outcomes__';
+const AUDIT_EVENT_TABLE_GRID_CLASS =
+  'grid w-full min-w-[860px] grid-cols-[170px_minmax(220px,1fr)_minmax(180px,0.85fr)_96px_120px] gap-2';
+const AUDIT_DETAIL_ROW_CLASS = 'grid grid-cols-[110px_minmax(0,1fr)] items-start gap-2';
 
 /**
  * Resolves list query start time from a preset value.
@@ -176,159 +182,175 @@ const AuditLogs: React.FC = () => {
   return (
     <SplitWorkbenchLayout
       sidebar={
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="space-y-3 pb-3">
-            <div className="relative">
-              <Input
-                value={searchKeyword}
-                placeholder={t('auditLogs.filters.keywordPlaceholder')}
-                className="pr-9"
-                onChange={(event) => {
-                  setPage(1);
-                  setSearchKeyword(event.target.value);
-                }}
-              />
-              <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
-            </div>
+        <>
+          <div className="pb-3">
+            <Menubar className="w-full">
+              <div className="relative w-full">
+                <Input
+                  value={searchKeyword}
+                  placeholder={t('auditLogs.filters.keywordPlaceholder')}
+                  className="pr-9"
+                  onChange={(event) => {
+                    setPage(1);
+                    setSearchKeyword(event.target.value);
+                  }}
+                />
+                <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
+              </div>
 
-            <div className="grid gap-2">
-              <Label
-                htmlFor="audit-logs-category-filter"
-                className="px-0 text-xs font-medium text-home-text-subtle"
-              >
-                {t('auditLogs.filters.category')}
-              </Label>
-              <Select
-                value={categoryFilter || ALL_CATEGORY_FILTER_VALUE}
-                onValueChange={(value) => {
-                  setPage(1);
-                  setCategoryFilter(value === ALL_CATEGORY_FILTER_VALUE ? '' : value);
+              <MenubarSeparator vertical />
+
+              <button
+                type="button"
+                aria-label={t('auditLogs.actions.refresh')}
+                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                onClick={() => {
+                  void refreshList();
                 }}
               >
-                <SelectTrigger id="audit-logs-category-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_CATEGORY_FILTER_VALUE}>{t('auditLogs.filters.allCategories')}</SelectItem>
-                  <SelectItem value="ssh-session">{t('auditLogs.categories.sshSession')}</SelectItem>
-                  <SelectItem value="ssh-server">{t('auditLogs.categories.sshServer')}</SelectItem>
-                  <SelectItem value="ssh-keychain">{t('auditLogs.categories.sshKeychain')}</SelectItem>
-                  <SelectItem value="settings">{t('auditLogs.categories.settings')}</SelectItem>
-                  <SelectItem value="ssh-host-trust">{t('auditLogs.categories.hostTrust')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label
-                htmlFor="audit-logs-outcome-filter"
-                className="px-0 text-xs font-medium text-home-text-subtle"
-              >
-                {t('auditLogs.filters.outcome')}
-              </Label>
-              <Select
-                value={outcomeFilter || ALL_OUTCOME_FILTER_VALUE}
-                onValueChange={(value) => {
-                  setPage(1);
-                  setOutcomeFilter(value === ALL_OUTCOME_FILTER_VALUE ? '' : value);
-                }}
-              >
-                <SelectTrigger id="audit-logs-outcome-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={ALL_OUTCOME_FILTER_VALUE}>{t('auditLogs.filters.allOutcomes')}</SelectItem>
-                  <SelectItem value="success">{t('auditLogs.outcomes.success')}</SelectItem>
-                  <SelectItem value="failure">{t('auditLogs.outcomes.failure')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="grid gap-2">
-              <Label
-                htmlFor="audit-logs-time-range-filter"
-                className="px-0 text-xs font-medium text-home-text-subtle"
-              >
-                {t('auditLogs.filters.timeRange')}
-              </Label>
-              <Select
-                value={timeRangePreset}
-                onValueChange={(value) => {
-                  setPage(1);
-                  setTimeRangePreset(value as TimeRangePreset);
-                }}
-              >
-                <SelectTrigger id="audit-logs-time-range-filter">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="24h">{t('auditLogs.timeRange.last24h')}</SelectItem>
-                  <SelectItem value="7d">{t('auditLogs.timeRange.last7d')}</SelectItem>
-                  <SelectItem value="30d">{t('auditLogs.timeRange.last30d')}</SelectItem>
-                  <SelectItem value="180d">{t('auditLogs.timeRange.last180d')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <Button
-              variant="ghost"
-              className="w-full !justify-start"
-              onClick={() => {
-                void refreshList();
-              }}
-            >
-              <RefreshCcw className="h-4 w-4" />
-              {t('auditLogs.actions.refresh')}
-            </Button>
+                <RefreshCcw className="h-4 w-4" />
+              </button>
+            </Menubar>
           </div>
 
-          <div className="mt-auto rounded-[12px] border border-home-divider bg-bg-subtle p-3 text-xs text-home-text-subtle">
-            {t('auditLogs.retentionHint')}
+          <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
+            <div className="space-y-3">
+              <div className="grid gap-2">
+                <Label
+                  htmlFor="audit-logs-category-filter"
+                  className="px-0 text-xs font-medium text-home-text-subtle"
+                >
+                  {t('auditLogs.filters.category')}
+                </Label>
+                <Select
+                  value={categoryFilter || ALL_CATEGORY_FILTER_VALUE}
+                  onValueChange={(value) => {
+                    setPage(1);
+                    setCategoryFilter(value === ALL_CATEGORY_FILTER_VALUE ? '' : value);
+                  }}
+                >
+                  <SelectTrigger id="audit-logs-category-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_CATEGORY_FILTER_VALUE}>{t('auditLogs.filters.allCategories')}</SelectItem>
+                    <SelectItem value="ssh-session">{t('auditLogs.categories.sshSession')}</SelectItem>
+                    <SelectItem value="ssh-server">{t('auditLogs.categories.sshServer')}</SelectItem>
+                    <SelectItem value="ssh-keychain">{t('auditLogs.categories.sshKeychain')}</SelectItem>
+                    <SelectItem value="settings">{t('auditLogs.categories.settings')}</SelectItem>
+                    <SelectItem value="ssh-host-trust">{t('auditLogs.categories.hostTrust')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label
+                  htmlFor="audit-logs-outcome-filter"
+                  className="px-0 text-xs font-medium text-home-text-subtle"
+                >
+                  {t('auditLogs.filters.outcome')}
+                </Label>
+                <Select
+                  value={outcomeFilter || ALL_OUTCOME_FILTER_VALUE}
+                  onValueChange={(value) => {
+                    setPage(1);
+                    setOutcomeFilter(value === ALL_OUTCOME_FILTER_VALUE ? '' : value);
+                  }}
+                >
+                  <SelectTrigger id="audit-logs-outcome-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={ALL_OUTCOME_FILTER_VALUE}>{t('auditLogs.filters.allOutcomes')}</SelectItem>
+                    <SelectItem value="success">{t('auditLogs.outcomes.success')}</SelectItem>
+                    <SelectItem value="failure">{t('auditLogs.outcomes.failure')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="grid gap-2">
+                <Label
+                  htmlFor="audit-logs-time-range-filter"
+                  className="px-0 text-xs font-medium text-home-text-subtle"
+                >
+                  {t('auditLogs.filters.timeRange')}
+                </Label>
+                <Select
+                  value={timeRangePreset}
+                  onValueChange={(value) => {
+                    setPage(1);
+                    setTimeRangePreset(value as TimeRangePreset);
+                  }}
+                >
+                  <SelectTrigger id="audit-logs-time-range-filter">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="24h">{t('auditLogs.timeRange.last24h')}</SelectItem>
+                    <SelectItem value="7d">{t('auditLogs.timeRange.last7d')}</SelectItem>
+                    <SelectItem value="30d">{t('auditLogs.timeRange.last30d')}</SelectItem>
+                    <SelectItem value="180d">{t('auditLogs.timeRange.last180d')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-lg-2 bg-bg-subtle p-3 text-xs text-home-text-subtle">
+              {t('auditLogs.retentionHint')}
+            </div>
           </div>
-        </div>
+        </>
       }
       main={
         <SplitWorkbenchMainPanel
           header={
-            <div className="flex items-center justify-between gap-3 pb-2">
-              <div>
-                <h1 className="text-home-text text-[22px] font-semibold">{t('auditLogs.title')}</h1>
-                <p className="text-xs text-home-text-subtle">
+            <div className="items-top mx-auto flex min-h-[46px] justify-between gap-4 pb-1">
+              <div className="grid gap-1">
+                <h1 className="text-home-text ps-2 text-[24px] font-semibold">{t('auditLogs.title')}</h1>
+                <p className="ps-2 text-sm text-home-text-subtle">
                   {t('auditLogs.countSummary', {
                     count: String(pagination?.total ?? 0),
                   })}
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <Menubar>
                 <Button
-                  variant="ghost"
-                  className="h-8 px-2"
+                  variant="icon"
+                  aria-label={t('auditLogs.pagination.page', { page: String(page - 1) })}
                   disabled={!pagination || page <= 1 || loadingList}
                   onClick={() => setPage((current) => Math.max(1, current - 1))}
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="min-w-[90px] text-center text-xs text-home-text-subtle">
+
+                <span className="px-2 text-sm">
                   {t('auditLogs.pagination.page', {
                     page: String(pagination?.page ?? 1),
                   })}
                 </span>
+
                 <Button
-                  variant="ghost"
-                  className="h-8 px-2"
+                  variant="icon"
+                  aria-label={t('auditLogs.pagination.page', { page: String(page + 1) })}
                   disabled={!pagination || !pagination.hasMore || loadingList}
                   onClick={() => setPage((current) => current + 1)}
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
-              </div>
+              </Menubar>
             </div>
           }
+          bodyClassName=""
           body={
-            <div className="grid min-h-0 grid-cols-[minmax(0,1fr)_340px] gap-3">
-              <div className="min-h-0 overflow-auto rounded-[12px] border border-home-divider bg-bg-subtle">
-                <div className="sticky top-0 z-10 grid grid-cols-[170px_minmax(0,1fr)_170px_120px_120px] gap-2 border-b border-home-divider bg-bg px-3 py-2 text-[11px] font-medium uppercase tracking-[0.04em] text-home-text-subtle">
+            <div className="-mb-2 -me-3 -ms-1 grid h-full min-h-0 flex-1 grid-cols-[minmax(0,2fr)_minmax(320px,1fr)] gap-3 overflow-hidden">
+              <div className="min-h-0 min-w-0 overflow-auto rounded-lg-2 bg-bg-subtle">
+                <div
+                  className={classNames(
+                    AUDIT_EVENT_TABLE_GRID_CLASS,
+                    'sticky top-0 z-10 border-b border-home-divider bg-home-card-hover px-3 py-2 text-[11px] font-medium uppercase tracking-[0.04em] text-home-text-subtle backdrop-blur-md',
+                  )}
+                >
                   <span>{t('auditLogs.columns.time')}</span>
                   <span>{t('auditLogs.columns.event')}</span>
                   <span>{t('auditLogs.columns.target')}</span>
@@ -341,7 +363,10 @@ const AuditLogs: React.FC = () => {
                 ) : null}
 
                 {!loadingList && listItems.length === 0 ? (
-                  <div className="px-3 py-4 text-sm text-home-text-subtle">{t('auditLogs.empty')}</div>
+                  <HomeEmptyState
+                    text={t('auditLogs.empty')}
+                    icon={ClipboardList}
+                  />
                 ) : null}
 
                 {!loadingList
@@ -358,8 +383,9 @@ const AuditLogs: React.FC = () => {
                           key={item.eventId}
                           type="button"
                           className={classNames(
-                            'border-home-divider/70 grid w-full grid-cols-[170px_minmax(0,1fr)_170px_120px_120px] gap-2 border-b px-3 py-2 text-left text-[13px] transition-colors',
-                            isActive ? 'bg-home-selection text-home-text' : 'text-home-text hover:bg-bg',
+                            AUDIT_EVENT_TABLE_GRID_CLASS,
+                            'border-b border-home-divider px-3 py-2 text-left text-[13px] transition-colors',
+                            isActive ? 'text-home-text bg-home-card-active' : 'text-home-text hover:bg-home-card-hover',
                           )}
                           onClick={() => setSelectedEventId(item.eventId)}
                         >
@@ -371,7 +397,7 @@ const AuditLogs: React.FC = () => {
                           <span
                             className={classNames(
                               'truncate',
-                              item.outcome === 'success' ? 'text-emerald-400' : 'text-rose-400',
+                              item.outcome === 'success' ? 'text-status-good' : 'text-status-bad',
                             )}
                           >
                             {item.outcome === 'success'
@@ -385,37 +411,92 @@ const AuditLogs: React.FC = () => {
                   : null}
               </div>
 
-              <div className="min-h-0 overflow-auto rounded-[12px] border border-home-divider bg-bg-subtle p-3">
+              <div className="min-h-0 min-w-0 overflow-auto rounded-lg-2 bg-bg-subtle p-3">
                 {loadingDetail ? <p className="text-sm text-home-text-subtle">{t('auditLogs.detailLoading')}</p> : null}
 
                 {!loadingDetail && !detail ? (
-                  <p className="text-sm text-home-text-subtle">{t('auditLogs.detailEmpty')}</p>
+                  <HomeEmptyState
+                    text={t('auditLogs.detailEmpty')}
+                    icon={ClipboardList}
+                    className="py-4"
+                  />
                 ) : null}
 
                 {!loadingDetail && detail ? (
-                  <div className="space-y-3 text-[13px]">
+                  <div className="space-y-4 text-[13px]">
                     <h2 className="text-home-text text-sm font-semibold">{t('auditLogs.detailTitle')}</h2>
 
-                    <div className="grid gap-1 text-home-text-subtle">
-                      <div className="truncate">{`eventId: ${detail.eventId}`}</div>
-                      <div className="truncate">{`occurredAt: ${formatOccurredAt(detail.occurredAt)}`}</div>
-                      <div className="truncate">{`category: ${detail.category}`}</div>
-                      <div className="truncate">{`action: ${detail.action}`}</div>
-                      <div className="truncate">{`outcome: ${detail.outcome}`}</div>
-                      <div className="truncate">{`severity: ${detail.severity}`}</div>
-                      <div className="truncate">{`entity: ${detail.entityType ?? '-'}:${detail.entityId ?? '-'}`}</div>
-                      <div className="truncate">{`sessionId: ${detail.sessionId ?? '-'}`}</div>
-                      <div className="truncate">{`requestId: ${detail.requestId ?? '-'}`}</div>
-                      <div className="truncate">{`correlationId: ${detail.correlationId ?? '-'}`}</div>
-                      <div className="truncate">{`relatedRecordId: ${detail.relatedRecordId ?? '-'}`}</div>
-                      <div className="truncate">{`retentionUntilAt: ${formatOccurredAt(detail.retentionUntilAt)}`}</div>
+                    <div className="py-1">
+                      <div className="grid gap-2">
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">eventId</span>
+                          <span className="text-home-text select-text break-all">{detail.eventId}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">occurredAt</span>
+                          <span className="text-home-text select-text break-all">
+                            {formatOccurredAt(detail.occurredAt)}
+                          </span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">category</span>
+                          <span className="text-home-text select-text break-all">{detail.category}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">action</span>
+                          <span className="text-home-text select-text break-all">{detail.action}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">outcome</span>
+                          <span
+                            className={classNames(
+                              'select-text break-all',
+                              detail.outcome === 'success' ? 'text-status-good' : 'text-status-bad',
+                            )}
+                          >
+                            {detail.outcome}
+                          </span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">severity</span>
+                          <span className="text-home-text select-text break-all">{detail.severity}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">entity</span>
+                          <span className="text-home-text select-text break-all">
+                            {`${detail.entityType ?? '-'}:${detail.entityId ?? '-'}`}
+                          </span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">sessionId</span>
+                          <span className="text-home-text select-text break-all">{detail.sessionId ?? '-'}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">requestId</span>
+                          <span className="text-home-text select-text break-all">{detail.requestId ?? '-'}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">correlationId</span>
+                          <span className="text-home-text select-text break-all">{detail.correlationId ?? '-'}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">relatedRecordId</span>
+                          <span className="text-home-text select-text break-all">{detail.relatedRecordId ?? '-'}</span>
+                        </div>
+                        <div className={AUDIT_DETAIL_ROW_CLASS}>
+                          <span className="text-xs text-home-text-subtle">retentionUntilAt</span>
+                          <span className="text-home-text select-text break-all">
+                            {formatOccurredAt(detail.retentionUntilAt)}
+                          </span>
+                        </div>
+                      </div>
                     </div>
 
                     <div>
-                      <h3 className="pb-1 text-xs font-medium uppercase tracking-[0.04em] text-home-text-subtle">
+                      <h3 className="pb-1.5 text-xs font-medium uppercase tracking-[0.04em] text-home-text-subtle">
                         {t('auditLogs.metadata')}
                       </h3>
-                      <pre className="max-h-[300px] overflow-auto rounded-[10px] border border-home-divider bg-bg p-2 text-[11px] leading-5 text-home-text-subtle">
+                      <pre className="-mx-1 -mb-1 max-h-[300px] overflow-auto rounded-xl bg-bg p-2.5 text-[11px] leading-5 text-home-text-subtle">
                         {formatMetadataJson(detail.metadata)}
                       </pre>
                     </div>
