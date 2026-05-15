@@ -165,6 +165,7 @@ export type UseSshCoreParams = {
   terminalAutoCompletePromptRegex: string;
   terminalBracketedPasteEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
+  sshReconnectOnFocus: boolean;
   onTabTitleChange?: (title: string) => void;
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
   requestHostFingerprintTrust?: (prompt: HostFingerprintPrompt) => Promise<boolean>;
@@ -369,6 +370,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled,
+    sshReconnectOnFocus,
     onTabTitleChange,
     onTabVisualChange,
     requestHostFingerprintTrust,
@@ -472,6 +474,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   );
   const terminalInitOptionsRef = React.useRef<ITerminalOptions>(terminalInitOptions);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
+  const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
 
   const [terminalPaneIds, setTerminalPaneIds] = React.useState<string[]>(['pane-1']);
   const [activePaneId, setActivePaneId] = React.useState<string>('pane-1');
@@ -499,6 +502,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     sshConnectionTimeoutSecRef.current = sshConnectionTimeoutSec;
   }, [sshConnectionTimeoutSec]);
+
+  React.useEffect(() => {
+    sshReconnectOnFocusRef.current = sshReconnectOnFocus;
+  }, [sshReconnectOnFocus]);
 
   const {
     autocompleteItems,
@@ -747,6 +754,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
+    sshReconnectOnFocusRef,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,

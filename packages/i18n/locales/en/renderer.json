@@ -319,6 +319,10 @@
         "placeholder": "10000",
         "title": "SSH Max Rows"
       },
+      "sshReconnectOnFocus": {
+        "description": "When enabled, switching to a disconnected SSH tab will automatically attempt to reconnect the session.",
+        "title": "Auto-Reconnect on Tab Focus"
+      },
       "sshTabApplyServerVisualStyle": {
         "description": "Apply the selected server icon color and background style to SSH tabs.",
         "title": "Apply Server Icon Colors To SSH Tabs"

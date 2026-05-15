@@ -64,6 +64,7 @@ export interface SettingsValues {
   terminalAutoCompleteMaxItems: number;
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalAutoCompletePromptRegex: string;
+  sshReconnectOnFocus: boolean;
 }
 
 export type SettingKey = keyof SettingsValues;
@@ -327,6 +328,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     inputMode: 'numeric',
     min: 5,
     max: 180,
+  },
+  {
+    key: 'sshReconnectOnFocus',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.sshReconnectOnFocus.title',
+    descriptionI18nKey: 'settings.items.sshReconnectOnFocus.description',
+    category: SETTINGS_CATEGORIES.connection,
+    section: SETTINGS_CATEGORIES.connection.sections.connection,
+    control: 'switch',
+    path: 'connection.ssh.reconnectOnFocus',
+    commandActionId: 'settings.connection.ssh.reconnectOnFocus.toggle',
+    searchTerms: ['ssh', 'reconnect', 'tab', 'focus', 'auto reconnect', 'connection'],
   },
   {
     key: 'showFullServerAddress',

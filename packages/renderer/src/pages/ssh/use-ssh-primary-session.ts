@@ -33,6 +33,7 @@ type UseSshPrimarySessionParams = {
   socketRef: React.RefObject<WebSocket | null>;
   resolvedTerminalTargetRef: React.RefObject<ResolvedTerminalTarget | null>;
   sshConnectionTimeoutSecRef: React.RefObject<number>;
+  sshReconnectOnFocusRef: React.RefObject<boolean>;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
   connectSessionRef: React.RefObject<(() => void) | null>;
   selectionPointerClientXRef: React.RefObject<number | null>;
@@ -87,6 +88,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
+    sshReconnectOnFocusRef,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,
@@ -616,6 +618,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       return;
     }
 
+    if (!sshReconnectOnFocusRef.current) {
+      return;
+    }
+
     resumeConnectRef.current?.();
-  }, [isActive, primarySocketRef]);
+  }, [isActive, primarySocketRef, sshReconnectOnFocusRef]);
 };

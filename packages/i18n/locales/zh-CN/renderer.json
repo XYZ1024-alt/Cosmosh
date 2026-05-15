@@ -319,6 +319,10 @@
         "placeholder": "10000",
         "title": "SSH 最大行数"
       },
+      "sshReconnectOnFocus": {
+        "description": "启用后，切换到连接已断开的 SSH 标签页时将自动尝试重连会话。",
+        "title": "标签页聚焦时自动重连"
+      },
       "sshTabApplyServerVisualStyle": {
         "description": "将当前服务器设置的图标颜色和背景样式应用到 SSH 标签页。",
         "title": "将服务器图标配色应用到 SSH 标签页"

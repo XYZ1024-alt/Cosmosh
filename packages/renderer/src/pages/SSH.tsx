@@ -206,6 +206,7 @@ const SSH: React.FC<SSHProps> = ({
       settingsValues.terminalSelectionSearchUrlTemplate,
     ],
   );
+  const sshReconnectOnFocus = settingsValues.sshReconnectOnFocus;
 
   const sshCore = useSshCore({
     tabId,
@@ -226,6 +227,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
+    sshReconnectOnFocus,
     onTabTitleChange,
     onTabVisualChange,
     notifyWarning,
