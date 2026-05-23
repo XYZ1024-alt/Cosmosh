@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cosmosh UI Patterns"
+  short_description: "Cosmosh UI design and interaction rules"
+  default_prompt: "Use $cosmosh-ui-patterns to implement or review a Cosmosh renderer UI change."
