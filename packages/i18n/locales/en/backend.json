@@ -30,6 +30,14 @@
       "invalidRequestPayload": "Invalid settings request payload.",
       "rowNotPersisted": "Settings row was not persisted."
     },
+    "sftp": {
+      "directoryListFailed": "Failed to list SFTP directory: {reason}",
+      "directoryListFailedNoReason": "Failed to list SFTP directory.",
+      "sessionCreateFailed": "Failed to create SFTP session: {reason}",
+      "sessionCreateFailedNoReason": "Failed to create SFTP session.",
+      "sessionIdRequired": "sessionId is required.",
+      "sessionNotFound": "SFTP session was not found."
+    },
     "ssh": {
       "decryptCredentialsFailed": "Unable to decrypt SSH credentials. Please re-save this server credentials.",
       "folderConflict": "A folder with this name already exists.",
@@ -95,6 +103,10 @@
     "settings": {
       "fetched": "Settings fetched successfully.",
       "updated": "Settings updated successfully."
+    },
+    "sftp": {
+      "directoryListed": "SFTP directory listed successfully.",
+      "sessionCreated": "SFTP session created successfully."
     },
     "ssh": {
       "folderCreated": "SSH folder created successfully.",

@@ -5,6 +5,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -66,6 +71,10 @@ export type BackendClient = {
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse>;
+  createSftpSession: (
+    payload: ApiSftpCreateSessionRequest,
+  ) => Promise<ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse>;
+  listSftpDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => Promise<ApiSftpListDirectoryResponse>;
   trustSshFingerprint: (payload: ApiSshTrustFingerprintRequest) => Promise<ApiSshTrustFingerprintResponse>;
   listLocalTerminalProfiles: () => Promise<LocalTerminalListResponse>;
   createLocalTerminalSession: (
@@ -73,6 +82,7 @@ export type BackendClient = {
   ) => Promise<LocalTerminalCreateSessionResponse>;
   closeLocalTerminalSession: (sessionId: string) => Promise<{ success: boolean }>;
   closeSshSession: (sessionId: string) => Promise<{ success: boolean }>;
+  closeSftpSession: (sessionId: string) => Promise<{ success: boolean }>;
   deleteSshServer: (serverId: string) => Promise<{ success: boolean }>;
   deleteSshFolder: (folderId: string) => Promise<{ success: boolean }>;
   deleteSshKeychain: (keychainId: string) => Promise<{ success: boolean }>;
@@ -271,6 +281,32 @@ export const createBackendClient = (): BackendClient => {
 
       return payload;
     },
+    createSftpSession: async (requestPayload) => {
+      const payload = await transport.createSftpSession(requestPayload);
+
+      if (payload.success) {
+        return payload;
+      }
+
+      if (payload.code === 'SSH_HOST_UNTRUSTED' && 'data' in payload) {
+        return payload;
+      }
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      throw new Error('Unexpected SFTP session response.');
+    },
+    listSftpDirectory: async (sessionId, query) => {
+      const payload = await transport.listSftpDirectory(sessionId, query);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
     listLocalTerminalProfiles: async () => {
       const payload = await transport.listLocalTerminalProfiles();
 
@@ -294,6 +330,9 @@ export const createBackendClient = (): BackendClient => {
     },
     closeSshSession: async (sessionId) => {
       return transport.closeSshSession(sessionId);
+    },
+    closeSftpSession: async (sessionId) => {
+      return transport.closeSftpSession(sessionId);
     },
     deleteSshServer: async (serverId) => {
       return transport.deleteSshServer(serverId);

@@ -7,7 +7,7 @@ Cosmosh 采用 Electron 双进程模型，并嵌入后端服务：
 - **Main 进程** (`packages/main/src/index.ts`)：应用生命周期、BrowserWindow 创建、preload 注入、IPC 注册、后端进程编排。
 - **Preload Bridge** (`packages/main/src/preload.ts`)：通过 `contextBridge` 暴露严格受控 API。
 - **Renderer 进程** (`packages/renderer/src`)：React UI、xterm UI、状态编排。
-- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务。
+- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务，以及只读 SFTP 浏览会话。
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 ### Renderer 进程 (`packages/renderer/src`)
 
 - 仅通过 `window.electron` bridge 访问能力（不直接使用 Node API）。
-- 通过后端 API 创建 SSH/本地终端会话。
+- 通过后端 API 创建 SSH/本地终端会话与只读 SFTP 浏览会话。
 - 通过 WebSocket 建立终端数据通道，并由 `xterm.js` 渲染。
 - 非 Home 的渲染页（含 SSH 与设置编辑器/Monaco）采用懒加载，避免重型资源进入默认启动路径。
 - Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
@@ -107,10 +107,11 @@ sequenceDiagram
 - token 不匹配或会话过期会立即关闭（`1008`）。
 - 30 秒 attach 超时用于避免资源孤儿化。
 
-## 5. 当前缺口 / 规划工作
+## 5. 运行时能力
 
-- SFTP 运行时通道尚未实现；当前仅有 SSH 终端与本地终端会话通道。
-- Renderer 的 Home 右键菜单已有 SFTP 占位入口，实际页面/会话接线仍在规划中。
+- SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
+- SFTP v1 使用请求/响应式 IPC + backend HTTP route 实现只读目录浏览。
+- SFTP 上传、下载、写操作、传输队列、文件预览与 SSH terminal 会话复用仍属于后续规划。
 
 ## 5.1 设置运行时（已实现）
 

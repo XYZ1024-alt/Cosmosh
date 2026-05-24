@@ -33,6 +33,7 @@ const SettingsEditor = React.lazy(() => import('./pages/SettingsEditor'));
 const SSH = React.lazy(() => import('./pages/SSH'));
 const SSHEditor = React.lazy(() => import('./pages/SSHEditor'));
 const SSHKeychains = React.lazy(() => import('./pages/SSHKeychains'));
+const SFTP = React.lazy(() => import('./pages/SFTP'));
 
 let hasCheckedInitialPendingLaunchWorkingDirectory = false;
 
@@ -464,6 +465,47 @@ const App: React.FC = () => {
                       },
                     });
                   }}
+                  onOpenSFTP={(serverId, tabTitle, options) => {
+                    const resolvedTitle = tabTitle?.trim() || t('tabs.page.sftp');
+                    const nextIntent = {
+                      serverId,
+                      serverName: resolvedTitle,
+                      createdAt: Date.now(),
+                    };
+
+                    if (!options?.openInNewTab) {
+                      const existingSftpTab = tabs.find((item) => {
+                        return item.page === 'sftp' && item.state?.sftpConnectionIntent?.serverId === serverId;
+                      });
+
+                      if (existingSftpTab) {
+                        setActiveTabId(existingSftpTab.id);
+                        return;
+                      }
+                    }
+
+                    if (options?.openInNewTab) {
+                      addTab('sftp', {
+                        title: resolvedTitle,
+                        iconKey: 'sftp',
+                        state: {
+                          sftpConnectionIntent: nextIntent,
+                        },
+                      });
+                      return;
+                    }
+
+                    openPageInTab(tab.id, 'sftp');
+                    updateTab(tab.id, {
+                      title: resolvedTitle,
+                      iconKey: 'sftp',
+                      iconColorKey: undefined,
+                      state: {
+                        ...(tab.state ?? {}),
+                        sftpConnectionIntent: nextIntent,
+                      },
+                    });
+                  }}
                 />
               )}
               {tab.page === 'ssh' && (
@@ -495,6 +537,16 @@ const App: React.FC = () => {
                         iconKey: visual.iconKey,
                         iconColorKey: visual.iconColorKey,
                       });
+                    }}
+                  />
+                </React.Suspense>
+              )}
+              {tab.page === 'sftp' && (
+                <React.Suspense fallback={pageLoadingFallback}>
+                  <SFTP
+                    connectionIntent={tab.state?.sftpConnectionIntent}
+                    onTabTitleChange={(title) => {
+                      updateTab(tab.id, { title });
                     }}
                   />
                 </React.Suspense>
@@ -581,7 +633,9 @@ const App: React.FC = () => {
     contentTabOrder,
     handleShowSystemMonitorOverlayChange,
     openPageInTab,
+    setActiveTabId,
     showSystemMonitorOverlay,
+    tabs,
     tabsById,
     updateTab,
   ]);

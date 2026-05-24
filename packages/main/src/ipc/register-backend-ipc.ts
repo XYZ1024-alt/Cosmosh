@@ -9,6 +9,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -353,7 +358,40 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
     },
   );
 
+  ipcMain.handle(
+    'backend:sftp-create-session',
+    async (
+      _event,
+      payload: ApiSftpCreateSessionRequest,
+    ): Promise<
+      ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse
+    > => {
+      return options.requestBackend<
+        ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse
+      >(API_PATHS.sftpCreateSession, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-list-directory',
+    async (
+      _event,
+      sessionId: string,
+      query?: ApiSftpListDirectoryQuery,
+    ): Promise<ApiSftpListDirectoryResponse | ApiErrorResponse> => {
+      const pathTemplate = replacePathToken(API_PATHS.sftpListDirectory, 'sessionId', sessionId);
+      const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
+      return options.requestBackend<ApiSftpListDirectoryResponse>(path, {
+        method: 'GET',
+      });
+    },
+  );
+
   registerDeleteHandler(options, 'backend:ssh-close-session', API_PATHS.sshCloseSession, 'sessionId');
+  registerDeleteHandler(options, 'backend:sftp-close-session', API_PATHS.sftpCloseSession, 'sessionId');
   registerDeleteHandler(options, 'backend:ssh-delete-server', API_PATHS.sshDeleteServer, 'serverId');
   registerDeleteHandler(options, 'backend:ssh-delete-folder', API_PATHS.sshDeleteFolder, 'folderId');
   registerDeleteHandler(options, 'backend:ssh-delete-keychain', API_PATHS.sshDeleteKeychain, 'keychainId');

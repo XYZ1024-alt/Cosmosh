@@ -37,6 +37,12 @@ export type SshEditorState = {
   createMode?: boolean;
 };
 
+export type SftpConnectionIntent = {
+  serverId: string;
+  serverName: string;
+  createdAt: number;
+};
+
 export type TabItem = {
   id: string;
   title: string;
@@ -49,6 +55,7 @@ export type TabItem = {
     settingsInitialSearch?: string;
     settingsEditorSettingKey?: string;
     sshConnectionIntent?: SshConnectionIntent;
+    sftpConnectionIntent?: SftpConnectionIntent;
     sshEditor?: SshEditorState;
   };
 };

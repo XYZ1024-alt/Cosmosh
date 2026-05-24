@@ -301,6 +301,57 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create a read-only SFTP browser session. */
+    post: operations['sftpCreateSession'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/entries': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List entries in one remote SFTP directory. */
+    get: operations['sftpListDirectory'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /** Close a read-only SFTP browser session. */
+    delete: operations['sftpCloseSession'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/local-terminals/profiles': {
     parameters: {
       query?: never;
@@ -384,6 +435,9 @@ export interface components {
         | 'SSH_HOST_UNTRUSTED'
         | 'SSH_SESSION_NOT_FOUND'
         | 'SSH_KEYCHAIN_IN_USE'
+        | 'SFTP_SESSION_NOT_FOUND'
+        | 'SFTP_VALIDATION_FAILED'
+        | 'SFTP_OPERATION_FAILED'
         | 'AUDIT_VALIDATION_FAILED'
         | 'AUDIT_EVENT_NOT_FOUND'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
@@ -685,6 +739,39 @@ export interface components {
       /** @enum {boolean} */
       trusted: true;
     };
+    SftpSessionCreateRequest: {
+      serverId: string;
+      initialPath?: string;
+      connectTimeoutSec?: number;
+      strictHostKey?: boolean;
+    };
+    /** @enum {string} */
+    SftpEntryType: 'directory' | 'file' | 'symlink' | 'other';
+    SftpEntry: {
+      name: string;
+      path: string;
+      type: components['schemas']['SftpEntryType'];
+      /** Format: int64 */
+      size: number;
+      mode: number;
+      permissions: string;
+      /** Format: date-time */
+      modifiedAt: string;
+    };
+    SftpSessionCreateData: {
+      sessionId: string;
+      serverId: string;
+      initialPath: string;
+      currentPath: string;
+      /** @enum {boolean} */
+      readOnly: true;
+    };
+    SftpDirectoryListData: {
+      sessionId: string;
+      path: string;
+      parentPath?: string;
+      entries: components['schemas']['SftpEntry'][];
+    };
     LocalTerminalProfile: {
       id: string;
       name: string;
@@ -857,6 +944,20 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SshTrustFingerprintData'];
+    };
+    SftpSessionCreateSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_SESSION_CREATE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpSessionCreateData'];
+    };
+    SftpDirectoryListSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_DIRECTORY_LIST_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpDirectoryListData'];
     };
   };
   responses: never;
@@ -1964,6 +2065,161 @@ export interface operations {
         };
       };
       /** @description Server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCreateSession: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpSessionCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description SFTP session is ready for directory browsing. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpSessionCreateSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Host fingerprint is not trusted. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SshHostVerificationRequired'];
+        };
+      };
+    };
+  };
+  sftpListDirectory: {
+    parameters: {
+      query?: {
+        path?: string;
+      };
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Directory entries listed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpDirectoryListSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or directory not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCloseSession: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Session closed. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
       404: {
         headers: {
           [name: string]: unknown;

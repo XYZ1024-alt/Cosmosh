@@ -9,6 +9,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -169,6 +174,16 @@ declare global {
         payload: ApiSshTrustFingerprintRequest,
       ) => Promise<ApiSshTrustFingerprintResponse | ApiErrorResponse>;
       backendSshCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
+      backendSftpCreateSession: (
+        payload: ApiSftpCreateSessionRequest,
+      ) => Promise<
+        ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse
+      >;
+      backendSftpListDirectory: (
+        sessionId: string,
+        query?: ApiSftpListDirectoryQuery,
+      ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
+      backendSftpCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;
       backendSshDeleteKeychain: (keychainId: string) => Promise<{ success: boolean }>;

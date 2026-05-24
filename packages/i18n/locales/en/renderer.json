@@ -605,6 +605,50 @@
     "title": "Settings Editor",
     "validationFailed": "Settings validation failed."
   },
+  "sftp": {
+    "actions": {
+      "back": "Back",
+      "collapse": "Collapse Folder",
+      "expand": "Expand Folder",
+      "forward": "Forward",
+      "refresh": "Refresh",
+      "retry": "Retry",
+      "search": "Search Current Directory",
+      "up": "Parent Directory"
+    },
+    "columns": {
+      "mode": "Mode",
+      "modified": "Modified",
+      "name": "Name",
+      "size": "Size"
+    },
+    "connecting": "Connecting SFTP...",
+    "detail": {
+      "modified": "Modified",
+      "path": "Path",
+      "permissions": "Permissions",
+      "size": "Size",
+      "type": "Type"
+    },
+    "detailEmpty": "Select a file or directory to inspect metadata.",
+    "detailTitle": "Details",
+    "empty": "This directory is empty.",
+    "entryType": {
+      "directory": "Directory",
+      "file": "File",
+      "other": "Other",
+      "symlink": "Symbolic Link"
+    },
+    "loadFailed": "Failed to load SFTP directory.",
+    "loading": "Loading directory...",
+    "noSession": "No SFTP session is active.",
+    "pathInputLabel": "Remote path",
+    "searchEmpty": "No entries match this search.",
+    "searchPlaceholder": "Search files...",
+    "sessionInitFailed": "Failed to initialize SFTP session.",
+    "title": "SFTP",
+    "untitledServer": "SFTP Server"
+  },
   "ssh": {
     "authTypeBoth": "Password and Private Key",
     "authTypeKey": "Private Key",
@@ -800,6 +844,7 @@
       "localTerminal": "Local Terminal",
       "settings": "Settings",
       "settingsEditor": "Settings Editor",
+      "sftp": "SFTP",
       "ssh": "SSH",
       "sshEditor": "Edit Server",
       "sshKeychains": "SSH Keychains"

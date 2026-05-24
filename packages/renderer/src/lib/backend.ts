@@ -5,6 +5,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -141,6 +146,23 @@ export const trustSshFingerprint = async (
 
 export const closeSshSession = async (sessionId: string): Promise<{ success: boolean }> => {
   return backendClient.closeSshSession(sessionId);
+};
+
+export const createSftpSession = async (
+  payload: ApiSftpCreateSessionRequest,
+): Promise<ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse> => {
+  return backendClient.createSftpSession(payload);
+};
+
+export const listSftpDirectory = async (
+  sessionId: string,
+  query?: ApiSftpListDirectoryQuery,
+): Promise<ApiSftpListDirectoryResponse> => {
+  return backendClient.listSftpDirectory(sessionId, query);
+};
+
+export const closeSftpSession = async (sessionId: string): Promise<{ success: boolean }> => {
+  return backendClient.closeSftpSession(sessionId);
 };
 
 export const listLocalTerminalProfiles = async (): Promise<LocalTerminalListResponse> => {

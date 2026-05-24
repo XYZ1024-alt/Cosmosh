@@ -42,6 +42,7 @@ flowchart TB
   - `src/http/routes`: REST endpoints for settings, SSH entities, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution).
+  - `src/sftp`: read-only SFTP browser session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults and validation parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
@@ -89,7 +90,7 @@ flowchart TD
 
 ## 5. Not Implemented Yet (Planned)
 
-- Full SFTP feature module (backend service, WebSocket/file transfer protocol, renderer explorer page).
+- Full SFTP file transfer module (upload/download streams, write operations, transfer queue, and file preview/editor integration).
 - Dedicated shared `common` package is not present yet; current sharing is done through `api-contract` + `i18n`.
 
 ## 6. Common Change Scenarios

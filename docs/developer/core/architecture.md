@@ -7,7 +7,7 @@ Cosmosh uses an Electron dual-process model with an embedded backend service:
 - **Main Process** (`packages/main/src/index.ts`): app lifecycle, BrowserWindow creation, preload wiring, IPC registration, backend process orchestration.
 - **Preload Bridge** (`packages/main/src/preload.ts`): strict API surface exposed via `contextBridge`.
 - **Renderer Process** (`packages/renderer/src`): React UI, xterm UI, state orchestration.
-- **Backend Process** (`packages/backend/src/index.ts`): Hono HTTP API + WebSocket session services for SSH and local terminal.
+- **Backend Process** (`packages/backend/src/index.ts`): Hono HTTP API + WebSocket session services for SSH/local terminal, plus read-only SFTP browser sessions.
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 ### Renderer Process (`packages/renderer/src`)
 
 - Uses `window.electron` bridge only (no direct Node API usage).
-- Creates SSH/local terminal sessions through backend APIs.
+- Creates SSH/local terminal sessions and read-only SFTP browser sessions through backend APIs.
 - Connects terminal data channels through WebSocket and renders with `xterm.js`.
 - Non-home renderer pages (including SSH and settings editor/Monaco) are lazy-loaded to keep heavyweight assets out of the default startup path.
 - Renderer bootstrap hydrates settings from local cache first, then refreshes canonical values from backend in background.
@@ -107,10 +107,11 @@ sequenceDiagram
 - Token mismatch or stale session causes immediate close (`1008`).
 - Session attach timeout is enforced (30 seconds) to avoid orphaned resources.
 
-## 5. Current Gaps / Planned Work
+## 5. Runtime Capabilities
 
-- SFTP runtime channel is not implemented yet; only SSH terminal and local terminal session channels are active.
-- Renderer has SFTP entry placeholders in Home context menu; actual SFTP page/session wiring remains planned.
+- SSH and local terminal sessions use WebSocket data channels for terminal I/O.
+- SFTP v1 uses request/response IPC + backend HTTP routes for read-only directory browsing.
+- SFTP upload, download, write operations, transfer queues, file preview, and SSH terminal session reuse remain planned follow-up work.
 
 ## 5.1 Settings Runtime (Implemented)
 

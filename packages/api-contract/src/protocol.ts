@@ -29,6 +29,9 @@ export const API_PATHS = {
   sshCreateSession: '/api/v1/ssh/sessions',
   sshCloseSession: '/api/v1/ssh/sessions/{sessionId}',
   sshTrustFingerprint: '/api/v1/ssh/trusted-host-keys',
+  sftpCreateSession: '/api/v1/sftp/sessions',
+  sftpListDirectory: '/api/v1/sftp/sessions/{sessionId}/entries',
+  sftpCloseSession: '/api/v1/sftp/sessions/{sessionId}',
   localTerminalListProfiles: '/api/v1/local-terminals/profiles',
   localTerminalCreateSession: '/api/v1/local-terminals/sessions',
   localTerminalCloseSession: '/api/v1/local-terminals/sessions/{sessionId}',
@@ -52,6 +55,9 @@ export const API_CODES = {
   sshHostUntrusted: 'SSH_HOST_UNTRUSTED',
   sshSessionNotFound: 'SSH_SESSION_NOT_FOUND',
   sshKeychainInUse: 'SSH_KEYCHAIN_IN_USE',
+  sftpSessionNotFound: 'SFTP_SESSION_NOT_FOUND',
+  sftpValidationFailed: 'SFTP_VALIDATION_FAILED',
+  sftpOperationFailed: 'SFTP_OPERATION_FAILED',
   auditValidationFailed: 'AUDIT_VALIDATION_FAILED',
   auditEventNotFound: 'AUDIT_EVENT_NOT_FOUND',
   localTerminalValidationFailed: 'LOCAL_TERMINAL_VALIDATION_FAILED',
@@ -78,6 +84,8 @@ export const API_CODES = {
   sshTagCreateOk: 'SSH_TAG_CREATE_OK',
   sshSessionCreateOk: 'SSH_SESSION_CREATE_OK',
   sshTrustFingerprintOk: 'SSH_TRUST_FINGERPRINT_OK',
+  sftpSessionCreateOk: 'SFTP_SESSION_CREATE_OK',
+  sftpDirectoryListOk: 'SFTP_DIRECTORY_LIST_OK',
 } as const;
 
 export const API_CAPABILITIES = ['ssh', 'sftp'] as const;

@@ -101,6 +101,7 @@ import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-stat
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
+  onOpenSFTP: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
   isActive: boolean;
 };
 
@@ -160,7 +161,7 @@ const hashString = (value: string): number => {
   return hash >>> 0;
 };
 
-const Home: React.FC<HomeProps> = ({ onOpenSSH, isActive }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
@@ -1338,6 +1339,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, isActive }) => {
                                         aria-label={t('home.contextConnectSftp')}
                                         onClick={(event) => {
                                           event.stopPropagation();
+                                          onOpenSFTP(server.id, server.name, { openInNewTab: true });
                                         }}
                                       >
                                         <File className="h-4 w-4 flex-shrink-0" />
@@ -1368,10 +1370,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, isActive }) => {
                                     {t('home.openSshNewTab')}
                                     <ContextMenuShortcut>{openInNewTabShortcutLabel}</ContextMenuShortcut>
                                   </ContextMenuItem>
-                                  {/* TODO(home): SFTP connect entry is pending dedicated SFTP page/session wiring. */}
                                   <ContextMenuItem
-                                    disabled
                                     icon={File}
+                                    onSelect={() => onOpenSFTP(server.id, server.name)}
                                   >
                                     {t('home.contextConnectSftp')}
                                   </ContextMenuItem>

@@ -12,6 +12,7 @@ import { createBackendApp } from './http/create-app.js';
 import { enableI18nDevHotReload } from './i18n-bridge.js';
 import { LocalTerminalSessionService } from './local-terminal/session-service.js';
 import { resolveRuntimeMode } from './runtime.js';
+import { SftpSessionService } from './sftp/session-service.js';
 import { SshSessionService } from './ssh/session-service.js';
 
 /**
@@ -72,6 +73,7 @@ const workspaceRoot = path.resolve(currentDirPath, '../../..');
 const i18nLocaleRootDir = path.join(workspaceRoot, 'packages', 'i18n', 'locales');
 let disableI18nHotReload: (() => void) | null = null;
 let sshSessionService: SshSessionService | null = null;
+let sftpSessionService: SftpSessionService | null = null;
 let localTerminalSessionService: LocalTerminalSessionService | null = null;
 let auditEventService: AuditEventService | null = null;
 let httpServer: ReturnType<typeof serve> | null = null;
@@ -128,6 +130,11 @@ const registerShutdownHooks = (): void => {
         if (sshSessionService) {
           await sshSessionService.stop();
           sshSessionService = null;
+        }
+
+        if (sftpSessionService) {
+          await sftpSessionService.stop();
+          sftpSessionService = null;
         }
 
         if (localTerminalSessionService) {
@@ -220,6 +227,12 @@ const bootstrap = async (): Promise<void> => {
     credentialEncryptionKey,
   });
 
+  sftpSessionService = new SftpSessionService({
+    getDbClient,
+    auditEventService,
+    credentialEncryptionKey,
+  });
+
   localTerminalSessionService = new LocalTerminalSessionService({
     host: '127.0.0.1',
     port: localTerminalWebSocketPort,
@@ -233,6 +246,7 @@ const bootstrap = async (): Promise<void> => {
     getDbClient,
     auditEventService,
     sshSessionService,
+    sftpSessionService,
     localTerminalSessionService,
   });
 
@@ -266,6 +280,13 @@ void bootstrap().catch(async (error: unknown) => {
       console.error('[bootstrap][SSH_SESSION] Failed to stop SSH session service.', serviceError);
     });
     sshSessionService = null;
+  }
+
+  if (sftpSessionService) {
+    await sftpSessionService.stop().catch((serviceError: unknown) => {
+      console.error('[bootstrap][SFTP_SESSION] Failed to stop SFTP session service.', serviceError);
+    });
+    sftpSessionService = null;
   }
 
   auditEventService = null;

@@ -42,6 +42,7 @@ flowchart TB
   - `src/http/routes`：设置、SSH 实体与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测）。
+  - `src/sftp`：只读 SFTP 浏览会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值与请求校验解析。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
@@ -89,7 +90,7 @@ flowchart TD
 
 ## 5. 尚未实现（规划中）
 
-- 完整 SFTP 功能模块（后端服务、WebSocket/文件传输协议、renderer 资源管理器页面）。
+- 完整 SFTP 文件传输模块（上传/下载流、写操作、传输队列与文件预览/编辑器集成）。
 - 尚无独立 `common` 共享包；当前共享通过 `api-contract` + `i18n` 实现。
 
 ## 6. 常见改动场景

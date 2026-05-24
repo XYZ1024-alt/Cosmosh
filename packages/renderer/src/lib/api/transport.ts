@@ -10,6 +10,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -53,6 +58,9 @@ type ApiResponse =
   | ApiAuditEventDetailResponse
   | ApiSettingsGetResponse
   | ApiSettingsUpdateResponse
+  | ApiSftpCreateSessionResponse
+  | ApiSftpCreateSessionHostVerificationRequiredResponse
+  | ApiSftpListDirectoryResponse
   | ApiSshListServersResponse
   | ApiSshCreateServerResponse
   | ApiSshUpdateServerResponse
@@ -104,6 +112,13 @@ export type ApiTransport = {
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse>;
+  createSftpSession: (
+    payload: ApiSftpCreateSessionRequest,
+  ) => Promise<ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse>;
+  listSftpDirectory: (
+    sessionId: string,
+    query?: ApiSftpListDirectoryQuery,
+  ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
   trustSshFingerprint: (
     payload: ApiSshTrustFingerprintRequest,
   ) => Promise<ApiSshTrustFingerprintResponse | ApiErrorResponse>;
@@ -113,6 +128,7 @@ export type ApiTransport = {
   ) => Promise<LocalTerminalCreateSessionResponse | ApiErrorResponse>;
   closeLocalTerminalSession: (sessionId: string) => Promise<{ success: boolean }>;
   closeSshSession: (sessionId: string) => Promise<{ success: boolean }>;
+  closeSftpSession: (sessionId: string) => Promise<{ success: boolean }>;
   deleteSshServer: (serverId: string) => Promise<{ success: boolean }>;
   deleteSshFolder: (folderId: string) => Promise<{ success: boolean }>;
   deleteSshKeychain: (keychainId: string) => Promise<{ success: boolean }>;
@@ -229,6 +245,17 @@ const createElectronTransport = (): ApiTransport => {
         | ApiSshTrustFingerprintResponse
         | ApiErrorResponse;
     },
+    createSftpSession: async (payload) => {
+      return (await window.electron!.backendSftpCreateSession(payload)) as
+        | ApiSftpCreateSessionResponse
+        | ApiSftpCreateSessionHostVerificationRequiredResponse
+        | ApiErrorResponse;
+    },
+    listSftpDirectory: async (sessionId, query) => {
+      return (await window.electron!.backendSftpListDirectory(sessionId, query)) as
+        | ApiSftpListDirectoryResponse
+        | ApiErrorResponse;
+    },
     listLocalTerminalProfiles: async () => {
       return (await window.electron!.backendLocalTerminalListProfiles()) as
         | LocalTerminalListResponse
@@ -244,6 +271,9 @@ const createElectronTransport = (): ApiTransport => {
     },
     closeSshSession: async (sessionId) => {
       return await window.electron!.backendSshCloseSession(sessionId);
+    },
+    closeSftpSession: async (sessionId) => {
+      return await window.electron!.backendSftpCloseSession(sessionId);
     },
     deleteSshServer: async (serverId) => {
       return await window.electron!.backendSshDeleteServer(serverId);
@@ -383,6 +413,27 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiSshTrustFingerprintResponse
         | ApiErrorResponse;
     },
+    createSftpSession: async (payload) => {
+      return (await callBrowserApi(API_PATHS.sftpCreateSession, 'POST', payload)) as
+        | ApiSftpCreateSessionResponse
+        | ApiSftpCreateSessionHostVerificationRequiredResponse
+        | ApiErrorResponse;
+    },
+    listSftpDirectory: async (sessionId, query) => {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(query ?? {})) {
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+
+        searchParams.set(key, String(value));
+      }
+
+      const queryString = searchParams.toString();
+      const basePath = API_PATHS.sftpListDirectory.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = queryString.length > 0 ? `${basePath}?${queryString}` : basePath;
+      return (await callBrowserApi(path, 'GET')) as ApiSftpListDirectoryResponse | ApiErrorResponse;
+    },
     listLocalTerminalProfiles: async () => {
       return createBrowserFallbackError('Local terminal profiles are only available in Electron runtime.');
     },
@@ -394,6 +445,18 @@ const createBrowserTransport = (): ApiTransport => {
     },
     closeSshSession: async (sessionId) => {
       const path = API_PATHS.sshCloseSession.replace('{sessionId}', encodeURIComponent(sessionId));
+      const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${resolveBrowserAuthToken() ?? ''}`,
+          [API_HEADERS.locale]: navigator.language,
+        },
+      });
+
+      return { success: response.status === 204 };
+    },
+    closeSftpSession: async (sessionId) => {
+      const path = API_PATHS.sftpCloseSession.replace('{sessionId}', encodeURIComponent(sessionId));
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {

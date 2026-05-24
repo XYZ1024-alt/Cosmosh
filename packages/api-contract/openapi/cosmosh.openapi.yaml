@@ -852,6 +852,123 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions:
+    post:
+      tags:
+        - sftp
+      summary: Create a read-only SFTP browser session.
+      operationId: sftpCreateSession
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpSessionCreateRequest'
+      responses:
+        '200':
+          description: SFTP session is ready for directory browsing.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpSessionCreateSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Host fingerprint is not trusted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SshHostVerificationRequired'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/entries:
+    get:
+      tags:
+        - sftp
+      summary: List entries in one remote SFTP directory.
+      operationId: sftpListDirectory
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: false
+          schema:
+            type: string
+            default: .
+      responses:
+        '200':
+          description: Directory entries listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpDirectoryListSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or directory not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}:
+    delete:
+      tags:
+        - sftp
+      summary: Close a read-only SFTP browser session.
+      operationId: sftpCloseSession
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Session closed.
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/local-terminals/profiles:
     get:
       tags:
@@ -1007,6 +1124,9 @@ components:
                   'SSH_HOST_UNTRUSTED',
                   'SSH_SESSION_NOT_FOUND',
                   'SSH_KEYCHAIN_IN_USE',
+                  'SFTP_SESSION_NOT_FOUND',
+                  'SFTP_VALIDATION_FAILED',
+                  'SFTP_OPERATION_FAILED',
                   'AUDIT_VALIDATION_FAILED',
                   'AUDIT_EVENT_NOT_FOUND',
                   'LOCAL_TERMINAL_VALIDATION_FAILED',
@@ -1755,6 +1875,88 @@ components:
         trusted:
           type: boolean
           enum: [true]
+    SftpSessionCreateRequest:
+      type: object
+      required:
+        - serverId
+      properties:
+        serverId:
+          type: string
+        initialPath:
+          type: string
+        connectTimeoutSec:
+          type: integer
+          minimum: 5
+          maximum: 180
+        strictHostKey:
+          type: boolean
+    SftpEntryType:
+      type: string
+      enum: ['directory', 'file', 'symlink', 'other']
+    SftpEntry:
+      type: object
+      required:
+        - name
+        - path
+        - type
+        - size
+        - mode
+        - permissions
+        - modifiedAt
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          $ref: '#/components/schemas/SftpEntryType'
+        size:
+          type: integer
+          format: int64
+        mode:
+          type: integer
+        permissions:
+          type: string
+        modifiedAt:
+          type: string
+          format: date-time
+    SftpSessionCreateData:
+      type: object
+      required:
+        - sessionId
+        - serverId
+        - initialPath
+        - currentPath
+        - readOnly
+      properties:
+        sessionId:
+          type: string
+        serverId:
+          type: string
+        initialPath:
+          type: string
+        currentPath:
+          type: string
+        readOnly:
+          type: boolean
+          enum: [true]
+    SftpDirectoryListData:
+      type: object
+      required:
+        - sessionId
+        - path
+        - entries
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        parentPath:
+          type: string
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SftpEntry'
     LocalTerminalProfile:
       type: object
       required:
@@ -2183,3 +2385,37 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SshTrustFingerprintData'
+    SftpSessionCreateSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_SESSION_CREATE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpSessionCreateData'
+    SftpDirectoryListSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_DIRECTORY_LIST_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpDirectoryListData'

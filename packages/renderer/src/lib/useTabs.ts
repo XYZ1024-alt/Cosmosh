@@ -23,6 +23,10 @@ export const resolvePageDefaults = (page: TabPage): { title: string; iconKey: Ta
     return { title: t('tabs.page.ssh'), iconKey: 'ssh' };
   }
 
+  if (page === 'sftp') {
+    return { title: t('tabs.page.sftp'), iconKey: 'sftp' };
+  }
+
   if (page === 'ssh-editor') {
     return { title: t('tabs.page.sshEditor'), iconKey: 'ssh' };
   }

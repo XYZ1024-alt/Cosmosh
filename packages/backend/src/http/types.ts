@@ -3,6 +3,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { AuditEventService } from '../audit/service.js';
 import type { RuntimeMode } from '../db/prisma.js';
 import type { LocalTerminalSessionService } from '../local-terminal/session-service.js';
+import type { SftpSessionService } from '../sftp/session-service.js';
 import type { SshSessionService } from '../ssh/session-service.js';
 
 /**
@@ -16,5 +17,6 @@ export type BackendAppContext = {
   getDbClient: () => PrismaClient;
   auditEventService: AuditEventService;
   sshSessionService: SshSessionService;
+  sftpSessionService: SftpSessionService;
   localTerminalSessionService: LocalTerminalSessionService;
 };

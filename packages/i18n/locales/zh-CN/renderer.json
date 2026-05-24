@@ -605,6 +605,50 @@
     "title": "设置编辑器",
     "validationFailed": "设置校验失败。"
   },
+  "sftp": {
+    "actions": {
+      "back": "后退",
+      "collapse": "收起文件夹",
+      "expand": "展开文件夹",
+      "forward": "前进",
+      "refresh": "刷新",
+      "retry": "重试",
+      "search": "搜索当前目录",
+      "up": "返回上级目录"
+    },
+    "columns": {
+      "mode": "Mode",
+      "modified": "修改时间",
+      "name": "名称",
+      "size": "大小"
+    },
+    "connecting": "正在连接 SFTP...",
+    "detail": {
+      "modified": "修改时间",
+      "path": "路径",
+      "permissions": "权限",
+      "size": "大小",
+      "type": "类型"
+    },
+    "detailEmpty": "选择文件或目录以查看元数据。",
+    "detailTitle": "详情",
+    "empty": "该目录为空。",
+    "entryType": {
+      "directory": "目录",
+      "file": "文件",
+      "other": "其他",
+      "symlink": "符号链接"
+    },
+    "loadFailed": "加载 SFTP 目录失败。",
+    "loading": "正在加载目录...",
+    "noSession": "当前没有活动的 SFTP 会话。",
+    "pathInputLabel": "远程路径",
+    "searchEmpty": "没有匹配的条目。",
+    "searchPlaceholder": "搜索文件...",
+    "sessionInitFailed": "初始化 SFTP 会话失败。",
+    "title": "SFTP",
+    "untitledServer": "SFTP 服务器"
+  },
   "ssh": {
     "authTypeBoth": "密码和私钥",
     "authTypeKey": "私钥",
@@ -800,6 +844,7 @@
       "localTerminal": "本地终端",
       "settings": "设置",
       "settingsEditor": "设置编辑器",
+      "sftp": "SFTP",
       "ssh": "SSH",
       "sshEditor": "编辑服务器",
       "sshKeychains": "SSH 钥匙链"

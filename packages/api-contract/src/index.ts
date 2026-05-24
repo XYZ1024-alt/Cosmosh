@@ -123,6 +123,19 @@ export type ApiSshTrustFingerprintRequest =
 export type ApiSshTrustFingerprintResponse =
   paths['/api/v1/ssh/trusted-host-keys']['post']['responses']['200']['content']['application/json'];
 export type ApiSshCloseSessionRequest = paths['/api/v1/ssh/sessions/{sessionId}']['delete']['parameters']['path'];
+export type ApiSftpCreateSessionRequest =
+  paths['/api/v1/sftp/sessions']['post']['requestBody']['content']['application/json'];
+export type ApiSftpCreateSessionResponse =
+  paths['/api/v1/sftp/sessions']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpCreateSessionHostVerificationRequiredResponse =
+  paths['/api/v1/sftp/sessions']['post']['responses']['409']['content']['application/json'];
+export type ApiSftpListDirectoryQuery =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['parameters']['query'];
+export type ApiSftpListDirectoryResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpCloseSessionRequest = paths['/api/v1/sftp/sessions/{sessionId}']['delete']['parameters']['path'];
+export type ApiSftpEntry = components['schemas']['SftpEntry'];
+export type ApiSftpEntryType = components['schemas']['SftpEntryType'];
 export type ApiLocalTerminalProfile = components['schemas']['LocalTerminalProfile'];
 export type ApiLocalTerminalListProfilesResponse =
   paths['/api/v1/local-terminals/profiles']['get']['responses']['200']['content']['application/json'];

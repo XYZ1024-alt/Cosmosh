@@ -7,6 +7,7 @@ import { registerCommonMiddleware } from './middleware.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { registerLocalTerminalRoutes } from './routes/local-terminal.js';
 import { registerSettingsRoutes } from './routes/settings.js';
+import { registerSftpRoutes } from './routes/sftp.js';
 import { registerSshRoutes } from './routes/ssh.js';
 import { registerSystemRoutes } from './routes/system.js';
 import type { BackendAppContext } from './types.js';
@@ -21,6 +22,7 @@ export const createBackendApp = (context: BackendAppContext): BackendHttpApp => 
   registerSystemRoutes(app, context);
   registerSettingsRoutes(app, context);
   registerSshRoutes(app, context);
+  registerSftpRoutes(app, context);
   registerAuditRoutes(app, context);
   registerLocalTerminalRoutes(app, context);
 

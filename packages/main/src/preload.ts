@@ -9,6 +9,11 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCreateSessionHostVerificationRequiredResponse,
+  ApiSftpCreateSessionRequest,
+  ApiSftpCreateSessionResponse,
+  ApiSftpListDirectoryQuery,
+  ApiSftpListDirectoryResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -311,6 +316,17 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSshCloseSession: (sessionId: string) => {
     return invokeIpc<{ success: boolean }>('backend:ssh-close-session', sessionId);
+  },
+  backendSftpCreateSession: (payload: ApiSftpCreateSessionRequest) => {
+    return invokeIpc<
+      ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse
+    >('backend:sftp-create-session', payload);
+  },
+  backendSftpListDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => {
+    return invokeIpc<ApiSftpListDirectoryResponse | ApiErrorResponse>('backend:sftp-list-directory', sessionId, query);
+  },
+  backendSftpCloseSession: (sessionId: string) => {
+    return invokeIpc<{ success: boolean }>('backend:sftp-close-session', sessionId);
   },
   backendSshDeleteServer: (serverId: string) => {
     return invokeIpc<{ success: boolean }>('backend:ssh-delete-server', serverId);
