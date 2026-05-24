@@ -145,6 +145,17 @@ type SftpDeleteConfirmationPrompt = {
   source: SftpDeleteInvocationSource;
 };
 
+type SftpFileNavigationRow =
+  | {
+      kind: 'parent';
+      key: string;
+    }
+  | {
+      kind: 'entry';
+      key: string;
+      entry: ApiSftpEntry;
+    };
+
 const TREE_INDENT_CLASS_NAMES = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-16'] as const;
 const SFTP_CARD_CLASS_NAME = 'bg-ssh-card-bg-terminal h-full min-h-0 overflow-hidden rounded-[18px] p-1';
 const DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME = 'min-w-[600px]';
@@ -152,6 +163,7 @@ const DIRECTORY_ROW_GRID_CLASS_NAME = 'grid-cols-[minmax(0,1fr)_92px_148px_96px_
 const NEW_FILE_NAME = 'untitled.txt';
 const NEW_DIRECTORY_NAME = 'Untitled Folder';
 const FILE_PREVIEW_MAX_BYTES = 256 * 1024;
+const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 
 /**
  * Formats SFTP byte sizes for the compact file list.
@@ -472,6 +484,34 @@ const resolveRangeSelectionPaths = (entries: ApiSftpEntry[], anchorPath: string,
 };
 
 /**
+ * Flattens the expanded directory tree into the exact visual row order.
+ *
+ * @param treeNodes Directory tree registry keyed by remote path.
+ * @param rootPaths Top-level paths to render.
+ * @returns Visible directory paths in keyboard navigation order.
+ */
+const flattenVisibleTreePaths = (treeNodes: Record<string, TreeDirectoryNode>, rootPaths: string[]): string[] => {
+  const visiblePaths: string[] = [];
+
+  const appendNode = (nodePath: string): void => {
+    const node = treeNodes[nodePath];
+    if (!node) {
+      return;
+    }
+
+    visiblePaths.push(node.path);
+
+    if (node.isExpanded) {
+      node.children.forEach(appendNode);
+    }
+  };
+
+  rootPaths.forEach(appendNode);
+
+  return visiblePaths;
+};
+
+/**
  * Resolves the entries affected by a toolbar or row-context action.
  *
  * @param contextEntry Row entry that opened the context menu, when available.
@@ -638,6 +678,8 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
+  const [activeTreePath, setActiveTreePath] = React.useState<string>('');
+  const [activeFileRowKey, setActiveFileRowKey] = React.useState<string>('');
   const [deleteConfirmationPrompt, setDeleteConfirmationPrompt] = React.useState<SftpDeleteConfirmationPrompt | null>(
     null,
   );
@@ -647,6 +689,8 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const sessionIdRef = React.useRef<string>('');
   const syncedTabTitleRef = React.useRef<string>('');
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
+  const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
+  const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
 
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -700,6 +744,22 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy && !isOperationRunning;
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
+
+  const fileNavigationRows = React.useMemo<SftpFileNavigationRow[]>(() => {
+    const rows: SftpFileNavigationRow[] = [];
+
+    if (canActivateParentDirectoryListEntry) {
+      rows.push({ kind: 'parent', key: PARENT_DIRECTORY_ROW_KEY });
+    }
+
+    visibleEntries.forEach((entry) => {
+      rows.push({ kind: 'entry', key: entry.path, entry });
+    });
+
+    return rows;
+  }, [canActivateParentDirectoryListEntry, visibleEntries]);
+
+  const resolvedActiveFileRowKey = activeFileRowKey || fileNavigationRows[0]?.key || '';
 
   const resetSelection = React.useCallback((): void => {
     setSelectedPaths([]);
@@ -1672,6 +1732,75 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     [handleOpenEntry],
   );
 
+  const focusFileRow = React.useCallback((rowKey: string): void => {
+    setActiveFileRowKey(rowKey);
+    fileRowRefs.current[rowKey]?.focus();
+  }, []);
+
+  const handleFileNavigationRowKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>, row: SftpFileNavigationRow): void => {
+      if (event.currentTarget !== event.target) {
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        if (row.kind === 'parent') {
+          handleParentDirectory();
+          return;
+        }
+
+        handleEntryOpen(row.entry);
+        return;
+      }
+
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const currentIndex = fileNavigationRows.findIndex((candidate) => candidate.key === row.key);
+      if (currentIndex < 0) {
+        return;
+      }
+
+      const nextIndex =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? fileNavigationRows.length - 1
+            : event.key === 'ArrowDown'
+              ? Math.min(currentIndex + 1, fileNavigationRows.length - 1)
+              : Math.max(currentIndex - 1, 0);
+      const nextRow = fileNavigationRows[nextIndex];
+      if (!nextRow || nextRow.key === row.key) {
+        return;
+      }
+
+      focusFileRow(nextRow.key);
+      if (nextRow.kind === 'entry') {
+        selectSingleEntry(nextRow.entry);
+      }
+    },
+    [fileNavigationRows, focusFileRow, handleEntryOpen, handleParentDirectory, selectSingleEntry],
+  );
+
+  React.useEffect(() => {
+    setActiveFileRowKey((previous) => {
+      if (previous && fileNavigationRows.some((row) => row.key === previous)) {
+        return previous;
+      }
+
+      const selectedVisibleRow = selectedEntry
+        ? fileNavigationRows.find((row) => row.kind === 'entry' && row.key === selectedEntry.path)
+        : undefined;
+
+      return selectedVisibleRow?.key ?? fileNavigationRows[0]?.key ?? '';
+    });
+  }, [fileNavigationRows, selectedEntry]);
+
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
       const target = event.target;
@@ -1804,6 +1933,76 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     return breadcrumbs[0]?.path ? [breadcrumbs[0].path] : [];
   }, [breadcrumbs, treeNodes]);
 
+  const visibleTreePaths = React.useMemo(() => {
+    return flattenVisibleTreePaths(treeNodes, treeRootPaths);
+  }, [treeNodes, treeRootPaths]);
+
+  const resolvedActiveTreePath =
+    (activeTreePath && visibleTreePaths.includes(activeTreePath) ? activeTreePath : '') ||
+    (visibleTreePaths.includes(currentPath) ? currentPath : '') ||
+    visibleTreePaths[0] ||
+    '';
+
+  const focusTreePath = React.useCallback((nodePath: string): void => {
+    setActiveTreePath(nodePath);
+    treeRowRefs.current[nodePath]?.focus();
+  }, []);
+
+  const handleTreeRowKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLButtonElement>, nodePath: string): void => {
+      if (event.currentTarget !== event.target) {
+        return;
+      }
+
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        void navigateToPath(nodePath);
+        return;
+      }
+
+      if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'Home' || event.key === 'End') {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const currentIndex = visibleTreePaths.indexOf(nodePath);
+        if (currentIndex < 0) {
+          return;
+        }
+
+        const nextIndex =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? visibleTreePaths.length - 1
+              : event.key === 'ArrowDown'
+                ? Math.min(currentIndex + 1, visibleTreePaths.length - 1)
+                : Math.max(currentIndex - 1, 0);
+        const nextPath = visibleTreePaths[nextIndex];
+        if (nextPath && nextPath !== nodePath) {
+          focusTreePath(nextPath);
+        }
+        return;
+      }
+
+      const node = treeNodes[nodePath];
+      const isExpandable = Boolean(node && (node.isLoading || node.children.length > 0 || !node.isLoaded));
+
+      if (event.key === 'ArrowRight' && node && isExpandable && !node.isExpanded) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTreeNodeToggle(node.path);
+        return;
+      }
+
+      if (event.key === 'ArrowLeft' && node?.isExpanded) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleTreeNodeToggle(node.path);
+      }
+    },
+    [focusTreePath, handleTreeNodeToggle, navigateToPath, treeNodes, visibleTreePaths],
+  );
+
   const treeContent = React.useMemo(() => {
     const renderNode = (nodePath: string, depth: number): React.ReactNode => {
       const node = treeNodes[nodePath];
@@ -1833,6 +2032,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 aria-label={t(node.isExpanded ? 'sftp.actions.collapse' : 'sftp.actions.expand')}
                 className="focus-visible:ring-form-ring flex h-[30px] w-5 shrink-0 items-center justify-center rounded-sm-2 text-home-text-subtle focus-visible:outline-none focus-visible:ring-2"
                 disabled={node.isLoading}
+                tabIndex={-1}
                 onClick={(event) => {
                   event.stopPropagation();
                   handleTreeNodeToggle(node.path);
@@ -1852,11 +2052,18 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 )}
               </button>
               <button
+                ref={(element) => {
+                  treeRowRefs.current[node.path] = element;
+                }}
                 type="button"
                 className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-sm-2 pr-2 text-left focus-visible:outline-none focus-visible:ring-2"
+                tabIndex={resolvedActiveTreePath === node.path ? 0 : -1}
                 onClick={() => {
+                  setActiveTreePath(node.path);
                   void navigateToPath(node.path);
                 }}
+                onFocus={() => setActiveTreePath(node.path)}
+                onKeyDown={(event) => handleTreeRowKeyDown(event, node.path)}
               >
                 <Folder className="text-home-text h-3.5 w-3.5 shrink-0" />
                 <span className="truncate">{node.name}</span>
@@ -1869,7 +2076,15 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     };
 
     return treeRootPaths.map((rootPath) => renderNode(rootPath, 0));
-  }, [currentPath, handleTreeNodeToggle, navigateToPath, treeNodes, treeRootPaths]);
+  }, [
+    currentPath,
+    handleTreeNodeToggle,
+    handleTreeRowKeyDown,
+    navigateToPath,
+    resolvedActiveTreePath,
+    treeNodes,
+    treeRootPaths,
+  ]);
 
   const toolbar = (
     <TooltipProvider>
@@ -2174,10 +2389,17 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                   ) : null}
                   {status === 'ready' && hasParentDirectoryListEntry ? (
                     <div
+                      ref={(element) => {
+                        fileRowRefs.current[PARENT_DIRECTORY_ROW_KEY] = element;
+                      }}
                       role="button"
                       aria-label={t('sftp.parentDirectoryEntryLabel')}
                       aria-disabled={!canActivateParentDirectoryListEntry}
-                      tabIndex={canActivateParentDirectoryListEntry ? 0 : -1}
+                      tabIndex={
+                        canActivateParentDirectoryListEntry && resolvedActiveFileRowKey === PARENT_DIRECTORY_ROW_KEY
+                          ? 0
+                          : -1
+                      }
                       className={classNames(
                         'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
                         DIRECTORY_ROW_GRID_CLASS_NAME,
@@ -2186,10 +2408,17 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                           : 'cursor-default text-home-text-subtle opacity-55',
                       )}
                       onDoubleClick={canActivateParentDirectoryListEntry ? handleParentDirectory : undefined}
+                      onFocus={() => {
+                        if (canActivateParentDirectoryListEntry) {
+                          setActiveFileRowKey(PARENT_DIRECTORY_ROW_KEY);
+                        }
+                      }}
                       onKeyDown={(event) => {
-                        if (event.key === 'Enter' && canActivateParentDirectoryListEntry) {
-                          event.preventDefault();
-                          handleParentDirectory();
+                        if (canActivateParentDirectoryListEntry) {
+                          handleFileNavigationRowKeyDown(event, {
+                            kind: 'parent',
+                            key: PARENT_DIRECTORY_ROW_KEY,
+                          });
                         }
                       }}
                     >
@@ -2267,9 +2496,12 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                           <ContextMenu key={entry.path}>
                             <ContextMenuTrigger asChild>
                               <div
+                                ref={(element) => {
+                                  fileRowRefs.current[entry.path] = element;
+                                }}
                                 role="button"
                                 aria-selected={isSelected}
-                                tabIndex={0}
+                                tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
                                 className={classNames(
                                   'focus-visible:ring-form-ring grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
                                   DIRECTORY_ROW_GRID_CLASS_NAME,
@@ -2283,14 +2515,19 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                                   isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
                                   isCut ? 'opacity-55' : '',
                                 )}
-                                onClick={(event) => handleEntrySelect(entry, event)}
+                                onClick={(event) => {
+                                  setActiveFileRowKey(entry.path);
+                                  handleEntrySelect(entry, event);
+                                }}
                                 onDoubleClick={() => handleEntryOpen(entry)}
                                 onContextMenu={() => handleEntryContextMenu(entry)}
+                                onFocus={() => setActiveFileRowKey(entry.path)}
                                 onKeyDown={(event) => {
-                                  if (event.key === 'Enter') {
-                                    event.preventDefault();
-                                    handleEntryOpen(entry);
-                                  }
+                                  handleFileNavigationRowKeyDown(event, {
+                                    kind: 'entry',
+                                    key: entry.path,
+                                    entry,
+                                  });
                                 }}
                               >
                                 <span className="flex min-w-0 items-center gap-2 overflow-hidden">

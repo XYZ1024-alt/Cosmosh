@@ -180,6 +180,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
 - Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, and `Shift` selects the visible range from the current anchor. Row context menus preserve an existing multi-selection when the clicked row is already selected.
+- The left directory tree and center file list use roving focus: `Tab` enters each list once, then `ArrowUp`/`ArrowDown` move between rows. In the file list, arrow navigation selects the focused file row while the optional `..` parent row remains activation-only.
 - Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
