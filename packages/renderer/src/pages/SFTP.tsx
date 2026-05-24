@@ -18,7 +18,6 @@ import {
   RefreshCcw,
   Scissors,
   Search,
-  Server,
   ShieldAlert,
   Trash2,
 } from 'lucide-react';
@@ -650,7 +649,6 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const hasSingleSelection = selectedCount === 1;
 
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
-  const serverDisplayName = connectionIntent?.serverName ?? t('sftp.untitledServer');
   const isBusy = status === 'connecting' || status === 'loading';
   const isOperationRunning = operationStatus === 'running';
   const shortcutModifier = React.useMemo(() => resolveShortcutModifier(), []);
@@ -2024,10 +2022,6 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const treePanel = (
     <aside className={SFTP_CARD_CLASS_NAME}>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="flex h-[34px] shrink-0 items-center gap-2 px-2">
-          <Server className="h-4 w-4 shrink-0 text-home-text-subtle" />
-          <div className="text-home-text min-w-0 flex-1 truncate text-sm font-medium">{serverDisplayName}</div>
-        </div>
         <div className="min-h-0 flex-1 overflow-auto">
           {status === 'connecting' && treeRootPaths.length === 0 ? (
             <div className="flex h-full items-center justify-center gap-2 text-xs text-home-text-subtle">
