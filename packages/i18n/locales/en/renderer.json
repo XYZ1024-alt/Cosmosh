@@ -641,6 +641,7 @@
       "type": "Type"
     },
     "detailEmpty": "Select a file or directory to inspect metadata.",
+    "detailSelectedMany": "{count} entries selected.",
     "detailTitle": "Details",
     "empty": "This directory is empty.",
     "entryType": {
@@ -651,10 +652,13 @@
     },
     "feedback": {
       "copied": "Copied.",
+      "copiedMany": "Copied {count} entries.",
       "deleted": "Deleted.",
+      "deletedMany": "Deleted {count} entries.",
       "directoryCreated": "Folder created.",
       "fileCreated": "File created.",
       "moved": "Moved.",
+      "movedMany": "Moved {count} entries.",
       "renamed": "Renamed."
     },
     "loadFailed": "Failed to load SFTP directory.",

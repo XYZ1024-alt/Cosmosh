@@ -641,6 +641,7 @@
       "type": "类型"
     },
     "detailEmpty": "选择文件或目录以查看元数据。",
+    "detailSelectedMany": "已选择 {count} 个条目。",
     "detailTitle": "详情",
     "empty": "该目录为空。",
     "entryType": {
@@ -651,10 +652,13 @@
     },
     "feedback": {
       "copied": "已复制。",
+      "copiedMany": "已复制 {count} 个条目。",
       "deleted": "已删除。",
+      "deletedMany": "已删除 {count} 个条目。",
       "directoryCreated": "文件夹已创建。",
       "fileCreated": "文件已创建。",
       "moved": "已移动。",
+      "movedMany": "已移动 {count} 个条目。",
       "renamed": "已重命名。"
     },
     "loadFailed": "加载 SFTP 目录失败。",

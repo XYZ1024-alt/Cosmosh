@@ -11,7 +11,7 @@ Implemented in v1:
 - Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries, metadata details, and bounded UTF-8 file preview.
 - The left directory tree shows the current directory ancestry and caches loaded child directories as users browse.
-- Context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename.
+- Context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
@@ -125,7 +125,7 @@ Entry types are reduced to:
 - `symlink`
 - `other`
 
-The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for the selected entry and switches to a bounded preview after opening a regular file.
+The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry, shows a selected-count summary for multiple entries, and switches to a bounded preview after opening a regular file.
 
 Directory results are cached in the renderer for the lifetime of the SFTP tab. Revisiting an already loaded path uses that in-memory result immediately. The refresh action bypasses the cache and requests a fresh listing from the active backend session while preserving the visible list until the new result arrives.
 
@@ -137,6 +137,7 @@ Mutation rules:
 - Copying a directory into itself or one of its descendants is rejected.
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
+- Multi-entry cut/copy/delete/paste is orchestrated by the renderer as ordered single-entry API calls against the current SFTP session. Rename, open, open-in-new-tab, and preview remain single-entry actions.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 - File preview reads up to the requested bounded byte limit and reports whether the result was truncated.
 
@@ -173,6 +174,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Keep the toolbar compact and ordered as path controls, remote path input, file-operation buttons, and current-directory filter.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
+- Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, and `Shift` selects the visible range from the current anchor. Row context menus preserve an existing multi-selection when the clicked row is already selected.
 - Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
