@@ -9,11 +9,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -183,6 +195,30 @@ declare global {
         sessionId: string,
         query?: ApiSftpListDirectoryQuery,
       ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
+      backendSftpReadFile: (
+        sessionId: string,
+        query: ApiSftpReadFileQuery,
+      ) => Promise<ApiSftpReadFileResponse | ApiErrorResponse>;
+      backendSftpCreateDirectory: (
+        sessionId: string,
+        payload: ApiSftpCreateDirectoryRequest,
+      ) => Promise<ApiSftpCreateDirectoryResponse | ApiErrorResponse>;
+      backendSftpCreateFile: (
+        sessionId: string,
+        payload: ApiSftpCreateFileRequest,
+      ) => Promise<ApiSftpCreateFileResponse | ApiErrorResponse>;
+      backendSftpRenameEntry: (
+        sessionId: string,
+        payload: ApiSftpRenameRequest,
+      ) => Promise<ApiSftpRenameResponse | ApiErrorResponse>;
+      backendSftpCopyEntry: (
+        sessionId: string,
+        payload: ApiSftpCopyRequest,
+      ) => Promise<ApiSftpCopyResponse | ApiErrorResponse>;
+      backendSftpDeleteEntry: (
+        sessionId: string,
+        payload: ApiSftpDeleteRequest,
+      ) => Promise<ApiSftpDeleteResponse | ApiErrorResponse>;
       backendSftpCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;

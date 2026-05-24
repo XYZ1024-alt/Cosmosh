@@ -3,15 +3,21 @@ import crypto from 'node:crypto';
 import {
   API_CODES,
   API_PATHS,
+  type ApiSftpCopyResponse,
+  type ApiSftpCreateDirectoryResponse,
+  type ApiSftpCreateFileResponse,
   type ApiSftpCreateSessionHostVerificationRequiredResponse,
   type ApiSftpCreateSessionResponse,
+  type ApiSftpDeleteResponse,
   type ApiSftpListDirectoryResponse,
+  type ApiSftpReadFileResponse,
+  type ApiSftpRenameResponse,
   createApiSuccess,
 } from '@cosmosh/api-contract';
 
 import type { CreateSftpSessionInput } from '../../sftp/session-service.js';
 import { buildErrorPayload } from '../errors.js';
-import { type BackendHttpApp, getTranslator, translateValidationMessage } from '../i18n.js';
+import { type BackendHttpApp, type BackendTranslator, getTranslator, translateValidationMessage } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
 
 type ValidationError = {
@@ -26,6 +32,27 @@ type ValidationResult<TValue> = {
 };
 
 type NormalizedSftpSessionCreateRequest = Omit<CreateSftpSessionInput, 'locale' | 'requestId'>;
+
+type NormalizedSftpPathRequest = {
+  path: string;
+};
+
+type NormalizedSftpRenameRequest = {
+  sourcePath: string;
+  targetPath: string;
+};
+
+type NormalizedSftpDeleteRequest = {
+  path: string;
+  recursive: boolean;
+};
+
+type ApiSftpOperationResponse =
+  | ApiSftpCreateDirectoryResponse
+  | ApiSftpCreateFileResponse
+  | ApiSftpRenameResponse
+  | ApiSftpCopyResponse
+  | ApiSftpDeleteResponse;
 
 const buildValidationError = (
   i18nKey: string,
@@ -54,6 +81,15 @@ const normalizeOptionalString = (value: unknown): string | undefined => {
 
 const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
   return typeof value === 'boolean' ? value : undefined;
+};
+
+const normalizePositiveInteger = (value: unknown): number | undefined => {
+  if (value === undefined || value === null || value === '') {
+    return undefined;
+  }
+
+  const normalizedValue = typeof value === 'number' ? value : Number(value);
+  return Number.isInteger(normalizedValue) && normalizedValue > 0 ? normalizedValue : undefined;
 };
 
 /**
@@ -108,6 +144,172 @@ const parseCreateSftpSessionRequest = (payload: unknown): ValidationResult<Norma
   return {
     value,
   };
+};
+
+/**
+ * Parses and validates a payload that contains one SFTP path.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized request or validation error.
+ */
+const parseSftpPathRequest = (payload: unknown): ValidationResult<NormalizedSftpPathRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  const requestedPath = normalizeOptionalString(payload.path);
+  if (!requestedPath) {
+    return {
+      error: buildValidationError('errors.sftp.pathRequired', 'path is required.'),
+    };
+  }
+
+  return {
+    value: {
+      path: requestedPath,
+    },
+  };
+};
+
+/**
+ * Parses source/target path payloads for SFTP copy and rename operations.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized source/target request or validation error.
+ */
+const parseSftpSourceTargetRequest = (payload: unknown): ValidationResult<NormalizedSftpRenameRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  const sourcePath = normalizeOptionalString(payload.sourcePath);
+  const targetPath = normalizeOptionalString(payload.targetPath);
+  if (!sourcePath || !targetPath) {
+    return {
+      error: buildValidationError('errors.sftp.sourceTargetRequired', 'sourcePath and targetPath are required.'),
+    };
+  }
+
+  return {
+    value: {
+      sourcePath,
+      targetPath,
+    },
+  };
+};
+
+/**
+ * Parses SFTP delete payloads.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized delete request or validation error.
+ */
+const parseSftpDeleteRequest = (payload: unknown): ValidationResult<NormalizedSftpDeleteRequest> => {
+  const parsedPath = parseSftpPathRequest(payload);
+  if (!parsedPath.value) {
+    return parsedPath as ValidationResult<NormalizedSftpDeleteRequest>;
+  }
+
+  const recursive = isRecord(payload) && typeof payload.recursive === 'boolean' ? payload.recursive : true;
+  return {
+    value: {
+      path: parsedPath.value.path,
+      recursive,
+    },
+  };
+};
+
+const buildValidationFailureResponse = (t: BackendTranslator, error?: ValidationError) => {
+  return buildErrorPayload(
+    API_CODES.sftpValidationFailed,
+    error ? t(error.i18nKey, error.params) : t('errors.validation.invalidPayload'),
+  );
+};
+
+const buildOperationFailureResponse = (t: BackendTranslator, reason: string) => {
+  return buildErrorPayload(
+    API_CODES.sftpOperationFailed,
+    translateValidationMessage(
+      reason,
+      t('errors.sftp.operationFailed', { reason }),
+      t('errors.sftp.operationFailedNoReason'),
+    ),
+  );
+};
+
+const buildSftpOperationSuccess = (
+  code: typeof API_CODES.sftpOperationOk,
+  message: string,
+  data: {
+    sessionId: string;
+    path: string;
+    targetPath?: string;
+  },
+): ApiSftpOperationResponse => {
+  return createApiSuccess({
+    code,
+    message,
+    data,
+  });
+};
+
+/**
+ * Registers a POST SFTP path operation route with shared validation/error mapping.
+ *
+ * @param app Backend HTTP app.
+ * @param routePath API path template with `{sessionId}` token.
+ * @param parsePayload Payload parser.
+ * @param successMessage Success message resolver.
+ * @param runOperation Service operation callback.
+ * @returns void.
+ */
+const registerSftpPathOperationRoute = <TRequest>(
+  app: BackendHttpApp,
+  routePath: string,
+  parsePayload: (payload: unknown) => ValidationResult<TRequest>,
+  successMessage: (t: BackendTranslator) => string,
+  runOperation: (
+    sessionId: string,
+    request: TRequest,
+  ) => Promise<
+    | {
+        type: 'success';
+        sessionId: string;
+        path: string;
+        targetPath?: string;
+      }
+    | { type: 'not-found' }
+    | { type: 'failed'; message: string }
+  >,
+): void => {
+  app.post(routePath.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parsePayload(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = await runOperation(sessionId, parsed.value);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    if (result.type === 'failed') {
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    return c.json(buildSftpOperationSuccess(API_CODES.sftpOperationOk, successMessage(t), result));
+  });
 };
 
 /**
@@ -185,7 +387,7 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
         serverId: result.serverId,
         initialPath: result.initialPath,
         currentPath: result.currentPath,
-        readOnly: true,
+        readOnly: false,
       },
     });
 
@@ -234,6 +436,88 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
 
     return c.json(payload);
   });
+
+  app.get(API_PATHS.sftpReadFile.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    const requestedPath = c.req.query('path');
+    const maxBytes = normalizePositiveInteger(c.req.query('maxBytes'));
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    if (!requestedPath) {
+      return c.json(
+        buildValidationFailureResponse(t, buildValidationError('errors.sftp.pathRequired', 'path is required.')),
+        400,
+      );
+    }
+
+    const result = await context.sftpSessionService.readFilePreview(sessionId, requestedPath, maxBytes);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    if (result.type === 'failed') {
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    const payload: ApiSftpReadFileResponse = createApiSuccess({
+      code: API_CODES.sftpFileReadOk,
+      message: t('success.sftp.fileRead'),
+      data: {
+        sessionId: result.sessionId,
+        path: result.path,
+        encoding: 'utf8',
+        content: result.content,
+        size: result.size,
+        truncated: result.truncated,
+      },
+    });
+
+    return c.json(payload);
+  });
+
+  registerSftpPathOperationRoute(
+    app,
+    API_PATHS.sftpCreateDirectory,
+    parseSftpPathRequest,
+    (t) => t('success.sftp.directoryCreated'),
+    (sessionId, request) => context.sftpSessionService.createDirectory(sessionId, request.path),
+  );
+
+  registerSftpPathOperationRoute(
+    app,
+    API_PATHS.sftpCreateFile,
+    parseSftpPathRequest,
+    (t) => t('success.sftp.fileCreated'),
+    (sessionId, request) => context.sftpSessionService.createFile(sessionId, request.path),
+  );
+
+  registerSftpPathOperationRoute(
+    app,
+    API_PATHS.sftpRenameEntry,
+    parseSftpSourceTargetRequest,
+    (t) => t('success.sftp.entryRenamed'),
+    (sessionId, request) => context.sftpSessionService.renameEntry(sessionId, request.sourcePath, request.targetPath),
+  );
+
+  registerSftpPathOperationRoute(
+    app,
+    API_PATHS.sftpCopyEntry,
+    parseSftpSourceTargetRequest,
+    (t) => t('success.sftp.entryCopied'),
+    (sessionId, request) => context.sftpSessionService.copyEntry(sessionId, request.sourcePath, request.targetPath),
+  );
+
+  registerSftpPathOperationRoute(
+    app,
+    API_PATHS.sftpDeleteEntry,
+    parseSftpDeleteRequest,
+    (t) => t('success.sftp.entryDeleted'),
+    (sessionId, request) => context.sftpSessionService.deleteEntry(sessionId, request.path, request.recursive),
+  );
 
   app.delete(API_PATHS.sftpCloseSession.replace('{sessionId}', ':sessionId'), async (c) => {
     const t = getTranslator(c);

@@ -856,7 +856,7 @@ paths:
     post:
       tags:
         - sftp
-      summary: Create a read-only SFTP browser session.
+      summary: Create an SFTP file-system session.
       operationId: sftpCreateSession
       parameters:
         - $ref: '#/components/parameters/LocaleHeader'
@@ -868,7 +868,7 @@ paths:
               $ref: '#/components/schemas/SftpSessionCreateRequest'
       responses:
         '200':
-          description: SFTP session is ready for directory browsing.
+          description: SFTP session is ready for file-system operations.
           content:
             application/json:
               schema:
@@ -941,11 +941,282 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/file:
+    get:
+      tags:
+        - sftp
+      summary: Read one remote SFTP file for preview.
+      operationId: sftpReadFile
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: path
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: maxBytes
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1024
+            maximum: 1048576
+            default: 262144
+      responses:
+        '200':
+          description: File content read.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpReadFileSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or file not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/directories:
+    post:
+      tags:
+        - sftp
+      summary: Create one remote SFTP directory.
+      operationId: sftpCreateDirectory
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpCreateDirectoryRequest'
+      responses:
+        '200':
+          description: Directory created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/files:
+    post:
+      tags:
+        - sftp
+      summary: Create one empty remote SFTP file.
+      operationId: sftpCreateFile
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpCreateFileRequest'
+      responses:
+        '200':
+          description: File created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/rename:
+    post:
+      tags:
+        - sftp
+      summary: Rename or move one remote SFTP entry.
+      operationId: sftpRenameEntry
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpRenameRequest'
+      responses:
+        '200':
+          description: Entry renamed or moved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/copy:
+    post:
+      tags:
+        - sftp
+      summary: Copy one remote SFTP entry.
+      operationId: sftpCopyEntry
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpCopyRequest'
+      responses:
+        '200':
+          description: Entry copied.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/entries/delete:
+    post:
+      tags:
+        - sftp
+      summary: Delete one remote SFTP entry.
+      operationId: sftpDeleteEntry
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpDeleteRequest'
+      responses:
+        '200':
+          description: Entry deleted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}:
     delete:
       tags:
         - sftp
-      summary: Close a read-only SFTP browser session.
+      summary: Close an SFTP file-system session.
       operationId: sftpCloseSession
       parameters:
         - $ref: '#/components/parameters/LocaleHeader'
@@ -1890,6 +2161,52 @@ components:
           maximum: 180
         strictHostKey:
           type: boolean
+    SftpPathRequest:
+      type: object
+      required:
+        - path
+      properties:
+        path:
+          type: string
+          minLength: 1
+    SftpCreateDirectoryRequest:
+      allOf:
+        - $ref: '#/components/schemas/SftpPathRequest'
+    SftpCreateFileRequest:
+      allOf:
+        - $ref: '#/components/schemas/SftpPathRequest'
+    SftpRenameRequest:
+      type: object
+      required:
+        - sourcePath
+        - targetPath
+      properties:
+        sourcePath:
+          type: string
+          minLength: 1
+        targetPath:
+          type: string
+          minLength: 1
+    SftpCopyRequest:
+      type: object
+      required:
+        - sourcePath
+        - targetPath
+      properties:
+        sourcePath:
+          type: string
+          minLength: 1
+        targetPath:
+          type: string
+          minLength: 1
+    SftpDeleteRequest:
+      allOf:
+        - $ref: '#/components/schemas/SftpPathRequest'
+        - type: object
+          properties:
+            recursive:
+              type: boolean
+              default: true
     SftpEntryType:
       type: string
       enum: ['directory', 'file', 'symlink', 'other']
@@ -1939,7 +2256,7 @@ components:
           type: string
         readOnly:
           type: boolean
-          enum: [true]
+          enum: [false]
     SftpDirectoryListData:
       type: object
       required:
@@ -1957,6 +2274,42 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SftpEntry'
+    SftpOperationData:
+      type: object
+      required:
+        - sessionId
+        - path
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        targetPath:
+          type: string
+    SftpReadFileData:
+      type: object
+      required:
+        - sessionId
+        - path
+        - encoding
+        - content
+        - size
+        - truncated
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        encoding:
+          type: string
+          enum: ['utf8']
+        content:
+          type: string
+        size:
+          type: integer
+          format: int64
+        truncated:
+          type: boolean
     LocalTerminalProfile:
       type: object
       required:
@@ -2419,3 +2772,37 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpDirectoryListData'
+    SftpOperationSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_OPERATION_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpOperationData'
+    SftpReadFileSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_FILE_READ_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpReadFileData'

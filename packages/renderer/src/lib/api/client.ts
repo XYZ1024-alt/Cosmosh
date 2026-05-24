@@ -5,11 +5,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -75,6 +87,15 @@ export type BackendClient = {
     payload: ApiSftpCreateSessionRequest,
   ) => Promise<ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse>;
   listSftpDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => Promise<ApiSftpListDirectoryResponse>;
+  readSftpFile: (sessionId: string, query: ApiSftpReadFileQuery) => Promise<ApiSftpReadFileResponse>;
+  createSftpDirectory: (
+    sessionId: string,
+    payload: ApiSftpCreateDirectoryRequest,
+  ) => Promise<ApiSftpCreateDirectoryResponse>;
+  createSftpFile: (sessionId: string, payload: ApiSftpCreateFileRequest) => Promise<ApiSftpCreateFileResponse>;
+  renameSftpEntry: (sessionId: string, payload: ApiSftpRenameRequest) => Promise<ApiSftpRenameResponse>;
+  copySftpEntry: (sessionId: string, payload: ApiSftpCopyRequest) => Promise<ApiSftpCopyResponse>;
+  deleteSftpEntry: (sessionId: string, payload: ApiSftpDeleteRequest) => Promise<ApiSftpDeleteResponse>;
   trustSshFingerprint: (payload: ApiSshTrustFingerprintRequest) => Promise<ApiSshTrustFingerprintResponse>;
   listLocalTerminalProfiles: () => Promise<LocalTerminalListResponse>;
   createLocalTerminalSession: (
@@ -300,6 +321,60 @@ export const createBackendClient = (): BackendClient => {
     },
     listSftpDirectory: async (sessionId, query) => {
       const payload = await transport.listSftpDirectory(sessionId, query);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    readSftpFile: async (sessionId, query) => {
+      const payload = await transport.readSftpFile(sessionId, query);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    createSftpDirectory: async (sessionId, requestPayload) => {
+      const payload = await transport.createSftpDirectory(sessionId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    createSftpFile: async (sessionId, requestPayload) => {
+      const payload = await transport.createSftpFile(sessionId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    renameSftpEntry: async (sessionId, requestPayload) => {
+      const payload = await transport.renameSftpEntry(sessionId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    copySftpEntry: async (sessionId, requestPayload) => {
+      const payload = await transport.copySftpEntry(sessionId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    deleteSftpEntry: async (sessionId, requestPayload) => {
+      const payload = await transport.deleteSftpEntry(sessionId, requestPayload);
 
       if (!payload.success) {
         throw new Error(payload.message);

@@ -9,11 +9,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -324,6 +336,28 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpListDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => {
     return invokeIpc<ApiSftpListDirectoryResponse | ApiErrorResponse>('backend:sftp-list-directory', sessionId, query);
+  },
+  backendSftpReadFile: (sessionId: string, query: ApiSftpReadFileQuery) => {
+    return invokeIpc<ApiSftpReadFileResponse | ApiErrorResponse>('backend:sftp-read-file', sessionId, query);
+  },
+  backendSftpCreateDirectory: (sessionId: string, payload: ApiSftpCreateDirectoryRequest) => {
+    return invokeIpc<ApiSftpCreateDirectoryResponse | ApiErrorResponse>(
+      'backend:sftp-create-directory',
+      sessionId,
+      payload,
+    );
+  },
+  backendSftpCreateFile: (sessionId: string, payload: ApiSftpCreateFileRequest) => {
+    return invokeIpc<ApiSftpCreateFileResponse | ApiErrorResponse>('backend:sftp-create-file', sessionId, payload);
+  },
+  backendSftpRenameEntry: (sessionId: string, payload: ApiSftpRenameRequest) => {
+    return invokeIpc<ApiSftpRenameResponse | ApiErrorResponse>('backend:sftp-rename-entry', sessionId, payload);
+  },
+  backendSftpCopyEntry: (sessionId: string, payload: ApiSftpCopyRequest) => {
+    return invokeIpc<ApiSftpCopyResponse | ApiErrorResponse>('backend:sftp-copy-entry', sessionId, payload);
+  },
+  backendSftpDeleteEntry: (sessionId: string, payload: ApiSftpDeleteRequest) => {
+    return invokeIpc<ApiSftpDeleteResponse | ApiErrorResponse>('backend:sftp-delete-entry', sessionId, payload);
   },
   backendSftpCloseSession: (sessionId: string) => {
     return invokeIpc<{ success: boolean }>('backend:sftp-close-session', sessionId);

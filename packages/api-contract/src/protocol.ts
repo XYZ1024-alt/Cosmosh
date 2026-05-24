@@ -31,6 +31,12 @@ export const API_PATHS = {
   sshTrustFingerprint: '/api/v1/ssh/trusted-host-keys',
   sftpCreateSession: '/api/v1/sftp/sessions',
   sftpListDirectory: '/api/v1/sftp/sessions/{sessionId}/entries',
+  sftpReadFile: '/api/v1/sftp/sessions/{sessionId}/file',
+  sftpCreateDirectory: '/api/v1/sftp/sessions/{sessionId}/directories',
+  sftpCreateFile: '/api/v1/sftp/sessions/{sessionId}/files',
+  sftpRenameEntry: '/api/v1/sftp/sessions/{sessionId}/rename',
+  sftpCopyEntry: '/api/v1/sftp/sessions/{sessionId}/copy',
+  sftpDeleteEntry: '/api/v1/sftp/sessions/{sessionId}/entries/delete',
   sftpCloseSession: '/api/v1/sftp/sessions/{sessionId}',
   localTerminalListProfiles: '/api/v1/local-terminals/profiles',
   localTerminalCreateSession: '/api/v1/local-terminals/sessions',
@@ -86,6 +92,8 @@ export const API_CODES = {
   sshTrustFingerprintOk: 'SSH_TRUST_FINGERPRINT_OK',
   sftpSessionCreateOk: 'SFTP_SESSION_CREATE_OK',
   sftpDirectoryListOk: 'SFTP_DIRECTORY_LIST_OK',
+  sftpOperationOk: 'SFTP_OPERATION_OK',
+  sftpFileReadOk: 'SFTP_FILE_READ_OK',
 } as const;
 
 export const API_CAPABILITIES = ['ssh', 'sftp'] as const;

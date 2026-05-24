@@ -40,6 +40,7 @@ export type SshEditorState = {
 export type SftpConnectionIntent = {
   serverId: string;
   serverName: string;
+  initialPath?: string;
   createdAt: number;
 };
 

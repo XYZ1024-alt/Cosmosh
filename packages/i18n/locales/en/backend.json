@@ -31,12 +31,26 @@
       "rowNotPersisted": "Settings row was not persisted."
     },
     "sftp": {
+      "copyIntoSelfUnsupported": "A directory cannot be copied into itself.",
+      "copyTargetConflict": "Unable to choose a unique copy target path.",
+      "directoryCreateFailedNoReason": "Failed to create SFTP directory.",
       "directoryListFailed": "Failed to list SFTP directory: {reason}",
       "directoryListFailedNoReason": "Failed to list SFTP directory.",
+      "entryCopyFailedNoReason": "Failed to copy SFTP entry.",
+      "entryCopyUnsupported": "This SFTP entry type cannot be copied yet.",
+      "entryDeleteFailedNoReason": "Failed to delete SFTP entry.",
+      "entryRenameFailedNoReason": "Failed to rename SFTP entry.",
+      "fileCreateFailedNoReason": "Failed to create SFTP file.",
+      "fileReadFailedNoReason": "Failed to read SFTP file.",
+      "fileReadUnsupported": "Only regular files can be opened in the SFTP preview.",
+      "operationFailed": "SFTP operation failed: {reason}",
+      "operationFailedNoReason": "SFTP operation failed.",
+      "pathRequired": "path is required.",
       "sessionCreateFailed": "Failed to create SFTP session: {reason}",
       "sessionCreateFailedNoReason": "Failed to create SFTP session.",
       "sessionIdRequired": "sessionId is required.",
-      "sessionNotFound": "SFTP session was not found."
+      "sessionNotFound": "SFTP session was not found.",
+      "sourceTargetRequired": "sourcePath and targetPath are required."
     },
     "ssh": {
       "decryptCredentialsFailed": "Unable to decrypt SSH credentials. Please re-save this server credentials.",
@@ -105,7 +119,13 @@
       "updated": "Settings updated successfully."
     },
     "sftp": {
+      "directoryCreated": "SFTP directory created successfully.",
       "directoryListed": "SFTP directory listed successfully.",
+      "entryCopied": "SFTP entry copied successfully.",
+      "entryDeleted": "SFTP entry deleted successfully.",
+      "entryRenamed": "SFTP entry renamed successfully.",
+      "fileCreated": "SFTP file created successfully.",
+      "fileRead": "SFTP file read successfully.",
       "sessionCreated": "SFTP session created successfully."
     },
     "ssh": {

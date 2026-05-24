@@ -31,12 +31,26 @@
       "rowNotPersisted": "设置记录未持久化。"
     },
     "sftp": {
+      "copyIntoSelfUnsupported": "不能将目录复制到自身内部。",
+      "copyTargetConflict": "无法选择唯一的复制目标路径。",
+      "directoryCreateFailedNoReason": "创建 SFTP 目录失败。",
       "directoryListFailed": "列出 SFTP 目录失败：{reason}",
       "directoryListFailedNoReason": "列出 SFTP 目录失败。",
+      "entryCopyFailedNoReason": "复制 SFTP 条目失败。",
+      "entryCopyUnsupported": "暂不支持复制此类 SFTP 条目。",
+      "entryDeleteFailedNoReason": "删除 SFTP 条目失败。",
+      "entryRenameFailedNoReason": "重命名 SFTP 条目失败。",
+      "fileCreateFailedNoReason": "创建 SFTP 文件失败。",
+      "fileReadFailedNoReason": "读取 SFTP 文件失败。",
+      "fileReadUnsupported": "SFTP 预览仅支持打开普通文件。",
+      "operationFailed": "SFTP 操作失败：{reason}",
+      "operationFailedNoReason": "SFTP 操作失败。",
+      "pathRequired": "path 为必填项。",
       "sessionCreateFailed": "SFTP 会话创建失败：{reason}",
       "sessionCreateFailedNoReason": "SFTP 会话创建失败。",
       "sessionIdRequired": "sessionId 为必填项。",
-      "sessionNotFound": "未找到 SFTP 会话。"
+      "sessionNotFound": "未找到 SFTP 会话。",
+      "sourceTargetRequired": "sourcePath 和 targetPath 为必填项。"
     },
     "ssh": {
       "decryptCredentialsFailed": "SSH 凭据解密失败，请重新保存该服务器凭据。",
@@ -105,7 +119,13 @@
       "updated": "设置更新成功。"
     },
     "sftp": {
+      "directoryCreated": "SFTP 目录创建成功。",
       "directoryListed": "SFTP 目录获取成功。",
+      "entryCopied": "SFTP 条目复制成功。",
+      "entryDeleted": "SFTP 条目删除成功。",
+      "entryRenamed": "SFTP 条目重命名成功。",
+      "fileCreated": "SFTP 文件创建成功。",
+      "fileRead": "SFTP 文件读取成功。",
       "sessionCreated": "SFTP 会话创建成功。"
     },
     "ssh": {

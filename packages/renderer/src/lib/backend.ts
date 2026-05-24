@@ -5,11 +5,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -159,6 +171,45 @@ export const listSftpDirectory = async (
   query?: ApiSftpListDirectoryQuery,
 ): Promise<ApiSftpListDirectoryResponse> => {
   return backendClient.listSftpDirectory(sessionId, query);
+};
+
+export const readSftpFile = async (
+  sessionId: string,
+  query: ApiSftpReadFileQuery,
+): Promise<ApiSftpReadFileResponse> => {
+  return backendClient.readSftpFile(sessionId, query);
+};
+
+export const createSftpDirectory = async (
+  sessionId: string,
+  payload: ApiSftpCreateDirectoryRequest,
+): Promise<ApiSftpCreateDirectoryResponse> => {
+  return backendClient.createSftpDirectory(sessionId, payload);
+};
+
+export const createSftpFile = async (
+  sessionId: string,
+  payload: ApiSftpCreateFileRequest,
+): Promise<ApiSftpCreateFileResponse> => {
+  return backendClient.createSftpFile(sessionId, payload);
+};
+
+export const renameSftpEntry = async (
+  sessionId: string,
+  payload: ApiSftpRenameRequest,
+): Promise<ApiSftpRenameResponse> => {
+  return backendClient.renameSftpEntry(sessionId, payload);
+};
+
+export const copySftpEntry = async (sessionId: string, payload: ApiSftpCopyRequest): Promise<ApiSftpCopyResponse> => {
+  return backendClient.copySftpEntry(sessionId, payload);
+};
+
+export const deleteSftpEntry = async (
+  sessionId: string,
+  payload: ApiSftpDeleteRequest,
+): Promise<ApiSftpDeleteResponse> => {
+  return backendClient.deleteSftpEntry(sessionId, payload);
 };
 
 export const closeSftpSession = async (sessionId: string): Promise<{ success: boolean }> => {

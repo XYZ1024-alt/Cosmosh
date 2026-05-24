@@ -310,7 +310,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Create a read-only SFTP browser session. */
+    /** Create an SFTP file-system session. */
     post: operations['sftpCreateSession'];
     delete?: never;
     options?: never;
@@ -335,6 +335,108 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/file': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read one remote SFTP file for preview. */
+    get: operations['sftpReadFile'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/directories': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create one remote SFTP directory. */
+    post: operations['sftpCreateDirectory'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/files': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create one empty remote SFTP file. */
+    post: operations['sftpCreateFile'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/rename': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rename or move one remote SFTP entry. */
+    post: operations['sftpRenameEntry'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/copy': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Copy one remote SFTP entry. */
+    post: operations['sftpCopyEntry'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/entries/delete': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Delete one remote SFTP entry. */
+    post: operations['sftpDeleteEntry'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}': {
     parameters: {
       query?: never;
@@ -345,7 +447,7 @@ export interface paths {
     get?: never;
     put?: never;
     post?: never;
-    /** Close a read-only SFTP browser session. */
+    /** Close an SFTP file-system session. */
     delete: operations['sftpCloseSession'];
     options?: never;
     head?: never;
@@ -745,6 +847,23 @@ export interface components {
       connectTimeoutSec?: number;
       strictHostKey?: boolean;
     };
+    SftpPathRequest: {
+      path: string;
+    };
+    SftpCreateDirectoryRequest: components['schemas']['SftpPathRequest'];
+    SftpCreateFileRequest: components['schemas']['SftpPathRequest'];
+    SftpRenameRequest: {
+      sourcePath: string;
+      targetPath: string;
+    };
+    SftpCopyRequest: {
+      sourcePath: string;
+      targetPath: string;
+    };
+    SftpDeleteRequest: components['schemas']['SftpPathRequest'] & {
+      /** @default true */
+      recursive: boolean;
+    };
     /** @enum {string} */
     SftpEntryType: 'directory' | 'file' | 'symlink' | 'other';
     SftpEntry: {
@@ -764,13 +883,28 @@ export interface components {
       initialPath: string;
       currentPath: string;
       /** @enum {boolean} */
-      readOnly: true;
+      readOnly: false;
     };
     SftpDirectoryListData: {
       sessionId: string;
       path: string;
       parentPath?: string;
       entries: components['schemas']['SftpEntry'][];
+    };
+    SftpOperationData: {
+      sessionId: string;
+      path: string;
+      targetPath?: string;
+    };
+    SftpReadFileData: {
+      sessionId: string;
+      path: string;
+      /** @enum {string} */
+      encoding: 'utf8';
+      content: string;
+      /** Format: int64 */
+      size: number;
+      truncated: boolean;
     };
     LocalTerminalProfile: {
       id: string;
@@ -958,6 +1092,20 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpDirectoryListData'];
+    };
+    SftpOperationSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_OPERATION_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpOperationData'];
+    };
+    SftpReadFileSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_FILE_READ_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpReadFileData'];
     };
   };
   responses: never;
@@ -2090,7 +2238,7 @@ export interface operations {
       };
     };
     responses: {
-      /** @description SFTP session is ready for directory browsing. */
+      /** @description SFTP session is ready for file-system operations. */
       200: {
         headers: {
           [name: string]: unknown;
@@ -2180,6 +2328,335 @@ export interface operations {
         };
       };
       /** @description Session or directory not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpReadFile: {
+    parameters: {
+      query: {
+        path: string;
+        maxBytes?: number;
+      };
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description File content read. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpReadFileSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or file not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCreateDirectory: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpCreateDirectoryRequest'];
+      };
+    };
+    responses: {
+      /** @description Directory created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCreateFile: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpCreateFileRequest'];
+      };
+    };
+    responses: {
+      /** @description File created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpRenameEntry: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpRenameRequest'];
+      };
+    };
+    responses: {
+      /** @description Entry renamed or moved. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or entry not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCopyEntry: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpCopyRequest'];
+      };
+    };
+    responses: {
+      /** @description Entry copied. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or entry not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpDeleteEntry: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpDeleteRequest'];
+      };
+    };
+    responses: {
+      /** @description Entry deleted. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or entry not found. */
       404: {
         headers: {
           [name: string]: unknown;

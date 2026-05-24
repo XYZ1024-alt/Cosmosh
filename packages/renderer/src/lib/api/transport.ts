@@ -10,11 +10,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -61,6 +73,12 @@ type ApiResponse =
   | ApiSftpCreateSessionResponse
   | ApiSftpCreateSessionHostVerificationRequiredResponse
   | ApiSftpListDirectoryResponse
+  | ApiSftpReadFileResponse
+  | ApiSftpCreateDirectoryResponse
+  | ApiSftpCreateFileResponse
+  | ApiSftpRenameResponse
+  | ApiSftpCopyResponse
+  | ApiSftpDeleteResponse
   | ApiSshListServersResponse
   | ApiSshCreateServerResponse
   | ApiSshUpdateServerResponse
@@ -119,6 +137,24 @@ export type ApiTransport = {
     sessionId: string,
     query?: ApiSftpListDirectoryQuery,
   ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
+  readSftpFile: (sessionId: string, query: ApiSftpReadFileQuery) => Promise<ApiSftpReadFileResponse | ApiErrorResponse>;
+  createSftpDirectory: (
+    sessionId: string,
+    payload: ApiSftpCreateDirectoryRequest,
+  ) => Promise<ApiSftpCreateDirectoryResponse | ApiErrorResponse>;
+  createSftpFile: (
+    sessionId: string,
+    payload: ApiSftpCreateFileRequest,
+  ) => Promise<ApiSftpCreateFileResponse | ApiErrorResponse>;
+  renameSftpEntry: (
+    sessionId: string,
+    payload: ApiSftpRenameRequest,
+  ) => Promise<ApiSftpRenameResponse | ApiErrorResponse>;
+  copySftpEntry: (sessionId: string, payload: ApiSftpCopyRequest) => Promise<ApiSftpCopyResponse | ApiErrorResponse>;
+  deleteSftpEntry: (
+    sessionId: string,
+    payload: ApiSftpDeleteRequest,
+  ) => Promise<ApiSftpDeleteResponse | ApiErrorResponse>;
   trustSshFingerprint: (
     payload: ApiSshTrustFingerprintRequest,
   ) => Promise<ApiSshTrustFingerprintResponse | ApiErrorResponse>;
@@ -254,6 +290,36 @@ const createElectronTransport = (): ApiTransport => {
     listSftpDirectory: async (sessionId, query) => {
       return (await window.electron!.backendSftpListDirectory(sessionId, query)) as
         | ApiSftpListDirectoryResponse
+        | ApiErrorResponse;
+    },
+    readSftpFile: async (sessionId, query) => {
+      return (await window.electron!.backendSftpReadFile(sessionId, query)) as
+        | ApiSftpReadFileResponse
+        | ApiErrorResponse;
+    },
+    createSftpDirectory: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpCreateDirectory(sessionId, payload)) as
+        | ApiSftpCreateDirectoryResponse
+        | ApiErrorResponse;
+    },
+    createSftpFile: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpCreateFile(sessionId, payload)) as
+        | ApiSftpCreateFileResponse
+        | ApiErrorResponse;
+    },
+    renameSftpEntry: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpRenameEntry(sessionId, payload)) as
+        | ApiSftpRenameResponse
+        | ApiErrorResponse;
+    },
+    copySftpEntry: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpCopyEntry(sessionId, payload)) as
+        | ApiSftpCopyResponse
+        | ApiErrorResponse;
+    },
+    deleteSftpEntry: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpDeleteEntry(sessionId, payload)) as
+        | ApiSftpDeleteResponse
         | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
@@ -433,6 +499,41 @@ const createBrowserTransport = (): ApiTransport => {
       const basePath = API_PATHS.sftpListDirectory.replace('{sessionId}', encodeURIComponent(sessionId));
       const path = queryString.length > 0 ? `${basePath}?${queryString}` : basePath;
       return (await callBrowserApi(path, 'GET')) as ApiSftpListDirectoryResponse | ApiErrorResponse;
+    },
+    readSftpFile: async (sessionId, query) => {
+      const searchParams = new URLSearchParams();
+      for (const [key, value] of Object.entries(query)) {
+        if (value === undefined || value === null || value === '') {
+          continue;
+        }
+
+        searchParams.set(key, String(value));
+      }
+
+      const basePath = API_PATHS.sftpReadFile.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(`${basePath}?${searchParams.toString()}`, 'GET')) as
+        | ApiSftpReadFileResponse
+        | ApiErrorResponse;
+    },
+    createSftpDirectory: async (sessionId, payload) => {
+      const path = API_PATHS.sftpCreateDirectory.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCreateDirectoryResponse | ApiErrorResponse;
+    },
+    createSftpFile: async (sessionId, payload) => {
+      const path = API_PATHS.sftpCreateFile.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCreateFileResponse | ApiErrorResponse;
+    },
+    renameSftpEntry: async (sessionId, payload) => {
+      const path = API_PATHS.sftpRenameEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpRenameResponse | ApiErrorResponse;
+    },
+    copySftpEntry: async (sessionId, payload) => {
+      const path = API_PATHS.sftpCopyEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCopyResponse | ApiErrorResponse;
+    },
+    deleteSftpEntry: async (sessionId, payload) => {
+      const path = API_PATHS.sftpDeleteEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDeleteResponse | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
       return createBrowserFallbackError('Local terminal profiles are only available in Electron runtime.');

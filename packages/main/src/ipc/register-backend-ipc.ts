@@ -9,11 +9,23 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpCopyRequest,
+  ApiSftpCopyResponse,
+  ApiSftpCreateDirectoryRequest,
+  ApiSftpCreateDirectoryResponse,
+  ApiSftpCreateFileRequest,
+  ApiSftpCreateFileResponse,
   ApiSftpCreateSessionHostVerificationRequiredResponse,
   ApiSftpCreateSessionRequest,
   ApiSftpCreateSessionResponse,
+  ApiSftpDeleteRequest,
+  ApiSftpDeleteResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpReadFileQuery,
+  ApiSftpReadFileResponse,
+  ApiSftpRenameRequest,
+  ApiSftpRenameResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -386,6 +398,92 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
       return options.requestBackend<ApiSftpListDirectoryResponse>(path, {
         method: 'GET',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-read-file',
+    async (
+      _event,
+      sessionId: string,
+      query: ApiSftpReadFileQuery,
+    ): Promise<ApiSftpReadFileResponse | ApiErrorResponse> => {
+      const pathTemplate = replacePathToken(API_PATHS.sftpReadFile, 'sessionId', sessionId);
+      const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
+      return options.requestBackend<ApiSftpReadFileResponse>(path, {
+        method: 'GET',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-create-directory',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpCreateDirectoryRequest,
+    ): Promise<ApiSftpCreateDirectoryResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpCreateDirectoryResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-create-file',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpCreateFileRequest,
+    ): Promise<ApiSftpCreateFileResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpCreateFile, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpCreateFileResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-rename-entry',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpRenameRequest,
+    ): Promise<ApiSftpRenameResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpRenameEntry, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpRenameResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-copy-entry',
+    async (_event, sessionId: string, payload: ApiSftpCopyRequest): Promise<ApiSftpCopyResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpCopyEntry, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpCopyResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-delete-entry',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpDeleteRequest,
+    ): Promise<ApiSftpDeleteResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpDeleteEntry, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpDeleteResponse>(path, {
+        method: 'POST',
+        body: payload,
       });
     },
   );

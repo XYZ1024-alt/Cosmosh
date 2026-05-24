@@ -4,18 +4,35 @@ import {
   ArrowUp,
   ChevronLeft,
   ChevronRight,
+  Clipboard,
+  Copy,
+  Edit3,
   File,
+  FilePlus2,
   Folder,
+  FolderOpen,
+  FolderPlus,
   Info,
   Loader2,
+  MoreVertical,
   RefreshCcw,
+  Scissors,
   Search,
   Server,
   ShieldAlert,
+  Trash2,
 } from 'lucide-react';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuShortcut,
+  ContextMenuTrigger,
+} from '../components/ui/context-menu';
 import {
   Dialog,
   DialogContent,
@@ -26,10 +43,29 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
-import { Menubar } from '../components/ui/menubar';
+import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
-import { closeSftpSession, createSftpSession, listSftpDirectory, trustSshFingerprint } from '../lib/backend';
+import {
+  closeSftpSession,
+  copySftpEntry,
+  createSftpDirectory,
+  createSftpFile,
+  createSftpSession,
+  deleteSftpEntry,
+  listSftpDirectory,
+  readSftpFile,
+  renameSftpEntry,
+  trustSshFingerprint,
+} from '../lib/backend';
 import { t } from '../lib/i18n';
 import { useToast } from '../lib/toast-context';
 import type { SftpConnectionIntent } from '../types/tabs';
@@ -44,11 +80,13 @@ type HostFingerprintPrompt = {
 
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
+  onOpenDirectoryInNewTab: (initialPath: string) => void;
   onTabTitleChange: (title: string) => void;
 };
 
 type DirectoryLoadOptions = {
   forceRefresh?: boolean;
+  preserveCurrentView?: boolean;
   isCancelled?: () => boolean;
 };
 
@@ -73,10 +111,38 @@ type NavigationState = {
   index: number;
 };
 
+type ClipboardState = {
+  mode: 'copy' | 'cut';
+  entry: ApiSftpEntry;
+};
+
+type FilePreviewState = {
+  path: string;
+  name: string;
+  content: string;
+  size: number;
+  truncated: boolean;
+};
+
+type PendingCreateState = {
+  type: 'file' | 'directory';
+  name: string;
+};
+
+type SftpActionMenuOptions = {
+  contextEntry: ApiSftpEntry | null;
+  menuSurface: 'context' | 'dropdown';
+  scope: 'entry' | 'directory' | 'toolbarMore';
+  showShortcuts: boolean;
+};
+
 const TREE_INDENT_CLASS_NAMES = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-16'] as const;
 const SFTP_CARD_CLASS_NAME = 'bg-ssh-card-bg-terminal h-full min-h-0 overflow-hidden rounded-[18px] p-1';
 const DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME = 'min-w-[600px]';
 const DIRECTORY_ROW_GRID_CLASS_NAME = 'grid-cols-[minmax(0,1fr)_92px_148px_96px_28px]';
+const NEW_FILE_NAME = 'untitled.txt';
+const NEW_DIRECTORY_NAME = 'Untitled Folder';
+const FILE_PREVIEW_MAX_BYTES = 256 * 1024;
 
 /**
  * Formats SFTP byte sizes for the compact file list.
@@ -355,13 +421,64 @@ const filterSftpEntries = (entries: ApiSftpEntry[], query: string): ApiSftpEntry
 };
 
 /**
+ * Resolves the modifier key name shown in shortcut labels for the active desktop platform.
+ *
+ * @returns Shortcut modifier label.
+ */
+const resolveShortcutModifier = (): string => {
+  return window.electron?.platform === 'darwin' ? 'Cmd' : 'Ctrl';
+};
+
+/**
+ * Builds a child path for the current SFTP directory.
+ *
+ * @param parentPath Current remote directory path.
+ * @param name New entry name.
+ * @returns POSIX-style child path.
+ */
+const joinRemotePath = (parentPath: string, name: string): string => {
+  if (parentPath === '/' || parentPath === '.') {
+    return `${parentPath === '/' ? '' : parentPath}/${name}`.replace(/\/+/g, '/') || '/';
+  }
+
+  return `${parentPath.replace(/\/+$/, '')}/${name}`;
+};
+
+/**
+ * Returns the parent directory for a remote SFTP entry path.
+ *
+ * @param entryPath Remote entry path.
+ * @returns Parent path.
+ */
+const resolveEntryParentPath = (entryPath: string): string => {
+  const normalizedPath = entryPath.replace(/\/+$/, '');
+  const slashIndex = normalizedPath.lastIndexOf('/');
+  if (slashIndex <= 0) {
+    return normalizedPath.startsWith('/') ? '/' : '.';
+  }
+
+  return normalizedPath.slice(0, slashIndex);
+};
+
+/**
+ * Returns a sibling path for renaming an entry without moving it.
+ *
+ * @param entry Existing SFTP entry.
+ * @param nextName New entry name.
+ * @returns Target path for rename.
+ */
+const resolveRenameTargetPath = (entry: ApiSftpEntry, nextName: string): string => {
+  return joinRemotePath(resolveEntryParentPath(entry.path), nextName);
+};
+
+/**
  * Read-only SFTP browser page bound to one renderer tab.
  *
  * @param props SFTP tab runtime props.
  * @returns SFTP workbench page.
  */
-const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
-  const { error: notifyError } = useToast();
+const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, onTabTitleChange }) => {
+  const { error: notifyError, success: notifySuccess } = useToast();
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
@@ -374,10 +491,18 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
   const [treeNodes, setTreeNodes] = React.useState<Record<string, TreeDirectoryNode>>({});
   const [navigationState, setNavigationState] = React.useState<NavigationState>({ paths: [], index: -1 });
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
+  const [clipboardState, setClipboardState] = React.useState<ClipboardState | null>(null);
+  const [operationStatus, setOperationStatus] = React.useState<'idle' | 'running'>('idle');
+  const [isRefreshingDirectory, setIsRefreshingDirectory] = React.useState(false);
+  const [renamingEntryPath, setRenamingEntryPath] = React.useState<string>('');
+  const [renameInput, setRenameInput] = React.useState<string>('');
+  const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
+  const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
   const pendingPromptResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
   const syncedTabTitleRef = React.useRef<string>('');
+  const renameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -395,6 +520,17 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
     setPathInput(currentPath);
   }, [currentPath]);
 
+  React.useEffect(() => {
+    if (!renamingEntryPath && !pendingCreate) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      renameInputRef.current?.focus();
+      renameInputRef.current?.select();
+    });
+  }, [pendingCreate, renamingEntryPath]);
+
   const selectedEntry = React.useMemo(() => {
     return entries.find((entry) => entry.path === selectedPath) ?? null;
   }, [entries, selectedPath]);
@@ -406,8 +542,11 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
   const serverDisplayName = connectionIntent?.serverName ?? t('sftp.untitledServer');
   const isBusy = status === 'connecting' || status === 'loading';
+  const isOperationRunning = operationStatus === 'running';
+  const shortcutModifier = React.useMemo(() => resolveShortcutModifier(), []);
   const canGoBack = navigationState.index > 0;
   const canGoForward = navigationState.index >= 0 && navigationState.index < navigationState.paths.length - 1;
+  const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy && !isOperationRunning;
 
   const requestHostFingerprintTrust = React.useCallback((prompt: HostFingerprintPrompt): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -503,6 +642,17 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
     setErrorMessage('');
   }, []);
 
+  const invalidateDirectoryCache = React.useCallback((directoryPath?: string): void => {
+    if (!directoryPath) {
+      directoryCacheRef.current = {};
+      return;
+    }
+
+    const nextCache = { ...directoryCacheRef.current };
+    delete nextCache[directoryPath];
+    directoryCacheRef.current = nextCache;
+  }, []);
+
   const loadDirectory = React.useCallback(
     async (nextSessionId: string, directoryPath: string, options?: DirectoryLoadOptions): Promise<string | null> => {
       const cachedDirectory = directoryCacheRef.current[directoryPath];
@@ -512,13 +662,20 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         return cachedDirectory.path;
       }
 
-      setStatus((previous) => (previous === 'connecting' ? 'connecting' : 'loading'));
+      const shouldPreserveCurrentView = options?.preserveCurrentView === true;
+      if (shouldPreserveCurrentView) {
+        setIsRefreshingDirectory(true);
+      } else {
+        setStatus((previous) => (previous === 'connecting' ? 'connecting' : 'loading'));
+      }
+
       setErrorMessage('');
       setTreeNodeLoading(directoryPath, true);
 
       try {
         const response = await listSftpDirectory(nextSessionId, { path: directoryPath });
         if (options?.isCancelled?.()) {
+          setIsRefreshingDirectory(false);
           return null;
         }
 
@@ -526,11 +683,14 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         setCurrentPath(response.data.path);
         setParentPath(response.data.parentPath);
         setEntries(sortedEntries);
-        setSelectedPath('');
-        setFilterQuery('');
+        if (!shouldPreserveCurrentView) {
+          setSelectedPath('');
+          setFilterQuery('');
+        }
         setTreeNodes((previous) =>
           mergeResolvedDirectoryIntoTree(previous, directoryPath, response.data.path, sortedEntries),
         );
+        setIsRefreshingDirectory(false);
         directoryCacheRef.current = {
           ...directoryCacheRef.current,
           [directoryPath]: {
@@ -549,14 +709,19 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         return response.data.path;
       } catch (error: unknown) {
         if (options?.isCancelled?.()) {
+          setIsRefreshingDirectory(false);
           return null;
         }
 
         const message = error instanceof Error ? error.message : t('sftp.loadFailed');
+        setIsRefreshingDirectory(false);
         setTreeNodeLoading(directoryPath, false);
         void syncAncestorDirectories(nextSessionId, directoryPath, options?.isCancelled);
         setErrorMessage(message);
-        setStatus('error');
+        if (!shouldPreserveCurrentView) {
+          setStatus('error');
+        }
+
         notifyError(message);
         return null;
       }
@@ -619,7 +784,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         shouldRetry = false;
         const response = await createSftpSession({
           serverId: connectionIntent.serverId,
-          initialPath: '.',
+          initialPath: connectionIntent.initialPath ?? '.',
           connectTimeoutSec: 45,
         });
 
@@ -664,7 +829,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         }
       }
     },
-    [connectionIntent?.serverId, loadDirectory, requestHostFingerprintTrust],
+    [connectionIntent?.initialPath, connectionIntent?.serverId, loadDirectory, requestHostFingerprintTrust],
   );
 
   React.useEffect(() => {
@@ -687,6 +852,10 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
         setEntries([]);
         setSelectedPath('');
         setTreeNodes({});
+        setClipboardState(null);
+        setFilePreview(null);
+        setPendingCreate(null);
+        setRenamingEntryPath('');
         directoryCacheRef.current = {};
         setNavigationState({ paths: [], index: -1 });
         setFilterQuery('');
@@ -714,6 +883,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
     };
   }, [
     connectionIntent?.createdAt,
+    connectionIntent?.initialPath,
     connectionIntent?.serverId,
     createSessionForIntent,
     notifyError,
@@ -728,6 +898,31 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
       }
     };
   }, []);
+
+  const handleHistoryJump = React.useCallback(
+    async (nextIndex: number): Promise<void> => {
+      if (!sessionId || nextIndex < 0 || nextIndex >= navigationState.paths.length) {
+        return;
+      }
+
+      const targetPath = navigationState.paths[nextIndex];
+      if (!targetPath) {
+        return;
+      }
+
+      const loadedPath = await loadDirectory(sessionId, targetPath);
+      if (!loadedPath) {
+        return;
+      }
+
+      setNavigationState((previous) => {
+        const nextPaths = [...previous.paths];
+        nextPaths[nextIndex] = loadedPath;
+        return { paths: nextPaths, index: nextIndex };
+      });
+    },
+    [loadDirectory, navigationState.paths, sessionId],
+  );
 
   const navigateToPath = React.useCallback(
     async (directoryPath: string): Promise<void> => {
@@ -755,38 +950,376 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
     [loadDirectory, sessionId],
   );
 
-  const handleHistoryJump = React.useCallback(
-    async (nextIndex: number): Promise<void> => {
-      if (!sessionId || nextIndex < 0 || nextIndex >= navigationState.paths.length) {
-        return;
-      }
-
-      const targetPath = navigationState.paths[nextIndex];
-      if (!targetPath) {
-        return;
-      }
-
-      const loadedPath = await loadDirectory(sessionId, targetPath);
-      if (!loadedPath) {
-        return;
-      }
-
-      setNavigationState((previous) => {
-        const nextPaths = [...previous.paths];
-        nextPaths[nextIndex] = loadedPath;
-        return { paths: nextPaths, index: nextIndex };
-      });
-    },
-    [loadDirectory, navigationState.paths, sessionId],
-  );
-
   const handleRefresh = React.useCallback(() => {
     if (!sessionId) {
       return;
     }
 
-    void loadDirectory(sessionId, currentPath, { forceRefresh: true });
+    void loadDirectory(sessionId, currentPath, { forceRefresh: true, preserveCurrentView: true });
   }, [currentPath, loadDirectory, sessionId]);
+
+  const refreshCurrentDirectoryAfterOperation = React.useCallback(async (): Promise<void> => {
+    if (!sessionId) {
+      return;
+    }
+
+    invalidateDirectoryCache(currentPath);
+    await loadDirectory(sessionId, currentPath, { forceRefresh: true, preserveCurrentView: true });
+  }, [currentPath, invalidateDirectoryCache, loadDirectory, sessionId]);
+
+  const runSftpOperation = React.useCallback(
+    async (operation: () => Promise<void>): Promise<void> => {
+      if (!canUseFileActions) {
+        return;
+      }
+
+      setOperationStatus('running');
+      try {
+        await operation();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : t('sftp.operationFailed');
+        notifyError(message);
+      } finally {
+        setOperationStatus('idle');
+      }
+    },
+    [canUseFileActions, notifyError],
+  );
+
+  const beginRenameEntry = React.useCallback((entry: ApiSftpEntry): void => {
+    setPendingCreate(null);
+    setSelectedPath(entry.path);
+    setRenamingEntryPath(entry.path);
+    setRenameInput(entry.name);
+  }, []);
+
+  const cancelInlineEdit = React.useCallback((): void => {
+    setRenamingEntryPath('');
+    setRenameInput('');
+    setPendingCreate(null);
+  }, []);
+
+  const commitRenameEntry = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      const nextName = renameInput.trim();
+      cancelInlineEdit();
+      if (!nextName || nextName === entry.name || !sessionId) {
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const targetPath = resolveRenameTargetPath(entry, nextName);
+        await renameSftpEntry(sessionId, {
+          sourcePath: entry.path,
+          targetPath,
+        });
+        notifySuccess(t('sftp.feedback.renamed'));
+        await refreshCurrentDirectoryAfterOperation();
+        setSelectedPath(targetPath);
+      });
+    },
+    [cancelInlineEdit, notifySuccess, refreshCurrentDirectoryAfterOperation, renameInput, runSftpOperation, sessionId],
+  );
+
+  const commitPendingCreate = React.useCallback(async (): Promise<void> => {
+    const draft = pendingCreate;
+    const nextName = renameInput.trim();
+    cancelInlineEdit();
+    if (!draft || !nextName || !sessionId) {
+      return;
+    }
+
+    await runSftpOperation(async () => {
+      const targetPath = joinRemotePath(currentPath, nextName);
+      if (draft.type === 'directory') {
+        await createSftpDirectory(sessionId, { path: targetPath });
+        notifySuccess(t('sftp.feedback.directoryCreated'));
+      } else {
+        await createSftpFile(sessionId, { path: targetPath });
+        notifySuccess(t('sftp.feedback.fileCreated'));
+      }
+
+      await refreshCurrentDirectoryAfterOperation();
+      setSelectedPath(targetPath);
+    });
+  }, [
+    cancelInlineEdit,
+    currentPath,
+    notifySuccess,
+    pendingCreate,
+    refreshCurrentDirectoryAfterOperation,
+    renameInput,
+    runSftpOperation,
+    sessionId,
+  ]);
+
+  const beginCreateEntry = React.useCallback(
+    (type: PendingCreateState['type']): void => {
+      if (!canUseFileActions) {
+        return;
+      }
+
+      setRenamingEntryPath('');
+      setSelectedPath('');
+      setPendingCreate({
+        type,
+        name: type === 'directory' ? NEW_DIRECTORY_NAME : NEW_FILE_NAME,
+      });
+      setRenameInput(type === 'directory' ? NEW_DIRECTORY_NAME : NEW_FILE_NAME);
+    },
+    [canUseFileActions],
+  );
+
+  const handleOpenEntry = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      setSelectedPath(entry.path);
+      if (entry.type === 'directory') {
+        await navigateToPath(entry.path);
+        return;
+      }
+
+      if (entry.type !== 'file' || !sessionId) {
+        notifyError(t('sftp.openUnsupported'));
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const response = await readSftpFile(sessionId, { path: entry.path, maxBytes: FILE_PREVIEW_MAX_BYTES });
+        setFilePreview({
+          path: response.data.path,
+          name: entry.name,
+          content: response.data.content,
+          size: response.data.size,
+          truncated: response.data.truncated,
+        });
+      });
+    },
+    [navigateToPath, notifyError, runSftpOperation, sessionId],
+  );
+
+  const handleOpenDirectoryInNewTab = React.useCallback(
+    (entry: ApiSftpEntry): void => {
+      if (entry.type !== 'directory') {
+        return;
+      }
+
+      onOpenDirectoryInNewTab(entry.path);
+    },
+    [onOpenDirectoryInNewTab],
+  );
+
+  const handleCopyEntry = React.useCallback((entry: ApiSftpEntry): void => {
+    setClipboardState({ mode: 'copy', entry });
+    setSelectedPath(entry.path);
+  }, []);
+
+  const handleCutEntry = React.useCallback((entry: ApiSftpEntry): void => {
+    setClipboardState({ mode: 'cut', entry });
+    setSelectedPath(entry.path);
+  }, []);
+
+  const handlePasteEntry = React.useCallback(async (): Promise<void> => {
+    if (!clipboardState || !sessionId) {
+      return;
+    }
+
+    await runSftpOperation(async () => {
+      const targetPath = joinRemotePath(currentPath, clipboardState.entry.name);
+      if (clipboardState.mode === 'copy') {
+        await copySftpEntry(sessionId, {
+          sourcePath: clipboardState.entry.path,
+          targetPath,
+        });
+        notifySuccess(t('sftp.feedback.copied'));
+      } else {
+        await renameSftpEntry(sessionId, {
+          sourcePath: clipboardState.entry.path,
+          targetPath,
+        });
+        setClipboardState(null);
+        notifySuccess(t('sftp.feedback.moved'));
+      }
+
+      await refreshCurrentDirectoryAfterOperation();
+    });
+  }, [clipboardState, currentPath, notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, sessionId]);
+
+  const handleDeleteEntry = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      if (!sessionId) {
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        await deleteSftpEntry(sessionId, {
+          path: entry.path,
+          recursive: entry.type === 'directory',
+        });
+        notifySuccess(t('sftp.feedback.deleted'));
+        if (selectedPath === entry.path) {
+          setSelectedPath('');
+        }
+
+        setFilePreview((previous) => (previous?.path === entry.path ? null : previous));
+        await refreshCurrentDirectoryAfterOperation();
+      });
+    },
+    [notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, selectedPath, sessionId],
+  );
+
+  const renderSftpActionMenuItems = React.useCallback(
+    ({ contextEntry, menuSurface, scope, showShortcuts }: SftpActionMenuOptions): React.ReactNode => {
+      const targetEntry = contextEntry ?? (scope === 'entry' ? selectedEntry : null);
+      const shouldShowEntryOpenActions = scope === 'entry' || scope === 'toolbarMore';
+      const shouldShowEntryMutationActions = scope === 'entry';
+      const shouldShowCreateActions = scope === 'directory';
+      const shouldShowPasteAction = scope === 'directory';
+      const canOpenEntry = canUseFileActions && Boolean(targetEntry);
+      const canOpenInNewTab = canOpenEntry && targetEntry?.type === 'directory';
+      const canMutateEntry = canUseFileActions && Boolean(targetEntry);
+      const canPaste = canUseFileActions && Boolean(clipboardState);
+      const shouldShowCreateSeparator = shouldShowPasteAction && shouldShowCreateActions;
+
+      const ShortcutComponent = menuSurface === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
+      const ItemComponent = menuSurface === 'context' ? ContextMenuItem : DropdownMenuItem;
+      const SeparatorComponent = menuSurface === 'context' ? ContextMenuSeparator : DropdownMenuSeparator;
+      const deleteShortcut = window.electron?.platform === 'darwin' ? 'Cmd+Backspace' : 'Del';
+
+      return (
+        <>
+          {shouldShowEntryOpenActions ? (
+            <>
+              <ItemComponent
+                icon={FolderOpen}
+                disabled={!canOpenEntry}
+                onSelect={() => {
+                  if (targetEntry) {
+                    void handleOpenEntry(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.open')}
+                {showShortcuts ? <ShortcutComponent>Enter</ShortcutComponent> : null}
+              </ItemComponent>
+              <ItemComponent
+                icon={FolderOpen}
+                disabled={!canOpenInNewTab}
+                onSelect={() => {
+                  if (targetEntry) {
+                    handleOpenDirectoryInNewTab(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.openInNewTab')}
+                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
+              </ItemComponent>
+              {shouldShowEntryMutationActions ? <SeparatorComponent /> : null}
+            </>
+          ) : null}
+          {shouldShowEntryMutationActions ? (
+            <>
+              <ItemComponent
+                icon={Scissors}
+                disabled={!canMutateEntry}
+                onSelect={() => {
+                  if (targetEntry) {
+                    handleCutEntry(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.cut')}
+                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+X</ShortcutComponent> : null}
+              </ItemComponent>
+              <ItemComponent
+                icon={Copy}
+                disabled={!canMutateEntry}
+                onSelect={() => {
+                  if (targetEntry) {
+                    handleCopyEntry(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.copy')}
+                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+C</ShortcutComponent> : null}
+              </ItemComponent>
+              <ItemComponent
+                icon={Edit3}
+                disabled={!canMutateEntry}
+                onSelect={() => {
+                  if (targetEntry) {
+                    beginRenameEntry(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.rename')}
+                {showShortcuts ? <ShortcutComponent>F2</ShortcutComponent> : null}
+              </ItemComponent>
+              <ItemComponent
+                icon={Trash2}
+                disabled={!canMutateEntry}
+                onSelect={() => {
+                  if (targetEntry) {
+                    void handleDeleteEntry(targetEntry);
+                  }
+                }}
+              >
+                {t('sftp.actions.delete')}
+                {showShortcuts ? <ShortcutComponent>{deleteShortcut}</ShortcutComponent> : null}
+              </ItemComponent>
+              {shouldShowPasteAction || shouldShowCreateActions ? <SeparatorComponent /> : null}
+            </>
+          ) : null}
+          {shouldShowPasteAction ? (
+            <ItemComponent
+              icon={Clipboard}
+              disabled={!canPaste}
+              onSelect={() => {
+                void handlePasteEntry();
+              }}
+            >
+              {t('sftp.actions.paste')}
+              {showShortcuts ? <ShortcutComponent>{shortcutModifier}+V</ShortcutComponent> : null}
+            </ItemComponent>
+          ) : null}
+          {shouldShowCreateActions ? (
+            <>
+              {shouldShowCreateSeparator ? <SeparatorComponent /> : null}
+              <ItemComponent
+                icon={FilePlus2}
+                disabled={!canUseFileActions}
+                onSelect={() => beginCreateEntry('file')}
+              >
+                {t('sftp.actions.newFile')}
+                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+N</ShortcutComponent> : null}
+              </ItemComponent>
+              <ItemComponent
+                icon={FolderPlus}
+                disabled={!canUseFileActions}
+                onSelect={() => beginCreateEntry('directory')}
+              >
+                {t('sftp.actions.newFolder')}
+                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Shift+N</ShortcutComponent> : null}
+              </ItemComponent>
+            </>
+          ) : null}
+        </>
+      );
+    },
+    [
+      beginCreateEntry,
+      beginRenameEntry,
+      canUseFileActions,
+      clipboardState,
+      handleCopyEntry,
+      handleCutEntry,
+      handleDeleteEntry,
+      handleOpenDirectoryInNewTab,
+      handleOpenEntry,
+      handlePasteEntry,
+      selectedEntry,
+      shortcutModifier,
+    ],
+  );
 
   const handlePathSubmit = React.useCallback(
     (event: React.FormEvent<HTMLFormElement>): void => {
@@ -810,13 +1343,97 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
 
   const handleEntryOpen = React.useCallback(
     (entry: ApiSftpEntry): void => {
-      setSelectedPath(entry.path);
-      if (entry.type === 'directory') {
-        void navigateToPath(entry.path);
-      }
+      void handleOpenEntry(entry);
     },
-    [navigateToPath],
+    [handleOpenEntry],
   );
+
+  React.useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target;
+      const isEditingText =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement;
+      if (isEditingText || !canUseFileActions) {
+        return;
+      }
+
+      const hasShortcutModifier = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+      if (hasShortcutModifier && event.key.toLowerCase() === 'x' && selectedEntry) {
+        event.preventDefault();
+        handleCutEntry(selectedEntry);
+        return;
+      }
+
+      if (hasShortcutModifier && event.key.toLowerCase() === 'c' && selectedEntry) {
+        event.preventDefault();
+        handleCopyEntry(selectedEntry);
+        return;
+      }
+
+      if (hasShortcutModifier && event.key.toLowerCase() === 'v' && clipboardState) {
+        event.preventDefault();
+        void handlePasteEntry();
+        return;
+      }
+
+      if (hasShortcutModifier && event.shiftKey && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        beginCreateEntry('directory');
+        return;
+      }
+
+      if (hasShortcutModifier && event.key.toLowerCase() === 'n') {
+        event.preventDefault();
+        beginCreateEntry('file');
+        return;
+      }
+
+      if (event.key === 'F2' && selectedEntry) {
+        event.preventDefault();
+        beginRenameEntry(selectedEntry);
+        return;
+      }
+
+      const isDeleteShortcut =
+        (window.electron?.platform === 'darwin' && event.metaKey && event.key === 'Backspace') ||
+        (window.electron?.platform !== 'darwin' && event.key === 'Delete');
+      if (isDeleteShortcut && selectedEntry) {
+        event.preventDefault();
+        void handleDeleteEntry(selectedEntry);
+        return;
+      }
+
+      if (event.key === 'Enter' && selectedEntry) {
+        event.preventDefault();
+        if (hasShortcutModifier && selectedEntry.type === 'directory') {
+          handleOpenDirectoryInNewTab(selectedEntry);
+          return;
+        }
+
+        void handleOpenEntry(selectedEntry);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [
+    beginCreateEntry,
+    beginRenameEntry,
+    canUseFileActions,
+    clipboardState,
+    handleCopyEntry,
+    handleCutEntry,
+    handleDeleteEntry,
+    handleOpenDirectoryInNewTab,
+    handleOpenEntry,
+    handlePasteEntry,
+    selectedEntry,
+  ]);
 
   const handleTreeNodeToggle = React.useCallback(
     (nodePath: string): void => {
@@ -932,62 +1549,64 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
     <TooltipProvider>
       <Menubar className="w-full shrink-0">
         <div className="flex min-w-0 flex-1 items-center gap-1">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={t('sftp.actions.back')}
-                variant="ghostIcon"
-                disabled={!canGoBack || isBusy}
-                onClick={() => {
-                  void handleHistoryJump(navigationState.index - 1);
-                }}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('sftp.actions.back')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={t('sftp.actions.forward')}
-                variant="ghostIcon"
-                disabled={!canGoForward || isBusy}
-                onClick={() => {
-                  void handleHistoryJump(navigationState.index + 1);
-                }}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('sftp.actions.forward')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={t('sftp.actions.up')}
-                variant="ghostIcon"
-                disabled={!sessionId || !parentPath || isBusy}
-                onClick={handleParentDirectory}
-              >
-                <ArrowUp className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('sftp.actions.up')}</TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                aria-label={t('sftp.actions.refresh')}
-                variant="ghostIcon"
-                disabled={!sessionId || isBusy}
-                onClick={handleRefresh}
-              >
-                <RefreshCcw className={classNames('h-4 w-4', isBusy && 'animate-spin')} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('sftp.actions.refresh')}</TooltipContent>
-          </Tooltip>
+          <div className="flex shrink-0 items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.back')}
+                  variant="ghostIcon"
+                  disabled={!canGoBack || isBusy}
+                  onClick={() => {
+                    void handleHistoryJump(navigationState.index - 1);
+                  }}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.back')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.forward')}
+                  variant="ghostIcon"
+                  disabled={!canGoForward || isBusy}
+                  onClick={() => {
+                    void handleHistoryJump(navigationState.index + 1);
+                  }}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.forward')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.up')}
+                  variant="ghostIcon"
+                  disabled={!sessionId || !parentPath || isBusy}
+                  onClick={handleParentDirectory}
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.up')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.refresh')}
+                  variant="ghostIcon"
+                  disabled={!sessionId || isBusy || isOperationRunning}
+                  onClick={handleRefresh}
+                >
+                  <RefreshCcw className={classNames('h-4 w-4', (isBusy || isRefreshingDirectory) && 'animate-spin')} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.refresh')}</TooltipContent>
+            </Tooltip>
+          </div>
 
           <form
             className="mx-1 min-w-0 flex-1"
@@ -1001,6 +1620,144 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
               onChange={(event) => setPathInput(event.target.value)}
             />
           </form>
+
+          <MenubarSeparator vertical />
+
+          <div className="flex shrink-0 items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.cut')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !selectedEntry}
+                  onClick={() => {
+                    if (selectedEntry) {
+                      handleCutEntry(selectedEntry);
+                    }
+                  }}
+                >
+                  <Scissors className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.cut')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.copy')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !selectedEntry}
+                  onClick={() => {
+                    if (selectedEntry) {
+                      handleCopyEntry(selectedEntry);
+                    }
+                  }}
+                >
+                  <Copy className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.copy')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.paste')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !clipboardState}
+                  onClick={() => {
+                    void handlePasteEntry();
+                  }}
+                >
+                  <Clipboard className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.paste')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.newFile')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions}
+                  onClick={() => beginCreateEntry('file')}
+                >
+                  <FilePlus2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.newFile')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.newFolder')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions}
+                  onClick={() => beginCreateEntry('directory')}
+                >
+                  <FolderPlus className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.newFolder')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.rename')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !selectedEntry}
+                  onClick={() => {
+                    if (selectedEntry) {
+                      beginRenameEntry(selectedEntry);
+                    }
+                  }}
+                >
+                  <Edit3 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.rename')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.delete')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !selectedEntry}
+                  onClick={() => {
+                    if (selectedEntry) {
+                      void handleDeleteEntry(selectedEntry);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.delete')}</TooltipContent>
+            </Tooltip>
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      aria-label={t('sftp.actions.more')}
+                      variant="ghostIcon"
+                      disabled={!sessionId || isBusy}
+                    >
+                      <MoreVertical className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>{t('sftp.actions.more')}</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent horizontalAlign="left">
+                {renderSftpActionMenuItems({
+                  contextEntry: selectedEntry,
+                  menuSurface: 'dropdown',
+                  scope: 'toolbarMore',
+                  showShortcuts: true,
+                })}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
 
           <div className="relative w-[220px] shrink-0">
             <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-home-text-subtle" />
@@ -1064,75 +1821,169 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
           {status === 'connecting' ? t('sftp.connecting') : t('sftp.loading')}
         </div>
       ) : (
-        <div className="h-full min-h-0 overflow-auto">
-          <div className={classNames('flex min-h-full flex-col', DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME)}>
-            <div
-              className={classNames(
-                'sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle',
-                DIRECTORY_ROW_GRID_CLASS_NAME,
-              )}
-            >
-              <span className="min-w-0 truncate">{t('sftp.columns.name')}</span>
-              <span className="min-w-0 truncate">{t('sftp.columns.size')}</span>
-              <span className="min-w-0 truncate">{t('sftp.columns.modified')}</span>
-              <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
-              <span></span>
-            </div>
-            <div className="min-h-0 flex-1">
-              {status === 'idle' ? (
-                <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                  {t('sftp.noSession')}
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="h-full min-h-0 overflow-auto">
+              <div className={classNames('flex min-h-full flex-col', DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME)}>
+                <div
+                  className={classNames(
+                    'sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle',
+                    DIRECTORY_ROW_GRID_CLASS_NAME,
+                  )}
+                >
+                  <span className="min-w-0 truncate">{t('sftp.columns.name')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.size')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.modified')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
+                  <span></span>
                 </div>
-              ) : null}
-              {status === 'ready' && entries.length === 0 ? (
-                <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                  {t('sftp.empty')}
-                </div>
-              ) : null}
-              {status === 'ready' && entries.length > 0 && visibleEntries.length === 0 ? (
-                <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                  {t('sftp.searchEmpty')}
-                </div>
-              ) : null}
-              {status === 'ready' && visibleEntries.length > 0
-                ? visibleEntries.map((entry) => (
-                    <button
-                      key={entry.path}
-                      type="button"
+                <div className="min-h-0 flex-1">
+                  {status === 'idle' ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.noSession')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' && entries.length === 0 && !pendingCreate ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.empty')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' && entries.length > 0 && visibleEntries.length === 0 ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.searchEmpty')}
+                    </div>
+                  ) : null}
+                  {pendingCreate ? (
+                    <div
                       className={classNames(
-                        'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
+                        'text-home-text grid h-[34px] w-full items-center rounded-lg bg-home-card-hover px-3 text-left text-sm',
                         DIRECTORY_ROW_GRID_CLASS_NAME,
-                        selectedPath === entry.path ? 'text-home-text bg-home-card-hover' : 'text-home-text',
                       )}
-                      onClick={() => handleEntrySelect(entry)}
-                      onDoubleClick={() => handleEntryOpen(entry)}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && entry.type === 'directory') {
-                          event.preventDefault();
-                          handleEntryOpen(entry);
-                        }
-                      }}
                     >
                       <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                        {resolveEntryIcon(entry)}
-                        <span className="truncate">{entry.name}</span>
+                        {pendingCreate.type === 'directory' ? (
+                          <Folder className="text-home-text h-4 w-4 shrink-0" />
+                        ) : (
+                          <File className="text-home-text h-4 w-4 shrink-0" />
+                        )}
+                        <Input
+                          ref={renameInputRef}
+                          aria-label={t('sftp.renameInputLabel')}
+                          className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                          value={renameInput}
+                          onBlur={() => {
+                            void commitPendingCreate();
+                          }}
+                          onChange={(event) => setRenameInput(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void commitPendingCreate();
+                            }
+
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              cancelInlineEdit();
+                            }
+                          }}
+                        />
                       </span>
-                      <span className="min-w-0 truncate text-xs text-home-text-subtle">
-                        {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
-                      </span>
-                      <span className="truncate text-xs text-home-text-subtle">
-                        {formatModifiedAt(entry.modifiedAt)}
-                      </span>
-                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
-                        {entry.permissions}
-                      </span>
-                      <Info className="h-3.5 w-3.5 shrink-0 justify-self-end text-home-text-subtle" />
-                    </button>
-                  ))
-                : null}
+                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
+                      <span className="truncate text-xs text-home-text-subtle">-</span>
+                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                      <span />
+                    </div>
+                  ) : null}
+                  {status === 'ready' && visibleEntries.length > 0
+                    ? visibleEntries.map((entry) => (
+                        <ContextMenu key={entry.path}>
+                          <ContextMenuTrigger asChild>
+                            <div
+                              role="button"
+                              tabIndex={0}
+                              className={classNames(
+                                'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
+                                DIRECTORY_ROW_GRID_CLASS_NAME,
+                                selectedPath === entry.path ? 'text-home-text bg-home-card-hover' : 'text-home-text',
+                                clipboardState?.mode === 'cut' && clipboardState.entry.path === entry.path
+                                  ? 'opacity-55'
+                                  : '',
+                              )}
+                              onClick={() => handleEntrySelect(entry)}
+                              onDoubleClick={() => handleEntryOpen(entry)}
+                              onContextMenu={() => handleEntrySelect(entry)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  handleEntryOpen(entry);
+                                }
+                              }}
+                            >
+                              <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                                {resolveEntryIcon(entry)}
+                                {renamingEntryPath === entry.path ? (
+                                  <Input
+                                    ref={renameInputRef}
+                                    aria-label={t('sftp.renameInputLabel')}
+                                    className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                                    value={renameInput}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onBlur={() => {
+                                      void commitRenameEntry(entry);
+                                    }}
+                                    onChange={(event) => setRenameInput(event.target.value)}
+                                    onKeyDown={(event) => {
+                                      if (event.key === 'Enter') {
+                                        event.preventDefault();
+                                        void commitRenameEntry(entry);
+                                      }
+
+                                      if (event.key === 'Escape') {
+                                        event.preventDefault();
+                                        cancelInlineEdit();
+                                      }
+                                    }}
+                                  />
+                                ) : (
+                                  <span className="truncate">{entry.name}</span>
+                                )}
+                              </span>
+                              <span className="min-w-0 truncate text-xs text-home-text-subtle">
+                                {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
+                              </span>
+                              <span className="truncate text-xs text-home-text-subtle">
+                                {formatModifiedAt(entry.modifiedAt)}
+                              </span>
+                              <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
+                                {entry.permissions}
+                              </span>
+                              <Info className="h-3.5 w-3.5 shrink-0 justify-self-end text-home-text-subtle" />
+                            </div>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent>
+                            {renderSftpActionMenuItems({
+                              contextEntry: entry,
+                              menuSurface: 'context',
+                              scope: 'entry',
+                              showShortcuts: true,
+                            })}
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      ))
+                    : null}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            {renderSftpActionMenuItems({
+              contextEntry: null,
+              menuSurface: 'context',
+              scope: 'directory',
+              showShortcuts: true,
+            })}
+          </ContextMenuContent>
+        </ContextMenu>
       )}
     </main>
   );
@@ -1142,10 +1993,28 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onTabTitleChange }) => {
       <div className="flex h-full min-h-0 flex-col">
         <div className="flex h-[34px] shrink-0 items-center gap-2 px-2">
           <Info className="h-4 w-4 shrink-0 text-home-text-subtle" />
-          <div className="text-home-text text-sm font-medium">{t('sftp.detailTitle')}</div>
+          <div className="text-home-text min-w-0 flex-1 truncate text-sm font-medium">
+            {filePreview ? t('sftp.previewTitle') : t('sftp.detailTitle')}
+          </div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto px-2 pb-2">
-          {selectedEntry ? (
+          {filePreview ? (
+            <div className="flex h-full min-h-0 flex-col gap-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <File className="text-home-text h-4 w-4 shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-home-text truncate text-sm font-medium">{filePreview.name}</div>
+                  <div className="mt-0.5 text-xs text-home-text-subtle">
+                    {formatFileSize(filePreview.size)}
+                    {filePreview.truncated ? ` · ${t('sftp.previewTruncated')}` : ''}
+                  </div>
+                </div>
+              </div>
+              <pre className="bg-home-card/70 text-home-text min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-home-divider p-2 font-mono text-xs leading-5">
+                {filePreview.content || t('sftp.previewEmpty')}
+              </pre>
+            </div>
+          ) : selectedEntry ? (
             <div className="space-y-4">
               <div className="flex min-w-0 items-center gap-2">
                 {resolveEntryIcon(selectedEntry)}

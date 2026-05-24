@@ -133,6 +133,30 @@ export type ApiSftpListDirectoryQuery =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['parameters']['query'];
 export type ApiSftpListDirectoryResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpReadFileQuery =
+  paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
+export type ApiSftpReadFileResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpCreateDirectoryRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['requestBody']['content']['application/json'];
+export type ApiSftpCreateDirectoryResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpCreateFileRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/files']['post']['requestBody']['content']['application/json'];
+export type ApiSftpCreateFileResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/files']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpRenameRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/rename']['post']['requestBody']['content']['application/json'];
+export type ApiSftpRenameResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/rename']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpCopyRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/copy']['post']['requestBody']['content']['application/json'];
+export type ApiSftpCopyResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/copy']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpDeleteRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries/delete']['post']['requestBody']['content']['application/json'];
+export type ApiSftpDeleteResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries/delete']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpCloseSessionRequest = paths['/api/v1/sftp/sessions/{sessionId}']['delete']['parameters']['path'];
 export type ApiSftpEntry = components['schemas']['SftpEntry'];
 export type ApiSftpEntryType = components['schemas']['SftpEntryType'];

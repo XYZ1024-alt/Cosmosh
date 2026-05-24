@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
+import { pipeline } from 'node:stream/promises';
 
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ConnectConfig, type SFTPWrapper, type Stats } from 'ssh2';
@@ -78,6 +79,38 @@ export type ListSftpDirectoryResult =
       message: string;
     };
 
+export type SftpOperationResult =
+  | {
+      type: 'success';
+      sessionId: string;
+      path: string;
+      targetPath?: string;
+    }
+  | {
+      type: 'not-found';
+    }
+  | {
+      type: 'failed';
+      message: string;
+    };
+
+export type ReadSftpFileResult =
+  | {
+      type: 'success';
+      sessionId: string;
+      path: string;
+      content: string;
+      size: number;
+      truncated: boolean;
+    }
+  | {
+      type: 'not-found';
+    }
+  | {
+      type: 'failed';
+      message: string;
+    };
+
 type OpenSftpResult =
   | {
       type: 'ready';
@@ -108,6 +141,10 @@ const S_IFMT = 0o170000;
 const S_IFDIR = 0o040000;
 const S_IFREG = 0o100000;
 const S_IFLNK = 0o120000;
+const DEFAULT_FILE_MODE = 0o644;
+const DEFAULT_DIRECTORY_MODE = 0o755;
+const DEFAULT_READ_FILE_MAX_BYTES = 256 * 1024;
+const MAX_READ_FILE_MAX_BYTES = 1024 * 1024;
 
 /**
  * Converts user-provided SFTP paths into POSIX-style paths used by remote SFTP servers.
@@ -140,6 +177,37 @@ export const joinSftpPath = (parent: string, name: string): string => {
   }
 
   return POSIX_PATH.normalize(`${parent}/${name}`);
+};
+
+/**
+ * Returns a sibling path with a Finder-like numeric suffix when the target already exists.
+ *
+ * @param targetPath Desired destination path.
+ * @param attempt Numbered collision attempt.
+ * @returns Collision-resistant target path candidate.
+ */
+export const buildSftpCopyTargetCandidate = (targetPath: string, attempt: number): string => {
+  if (attempt <= 0) {
+    return targetPath;
+  }
+
+  const directoryName = POSIX_PATH.dirname(targetPath);
+  const baseName = POSIX_PATH.basename(targetPath);
+  const extensionName = POSIX_PATH.extname(baseName);
+  const stem = extensionName ? baseName.slice(0, -extensionName.length) : baseName;
+  const candidateName = `${stem} copy${attempt > 1 ? ` ${attempt}` : ''}${extensionName}`;
+
+  return directoryName === '.' ? candidateName : joinSftpPath(directoryName, candidateName);
+};
+
+/**
+ * Checks whether a normalized path is safe for mutating entry-level operations.
+ *
+ * @param targetPath Normalized SFTP path.
+ * @returns True when the path targets a concrete entry instead of the root/current marker.
+ */
+export const isMutableSftpEntryPath = (targetPath: string): boolean => {
+  return targetPath !== '' && targetPath !== '.' && targetPath !== '/';
 };
 
 /**
@@ -197,7 +265,7 @@ const sortSftpEntries = (entries: SftpEntry[]): SftpEntry[] => {
 };
 
 /**
- * Manages read-only SFTP browser sessions created for renderer tabs.
+ * Manages SFTP file-system sessions created for renderer tabs.
  */
 export class SftpSessionService {
   private readonly getDbClient: GetDbClient;
@@ -414,6 +482,296 @@ export class SftpSessionService {
   }
 
   /**
+   * Reads one remote file into a bounded UTF-8 preview payload.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param requestedMaxBytes Maximum preview bytes requested by the caller.
+   * @returns File preview result.
+   */
+  public async readFilePreview(
+    sessionId: string,
+    requestedPath: string | undefined,
+    requestedMaxBytes?: number,
+  ): Promise<ReadSftpFileResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      const stats = await this.stat(session, normalizedPath);
+      if (!stats.isFile()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileReadUnsupported'),
+        };
+      }
+
+      const maxBytes = this.normalizeReadFileMaxBytes(requestedMaxBytes);
+      const readLength = Math.min(stats.size, maxBytes);
+      const buffer = Buffer.alloc(readLength);
+      const handle = await this.open(session, normalizedPath, 'r');
+
+      try {
+        if (readLength > 0) {
+          await this.read(session, handle, buffer, readLength);
+        }
+      } finally {
+        await this.closeHandle(session, handle).catch(() => undefined);
+      }
+
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+        content: buffer.toString('utf8'),
+        size: stats.size,
+        truncated: stats.size > maxBytes,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.fileReadFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Creates one empty remote file.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @returns File creation result.
+   */
+  public async createFile(sessionId: string, requestedPath: string | undefined): Promise<SftpOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      await this.writeFile(session, normalizedPath, Buffer.alloc(0), DEFAULT_FILE_MODE);
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.fileCreateFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Creates one remote directory.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote directory path.
+   * @returns Directory creation result.
+   */
+  public async createDirectory(sessionId: string, requestedPath: string | undefined): Promise<SftpOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      await this.mkdir(session, normalizedPath, DEFAULT_DIRECTORY_MODE);
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.directoryCreateFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Renames or moves one remote entry.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Source path.
+   * @param requestedTargetPath Target path.
+   * @returns Rename result.
+   */
+  public async renameEntry(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const sourcePath = normalizeSftpPathInput(requestedSourcePath);
+    const targetPath = normalizeSftpPathInput(requestedTargetPath);
+    if (!isMutableSftpEntryPath(sourcePath) || !isMutableSftpEntryPath(targetPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    if (sourcePath === targetPath) {
+      return {
+        type: 'success',
+        sessionId,
+        path: sourcePath,
+        targetPath,
+      };
+    }
+
+    try {
+      await this.rename(session, sourcePath, targetPath);
+      this.logSftpMutation(session, 'rename', {
+        path: sourcePath,
+        targetPath,
+      });
+      return {
+        type: 'success',
+        sessionId,
+        path: sourcePath,
+        targetPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.entryRenameFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Copies one remote file or directory tree.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Source path.
+   * @param requestedTargetPath Target path.
+   * @returns Copy result.
+   */
+  public async copyEntry(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const sourcePath = normalizeSftpPathInput(requestedSourcePath);
+    const targetPath = normalizeSftpPathInput(requestedTargetPath);
+    if (!isMutableSftpEntryPath(sourcePath) || !isMutableSftpEntryPath(targetPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      const resolvedTargetPath = await this.resolveAvailableCopyPath(session, targetPath);
+      if (this.isSameOrDescendantPath(sourcePath, resolvedTargetPath)) {
+        throw new Error(session.t('errors.sftp.copyIntoSelfUnsupported'));
+      }
+
+      await this.copyEntryRecursive(session, sourcePath, resolvedTargetPath);
+      this.logSftpMutation(session, 'copy', {
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      });
+
+      return {
+        type: 'success',
+        sessionId,
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.entryCopyFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Deletes one remote file, symlink, or directory tree.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote entry path.
+   * @param recursive Whether directories should be removed recursively.
+   * @returns Delete result.
+   */
+  public async deleteEntry(
+    sessionId: string,
+    requestedPath: string | undefined,
+    recursive: boolean,
+  ): Promise<SftpOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      await this.deleteEntryRecursive(session, normalizedPath, recursive);
+      this.logSftpMutation(session, 'delete', {
+        path: normalizedPath,
+        recursive,
+      });
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.entryDeleteFailedNoReason')),
+      };
+    }
+  }
+
+  /**
    * Closes one SFTP session and releases its SSH connection.
    *
    * @param sessionId Live SFTP session id.
@@ -488,8 +846,247 @@ export class SftpSessionService {
     });
   }
 
+  private async stat(session: SftpLiveSession, targetPath: string): Promise<Stats> {
+    return await new Promise((resolve, reject) => {
+      session.sftp.stat(targetPath, (error, stats) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(stats);
+      });
+    });
+  }
+
+  private async lstat(session: SftpLiveSession, targetPath: string): Promise<Stats> {
+    return await new Promise((resolve, reject) => {
+      session.sftp.lstat(targetPath, (error, stats) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(stats);
+      });
+    });
+  }
+
+  private async open(session: SftpLiveSession, targetPath: string, mode: 'r' | 'w'): Promise<Buffer> {
+    return await new Promise((resolve, reject) => {
+      session.sftp.open(targetPath, mode, (error, handle) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(handle);
+      });
+    });
+  }
+
+  private async closeHandle(session: SftpLiveSession, handle: Buffer): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.close(handle, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async read(session: SftpLiveSession, handle: Buffer, buffer: Buffer, length: number): Promise<number> {
+    return await new Promise((resolve, reject) => {
+      session.sftp.read(handle, buffer, 0, length, 0, (error, bytesRead) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(bytesRead);
+      });
+    });
+  }
+
+  private async writeFile(session: SftpLiveSession, targetPath: string, data: Buffer, mode: number): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.writeFile(targetPath, data, { mode, flag: 'wx' }, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async mkdir(session: SftpLiveSession, targetPath: string, mode: number): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.mkdir(targetPath, { mode }, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async unlink(session: SftpLiveSession, targetPath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.unlink(targetPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async rmdir(session: SftpLiveSession, targetPath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.rmdir(targetPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async rename(session: SftpLiveSession, sourcePath: string, targetPath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      session.sftp.rename(sourcePath, targetPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
+  private async pathExists(session: SftpLiveSession, targetPath: string): Promise<boolean> {
+    try {
+      await this.stat(session, targetPath);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private normalizeReadFileMaxBytes(requestedMaxBytes: number | undefined): number {
+    if (!requestedMaxBytes || !Number.isFinite(requestedMaxBytes)) {
+      return DEFAULT_READ_FILE_MAX_BYTES;
+    }
+
+    return Math.min(Math.max(Math.trunc(requestedMaxBytes), 1024), MAX_READ_FILE_MAX_BYTES);
+  }
+
+  private async resolveAvailableCopyPath(session: SftpLiveSession, targetPath: string): Promise<string> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const candidatePath = buildSftpCopyTargetCandidate(targetPath, attempt);
+      if (!(await this.pathExists(session, candidatePath))) {
+        return candidatePath;
+      }
+    }
+
+    throw new Error(session.t('errors.sftp.copyTargetConflict'));
+  }
+
+  private async copyFile(
+    session: SftpLiveSession,
+    sourcePath: string,
+    targetPath: string,
+    sourceStats: Stats,
+  ): Promise<void> {
+    const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
+    const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode: sourceStats.mode & 0o777 });
+    await pipeline(readStream, writeStream);
+  }
+
+  private async copyEntryRecursive(session: SftpLiveSession, sourcePath: string, targetPath: string): Promise<void> {
+    const sourceStats = await this.lstat(session, sourcePath);
+    if (sourceStats.isDirectory()) {
+      await this.mkdir(session, targetPath, sourceStats.mode & 0o777);
+      const children = await this.readdir(session, sourcePath);
+      for (const child of children) {
+        if (child.filename === '.' || child.filename === '..') {
+          continue;
+        }
+
+        await this.copyEntryRecursive(
+          session,
+          joinSftpPath(sourcePath, child.filename),
+          joinSftpPath(targetPath, child.filename),
+        );
+      }
+      return;
+    }
+
+    if (sourceStats.isFile()) {
+      await this.copyFile(session, sourcePath, targetPath, sourceStats);
+      return;
+    }
+
+    throw new Error(session.t('errors.sftp.entryCopyUnsupported'));
+  }
+
+  private async deleteEntryRecursive(session: SftpLiveSession, targetPath: string, recursive: boolean): Promise<void> {
+    const stats = await this.lstat(session, targetPath);
+    if (!stats.isDirectory()) {
+      await this.unlink(session, targetPath);
+      return;
+    }
+
+    if (!recursive) {
+      await this.rmdir(session, targetPath);
+      return;
+    }
+
+    const entries = await this.readdir(session, targetPath);
+    for (const entry of entries) {
+      if (entry.filename === '.' || entry.filename === '..') {
+        continue;
+      }
+
+      await this.deleteEntryRecursive(session, joinSftpPath(targetPath, entry.filename), true);
+    }
+
+    await this.rmdir(session, targetPath);
+  }
+
+  private isSameOrDescendantPath(sourcePath: string, targetPath: string): boolean {
+    const normalizedSource = sourcePath.replace(/\/+$/, '');
+    const normalizedTarget = targetPath.replace(/\/+$/, '');
+    return normalizedTarget === normalizedSource || normalizedTarget.startsWith(`${normalizedSource}/`);
+  }
+
   private logSftpAuditEvent(input: AuditEventInput): void {
     void this.auditEventService.logEvent(input);
+  }
+
+  private logSftpMutation(session: SftpLiveSession, action: string, metadata: Record<string, unknown>): void {
+    this.logSftpAuditEvent({
+      category: 'sftp-session',
+      action,
+      outcome: 'success',
+      severity: 'info',
+      entityType: 'ssh-server',
+      entityId: session.serverId,
+      sessionId: session.sessionId,
+      metadata,
+    });
   }
 
   private resolveErrorMessage(error: unknown, fallback: string): string {

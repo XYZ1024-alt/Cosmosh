@@ -545,6 +545,24 @@ const App: React.FC = () => {
                 <React.Suspense fallback={pageLoadingFallback}>
                   <SFTP
                     connectionIntent={tab.state?.sftpConnectionIntent}
+                    onOpenDirectoryInNewTab={(initialPath) => {
+                      const intent = tab.state?.sftpConnectionIntent;
+                      if (!intent) {
+                        return;
+                      }
+
+                      addTab('sftp', {
+                        title: intent.serverName,
+                        iconKey: 'sftp',
+                        state: {
+                          sftpConnectionIntent: {
+                            ...intent,
+                            initialPath,
+                            createdAt: Date.now(),
+                          },
+                        },
+                      });
+                    }}
                     onTabTitleChange={(title) => {
                       updateTab(tab.id, { title });
                     }}
