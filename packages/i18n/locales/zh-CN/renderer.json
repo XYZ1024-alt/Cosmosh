@@ -240,6 +240,7 @@
       "advanced": "高级",
       "connection": "连接",
       "general": "通用",
+      "sftp": "SFTP",
       "terminal": "终端",
       "theme": "主题"
     },
@@ -304,6 +305,14 @@
       "language": {
         "description": "设置使用的界面语言。",
         "title": "语言"
+      },
+      "sftpDeleteConfirmationMode": {
+        "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
+        "title": "删除前确认"
+      },
+      "sftpShowParentDirectoryEntry": {
+        "description": "在 SFTP 文件列表顶部显示“..”行，用于返回上一级目录。",
+        "title": "在文件列表中显示返回按钮"
       },
       "showFullServerAddress": {
         "description": "关闭后，服务器列表中的主机/IP 地址会以星号脱敏显示。",
@@ -522,6 +531,12 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "sftpDeleteConfirmationMode": {
+        "always": "开启",
+        "batch": "批量操作时开启",
+        "off": "关闭",
+        "shortcut": "使用快捷键时开启"
+      },
       "terminalAutoCompleteAcceptKeys": {
         "enter": "回车",
         "tab": "Tab",
@@ -572,6 +587,8 @@
       "localization": "本地化",
       "runtime": "运行时",
       "search": "搜索",
+      "sftpBrowser": "浏览器",
+      "sftpSafety": "安全",
       "sshRuntime": "SSH 运行时",
       "sshStyle": "SSH 样式",
       "synchronization": "同步",
@@ -633,6 +650,11 @@
       "size": "大小"
     },
     "connecting": "正在连接 SFTP...",
+    "deleteConfirmAccept": "删除",
+    "deleteConfirmCancel": "取消",
+    "deleteConfirmDescription": "确认从远程服务器删除“{name}”吗？",
+    "deleteConfirmDescriptionMany": "确认从远程服务器删除 {count} 个条目吗？",
+    "deleteConfirmTitle": "删除 SFTP 条目",
     "detail": {
       "modified": "修改时间",
       "path": "路径",
@@ -667,6 +689,7 @@
     "noSession": "当前没有活动的 SFTP 会话。",
     "openUnsupported": "该条目无法在 SFTP 预览中打开。",
     "operationFailed": "SFTP 操作失败。",
+    "parentDirectoryEntryLabel": "返回上一级目录",
     "pathInputLabel": "远程路径",
     "previewEmpty": "该文件为空。",
     "previewTitle": "预览",

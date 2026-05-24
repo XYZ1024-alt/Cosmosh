@@ -12,6 +12,7 @@ Implemented in v1:
 - The renderer shows directory entries, metadata details, and bounded UTF-8 file preview.
 - The left directory tree shows the current directory ancestry and caches loaded child directories as users browse.
 - Context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
@@ -38,6 +39,7 @@ flowchart LR
 - **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
 - **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
 - **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
+- **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP delete-confirmation and parent-directory-row preferences consumed by the renderer settings store.
 
 ## 3. API Contract
 
@@ -126,7 +128,7 @@ Entry types are reduced to:
 - `symlink`
 - `other`
 
-The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry, shows a selected-count summary for multiple entries, and switches to a bounded preview after opening a regular file.
+The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry, shows a selected-count summary for multiple entries, and switches to a bounded preview after opening a regular file. When `sftpShowParentDirectoryEntry` is enabled and the backend reports a parent path, the center list prepends a non-selectable `..` row that navigates to the parent directory without changing backend data.
 
 Directory results are cached in the renderer for the lifetime of the SFTP tab. Revisiting an already loaded path uses that in-memory result immediately. The refresh action bypasses the cache and requests a fresh listing from the active backend session while preserving the visible list until the new result arrives.
 
@@ -138,6 +140,7 @@ Mutation rules:
 - Copying a directory into itself or one of its descendants is rejected.
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
+- Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
 - Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, open-in-new-tab, and preview remain single-entry actions.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 - File preview reads up to the requested bounded byte limit and reports whether the result was truncated.
@@ -180,6 +183,8 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
+- Delete confirmation uses the shared `Dialog` wrapper and must preserve the pending operation until the user confirms or cancels. Keyboard-triggered delete passes an explicit shortcut source so the confirmation setting can distinguish shortcut-only safety prompts from toolbar and context-menu deletes.
+- The optional `..` parent-directory row belongs to the center file list only. It must render before real entries, stay out of selection and detail state, use double-click/Enter activation like regular file rows, and show a disabled state at the remote root when no parent path exists.
 - Show the current directory and all parent directories in the tree; expanding a tree row loads its child directory list and shows an inline spinner while loading.
 - Match file-manager behavior: expanding or collapsing a tree row does not navigate the center directory list. Opening a directory from the center list or path toolbar changes the current directory.
 - Preserve stable list columns and truncate long names/paths instead of allowing layout shift.

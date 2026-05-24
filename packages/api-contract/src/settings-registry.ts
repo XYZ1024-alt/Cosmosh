@@ -65,6 +65,8 @@ export interface SettingsValues {
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalAutoCompletePromptRegex: string;
   sshReconnectOnFocus: boolean;
+  sftpDeleteConfirmationMode: 'always' | 'batch' | 'shortcut' | 'off';
+  sftpShowParentDirectoryEntry: boolean;
 }
 
 export type SettingKey = keyof SettingsValues;
@@ -120,6 +122,13 @@ export const SETTINGS_CATEGORIES = {
     labelI18nKey: 'settings.categories.connection',
     sections: {
       connection: { labelI18nKey: 'settings.sections.connection' },
+    },
+  },
+  sftp: {
+    labelI18nKey: 'settings.categories.sftp',
+    sections: {
+      browser: { labelI18nKey: 'settings.sections.sftpBrowser' },
+      safety: { labelI18nKey: 'settings.sections.sftpSafety' },
     },
   },
   advanced: {
@@ -341,6 +350,34 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'connection.ssh.reconnectOnFocus',
     commandActionId: 'settings.connection.ssh.reconnectOnFocus.toggle',
     searchTerms: ['ssh', 'reconnect', 'tab', 'focus', 'auto reconnect', 'connection'],
+  },
+  {
+    key: 'sftpDeleteConfirmationMode',
+    valueType: 'string',
+    defaultValue: 'always',
+    nameI18nKey: 'settings.items.sftpDeleteConfirmationMode.title',
+    descriptionI18nKey: 'settings.items.sftpDeleteConfirmationMode.description',
+    optionI18nNamespace: 'sftpDeleteConfirmationMode',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.safety,
+    control: 'select',
+    path: 'sftp.safety.deleteConfirmationMode',
+    commandActionId: 'settings.sftp.safety.deleteConfirmationMode.set',
+    searchTerms: ['sftp', 'delete', 'confirm', 'confirmation', 'batch', 'shortcut', 'safety'],
+    options: [{ value: 'always' }, { value: 'batch' }, { value: 'shortcut' }, { value: 'off' }],
+  },
+  {
+    key: 'sftpShowParentDirectoryEntry',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.sftpShowParentDirectoryEntry.title',
+    descriptionI18nKey: 'settings.items.sftpShowParentDirectoryEntry.description',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'switch',
+    path: 'sftp.browser.showParentDirectoryEntry',
+    commandActionId: 'settings.sftp.browser.showParentDirectoryEntry.toggle',
+    searchTerms: ['sftp', 'parent directory', 'up', '..', 'file list', 'browser'],
   },
   {
     key: 'showFullServerAddress',

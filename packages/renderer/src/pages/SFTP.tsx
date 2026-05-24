@@ -1,4 +1,4 @@
-import type { ApiSftpEntry } from '@cosmosh/api-contract';
+import type { ApiSftpEntry, SettingsValues } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import {
   ArrowUp,
@@ -20,6 +20,7 @@ import {
   Search,
   ShieldAlert,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 import React from 'react';
 
@@ -65,6 +66,7 @@ import {
   trustSshFingerprint,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
+import { useSettingsValue } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import type { SftpConnectionIntent } from '../types/tabs';
 
@@ -135,6 +137,13 @@ type SftpActionMenuOptions = {
 };
 
 type SftpSelectionClickEvent = Pick<React.MouseEvent<HTMLElement>, 'ctrlKey' | 'metaKey' | 'shiftKey'>;
+
+type SftpDeleteInvocationSource = 'action' | 'shortcut';
+
+type SftpDeleteConfirmationPrompt = {
+  entries: ApiSftpEntry[];
+  source: SftpDeleteInvocationSource;
+};
 
 const TREE_INDENT_CLASS_NAMES = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-16'] as const;
 const SFTP_CARD_CLASS_NAME = 'bg-ssh-card-bg-terminal h-full min-h-0 overflow-hidden rounded-[18px] p-1';
@@ -521,6 +530,34 @@ const formatBatchPartialFailureFeedback = (summary: {
 };
 
 /**
+ * Decides whether a destructive SFTP delete needs a confirmation prompt.
+ *
+ * @param mode User-configured confirmation mode.
+ * @param entryCount Number of entries that would be deleted.
+ * @param source UI surface that initiated the delete.
+ * @returns Whether the delete flow must ask before calling the backend.
+ */
+const shouldConfirmSftpDelete = (
+  mode: SettingsValues['sftpDeleteConfirmationMode'],
+  entryCount: number,
+  source: SftpDeleteInvocationSource,
+): boolean => {
+  if (mode === 'always') {
+    return true;
+  }
+
+  if (mode === 'batch') {
+    return entryCount > 1;
+  }
+
+  if (mode === 'shortcut') {
+    return source === 'shortcut';
+  }
+
+  return false;
+};
+
+/**
  * Resolves the modifier key name shown in shortcut labels for the active desktop platform.
  *
  * @returns Shortcut modifier label.
@@ -579,6 +616,8 @@ const resolveRenameTargetPath = (entry: ApiSftpEntry, nextName: string): string 
  */
 const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, onTabTitleChange }) => {
   const { error: notifyError, success: notifySuccess } = useToast();
+  const sftpDeleteConfirmationMode = useSettingsValue('sftpDeleteConfirmationMode');
+  const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
@@ -599,7 +638,11 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
+  const [deleteConfirmationPrompt, setDeleteConfirmationPrompt] = React.useState<SftpDeleteConfirmationPrompt | null>(
+    null,
+  );
   const pendingPromptResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
+  const pendingDeleteConfirmationResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
   const syncedTabTitleRef = React.useRef<string>('');
@@ -655,6 +698,8 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const canGoBack = navigationState.index > 0;
   const canGoForward = navigationState.index >= 0 && navigationState.index < navigationState.paths.length - 1;
   const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy && !isOperationRunning;
+  const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
+  const canActivateParentDirectoryListEntry = Boolean(parentPath);
 
   const resetSelection = React.useCallback((): void => {
     setSelectedPaths([]);
@@ -708,6 +753,22 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     pendingPromptResolverRef.current?.(accepted);
     pendingPromptResolverRef.current = null;
     setHostFingerprintPrompt(null);
+  }, []);
+
+  const requestDeleteConfirmation = React.useCallback(
+    (entriesToDelete: ApiSftpEntry[], source: SftpDeleteInvocationSource): Promise<boolean> => {
+      return new Promise((resolve) => {
+        pendingDeleteConfirmationResolverRef.current = resolve;
+        setDeleteConfirmationPrompt({ entries: entriesToDelete, source });
+      });
+    },
+    [],
+  );
+
+  const resolveDeleteConfirmationPrompt = React.useCallback((accepted: boolean): void => {
+    pendingDeleteConfirmationResolverRef.current?.(accepted);
+    pendingDeleteConfirmationResolverRef.current = null;
+    setDeleteConfirmationPrompt(null);
   }, []);
 
   const setTreeNodeLoading = React.useCallback((directoryPath: string, isLoading: boolean): void => {
@@ -1346,10 +1407,17 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   ]);
 
   const handleDeleteEntries = React.useCallback(
-    async (targetEntries: ApiSftpEntry[]): Promise<void> => {
+    async (targetEntries: ApiSftpEntry[], source: SftpDeleteInvocationSource = 'action'): Promise<void> => {
       const entriesToDelete = dedupeSftpEntries(targetEntries);
       if (!sessionId || entriesToDelete.length === 0) {
         return;
+      }
+
+      if (shouldConfirmSftpDelete(sftpDeleteConfirmationMode, entriesToDelete.length, source)) {
+        const accepted = await requestDeleteConfirmation(entriesToDelete, source);
+        if (!accepted) {
+          return;
+        }
       }
 
       await runSftpOperation(async () => {
@@ -1378,7 +1446,15 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
         await refreshCurrentDirectoryAfterOperation();
       });
     },
-    [notifyError, notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, sessionId],
+    [
+      notifyError,
+      notifySuccess,
+      refreshCurrentDirectoryAfterOperation,
+      requestDeleteConfirmation,
+      runSftpOperation,
+      sessionId,
+      sftpDeleteConfirmationMode,
+    ],
   );
 
   const renderSftpActionMenuItems = React.useCallback(
@@ -1649,7 +1725,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
         (window.electron?.platform !== 'darwin' && event.key === 'Delete');
       if (isDeleteShortcut && hasSelection) {
         event.preventDefault();
-        void handleDeleteEntries(selectedEntries);
+        void handleDeleteEntries(selectedEntries, 'shortcut');
         return;
       }
 
@@ -2083,14 +2159,53 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                       {t('sftp.noSession')}
                     </div>
                   ) : null}
-                  {status === 'ready' && entries.length === 0 && !pendingCreate ? (
+                  {status === 'ready' && entries.length === 0 && !pendingCreate && !hasParentDirectoryListEntry ? (
                     <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
                       {t('sftp.empty')}
                     </div>
                   ) : null}
-                  {status === 'ready' && entries.length > 0 && visibleEntries.length === 0 ? (
+                  {status === 'ready' &&
+                  entries.length > 0 &&
+                  visibleEntries.length === 0 &&
+                  !hasParentDirectoryListEntry ? (
                     <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
                       {t('sftp.searchEmpty')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' && hasParentDirectoryListEntry ? (
+                    <div
+                      role="button"
+                      aria-label={t('sftp.parentDirectoryEntryLabel')}
+                      aria-disabled={!canActivateParentDirectoryListEntry}
+                      tabIndex={canActivateParentDirectoryListEntry ? 0 : -1}
+                      className={classNames(
+                        'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
+                        DIRECTORY_ROW_GRID_CLASS_NAME,
+                        canActivateParentDirectoryListEntry
+                          ? 'text-home-text hover:bg-home-card-hover'
+                          : 'cursor-default text-home-text-subtle opacity-55',
+                      )}
+                      onDoubleClick={canActivateParentDirectoryListEntry ? handleParentDirectory : undefined}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && canActivateParentDirectoryListEntry) {
+                          event.preventDefault();
+                          handleParentDirectory();
+                        }
+                      }}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                        <Undo2
+                          className={classNames(
+                            'h-4 w-4 shrink-0',
+                            canActivateParentDirectoryListEntry ? 'text-home-text' : 'text-home-text-subtle',
+                          )}
+                        />
+                        <span className="truncate">..</span>
+                      </span>
+                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
+                      <span className="truncate text-xs text-home-text-subtle">-</span>
+                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                      <span />
                     </div>
                   ) : null}
                   {pendingCreate ? (
@@ -2352,6 +2467,36 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
             </DialogSecondaryButton>
             <DialogPrimaryButton onClick={() => resolveHostFingerprintPrompt(true)}>
               {t('ssh.hostFingerprintDialogTrustContinue')}
+            </DialogPrimaryButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={Boolean(deleteConfirmationPrompt)}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolveDeleteConfirmationPrompt(false);
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('sftp.deleteConfirmTitle')}</DialogTitle>
+            <DialogDescription>
+              {deleteConfirmationPrompt?.entries.length === 1
+                ? t('sftp.deleteConfirmDescription', { name: deleteConfirmationPrompt.entries[0]?.name ?? '' })
+                : t('sftp.deleteConfirmDescriptionMany', {
+                    count: deleteConfirmationPrompt?.entries.length ?? 0,
+                  })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogSecondaryButton onClick={() => resolveDeleteConfirmationPrompt(false)}>
+              {t('sftp.deleteConfirmCancel')}
+            </DialogSecondaryButton>
+            <DialogPrimaryButton onClick={() => resolveDeleteConfirmationPrompt(true)}>
+              <Trash2 className="h-4 w-4" />
+              {t('sftp.deleteConfirmAccept')}
             </DialogPrimaryButton>
           </DialogFooter>
         </DialogContent>

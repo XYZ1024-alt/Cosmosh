@@ -240,6 +240,7 @@
       "advanced": "Advanced",
       "connection": "Connection",
       "general": "General",
+      "sftp": "SFTP",
       "terminal": "Terminal",
       "theme": "Theme"
     },
@@ -304,6 +305,14 @@
       "language": {
         "description": "Sets the UI language.",
         "title": "Language"
+      },
+      "sftpDeleteConfirmationMode": {
+        "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
+        "title": "Confirm Before Delete"
+      },
+      "sftpShowParentDirectoryEntry": {
+        "description": "Shows a \"..\" row at the top of the SFTP file list for navigating to the parent directory.",
+        "title": "Show Parent Directory Row"
       },
       "showFullServerAddress": {
         "description": "When disabled, server host/IP values in the server list are masked with asterisks.",
@@ -522,6 +531,12 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "sftpDeleteConfirmationMode": {
+        "always": "Enabled",
+        "batch": "Enabled for batch operations",
+        "off": "Off",
+        "shortcut": "Enabled for keyboard shortcuts"
+      },
       "terminalAutoCompleteAcceptKeys": {
         "enter": "Enter",
         "tab": "Tab",
@@ -572,6 +587,8 @@
       "localization": "Localization",
       "runtime": "Runtime",
       "search": "Search",
+      "sftpBrowser": "Browser",
+      "sftpSafety": "Safety",
       "sshRuntime": "SSH Runtime",
       "sshStyle": "SSH Style",
       "synchronization": "Synchronization",
@@ -633,6 +650,11 @@
       "size": "Size"
     },
     "connecting": "Connecting SFTP...",
+    "deleteConfirmAccept": "Delete",
+    "deleteConfirmCancel": "Cancel",
+    "deleteConfirmDescription": "Delete \"{name}\" from the remote server?",
+    "deleteConfirmDescriptionMany": "Delete {count} entries from the remote server?",
+    "deleteConfirmTitle": "Delete SFTP Entries",
     "detail": {
       "modified": "Modified",
       "path": "Path",
@@ -667,6 +689,7 @@
     "noSession": "No SFTP session is active.",
     "openUnsupported": "This entry cannot be opened in the SFTP preview.",
     "operationFailed": "SFTP operation failed.",
+    "parentDirectoryEntryLabel": "Go to parent directory",
     "pathInputLabel": "Remote path",
     "previewEmpty": "This file is empty.",
     "previewTitle": "Preview",

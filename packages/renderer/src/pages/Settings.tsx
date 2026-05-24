@@ -1,6 +1,7 @@
 import { normalizeSettingsValuesStrict, type SettingValidationError } from '@cosmosh/api-contract';
 import {
   Cloud,
+  Folder,
   Info,
   Link2,
   Palette,
@@ -120,6 +121,7 @@ const categoryIconMap: Record<SettingsCategoryId, React.ComponentType<{ classNam
   theme: Palette,
   terminal: Terminal,
   connection: Link2,
+  sftp: Folder,
   advanced: Wrench,
   about: Info,
 };
