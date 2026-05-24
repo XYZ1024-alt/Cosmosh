@@ -31,6 +31,10 @@
       "rowNotPersisted": "设置记录未持久化。"
     },
     "sftp": {
+      "batchEntriesRequired": "entries 至少需要包含一个条目。",
+      "batchOperationRequired": "operation 必须是 copy、move 或 delete。",
+      "batchSkippedAfterFailure": "由于前一个批量条目失败，已跳过。",
+      "batchTargetRequired": "复制和移动批量操作必须提供 targetDirectoryPath。",
       "copyIntoSelfUnsupported": "不能将目录复制到自身内部。",
       "copyTargetConflict": "无法选择唯一的复制目标路径。",
       "directoryCreateFailedNoReason": "创建 SFTP 目录失败。",
@@ -40,6 +44,7 @@
       "entryCopyUnsupported": "暂不支持复制此类 SFTP 条目。",
       "entryDeleteFailedNoReason": "删除 SFTP 条目失败。",
       "entryRenameFailedNoReason": "重命名 SFTP 条目失败。",
+      "entryTypeRequired": "entry type 为必填项。",
       "fileCreateFailedNoReason": "创建 SFTP 文件失败。",
       "fileReadFailedNoReason": "读取 SFTP 文件失败。",
       "fileReadUnsupported": "SFTP 预览仅支持打开普通文件。",
@@ -119,6 +124,7 @@
       "updated": "设置更新成功。"
     },
     "sftp": {
+      "batchOperationCompleted": "SFTP 批量操作完成。",
       "directoryCreated": "SFTP 目录创建成功。",
       "directoryListed": "SFTP 目录获取成功。",
       "entryCopied": "SFTP 条目复制成功。",

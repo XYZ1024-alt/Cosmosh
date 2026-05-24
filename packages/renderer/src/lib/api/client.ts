@@ -5,6 +5,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -96,6 +98,10 @@ export type BackendClient = {
   renameSftpEntry: (sessionId: string, payload: ApiSftpRenameRequest) => Promise<ApiSftpRenameResponse>;
   copySftpEntry: (sessionId: string, payload: ApiSftpCopyRequest) => Promise<ApiSftpCopyResponse>;
   deleteSftpEntry: (sessionId: string, payload: ApiSftpDeleteRequest) => Promise<ApiSftpDeleteResponse>;
+  runSftpBatchOperation: (
+    sessionId: string,
+    payload: ApiSftpBatchOperationRequest,
+  ) => Promise<ApiSftpBatchOperationResponse>;
   trustSshFingerprint: (payload: ApiSshTrustFingerprintRequest) => Promise<ApiSshTrustFingerprintResponse>;
   listLocalTerminalProfiles: () => Promise<LocalTerminalListResponse>;
   createLocalTerminalSession: (
@@ -375,6 +381,15 @@ export const createBackendClient = (): BackendClient => {
     },
     deleteSftpEntry: async (sessionId, requestPayload) => {
       const payload = await transport.deleteSftpEntry(sessionId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    runSftpBatchOperation: async (sessionId, requestPayload) => {
+      const payload = await transport.runSftpBatchOperation(sessionId, requestPayload);
 
       if (!payload.success) {
         throw new Error(payload.message);

@@ -37,6 +37,7 @@ export const API_PATHS = {
   sftpRenameEntry: '/api/v1/sftp/sessions/{sessionId}/rename',
   sftpCopyEntry: '/api/v1/sftp/sessions/{sessionId}/copy',
   sftpDeleteEntry: '/api/v1/sftp/sessions/{sessionId}/entries/delete',
+  sftpBatchOperation: '/api/v1/sftp/sessions/{sessionId}/batch',
   sftpCloseSession: '/api/v1/sftp/sessions/{sessionId}',
   localTerminalListProfiles: '/api/v1/local-terminals/profiles',
   localTerminalCreateSession: '/api/v1/local-terminals/sessions',

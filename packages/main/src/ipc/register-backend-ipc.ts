@@ -9,6 +9,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -482,6 +484,21 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
     ): Promise<ApiSftpDeleteResponse | ApiErrorResponse> => {
       const path = replacePathToken(API_PATHS.sftpDeleteEntry, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpDeleteResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-batch-operation',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpBatchOperationRequest,
+    ): Promise<ApiSftpBatchOperationResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpBatchOperationResponse>(path, {
         method: 'POST',
         body: payload,
       });

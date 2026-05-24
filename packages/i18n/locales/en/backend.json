@@ -31,6 +31,10 @@
       "rowNotPersisted": "Settings row was not persisted."
     },
     "sftp": {
+      "batchEntriesRequired": "entries must contain at least one item.",
+      "batchOperationRequired": "operation must be copy, move, or delete.",
+      "batchSkippedAfterFailure": "Skipped because an earlier batch item failed.",
+      "batchTargetRequired": "targetDirectoryPath is required for copy and move batch operations.",
       "copyIntoSelfUnsupported": "A directory cannot be copied into itself.",
       "copyTargetConflict": "Unable to choose a unique copy target path.",
       "directoryCreateFailedNoReason": "Failed to create SFTP directory.",
@@ -40,6 +44,7 @@
       "entryCopyUnsupported": "This SFTP entry type cannot be copied yet.",
       "entryDeleteFailedNoReason": "Failed to delete SFTP entry.",
       "entryRenameFailedNoReason": "Failed to rename SFTP entry.",
+      "entryTypeRequired": "entry type is required.",
       "fileCreateFailedNoReason": "Failed to create SFTP file.",
       "fileReadFailedNoReason": "Failed to read SFTP file.",
       "fileReadUnsupported": "Only regular files can be opened in the SFTP preview.",
@@ -119,6 +124,7 @@
       "updated": "Settings updated successfully."
     },
     "sftp": {
+      "batchOperationCompleted": "SFTP batch operation completed.",
       "directoryCreated": "SFTP directory created successfully.",
       "directoryListed": "SFTP directory listed successfully.",
       "entryCopied": "SFTP entry copied successfully.",

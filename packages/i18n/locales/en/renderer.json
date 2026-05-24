@@ -651,6 +651,7 @@
       "symlink": "Symbolic Link"
     },
     "feedback": {
+      "batchPartialFailure": "Completed {completed} of {total} entries. {failed} failed and {skipped} skipped.",
       "copied": "Copied.",
       "copiedMany": "Copied {count} entries.",
       "deleted": "Deleted.",

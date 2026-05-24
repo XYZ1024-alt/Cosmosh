@@ -1212,6 +1212,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/batch:
+    post:
+      tags:
+        - sftp
+      summary: Run one ordered batch operation across remote SFTP entries.
+      operationId: sftpBatchOperation
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpBatchOperationRequest'
+      responses:
+        '200':
+          description: Batch operation completed. The summary reports failed and skipped entries when fail-fast stops execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpBatchOperationSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or entry not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}:
     delete:
       tags:
@@ -2207,6 +2251,57 @@ components:
             recursive:
               type: boolean
               default: true
+    SftpBatchOperationType:
+      type: string
+      enum: ['copy', 'move', 'delete']
+    SftpBatchOperationItemRequest:
+      type: object
+      required:
+        - path
+        - type
+      properties:
+        path:
+          type: string
+          minLength: 1
+        type:
+          $ref: '#/components/schemas/SftpEntryType'
+    SftpBatchOperationRequest:
+      type: object
+      required:
+        - operation
+        - entries
+      properties:
+        operation:
+          $ref: '#/components/schemas/SftpBatchOperationType'
+        entries:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/SftpBatchOperationItemRequest'
+        targetDirectoryPath:
+          type: string
+          minLength: 1
+          description: Required when operation is copy or move.
+    SftpBatchOperationItemStatus:
+      type: string
+      enum: ['success', 'failed', 'skipped']
+    SftpBatchOperationItemResult:
+      type: object
+      required:
+        - path
+        - type
+        - status
+      properties:
+        path:
+          type: string
+        type:
+          $ref: '#/components/schemas/SftpEntryType'
+        targetPath:
+          type: string
+        status:
+          $ref: '#/components/schemas/SftpBatchOperationItemStatus'
+        message:
+          type: string
     SftpEntryType:
       type: string
       enum: ['directory', 'file', 'symlink', 'other']
@@ -2286,6 +2381,40 @@ components:
           type: string
         targetPath:
           type: string
+    SftpBatchOperationData:
+      type: object
+      required:
+        - sessionId
+        - operation
+        - totalCount
+        - completedCount
+        - failedCount
+        - skippedCount
+        - stoppedOnFailure
+        - results
+      properties:
+        sessionId:
+          type: string
+        operation:
+          $ref: '#/components/schemas/SftpBatchOperationType'
+        totalCount:
+          type: integer
+          minimum: 0
+        completedCount:
+          type: integer
+          minimum: 0
+        failedCount:
+          type: integer
+          minimum: 0
+        skippedCount:
+          type: integer
+          minimum: 0
+        stoppedOnFailure:
+          type: boolean
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/SftpBatchOperationItemResult'
     SftpReadFileData:
       type: object
       required:
@@ -2789,6 +2918,23 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpOperationData'
+    SftpBatchOperationSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_OPERATION_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpBatchOperationData'
     SftpReadFileSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'

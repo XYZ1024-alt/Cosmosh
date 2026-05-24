@@ -9,6 +9,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -219,6 +221,10 @@ declare global {
         sessionId: string,
         payload: ApiSftpDeleteRequest,
       ) => Promise<ApiSftpDeleteResponse | ApiErrorResponse>;
+      backendSftpBatchOperation: (
+        sessionId: string,
+        payload: ApiSftpBatchOperationRequest,
+      ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
       backendSftpCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;

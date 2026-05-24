@@ -53,6 +53,7 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/rename` | Rename or move one remote entry. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/copy` | Copy one remote file or directory tree. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/entries/delete` | Delete one remote file, symlink, or directory tree. |
+| `POST` | `/api/v1/sftp/sessions/{sessionId}/batch` | Run one ordered batch copy, move, or delete operation across multiple remote entries. |
 | `DELETE` | `/api/v1/sftp/sessions/{sessionId}` | Close one SFTP session and release the SSH connection. |
 
 Success codes:
@@ -90,10 +91,10 @@ sequenceDiagram
   Main->>API: GET /api/v1/sftp/sessions/{sessionId}/entries
   API->>SFTP: listDirectory(sessionId, path)
   SFTP-->>UI: normalized directory entries
-  UI->>Main: backendSftpRenameEntry / backendSftpCopyEntry / ...
+  UI->>Main: backendSftpRenameEntry / backendSftpBatchOperation / ...
   Main->>API: POST /api/v1/sftp/sessions/{sessionId}/...
   API->>SFTP: Mutating operation on live session
-  SFTP-->>UI: operation success + background listing revalidation
+  SFTP-->>UI: operation success or batch summary + background listing revalidation
   UI->>Main: backendSftpCloseSession(sessionId)
   Main->>API: DELETE /api/v1/sftp/sessions/{sessionId}
 ```
@@ -137,7 +138,7 @@ Mutation rules:
 - Copying a directory into itself or one of its descendants is rejected.
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
-- Multi-entry cut/copy/delete/paste is orchestrated by the renderer as ordered single-entry API calls against the current SFTP session. Rename, open, open-in-new-tab, and preview remain single-entry actions.
+- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, open-in-new-tab, and preview remain single-entry actions.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 - File preview reads up to the requested bounded byte limit and reports whether the result was truncated.
 

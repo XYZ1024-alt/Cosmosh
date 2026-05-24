@@ -133,8 +133,7 @@ export type ApiSftpListDirectoryQuery =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['parameters']['query'];
 export type ApiSftpListDirectoryResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['responses']['200']['content']['application/json'];
-export type ApiSftpReadFileQuery =
-  paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
+export type ApiSftpReadFileQuery = paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
 export type ApiSftpReadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateDirectoryRequest =
@@ -157,6 +156,11 @@ export type ApiSftpDeleteRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/entries/delete']['post']['requestBody']['content']['application/json'];
 export type ApiSftpDeleteResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/entries/delete']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpBatchOperationRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/batch']['post']['requestBody']['content']['application/json'];
+export type ApiSftpBatchOperationResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/batch']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpBatchOperationItem = components['schemas']['SftpBatchOperationItemResult'];
 export type ApiSftpCloseSessionRequest = paths['/api/v1/sftp/sessions/{sessionId}']['delete']['parameters']['path'];
 export type ApiSftpEntry = components['schemas']['SftpEntry'];
 export type ApiSftpEntryType = components['schemas']['SftpEntryType'];

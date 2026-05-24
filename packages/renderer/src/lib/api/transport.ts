@@ -10,6 +10,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -79,6 +81,7 @@ type ApiResponse =
   | ApiSftpRenameResponse
   | ApiSftpCopyResponse
   | ApiSftpDeleteResponse
+  | ApiSftpBatchOperationResponse
   | ApiSshListServersResponse
   | ApiSshCreateServerResponse
   | ApiSshUpdateServerResponse
@@ -155,6 +158,10 @@ export type ApiTransport = {
     sessionId: string,
     payload: ApiSftpDeleteRequest,
   ) => Promise<ApiSftpDeleteResponse | ApiErrorResponse>;
+  runSftpBatchOperation: (
+    sessionId: string,
+    payload: ApiSftpBatchOperationRequest,
+  ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
   trustSshFingerprint: (
     payload: ApiSshTrustFingerprintRequest,
   ) => Promise<ApiSshTrustFingerprintResponse | ApiErrorResponse>;
@@ -320,6 +327,11 @@ const createElectronTransport = (): ApiTransport => {
     deleteSftpEntry: async (sessionId, payload) => {
       return (await window.electron!.backendSftpDeleteEntry(sessionId, payload)) as
         | ApiSftpDeleteResponse
+        | ApiErrorResponse;
+    },
+    runSftpBatchOperation: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpBatchOperation(sessionId, payload)) as
+        | ApiSftpBatchOperationResponse
         | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
@@ -534,6 +546,10 @@ const createBrowserTransport = (): ApiTransport => {
     deleteSftpEntry: async (sessionId, payload) => {
       const path = API_PATHS.sftpDeleteEntry.replace('{sessionId}', encodeURIComponent(sessionId));
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDeleteResponse | ApiErrorResponse;
+    },
+    runSftpBatchOperation: async (sessionId, payload) => {
+      const path = API_PATHS.sftpBatchOperation.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpBatchOperationResponse | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
       return createBrowserFallbackError('Local terminal profiles are only available in Electron runtime.');

@@ -56,14 +56,13 @@ import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import {
   closeSftpSession,
-  copySftpEntry,
   createSftpDirectory,
   createSftpFile,
   createSftpSession,
-  deleteSftpEntry,
   listSftpDirectory,
   readSftpFile,
   renameSftpEntry,
+  runSftpBatchOperation,
   trustSshFingerprint,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
@@ -500,6 +499,26 @@ const resolveActionTargetEntries = (
  */
 const formatBatchFeedback = (count: number, singularKey: string, pluralKey: string): string => {
   return count === 1 ? t(singularKey) : t(pluralKey, { count });
+};
+
+/**
+ * Formats the user-facing summary when the backend stops a batch after one failed item.
+ *
+ * @param summary Batch execution counts returned by the backend.
+ * @returns Localized partial-failure message.
+ */
+const formatBatchPartialFailureFeedback = (summary: {
+  completedCount: number;
+  failedCount: number;
+  skippedCount: number;
+  totalCount: number;
+}): string => {
+  return t('sftp.feedback.batchPartialFailure', {
+    completed: summary.completedCount,
+    failed: summary.failedCount,
+    skipped: summary.skippedCount,
+    total: summary.totalCount,
+  });
 };
 
 /**
@@ -1288,37 +1307,45 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     }
 
     await runSftpOperation(async () => {
-      for (const entry of clipboardState.entries) {
-        const targetPath = joinRemotePath(currentPath, entry.name);
-
-        if (clipboardState.mode === 'copy') {
-          await copySftpEntry(sessionId, {
-            sourcePath: entry.path,
-            targetPath,
-          });
-          continue;
-        }
-
-        await renameSftpEntry(sessionId, {
-          sourcePath: entry.path,
-          targetPath,
-        });
-      }
+      const response = await runSftpBatchOperation(sessionId, {
+        operation: clipboardState.mode === 'copy' ? 'copy' : 'move',
+        targetDirectoryPath: currentPath,
+        entries: clipboardState.entries.map((entry) => ({
+          path: entry.path,
+          type: entry.type,
+        })),
+      });
 
       if (clipboardState.mode === 'copy') {
-        notifySuccess(
-          formatBatchFeedback(clipboardState.entries.length, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
-        );
+        if (response.data.failedCount > 0) {
+          notifyError(formatBatchPartialFailureFeedback(response.data));
+        } else {
+          notifySuccess(
+            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
+          );
+        }
       } else {
         setClipboardState(null);
-        notifySuccess(
-          formatBatchFeedback(clipboardState.entries.length, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
-        );
+        if (response.data.failedCount > 0) {
+          notifyError(formatBatchPartialFailureFeedback(response.data));
+        } else {
+          notifySuccess(
+            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
+          );
+        }
       }
 
       await refreshCurrentDirectoryAfterOperation();
     });
-  }, [clipboardState, currentPath, notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, sessionId]);
+  }, [
+    clipboardState,
+    currentPath,
+    notifyError,
+    notifySuccess,
+    refreshCurrentDirectoryAfterOperation,
+    runSftpOperation,
+    sessionId,
+  ]);
 
   const handleDeleteEntries = React.useCallback(
     async (targetEntries: ApiSftpEntry[]): Promise<void> => {
@@ -1328,24 +1355,32 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
       }
 
       await runSftpOperation(async () => {
-        for (const entry of entriesToDelete) {
-          await deleteSftpEntry(sessionId, {
+        const response = await runSftpBatchOperation(sessionId, {
+          operation: 'delete',
+          entries: entriesToDelete.map((entry) => ({
             path: entry.path,
-            recursive: entry.type === 'directory',
-          });
+            type: entry.type,
+          })),
+        });
+        const deletedPaths = new Set(
+          response.data.results.filter((result) => result.status === 'success').map((result) => result.path),
+        );
+
+        if (response.data.failedCount > 0) {
+          notifyError(formatBatchPartialFailureFeedback(response.data));
+        } else {
+          notifySuccess(
+            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.deleted', 'sftp.feedback.deletedMany'),
+          );
         }
 
-        const deletedPaths = new Set(entriesToDelete.map((entry) => entry.path));
-        notifySuccess(
-          formatBatchFeedback(entriesToDelete.length, 'sftp.feedback.deleted', 'sftp.feedback.deletedMany'),
-        );
         setSelectedPaths((previous) => previous.filter((path) => !deletedPaths.has(path)));
         setSelectionAnchorPath((previous) => (deletedPaths.has(previous) ? '' : previous));
         setFilePreview((previous) => (previous && deletedPaths.has(previous.path) ? null : previous));
         await refreshCurrentDirectoryAfterOperation();
       });
     },
-    [notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, sessionId],
+    [notifyError, notifySuccess, refreshCurrentDirectoryAfterOperation, runSftpOperation, sessionId],
   );
 
   const renderSftpActionMenuItems = React.useCallback(

@@ -651,6 +651,7 @@
       "symlink": "符号链接"
     },
     "feedback": {
+      "batchPartialFailure": "已完成 {completed}/{total} 个条目，{failed} 个失败，{skipped} 个已跳过。",
       "copied": "已复制。",
       "copiedMany": "已复制 {count} 个条目。",
       "deleted": "已删除。",

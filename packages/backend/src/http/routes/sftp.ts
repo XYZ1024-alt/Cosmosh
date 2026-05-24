@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import {
   API_CODES,
   API_PATHS,
+  type ApiSftpBatchOperationResponse,
   type ApiSftpCopyResponse,
   type ApiSftpCreateDirectoryResponse,
   type ApiSftpCreateFileResponse,
@@ -15,7 +16,13 @@ import {
   createApiSuccess,
 } from '@cosmosh/api-contract';
 
-import type { CreateSftpSessionInput } from '../../sftp/session-service.js';
+import type {
+  CreateSftpSessionInput,
+  RunSftpBatchOperationInput,
+  SftpBatchOperation,
+  SftpBatchOperationResult,
+  SftpEntryType,
+} from '../../sftp/session-service.js';
 import { buildErrorPayload } from '../errors.js';
 import { type BackendHttpApp, type BackendTranslator, getTranslator, translateValidationMessage } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
@@ -47,6 +54,10 @@ type NormalizedSftpDeleteRequest = {
   recursive: boolean;
 };
 
+type NormalizedSftpBatchOperationRequest = RunSftpBatchOperationInput;
+
+type SuccessfulSftpBatchOperationResult = Extract<SftpBatchOperationResult, { type: 'success' }>;
+
 type ApiSftpOperationResponse =
   | ApiSftpCreateDirectoryResponse
   | ApiSftpCreateFileResponse
@@ -68,6 +79,14 @@ const buildValidationError = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null;
+};
+
+const isSftpEntryType = (value: unknown): value is SftpEntryType => {
+  return value === 'directory' || value === 'file' || value === 'symlink' || value === 'other';
+};
+
+const isSftpBatchOperation = (value: unknown): value is SftpBatchOperation => {
+  return value === 'copy' || value === 'move' || value === 'delete';
 };
 
 const normalizeOptionalString = (value: unknown): string | undefined => {
@@ -223,6 +242,82 @@ const parseSftpDeleteRequest = (payload: unknown): ValidationResult<NormalizedSf
   };
 };
 
+/**
+ * Parses SFTP batch operation payloads.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized batch operation request or validation error.
+ */
+const parseSftpBatchOperationRequest = (payload: unknown): ValidationResult<NormalizedSftpBatchOperationRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  if (!isSftpBatchOperation(payload.operation)) {
+    return {
+      error: buildValidationError('errors.sftp.batchOperationRequired', 'operation must be copy, move, or delete.'),
+    };
+  }
+
+  if (!Array.isArray(payload.entries) || payload.entries.length === 0) {
+    return {
+      error: buildValidationError('errors.sftp.batchEntriesRequired', 'entries must contain at least one item.'),
+    };
+  }
+
+  const entries: RunSftpBatchOperationInput['entries'] = [];
+  for (const entry of payload.entries) {
+    if (!isRecord(entry)) {
+      return {
+        error: buildValidationError('errors.sftp.batchEntriesRequired', 'entries must contain valid item objects.'),
+      };
+    }
+
+    const entryPath = normalizeOptionalString(entry.path);
+    if (!entryPath) {
+      return {
+        error: buildValidationError('errors.sftp.pathRequired', 'path is required.'),
+      };
+    }
+
+    if (!isSftpEntryType(entry.type)) {
+      return {
+        error: buildValidationError('errors.sftp.entryTypeRequired', 'entry type is required.'),
+      };
+    }
+
+    entries.push({
+      path: entryPath,
+      type: entry.type,
+    });
+  }
+
+  const targetDirectoryPath = normalizeOptionalString(payload.targetDirectoryPath);
+  if ((payload.operation === 'copy' || payload.operation === 'move') && !targetDirectoryPath) {
+    return {
+      error: buildValidationError(
+        'errors.sftp.batchTargetRequired',
+        'targetDirectoryPath is required for copy and move batch operations.',
+      ),
+    };
+  }
+
+  const value: NormalizedSftpBatchOperationRequest = {
+    operation: payload.operation,
+    entries,
+  };
+
+  if (targetDirectoryPath) {
+    value.targetDirectoryPath = targetDirectoryPath;
+  }
+
+  return {
+    value,
+  };
+};
+
 const buildValidationFailureResponse = (t: BackendTranslator, error?: ValidationError) => {
   return buildErrorPayload(
     API_CODES.sftpValidationFailed,
@@ -254,6 +349,26 @@ const buildSftpOperationSuccess = (
     code,
     message,
     data,
+  });
+};
+
+const buildSftpBatchOperationSuccess = (
+  t: BackendTranslator,
+  data: SuccessfulSftpBatchOperationResult,
+): ApiSftpBatchOperationResponse => {
+  return createApiSuccess({
+    code: API_CODES.sftpOperationOk,
+    message: t('success.sftp.batchOperationCompleted'),
+    data: {
+      sessionId: data.sessionId,
+      operation: data.operation,
+      totalCount: data.totalCount,
+      completedCount: data.completedCount,
+      failedCount: data.failedCount,
+      skippedCount: data.skippedCount,
+      stoppedOnFailure: data.stoppedOnFailure,
+      results: data.results,
+    },
   });
 };
 
@@ -313,7 +428,7 @@ const registerSftpPathOperationRoute = <TRequest>(
 };
 
 /**
- * Registers read-only SFTP browser session routes.
+ * Registers SFTP browser session routes.
  *
  * @param app Backend HTTP app.
  * @param context Runtime services injected by backend bootstrap.
@@ -518,6 +633,31 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
     (t) => t('success.sftp.entryDeleted'),
     (sessionId, request) => context.sftpSessionService.deleteEntry(sessionId, request.path, request.recursive),
   );
+
+  app.post(API_PATHS.sftpBatchOperation.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parseSftpBatchOperationRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = await context.sftpSessionService.runBatchOperation(sessionId, parsed.value);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    if (result.type === 'failed') {
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    return c.json(buildSftpBatchOperationSuccess(t, result));
+  });
 
   app.delete(API_PATHS.sftpCloseSession.replace('{sessionId}', ':sessionId'), async (c) => {
     const t = getTranslator(c);

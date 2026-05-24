@@ -5,6 +5,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -210,6 +212,13 @@ export const deleteSftpEntry = async (
   payload: ApiSftpDeleteRequest,
 ): Promise<ApiSftpDeleteResponse> => {
   return backendClient.deleteSftpEntry(sessionId, payload);
+};
+
+export const runSftpBatchOperation = async (
+  sessionId: string,
+  payload: ApiSftpBatchOperationRequest,
+): Promise<ApiSftpBatchOperationResponse> => {
+  return backendClient.runSftpBatchOperation(sessionId, payload);
 };
 
 export const closeSftpSession = async (sessionId: string): Promise<{ success: boolean }> => {

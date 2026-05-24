@@ -437,6 +437,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/batch': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Run one ordered batch operation across remote SFTP entries. */
+    post: operations['sftpBatchOperation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}': {
     parameters: {
       query?: never;
@@ -865,6 +882,27 @@ export interface components {
       recursive: boolean;
     };
     /** @enum {string} */
+    SftpBatchOperationType: 'copy' | 'move' | 'delete';
+    SftpBatchOperationItemRequest: {
+      path: string;
+      type: components['schemas']['SftpEntryType'];
+    };
+    SftpBatchOperationRequest: {
+      operation: components['schemas']['SftpBatchOperationType'];
+      entries: components['schemas']['SftpBatchOperationItemRequest'][];
+      /** @description Required when operation is copy or move. */
+      targetDirectoryPath?: string;
+    };
+    /** @enum {string} */
+    SftpBatchOperationItemStatus: 'success' | 'failed' | 'skipped';
+    SftpBatchOperationItemResult: {
+      path: string;
+      type: components['schemas']['SftpEntryType'];
+      targetPath?: string;
+      status: components['schemas']['SftpBatchOperationItemStatus'];
+      message?: string;
+    };
+    /** @enum {string} */
     SftpEntryType: 'directory' | 'file' | 'symlink' | 'other';
     SftpEntry: {
       name: string;
@@ -895,6 +933,16 @@ export interface components {
       sessionId: string;
       path: string;
       targetPath?: string;
+    };
+    SftpBatchOperationData: {
+      sessionId: string;
+      operation: components['schemas']['SftpBatchOperationType'];
+      totalCount: number;
+      completedCount: number;
+      failedCount: number;
+      skippedCount: number;
+      stoppedOnFailure: boolean;
+      results: components['schemas']['SftpBatchOperationItemResult'][];
     };
     SftpReadFileData: {
       sessionId: string;
@@ -1099,6 +1147,13 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpOperationData'];
+    };
+    SftpBatchOperationSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_OPERATION_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpBatchOperationData'];
     };
     SftpReadFileSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -2636,6 +2691,61 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or entry not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpBatchOperation: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpBatchOperationRequest'];
+      };
+    };
+    responses: {
+      /** @description Batch operation completed. The summary reports failed and skipped entries when fail-fast stops execution. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpBatchOperationSuccess'];
         };
       };
       /** @description Validation failed. */

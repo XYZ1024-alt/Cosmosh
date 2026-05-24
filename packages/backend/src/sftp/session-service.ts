@@ -39,6 +39,44 @@ export type SftpEntry = {
   modifiedAt: string;
 };
 
+/**
+ * Batch operation modes supported by one SFTP API request.
+ */
+export type SftpBatchOperation = 'copy' | 'move' | 'delete';
+
+/**
+ * Remote entry descriptor accepted by the SFTP batch operation endpoint.
+ */
+export type SftpBatchOperationEntry = {
+  path: string;
+  type: SftpEntryType;
+};
+
+/**
+ * Per-entry execution status reported by SFTP batch operations.
+ */
+export type SftpBatchOperationItemStatus = 'success' | 'failed' | 'skipped';
+
+/**
+ * Per-entry execution result reported by SFTP batch operations.
+ */
+export type SftpBatchOperationItemResult = {
+  path: string;
+  type: SftpEntryType;
+  targetPath?: string;
+  status: SftpBatchOperationItemStatus;
+  message?: string;
+};
+
+/**
+ * Normalized batch operation input used by the SFTP session service.
+ */
+export type RunSftpBatchOperationInput = {
+  operation: SftpBatchOperation;
+  entries: SftpBatchOperationEntry[];
+  targetDirectoryPath?: string;
+};
+
 export type CreateSftpSessionResult =
   | {
       type: 'success';
@@ -85,6 +123,26 @@ export type SftpOperationResult =
       sessionId: string;
       path: string;
       targetPath?: string;
+    }
+  | {
+      type: 'not-found';
+    }
+  | {
+      type: 'failed';
+      message: string;
+    };
+
+export type SftpBatchOperationResult =
+  | {
+      type: 'success';
+      sessionId: string;
+      operation: SftpBatchOperation;
+      totalCount: number;
+      completedCount: number;
+      failedCount: number;
+      skippedCount: number;
+      stoppedOnFailure: boolean;
+      results: SftpBatchOperationItemResult[];
     }
   | {
       type: 'not-found';
@@ -772,6 +830,110 @@ export class SftpSessionService {
   }
 
   /**
+   * Runs one ordered, fail-fast batch operation against one active SFTP session.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param input Normalized batch operation input from the HTTP route.
+   * @returns Batch execution summary with per-entry status.
+   */
+  public async runBatchOperation(
+    sessionId: string,
+    input: RunSftpBatchOperationInput,
+  ): Promise<SftpBatchOperationResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    if (input.entries.length === 0) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.batchEntriesRequired'),
+      };
+    }
+
+    const targetDirectoryPath = input.targetDirectoryPath
+      ? normalizeSftpPathInput(input.targetDirectoryPath)
+      : undefined;
+    if ((input.operation === 'copy' || input.operation === 'move') && !targetDirectoryPath) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.batchTargetRequired'),
+      };
+    }
+
+    const entries = input.entries.map((entry) => ({
+      path: normalizeSftpPathInput(entry.path),
+      type: entry.type,
+    }));
+
+    if (entries.some((entry) => !isMutableSftpEntryPath(entry.path))) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    const results: SftpBatchOperationItemResult[] = [];
+    let stoppedOnFailure = false;
+
+    for (let index = 0; index < entries.length; index += 1) {
+      const entry = entries[index];
+      const result = await this.runSingleBatchEntryOperation(sessionId, input.operation, entry, targetDirectoryPath);
+
+      if (result.type === 'success') {
+        const itemResult: SftpBatchOperationItemResult = {
+          path: result.path,
+          type: entry.type,
+          status: 'success',
+        };
+
+        if (result.targetPath) {
+          itemResult.targetPath = result.targetPath;
+        }
+
+        results.push(itemResult);
+        continue;
+      }
+
+      const message = result.type === 'not-found' ? session.t('errors.sftp.sessionNotFound') : result.message;
+      results.push({
+        path: entry.path,
+        type: entry.type,
+        status: 'failed',
+        message,
+      });
+      stoppedOnFailure = true;
+
+      for (const skippedEntry of entries.slice(index + 1)) {
+        results.push({
+          path: skippedEntry.path,
+          type: skippedEntry.type,
+          status: 'skipped',
+          message: session.t('errors.sftp.batchSkippedAfterFailure'),
+        });
+      }
+      break;
+    }
+
+    const completedCount = results.filter((result) => result.status === 'success').length;
+    const failedCount = results.filter((result) => result.status === 'failed').length;
+    const skippedCount = results.filter((result) => result.status === 'skipped').length;
+
+    return {
+      type: 'success',
+      sessionId,
+      operation: input.operation,
+      totalCount: entries.length,
+      completedCount,
+      failedCount,
+      skippedCount,
+      stoppedOnFailure,
+      results,
+    };
+  }
+
+  /**
    * Closes one SFTP session and releases its SSH connection.
    *
    * @param sessionId Live SFTP session id.
@@ -1002,6 +1164,24 @@ export class SftpSessionService {
     }
 
     throw new Error(session.t('errors.sftp.copyTargetConflict'));
+  }
+
+  private async runSingleBatchEntryOperation(
+    sessionId: string,
+    operation: SftpBatchOperation,
+    entry: SftpBatchOperationEntry,
+    targetDirectoryPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    if (operation === 'delete') {
+      return await this.deleteEntry(sessionId, entry.path, entry.type === 'directory');
+    }
+
+    const targetPath = joinSftpPath(targetDirectoryPath ?? '.', POSIX_PATH.basename(entry.path));
+    if (operation === 'copy') {
+      return await this.copyEntry(sessionId, entry.path, targetPath);
+    }
+
+    return await this.renameEntry(sessionId, entry.path, targetPath);
   }
 
   private async copyFile(

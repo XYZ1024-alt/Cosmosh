@@ -9,6 +9,8 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpBatchOperationRequest,
+  ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
   ApiSftpCopyResponse,
   ApiSftpCreateDirectoryRequest,
@@ -358,6 +360,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpDeleteEntry: (sessionId: string, payload: ApiSftpDeleteRequest) => {
     return invokeIpc<ApiSftpDeleteResponse | ApiErrorResponse>('backend:sftp-delete-entry', sessionId, payload);
+  },
+  backendSftpBatchOperation: (sessionId: string, payload: ApiSftpBatchOperationRequest) => {
+    return invokeIpc<ApiSftpBatchOperationResponse | ApiErrorResponse>(
+      'backend:sftp-batch-operation',
+      sessionId,
+      payload,
+    );
   },
   backendSftpCloseSession: (sessionId: string) => {
     return invokeIpc<{ success: boolean }>('backend:sftp-close-session', sessionId);
