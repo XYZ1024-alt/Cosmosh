@@ -2250,8 +2250,14 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                     </div>
                   ) : null}
                   {status === 'ready' && visibleEntries.length > 0
-                    ? visibleEntries.map((entry) => {
+                    ? visibleEntries.map((entry, index) => {
                         const isSelected = selectedPathSet.has(entry.path);
+                        const hasSelectedPreviousEntry =
+                          isSelected && index > 0 && selectedPathSet.has(visibleEntries[index - 1]?.path ?? '');
+                        const hasSelectedNextEntry =
+                          isSelected &&
+                          index < visibleEntries.length - 1 &&
+                          selectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
                         const isCut =
                           clipboardState?.mode === 'cut'
                             ? clipboardState.entries.some((clipboardEntry) => clipboardEntry.path === entry.path)
@@ -2265,8 +2271,15 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                                 aria-selected={isSelected}
                                 tabIndex={0}
                                 className={classNames(
-                                  'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
+                                  'focus-visible:ring-form-ring grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
                                   DIRECTORY_ROW_GRID_CLASS_NAME,
+                                  hasSelectedPreviousEntry && hasSelectedNextEntry
+                                    ? 'rounded-none'
+                                    : hasSelectedPreviousEntry
+                                      ? 'rounded-b-lg rounded-t-none'
+                                      : hasSelectedNextEntry
+                                        ? 'rounded-b-none rounded-t-lg'
+                                        : 'rounded-lg',
                                   isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
                                   isCut ? 'opacity-55' : '',
                                 )}
