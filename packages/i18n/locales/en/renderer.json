@@ -324,8 +324,8 @@
         "title": "Auto-Reconnect on Tab Focus"
       },
       "sshTabApplyServerVisualStyle": {
-        "description": "Apply the selected server icon color and background style to SSH tabs.",
-        "title": "Apply Server Icon Colors To SSH Tabs"
+        "description": "Apply the selected server icon color and background style to SSH and SFTP tabs.",
+        "title": "Apply Server Icon Colors To SSH And SFTP Tabs"
       },
       "terminalAltClickMovesCursor": {
         "description": "Use Alt (Option on macOS) + click to move the cursor to the clicked position.",

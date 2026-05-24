@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import { Bug, FileText, FolderTree, Home, icons, KeyRound, ScrollText, Server, Settings, Terminal } from 'lucide-react';
+import { Bug, FileText, Folder, Home, icons, KeyRound, ScrollText, Server, Settings, Terminal } from 'lucide-react';
 import React from 'react';
 
 import type { TabIconColorKey, TabIconKey, TabItem } from '../types/tabs';
@@ -10,7 +10,7 @@ const lucideIconMap = icons as Record<string, React.ComponentType<{ className?: 
 const builtinTabIconMap: Record<TabIconKey, React.ReactNode> = {
   home: <Home className="h-4 w-4 shrink-0" />,
   ssh: <Server className="h-4 w-4 shrink-0" />,
-  sftp: <FolderTree className="h-4 w-4 shrink-0" />,
+  sftp: <Folder className="h-4 w-4 shrink-0" />,
   settings: <Settings className="h-4 w-4 shrink-0" />,
   file: <FileText className="h-4 w-4 shrink-0" />,
   terminal: <Terminal className="h-4 w-4 shrink-0" />,

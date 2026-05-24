@@ -156,7 +156,8 @@ const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
 
   const items = React.useMemo<CommandPaletteItem[]>(() => {
     return tabs.map((tab) => {
-      const shouldApplySshTabVisual = applySshServerVisualStyle && tab.page === 'ssh' && Boolean(tab.iconColorKey);
+      const shouldApplySshTabVisual =
+        applySshServerVisualStyle && (tab.page === 'ssh' || tab.page === 'sftp') && Boolean(tab.iconColorKey);
 
       return {
         key: tab.id,
@@ -488,6 +489,7 @@ const App: React.FC = () => {
                       addTab('sftp', {
                         title: resolvedTitle,
                         iconKey: 'sftp',
+                        iconColorKey: options.iconColorKey,
                         state: {
                           sftpConnectionIntent: nextIntent,
                         },
@@ -499,7 +501,7 @@ const App: React.FC = () => {
                     updateTab(tab.id, {
                       title: resolvedTitle,
                       iconKey: 'sftp',
-                      iconColorKey: undefined,
+                      iconColorKey: options?.iconColorKey,
                       state: {
                         ...(tab.state ?? {}),
                         sftpConnectionIntent: nextIntent,
@@ -554,6 +556,7 @@ const App: React.FC = () => {
                       addTab('sftp', {
                         title: intent.serverName,
                         iconKey: 'sftp',
+                        iconColorKey: tab.iconColorKey,
                         state: {
                           sftpConnectionIntent: {
                             ...intent,

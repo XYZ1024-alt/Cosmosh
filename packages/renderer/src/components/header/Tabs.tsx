@@ -41,7 +41,7 @@ const DragOverlayTab: React.FC<{ tab: TabItem; width: number; applySshServerVisu
   width,
   applySshServerVisuals,
 }) => {
-  const shouldApplySshTabVisual = applySshServerVisuals && tab.page === 'ssh' && Boolean(tab.iconColorKey);
+  const shouldApplySshTabVisual = hasServerVisualTabStyle(tab, applySshServerVisuals);
 
   return (
     <div
@@ -52,7 +52,7 @@ const DragOverlayTab: React.FC<{ tab: TabItem; width: number; applySshServerVisu
       style={{ width, minWidth: width, maxWidth: width }}
     >
       <span aria-hidden>
-        {renderTabIcon(tab, !shouldApplySshTabVisual && applySshServerVisuals && tab.page === 'ssh')}
+        {renderTabIcon(tab, !shouldApplySshTabVisual && isServerBackedTab(tab) && applySshServerVisuals)}
       </span>
       <span className="flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm">{tab.title}</span>
       {tab.closable && <XIcon className="h-4 w-4" />}
@@ -73,7 +73,7 @@ const SortableTab = React.forwardRef<
     onContextMenu?: React.MouseEventHandler<HTMLDivElement>;
   }
 >(({ tab, isActive, width, applySshServerVisuals, onClose, onContextMenu }, forwardedRef) => {
-  const shouldApplySshTabVisual = applySshServerVisuals && tab.page === 'ssh' && Boolean(tab.iconColorKey);
+  const shouldApplySshTabVisual = hasServerVisualTabStyle(tab, applySshServerVisuals);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: tab.id,
@@ -147,7 +147,7 @@ const SortableTab = React.forwardRef<
             aria-hidden
             className={classNames(shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '')}
           >
-            {renderTabIcon(tab, !shouldApplySshTabVisual && applySshServerVisuals && tab.page === 'ssh')}
+            {renderTabIcon(tab, !shouldApplySshTabVisual && isServerBackedTab(tab) && applySshServerVisuals)}
           </span>
           <span
             className={classNames(
@@ -207,6 +207,14 @@ type TabsProps = {
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
   onReorderTabs?: (nextTabs: TabItem[]) => void;
+};
+
+const isServerBackedTab = (tab: TabItem | undefined): boolean => {
+  return tab?.page === 'ssh' || tab?.page === 'sftp';
+};
+
+const hasServerVisualTabStyle = (tab: TabItem | undefined, applySshServerVisuals: boolean): boolean => {
+  return applySshServerVisuals && isServerBackedTab(tab) && Boolean(tab?.iconColorKey);
 };
 
 export const Tabs: React.FC<TabsProps> = ({
@@ -457,7 +465,7 @@ export const Tabs: React.FC<TabsProps> = ({
   );
   const hasColoredSshTabVisual = React.useCallback(
     (tab: TabItem | undefined): boolean => {
-      return applySshServerVisuals && tab?.page === 'ssh' && Boolean(tab.iconColorKey);
+      return hasServerVisualTabStyle(tab, applySshServerVisuals);
     },
     [applySshServerVisuals],
   );

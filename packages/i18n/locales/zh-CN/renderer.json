@@ -324,8 +324,8 @@
         "title": "标签页聚焦时自动重连"
       },
       "sshTabApplyServerVisualStyle": {
-        "description": "将当前服务器设置的图标颜色和背景样式应用到 SSH 标签页。",
-        "title": "将服务器图标配色应用到 SSH 标签页"
+        "description": "将当前服务器设置的图标颜色和背景样式应用到 SSH 与 SFTP 标签页。",
+        "title": "将服务器图标配色应用到 SSH 与 SFTP 标签页"
       },
       "terminalAltClickMovesCursor": {
         "description": "按住 Alt（macOS 为 Option）并点击时，将光标移动到点击位置。",

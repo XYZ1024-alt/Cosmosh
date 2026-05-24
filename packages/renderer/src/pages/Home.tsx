@@ -7,7 +7,6 @@ import {
   CalendarPlus,
   Clock3,
   Copy,
-  File,
   FolderOpen,
   FolderPlus,
   Hash,
@@ -101,7 +100,11 @@ import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-stat
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
-  onOpenSFTP: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
+  onOpenSFTP: (
+    serverId: string,
+    tabTitle?: string,
+    options?: { openInNewTab?: boolean; iconColorKey?: EntityColorKey },
+  ) => void;
   isActive: boolean;
 };
 
@@ -1339,10 +1342,13 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                                         aria-label={t('home.contextConnectSftp')}
                                         onClick={(event) => {
                                           event.stopPropagation();
-                                          onOpenSFTP(server.id, server.name, { openInNewTab: true });
+                                          onOpenSFTP(server.id, server.name, {
+                                            openInNewTab: true,
+                                            iconColorKey: colorKey,
+                                          });
                                         }}
                                       >
-                                        <File className="h-4 w-4 flex-shrink-0" />
+                                        <FolderOpen className="h-4 w-4 flex-shrink-0" />
                                       </Button>
                                     }
                                     onDragStart={(event) => {
@@ -1371,8 +1377,8 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                                     <ContextMenuShortcut>{openInNewTabShortcutLabel}</ContextMenuShortcut>
                                   </ContextMenuItem>
                                   <ContextMenuItem
-                                    icon={File}
-                                    onSelect={() => onOpenSFTP(server.id, server.name)}
+                                    icon={FolderOpen}
+                                    onSelect={() => onOpenSFTP(server.id, server.name, { iconColorKey: colorKey })}
                                   >
                                     {t('home.contextConnectSftp')}
                                   </ContextMenuItem>

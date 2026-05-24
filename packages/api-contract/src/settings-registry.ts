@@ -366,7 +366,7 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     control: 'switch',
     path: 'theme.tabs.ssh.applyServerVisualStyle',
     commandActionId: 'settings.theme.tabs.ssh.applyServerVisualStyle.toggle',
-    searchTerms: ['ssh', 'tab icon', 'server icon', 'icon color', 'tab appearance'],
+    searchTerms: ['ssh', 'sftp', 'tab icon', 'server icon', 'icon color', 'tab appearance'],
   },
   {
     key: 'terminalCursorInactiveStyle',

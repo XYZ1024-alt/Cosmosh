@@ -172,6 +172,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Use three dense rounded workbench cards: left directory tree, center directory list, and right details/preview.
 - Keep the tree panel narrow and task-oriented, currently aligned to the 250 px Cosmosh sidebar rhythm.
 - Use internal UI wrappers (`Button`, `Tooltip`, `Dialog`) and tokenized classes.
+- SFTP tabs use a folder icon and inherit the server color background when the shared SSH/SFTP server-visual tab setting is enabled.
 - Keep the toolbar compact and ordered as path controls, remote path input, file-operation buttons, and current-directory filter.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.

@@ -82,6 +82,11 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Runtime-heavy pages (for example SSH/xterm sessions) must preserve in-memory session state when tab order changes.
 - Reorder state updates should be id-based and must preserve the latest tab objects from state instead of writing stale drag snapshots back.
 
+## 7.3 Server-Backed Tab Visuals
+
+- SSH and SFTP tabs may apply the source server color background when the shared server-visual tab setting is enabled.
+- SFTP tabs must keep a folder icon even when they inherit server color, so users can distinguish file-system tabs from terminal tabs quickly.
+
 ## 8. Compliance Checklist
 
 Before merging UI changes:
