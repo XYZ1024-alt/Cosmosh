@@ -132,8 +132,9 @@ type PendingCreateState = {
 type SftpActionMenuOptions = {
   contextEntry: ApiSftpEntry | null;
   menuSurface: 'context' | 'dropdown';
-  scope: 'entry' | 'directory' | 'toolbarMore';
+  scope: 'entry' | 'directory' | 'toolbarMore' | 'treeDirectory';
   showShortcuts: boolean;
+  targetDirectoryPath?: string;
 };
 
 type SftpSelectionClickEvent = Pick<React.MouseEvent<HTMLElement>, 'ctrlKey' | 'metaKey' | 'shiftKey'>;
@@ -530,6 +531,10 @@ const resolveActionTargetEntries = (
     return [];
   }
 
+  if (scope === 'treeDirectory') {
+    return contextEntry ? [contextEntry] : [];
+  }
+
   if (contextEntry) {
     return selectedPathSet.has(contextEntry.path) && selectedEntries.length > 0 ? selectedEntries : [contextEntry];
   }
@@ -646,6 +651,24 @@ const resolveEntryParentPath = (entryPath: string): string => {
  */
 const resolveRenameTargetPath = (entry: ApiSftpEntry, nextName: string): string => {
   return joinRemotePath(resolveEntryParentPath(entry.path), nextName);
+};
+
+/**
+ * Builds a minimal directory entry for tree-node menu actions.
+ *
+ * @param node Directory tree node opened through the context menu.
+ * @returns SFTP directory entry carrying the path/type fields action handlers require.
+ */
+const resolveTreeDirectoryEntry = (node: TreeDirectoryNode): ApiSftpEntry => {
+  return {
+    name: node.name,
+    path: node.path,
+    type: 'directory',
+    size: 0,
+    mode: 0,
+    permissions: '',
+    modifiedAt: '',
+  };
 };
 
 /**
@@ -1208,15 +1231,15 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   );
 
   const navigateToPath = React.useCallback(
-    async (directoryPath: string): Promise<void> => {
+    async (directoryPath: string): Promise<boolean> => {
       const trimmedPath = directoryPath.trim();
       if (!sessionId || !trimmedPath) {
-        return;
+        return false;
       }
 
       const loadedPath = await loadDirectory(sessionId, trimmedPath);
       if (!loadedPath) {
-        return;
+        return false;
       }
 
       setNavigationState((previous) => {
@@ -1229,6 +1252,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
         const nextPaths = [...retainedPaths, loadedPath];
         return { paths: nextPaths, index: nextPaths.length - 1 };
       });
+      return true;
     },
     [loadDirectory, sessionId],
   );
@@ -1240,6 +1264,23 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
 
     void loadDirectory(sessionId, currentPath, { forceRefresh: true, preserveCurrentView: true });
   }, [currentPath, loadDirectory, sessionId]);
+
+  const handleTreeDirectoryRefresh = React.useCallback(
+    (directoryPath: string): void => {
+      if (!sessionId) {
+        return;
+      }
+
+      invalidateDirectoryCache(directoryPath);
+      if (directoryPath === currentPath) {
+        void loadDirectory(sessionId, directoryPath, { forceRefresh: true, preserveCurrentView: true });
+        return;
+      }
+
+      void loadTreeDirectoryChildren(sessionId, directoryPath);
+    },
+    [currentPath, invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren, sessionId],
+  );
 
   const refreshCurrentDirectoryAfterOperation = React.useCallback(async (): Promise<void> => {
     if (!sessionId) {
@@ -1358,6 +1399,24 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     [canUseFileActions, resetSelection],
   );
 
+  const beginCreateEntryInDirectory = React.useCallback(
+    async (type: PendingCreateState['type'], directoryPath = currentPath): Promise<void> => {
+      if (!canUseFileActions) {
+        return;
+      }
+
+      if (directoryPath !== currentPath) {
+        const didNavigate = await navigateToPath(directoryPath);
+        if (!didNavigate) {
+          return;
+        }
+      }
+
+      beginCreateEntry(type);
+    },
+    [beginCreateEntry, canUseFileActions, currentPath, navigateToPath],
+  );
+
   const handleOpenEntry = React.useCallback(
     async (entry: ApiSftpEntry): Promise<void> => {
       selectSingleEntry(entry);
@@ -1420,51 +1479,61 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     setSelectionAnchorPath(entriesToCut[entriesToCut.length - 1]?.path ?? '');
   }, []);
 
-  const handlePasteEntry = React.useCallback(async (): Promise<void> => {
-    if (!clipboardState || !sessionId || clipboardState.entries.length === 0) {
-      return;
-    }
-
-    await runSftpOperation(async () => {
-      const response = await runSftpBatchOperation(sessionId, {
-        operation: clipboardState.mode === 'copy' ? 'copy' : 'move',
-        targetDirectoryPath: currentPath,
-        entries: clipboardState.entries.map((entry) => ({
-          path: entry.path,
-          type: entry.type,
-        })),
-      });
-
-      if (clipboardState.mode === 'copy') {
-        if (response.data.failedCount > 0) {
-          notifyError(formatBatchPartialFailureFeedback(response.data));
-        } else {
-          notifySuccess(
-            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
-          );
-        }
-      } else {
-        setClipboardState(null);
-        if (response.data.failedCount > 0) {
-          notifyError(formatBatchPartialFailureFeedback(response.data));
-        } else {
-          notifySuccess(
-            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
-          );
-        }
+  const handlePasteEntry = React.useCallback(
+    async (targetDirectoryPath = currentPath): Promise<void> => {
+      if (!clipboardState || !sessionId || clipboardState.entries.length === 0) {
+        return;
       }
 
-      await refreshCurrentDirectoryAfterOperation();
-    });
-  }, [
-    clipboardState,
-    currentPath,
-    notifyError,
-    notifySuccess,
-    refreshCurrentDirectoryAfterOperation,
-    runSftpOperation,
-    sessionId,
-  ]);
+      await runSftpOperation(async () => {
+        const response = await runSftpBatchOperation(sessionId, {
+          operation: clipboardState.mode === 'copy' ? 'copy' : 'move',
+          targetDirectoryPath,
+          entries: clipboardState.entries.map((entry) => ({
+            path: entry.path,
+            type: entry.type,
+          })),
+        });
+
+        if (clipboardState.mode === 'copy') {
+          if (response.data.failedCount > 0) {
+            notifyError(formatBatchPartialFailureFeedback(response.data));
+          } else {
+            notifySuccess(
+              formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
+            );
+          }
+        } else {
+          setClipboardState(null);
+          if (response.data.failedCount > 0) {
+            notifyError(formatBatchPartialFailureFeedback(response.data));
+          } else {
+            notifySuccess(
+              formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
+            );
+          }
+        }
+
+        if (targetDirectoryPath !== currentPath) {
+          invalidateDirectoryCache(targetDirectoryPath);
+          void loadTreeDirectoryChildren(sessionId, targetDirectoryPath);
+        }
+
+        await refreshCurrentDirectoryAfterOperation();
+      });
+    },
+    [
+      clipboardState,
+      currentPath,
+      invalidateDirectoryCache,
+      loadTreeDirectoryChildren,
+      notifyError,
+      notifySuccess,
+      refreshCurrentDirectoryAfterOperation,
+      runSftpOperation,
+      sessionId,
+    ],
+  );
 
   const handleDeleteEntries = React.useCallback(
     async (targetEntries: ApiSftpEntry[], source: SftpDeleteInvocationSource = 'action'): Promise<void> => {
@@ -1518,20 +1587,31 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   );
 
   const renderSftpActionMenuItems = React.useCallback(
-    ({ contextEntry, menuSurface, scope, showShortcuts }: SftpActionMenuOptions): React.ReactNode => {
+    ({
+      contextEntry,
+      menuSurface,
+      scope,
+      showShortcuts,
+      targetDirectoryPath = currentPath,
+    }: SftpActionMenuOptions): React.ReactNode => {
       const targetEntries = resolveActionTargetEntries(contextEntry, scope, selectedEntries, selectedPathSet);
       const targetEntry = targetEntries[0] ?? null;
       const isMultiTarget = targetEntries.length > 1;
-      const shouldShowEntryOpenActions = scope === 'entry' || scope === 'toolbarMore';
+      const isTreeDirectoryScope = scope === 'treeDirectory';
+      const shouldShowEntryOpenActions = scope === 'entry' || scope === 'toolbarMore' || isTreeDirectoryScope;
       const shouldShowEntryMutationActions = scope === 'entry';
-      const shouldShowCreateActions = scope === 'directory';
-      const shouldShowPasteAction = scope === 'directory';
+      const shouldShowCreateActions = scope === 'directory' || isTreeDirectoryScope;
+      const shouldShowPasteAction = scope === 'directory' || isTreeDirectoryScope;
+      const shouldShowRefreshAction = isTreeDirectoryScope;
       const canOpenEntry = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
       const canOpenInNewTab = canOpenEntry && targetEntry?.type === 'directory';
       const canMutateEntry = canUseFileActions && targetEntries.length > 0;
       const canRenameEntry = canMutateEntry && targetEntries.length === 1;
       const canPaste = canUseFileActions && Boolean(clipboardState);
-      const shouldShowCreateSeparator = shouldShowPasteAction && shouldShowCreateActions;
+      const canRefreshDirectory = canUseFileActions && Boolean(targetDirectoryPath);
+      const shouldShowOpenSeparator =
+        shouldShowEntryMutationActions || shouldShowRefreshAction || shouldShowPasteAction || shouldShowCreateActions;
+      const shouldShowCreateSeparator = (shouldShowPasteAction || shouldShowRefreshAction) && shouldShowCreateActions;
 
       const ShortcutComponent = menuSurface === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
       const ItemComponent = menuSurface === 'context' ? ContextMenuItem : DropdownMenuItem;
@@ -1566,7 +1646,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 {t('sftp.actions.openInNewTab')}
                 {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
               </ItemComponent>
-              {shouldShowEntryMutationActions ? <SeparatorComponent /> : null}
+              {shouldShowOpenSeparator ? <SeparatorComponent /> : null}
             </>
           ) : null}
           {shouldShowEntryMutationActions ? (
@@ -1616,12 +1696,21 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
               {shouldShowPasteAction || shouldShowCreateActions ? <SeparatorComponent /> : null}
             </>
           ) : null}
+          {shouldShowRefreshAction ? (
+            <ItemComponent
+              icon={RefreshCcw}
+              disabled={!canRefreshDirectory}
+              onSelect={() => handleTreeDirectoryRefresh(targetDirectoryPath)}
+            >
+              {t('sftp.actions.refresh')}
+            </ItemComponent>
+          ) : null}
           {shouldShowPasteAction ? (
             <ItemComponent
               icon={Clipboard}
               disabled={!canPaste}
               onSelect={() => {
-                void handlePasteEntry();
+                void handlePasteEntry(targetDirectoryPath);
               }}
             >
               {t('sftp.actions.paste')}
@@ -1634,7 +1723,9 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
               <ItemComponent
                 icon={FilePlus2}
                 disabled={!canUseFileActions}
-                onSelect={() => beginCreateEntry('file')}
+                onSelect={() => {
+                  void beginCreateEntryInDirectory('file', targetDirectoryPath);
+                }}
               >
                 {t('sftp.actions.newFile')}
                 {showShortcuts ? <ShortcutComponent>{shortcutModifier}+N</ShortcutComponent> : null}
@@ -1642,7 +1733,9 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
               <ItemComponent
                 icon={FolderPlus}
                 disabled={!canUseFileActions}
-                onSelect={() => beginCreateEntry('directory')}
+                onSelect={() => {
+                  void beginCreateEntryInDirectory('directory', targetDirectoryPath);
+                }}
               >
                 {t('sftp.actions.newFolder')}
                 {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Shift+N</ShortcutComponent> : null}
@@ -1653,16 +1746,18 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
       );
     },
     [
-      beginCreateEntry,
+      beginCreateEntryInDirectory,
       beginRenameEntry,
       canUseFileActions,
       clipboardState,
+      currentPath,
       handleCopyEntries,
       handleCutEntries,
       handleDeleteEntries,
       handleOpenDirectoryInNewTab,
       handleOpenEntry,
       handlePasteEntry,
+      handleTreeDirectoryRefresh,
       selectedEntries,
       selectedPathSet,
       shortcutModifier,
@@ -2012,64 +2107,78 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
 
       const isCurrent = node.path === currentPath;
       const isExpandable = node.isLoading || node.children.length > 0 || !node.isLoaded;
+      const treeContextEntry = resolveTreeDirectoryEntry(node);
 
       return (
         <React.Fragment key={node.path}>
-          <div
-            className={classNames(
-              'group flex h-[30px] w-full items-center rounded-lg text-sm transition-colors hover:bg-home-card-hover',
-              isCurrent ? 'bg-home-card-hover' : '',
-            )}
-          >
-            <div
-              className={classNames(
-                'flex min-w-0 flex-1 items-center',
-                depth > 0 ? resolveTreeIndentClassName(depth) : '',
-              )}
-            >
-              <button
-                type="button"
-                aria-label={t(node.isExpanded ? 'sftp.actions.collapse' : 'sftp.actions.expand')}
-                className="focus-visible:ring-form-ring flex h-[30px] w-5 shrink-0 items-center justify-center rounded-sm-2 text-home-text-subtle focus-visible:outline-none focus-visible:ring-2"
-                disabled={node.isLoading}
-                tabIndex={-1}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  handleTreeNodeToggle(node.path);
-                }}
-              >
-                {node.isLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : isExpandable ? (
-                  <ChevronRight
-                    className={classNames(
-                      'h-3.5 w-3.5 transition-transform',
-                      node.isExpanded && node.children.length > 0 ? 'rotate-90' : '',
-                    )}
-                  />
-                ) : (
-                  <span className="h-3.5 w-3.5" />
+          <ContextMenu>
+            <ContextMenuTrigger asChild>
+              <div
+                className={classNames(
+                  'group flex h-[30px] w-full items-center rounded-lg text-sm transition-colors hover:bg-home-card-hover',
+                  isCurrent ? 'bg-home-card-hover' : '',
                 )}
-              </button>
-              <button
-                ref={(element) => {
-                  treeRowRefs.current[node.path] = element;
-                }}
-                type="button"
-                className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-sm-2 pr-2 text-left focus-visible:outline-none focus-visible:ring-2"
-                tabIndex={resolvedActiveTreePath === node.path ? 0 : -1}
-                onClick={() => {
-                  setActiveTreePath(node.path);
-                  void navigateToPath(node.path);
-                }}
-                onFocus={() => setActiveTreePath(node.path)}
-                onKeyDown={(event) => handleTreeRowKeyDown(event, node.path)}
               >
-                <Folder className="text-home-text h-3.5 w-3.5 shrink-0" />
-                <span className="truncate">{node.name}</span>
-              </button>
-            </div>
-          </div>
+                <div
+                  className={classNames(
+                    'flex min-w-0 flex-1 items-center',
+                    depth > 0 ? resolveTreeIndentClassName(depth) : '',
+                  )}
+                >
+                  <button
+                    type="button"
+                    aria-label={t(node.isExpanded ? 'sftp.actions.collapse' : 'sftp.actions.expand')}
+                    className="focus-visible:ring-form-ring flex h-[30px] w-5 shrink-0 items-center justify-center rounded-sm-2 text-home-text-subtle focus-visible:outline-none focus-visible:ring-2"
+                    disabled={node.isLoading}
+                    tabIndex={-1}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      handleTreeNodeToggle(node.path);
+                    }}
+                  >
+                    {node.isLoading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : isExpandable ? (
+                      <ChevronRight
+                        className={classNames(
+                          'h-3.5 w-3.5 transition-transform',
+                          node.isExpanded && node.children.length > 0 ? 'rotate-90' : '',
+                        )}
+                      />
+                    ) : (
+                      <span className="h-3.5 w-3.5" />
+                    )}
+                  </button>
+                  <button
+                    ref={(element) => {
+                      treeRowRefs.current[node.path] = element;
+                    }}
+                    type="button"
+                    className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-sm-2 pr-2 text-left focus-visible:outline-none focus-visible:ring-2"
+                    tabIndex={resolvedActiveTreePath === node.path ? 0 : -1}
+                    onClick={() => {
+                      setActiveTreePath(node.path);
+                      void navigateToPath(node.path);
+                    }}
+                    onFocus={() => setActiveTreePath(node.path)}
+                    onKeyDown={(event) => handleTreeRowKeyDown(event, node.path)}
+                  >
+                    <Folder className="text-home-text h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{node.name}</span>
+                  </button>
+                </div>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              {renderSftpActionMenuItems({
+                contextEntry: treeContextEntry,
+                menuSurface: 'context',
+                scope: 'treeDirectory',
+                showShortcuts: false,
+                targetDirectoryPath: node.path,
+              })}
+            </ContextMenuContent>
+          </ContextMenu>
           {node.isExpanded ? node.children.map((childPath) => renderNode(childPath, depth + 1)) : null}
         </React.Fragment>
       );
@@ -2081,6 +2190,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     handleTreeNodeToggle,
     handleTreeRowKeyDown,
     navigateToPath,
+    renderSftpActionMenuItems,
     resolvedActiveTreePath,
     treeNodes,
     treeRootPaths,

@@ -10,8 +10,8 @@ Implemented in v1:
 - Each SFTP tab creates a backend SFTP session and owns that session lifecycle.
 - Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries, metadata details, and bounded UTF-8 file preview.
-- The left directory tree shows the current directory ancestry and caches loaded child directories as users browse.
-- Context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
+- Center-list context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
@@ -179,9 +179,10 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Keep the toolbar compact and ordered as path controls, remote path input, file-operation buttons, and current-directory filter.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
+- Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.
 - Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, and `Shift` selects the visible range from the current anchor. Row context menus preserve an existing multi-selection when the clicked row is already selected.
 - The left directory tree and center file list use roving focus: `Tab` enters each list once, then `ArrowUp`/`ArrowDown` move between rows. In the file list, arrow navigation selects the focused file row while the optional `..` parent row remains activation-only.
-- Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
+- Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, tree context menus focus on the clicked directory, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
 - Delete confirmation uses the shared `Dialog` wrapper and must preserve the pending operation until the user confirms or cancels. Keyboard-triggered delete passes an explicit shortcut source so the confirmation setting can distinguish shortcut-only safety prompts from toolbar and context-menu deletes.
