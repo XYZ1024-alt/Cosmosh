@@ -146,6 +146,8 @@ type SftpDeleteConfirmationPrompt = {
   source: SftpDeleteInvocationSource;
 };
 
+type InlineEditMenuAction = () => void | Promise<void>;
+
 type SftpFileNavigationRow =
   | {
       kind: 'parent';
@@ -165,6 +167,7 @@ const NEW_FILE_NAME = 'untitled.txt';
 const NEW_DIRECTORY_NAME = 'Untitled Folder';
 const FILE_PREVIEW_MAX_BYTES = 256 * 1024;
 const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
+const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
 
 /**
  * Formats SFTP byte sizes for the compact file list.
@@ -712,6 +715,9 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
   const sessionIdRef = React.useRef<string>('');
   const syncedTabTitleRef = React.useRef<string>('');
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
+  const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
+  const inlineEditMenuActionTimerRef = React.useRef<number | null>(null);
+  const inlineEditMenuFocusHandoffReleaseTimerRef = React.useRef<number | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
 
@@ -731,16 +737,148 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     setPathInput(currentPath);
   }, [currentPath]);
 
-  React.useEffect(() => {
-    if (!renamingEntryPath && !pendingCreate) {
-      return;
+  /**
+   * Focuses and selects the active inline-edit input after React mounts it.
+   *
+   * @returns void.
+   */
+  const focusInlineEditInput = React.useCallback((): void => {
+    renameInputRef.current?.focus();
+    renameInputRef.current?.select();
+  }, []);
+
+  /**
+   * Releases the short-lived menu focus guard used while inline edit starts.
+   *
+   * @returns void.
+   */
+  const releaseInlineEditMenuFocusHandoff = React.useCallback((): void => {
+    if (inlineEditMenuFocusHandoffReleaseTimerRef.current !== null) {
+      window.clearTimeout(inlineEditMenuFocusHandoffReleaseTimerRef.current);
+      inlineEditMenuFocusHandoffReleaseTimerRef.current = null;
     }
 
-    window.requestAnimationFrame(() => {
-      renameInputRef.current?.focus();
-      renameInputRef.current?.select();
+    shouldPreventMenuCloseAutoFocusRef.current = false;
+  }, []);
+
+  /**
+   * Keeps the menu close guard alive long enough for nested menus to finish restoring focus.
+   *
+   * @returns void.
+   */
+  const scheduleInlineEditMenuFocusHandoffRelease = React.useCallback((): void => {
+    if (inlineEditMenuFocusHandoffReleaseTimerRef.current !== null) {
+      window.clearTimeout(inlineEditMenuFocusHandoffReleaseTimerRef.current);
+    }
+
+    inlineEditMenuFocusHandoffReleaseTimerRef.current = window.setTimeout(() => {
+      shouldPreventMenuCloseAutoFocusRef.current = false;
+      inlineEditMenuFocusHandoffReleaseTimerRef.current = null;
+    }, INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS);
+  }, []);
+
+  /**
+   * Marks menu close events as an inline-edit focus handoff until the input is stable.
+   *
+   * @returns void.
+   */
+  const requestInlineEditMenuFocusHandoff = React.useCallback((): void => {
+    shouldPreventMenuCloseAutoFocusRef.current = true;
+    scheduleInlineEditMenuFocusHandoffRelease();
+  }, [scheduleInlineEditMenuFocusHandoffRelease]);
+
+  /**
+   * Prevents Radix menu focus restoration from immediately blurring inline edit inputs.
+   *
+   * @param event Radix close autofocus event.
+   * @returns void.
+   */
+  const handleInlineEditMenuCloseAutoFocus = React.useCallback(
+    (event: Event): void => {
+      if (!shouldPreventMenuCloseAutoFocusRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      scheduleInlineEditMenuFocusHandoffRelease();
+    },
+    [scheduleInlineEditMenuFocusHandoffRelease],
+  );
+
+  /**
+   * Runs an inline-edit action after menu selection has finished closing the source menu.
+   *
+   * @param action Action that starts rename or create state.
+   * @returns void.
+   */
+  const runInlineEditMenuActionAfterClose = React.useCallback(
+    (action: InlineEditMenuAction): void => {
+      requestInlineEditMenuFocusHandoff();
+
+      if (inlineEditMenuActionTimerRef.current !== null) {
+        window.clearTimeout(inlineEditMenuActionTimerRef.current);
+      }
+
+      inlineEditMenuActionTimerRef.current = window.setTimeout(() => {
+        inlineEditMenuActionTimerRef.current = null;
+
+        void Promise.resolve()
+          .then(action)
+          .catch((error: unknown) => {
+            releaseInlineEditMenuFocusHandoff();
+            notifyError(error instanceof Error ? error.message : t('sftp.operationFailed'));
+          });
+      }, 0);
+    },
+    [notifyError, releaseInlineEditMenuFocusHandoff, requestInlineEditMenuFocusHandoff],
+  );
+
+  /**
+   * Commits an inline edit unless the blur came from the menu-to-input focus handoff.
+   *
+   * @param commit Action that commits the current inline-edit draft.
+   * @returns void.
+   */
+  const handleInlineEditInputBlur = React.useCallback(
+    (commit: InlineEditMenuAction): void => {
+      if (shouldPreventMenuCloseAutoFocusRef.current) {
+        window.requestAnimationFrame(focusInlineEditInput);
+        scheduleInlineEditMenuFocusHandoffRelease();
+        return;
+      }
+
+      void Promise.resolve()
+        .then(commit)
+        .catch((error: unknown) => {
+          notifyError(error instanceof Error ? error.message : t('sftp.operationFailed'));
+        });
+    },
+    [focusInlineEditInput, notifyError, scheduleInlineEditMenuFocusHandoffRelease],
+  );
+
+  React.useEffect(() => {
+    if (!renamingEntryPath && !pendingCreate) {
+      return undefined;
+    }
+
+    const focusFrameId = window.requestAnimationFrame(() => {
+      focusInlineEditInput();
+      scheduleInlineEditMenuFocusHandoffRelease();
     });
-  }, [pendingCreate, renamingEntryPath]);
+
+    return () => window.cancelAnimationFrame(focusFrameId);
+  }, [focusInlineEditInput, pendingCreate, renamingEntryPath, scheduleInlineEditMenuFocusHandoffRelease]);
+
+  React.useEffect(() => {
+    return () => {
+      if (inlineEditMenuActionTimerRef.current !== null) {
+        window.clearTimeout(inlineEditMenuActionTimerRef.current);
+        inlineEditMenuActionTimerRef.current = null;
+      }
+
+      releaseInlineEditMenuFocusHandoff();
+    };
+  }, [releaseInlineEditMenuFocusHandoff]);
 
   const visibleEntries = React.useMemo(() => {
     return filterSftpEntries(entries, filterQuery);
@@ -1676,7 +1814,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 disabled={!canRenameEntry}
                 onSelect={() => {
                   if (targetEntry) {
-                    beginRenameEntry(targetEntry);
+                    runInlineEditMenuActionAfterClose(() => beginRenameEntry(targetEntry));
                   }
                 }}
               >
@@ -1724,7 +1862,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 icon={FilePlus2}
                 disabled={!canUseFileActions}
                 onSelect={() => {
-                  void beginCreateEntryInDirectory('file', targetDirectoryPath);
+                  runInlineEditMenuActionAfterClose(() => beginCreateEntryInDirectory('file', targetDirectoryPath));
                 }}
               >
                 {t('sftp.actions.newFile')}
@@ -1734,7 +1872,9 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 icon={FolderPlus}
                 disabled={!canUseFileActions}
                 onSelect={() => {
-                  void beginCreateEntryInDirectory('directory', targetDirectoryPath);
+                  runInlineEditMenuActionAfterClose(() =>
+                    beginCreateEntryInDirectory('directory', targetDirectoryPath),
+                  );
                 }}
               >
                 {t('sftp.actions.newFolder')}
@@ -1758,6 +1898,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
       handleOpenEntry,
       handlePasteEntry,
       handleTreeDirectoryRefresh,
+      runInlineEditMenuActionAfterClose,
       selectedEntries,
       selectedPathSet,
       shortcutModifier,
@@ -2169,7 +2310,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 </div>
               </div>
             </ContextMenuTrigger>
-            <ContextMenuContent>
+            <ContextMenuContent onCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}>
               {renderSftpActionMenuItems({
                 contextEntry: treeContextEntry,
                 menuSurface: 'context',
@@ -2187,6 +2328,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     return treeRootPaths.map((rootPath) => renderNode(rootPath, 0));
   }, [
     currentPath,
+    handleInlineEditMenuCloseAutoFocus,
     handleTreeNodeToggle,
     handleTreeRowKeyDown,
     navigateToPath,
@@ -2393,7 +2535,10 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 </TooltipTrigger>
                 <TooltipContent>{t('sftp.actions.more')}</TooltipContent>
               </Tooltip>
-              <DropdownMenuContent horizontalAlign="left">
+              <DropdownMenuContent
+                horizontalAlign="left"
+                onCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}
+              >
                 {renderSftpActionMenuItems({
                   contextEntry: primarySelectedEntry,
                   menuSurface: 'dropdown',
@@ -2566,7 +2711,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                           className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
                           value={renameInput}
                           onBlur={() => {
-                            void commitPendingCreate();
+                            handleInlineEditInputBlur(commitPendingCreate);
                           }}
                           onChange={(event) => setRenameInput(event.target.value)}
                           onKeyDown={(event) => {
@@ -2650,7 +2795,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                                       value={renameInput}
                                       onClick={(event) => event.stopPropagation()}
                                       onBlur={() => {
-                                        void commitRenameEntry(entry);
+                                        handleInlineEditInputBlur(() => commitRenameEntry(entry));
                                       }}
                                       onChange={(event) => setRenameInput(event.target.value)}
                                       onKeyDown={(event) => {
@@ -2681,7 +2826,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                                 <Info className="h-3.5 w-3.5 shrink-0 justify-self-end text-home-text-subtle" />
                               </div>
                             </ContextMenuTrigger>
-                            <ContextMenuContent>
+                            <ContextMenuContent onCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}>
                               {renderSftpActionMenuItems({
                                 contextEntry: entry,
                                 menuSurface: 'context',
@@ -2697,7 +2842,7 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
               </div>
             </div>
           </ContextMenuTrigger>
-          <ContextMenuContent>
+          <ContextMenuContent onCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}>
             {renderSftpActionMenuItems({
               contextEntry: null,
               menuSurface: 'context',
