@@ -540,6 +540,23 @@ const App: React.FC = () => {
                         iconColorKey: visual.iconColorKey,
                       });
                     }}
+                    onOpenDirectoryInSFTP={(serverId, serverName, initialPath) => {
+                      const nextIntent = {
+                        serverId,
+                        serverName,
+                        initialPath,
+                        createdAt: Date.now(),
+                      };
+
+                      addTab('sftp', {
+                        title: serverName,
+                        iconKey: 'sftp',
+                        iconColorKey: tab.iconColorKey,
+                        state: {
+                          sftpConnectionIntent: nextIntent,
+                        },
+                      });
+                    }}
                   />
                 </React.Suspense>
               )}

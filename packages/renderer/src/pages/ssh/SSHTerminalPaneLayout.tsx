@@ -15,14 +15,17 @@ type SSHTerminalPaneLayoutProps = {
   copyShortcutLabel: string;
   pasteShortcutLabel: string;
   searchOnlineLabel: string;
+  openDirectoryInSftpLabel: string;
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
+  canOpenDirectoryInSftp: boolean;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
   onCopy: PaneActionHandler;
   onPaste: PaneActionHandler;
   onSearchOnline: PaneActionHandler;
+  onOpenDirectoryInSftp: PaneActionHandler;
   onFind: PaneActionHandler;
   onSelectAll: PaneActionHandler;
   onClearTerminal: PaneActionHandler;
@@ -45,14 +48,17 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.copyShortcutLabel Platform-resolved copy shortcut label.
  * @param props.pasteShortcutLabel Platform-resolved paste shortcut label.
  * @param props.searchOnlineLabel Label for selection-based search/open action.
+ * @param props.openDirectoryInSftpLabel Label for selection-based SFTP directory handoff action.
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
+ * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
  * @param props.onCopy Callback that copies selection from pane.
  * @param props.onPaste Callback that pastes text into pane.
  * @param props.onSearchOnline Callback that searches selected text.
+ * @param props.onOpenDirectoryInSftp Callback that opens selected directory text in SFTP.
  * @param props.onFind Callback for find action.
  * @param props.onSelectAll Callback for select-all action.
  * @param props.onClearTerminal Callback for clear-screen action.
@@ -69,14 +75,17 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   copyShortcutLabel,
   pasteShortcutLabel,
   searchOnlineLabel,
+  openDirectoryInSftpLabel,
   findShortcutLabel,
   clearTerminalShortcutLabel,
+  canOpenDirectoryInSftp,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
   onCopy,
   onPaste,
   onSearchOnline,
+  onOpenDirectoryInSftp,
   onFind,
   onSelectAll,
   onClearTerminal,
@@ -94,6 +103,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           pasteLabel={t('ssh.contextMenuPaste')}
           pasteShortcutLabel={pasteShortcutLabel}
           searchOnlineLabel={searchOnlineLabel}
+          openDirectoryInSftpLabel={openDirectoryInSftpLabel}
           findLabel={t('ssh.contextMenuFind')}
           findShortcutLabel={findShortcutLabel}
           selectAllLabel={t('ssh.contextMenuSelectAll')}
@@ -103,9 +113,11 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           closeTerminalLabel={t('ssh.contextMenuCloseTerminal')}
           canSplitTerminal={canSplitTerminal}
           canCloseTerminal={terminalPaneIds.length > 1}
+          canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
           onCopy={() => onCopy(paneId)}
           onPaste={() => onPaste(paneId)}
           onSearchOnline={() => onSearchOnline(paneId)}
+          onOpenDirectoryInSftp={() => onOpenDirectoryInSftp(paneId)}
           onFind={() => onFind(paneId)}
           onSelectAll={() => onSelectAll(paneId)}
           onClearTerminal={() => onClearTerminal(paneId)}

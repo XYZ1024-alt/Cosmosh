@@ -104,6 +104,7 @@ sequenceDiagram
 生命周期规则：
 
 - 普通 Home 右键菜单动作会在同一服务器已有 SFTP 标签页时复用该标签页。
+- SSH Orbit Bar 与终端右键菜单交接过来的目录始终会用选中的目录路径创建新的 SFTP 标签页，即使同一服务器已经存在其他 SFTP 标签页。
 - 显式新标签动作会创建新的 SFTP 标签页，因此也会创建独立 backend SFTP 会话。
 - 隐藏的 SFTP 标签页保持挂载，并继续持有会话。
 - 关闭标签页或变更连接意图时，会尽力关闭旧 SFTP 会话。
@@ -112,6 +113,8 @@ sequenceDiagram
 ## 5. 目录列表与文件操作
 
 Backend 始终将 SFTP 路径视为 POSIX 路径，不受运行 Cosmosh 的宿主 OS 影响。
+
+SSH 到 SFTP 的交接只接受显式远程目录选区：绝对路径、home 相对路径、点相对路径，以及 `file://` URL。Renderer 会在作为结构化 `initialPath` 传递前去掉简单包裹引号和末尾标点；它不会执行 shell 命令，也不会为裸相对名称推断终端当前工作目录。
 
 目录列表步骤：
 

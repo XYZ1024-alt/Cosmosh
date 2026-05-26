@@ -264,6 +264,8 @@ Notes:
 - In-terminal text search is implemented with xterm `SearchAddon` in both primary and mirror panes. `Find...` opens a command-palette input, and footer controls include two toggles (`Case Sensitive` / `Regex`) plus compact navigation actions (`Prev` / `Next` / `First` / `Last`) to navigate and highlight matches in the active pane.
 - Search highlight decorations are explicitly cleared when the query becomes empty or the palette is dismissed, which prevents stale search markers from keeping extra memory alive after search exits.
 - Orbit Bar stays suppressed for the full search lifecycle (including empty query state and ESC close path) so search highlight flows do not re-open selection actions unexpectedly.
+- Orbit Bar and the terminal context menu can hand off a selected remote directory to SFTP. The action is available only for SSH-server sessions and explicit POSIX-like paths (`/path`, `~/path`, `./path`, `../path`, or `file:///path`); bare relative names stay disabled because SSH shell cwd is not shared with SFTP tabs.
+- Opening a selected directory in SFTP always creates a new SFTP tab with that `initialPath`, even when another SFTP tab for the same server already exists, and does not replace the active SSH terminal tab.
 
 ## 7. Developer Debug Checklist
 

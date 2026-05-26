@@ -11,6 +11,9 @@ const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngi
 
 const PROMPT_TERMINATOR_CHARS = new Set<string>(['$', '#', '>', '%', '❯', '➜', 'λ']);
 const MAX_PROMPT_TOKENS_TO_SCAN = 12;
+const SHELL_QUOTED_PATH_PATTERN = /^(['"])([\s\S]+)\1$/;
+const SHELL_FILE_URL_PATTERN = /^file:\/\/([^?#]*)/i;
+const REMOTE_DIRECTORY_PATH_PATTERN = /^(?:\/|~(?=\/|$)|\.{1,2}(?=\/|$)).*/;
 
 type PromptBoundaryToken = {
   value: string;
@@ -569,6 +572,83 @@ export const resolveSearchUrl = (
 
   const baseUrl = SEARCH_URL_BY_ENGINE[engine] ?? SEARCH_URL_BY_ENGINE.google;
   return `${baseUrl}${encodedQuery}`;
+};
+
+/**
+ * Unwraps one shell-style quoted selection while preserving the path body.
+ *
+ * @param value Candidate path text.
+ * @returns Unquoted value when the full selection uses matching quotes.
+ */
+const stripShellPathQuotes = (value: string): string => {
+  const quotedMatch = SHELL_QUOTED_PATH_PATTERN.exec(value);
+  if (!quotedMatch) {
+    return value;
+  }
+
+  return quotedMatch[2] ?? '';
+};
+
+/**
+ * Removes punctuation that is commonly included when selecting paths from prose/logs.
+ *
+ * @param value Candidate path text.
+ * @returns Path text without wrapping punctuation.
+ */
+const stripSelectionPathBoundaryPunctuation = (value: string): string => {
+  let nextValue = value.trim();
+
+  while (/^[([{<]/.test(nextValue) && /[)\]}>]$/.test(nextValue) && nextValue.length > 1) {
+    nextValue = nextValue.slice(1, -1).trim();
+  }
+
+  return nextValue.replace(/[,:;]+$/g, '').replace(/\.+$/g, '');
+};
+
+/**
+ * Decodes URL path text without letting malformed escape sequences break UI render.
+ *
+ * @param value Encoded path text.
+ * @returns Decoded path text, or the original value when decoding fails.
+ */
+const safeDecodePathComponent = (value: string): string => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
+/**
+ * Resolves terminal selection text into a remote SFTP directory path candidate.
+ *
+ * This parser intentionally accepts only explicit POSIX-like directory strings:
+ * absolute paths, home-relative paths, and dot-relative paths. Bare relative
+ * names are excluded because SSH terminal cwd is not shared with SFTP sessions.
+ *
+ * @param text Raw terminal selection text.
+ * @returns Normalized path candidate or `null` when selection is not a safe directory path.
+ */
+export const resolveSftpDirectoryPathFromSelection = (text: string): string | null => {
+  const firstLine = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (!firstLine) {
+    return null;
+  }
+
+  const fileUrlMatch = SHELL_FILE_URL_PATTERN.exec(firstLine);
+  const rawCandidate = fileUrlMatch ? safeDecodePathComponent(fileUrlMatch[1] ?? '') : firstLine;
+  const unquotedCandidate = stripShellPathQuotes(stripSelectionPathBoundaryPunctuation(rawCandidate));
+  const slashNormalized = unquotedCandidate.replace(/\\/g, '/').replace(/\/{2,}/g, '/');
+  const withoutTrailingSlash = slashNormalized.length > 1 ? slashNormalized.replace(/\/+$/g, '') : slashNormalized;
+
+  if (!REMOTE_DIRECTORY_PATH_PATTERN.test(withoutTrailingSlash)) {
+    return null;
+  }
+
+  return withoutTrailingSlash || null;
 };
 
 /**

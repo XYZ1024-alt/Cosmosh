@@ -1,4 +1,14 @@
-import { ClipboardPaste, Copy, Eraser, Globe, ScanSearch, SplitSquareHorizontal, TextSelect, X } from 'lucide-react';
+import {
+  ClipboardPaste,
+  Copy,
+  Eraser,
+  FolderOpen,
+  Globe,
+  ScanSearch,
+  SplitSquareHorizontal,
+  TextSelect,
+  X,
+} from 'lucide-react';
 import React from 'react';
 
 import {
@@ -25,6 +35,8 @@ type TerminalContextMenuProps = {
   pasteShortcutLabel?: string;
   /** Label for the selection-driven search/open menu item. */
   searchOnlineLabel: string;
+  /** Label for the selection-driven SFTP directory handoff menu item. */
+  openDirectoryInSftpLabel: string;
   /** Label for the "Find" menu item. */
   findLabel: string;
   /** Optional shortcut hint shown on the "Find" menu item. */
@@ -43,9 +55,12 @@ type TerminalContextMenuProps = {
   canSplitTerminal?: boolean;
   /** Whether close action is available for the current pane. */
   canCloseTerminal?: boolean;
+  /** Whether the selected text can be opened as a remote SFTP directory. */
+  canOpenDirectoryInSftp?: boolean;
   onCopy: () => void;
   onPaste: () => void;
   onSearchOnline: () => void;
+  onOpenDirectoryInSftp: () => void;
   /**
    * Called when "Find" is selected.
    * Parent may defer opening to next macrotask so menu-close focus restore
@@ -67,6 +82,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   pasteLabel,
   pasteShortcutLabel,
   searchOnlineLabel,
+  openDirectoryInSftpLabel,
   findLabel,
   findShortcutLabel,
   selectAllLabel,
@@ -76,9 +92,11 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   closeTerminalLabel,
   canSplitTerminal = false,
   canCloseTerminal = false,
+  canOpenDirectoryInSftp = false,
   onCopy,
   onPaste,
   onSearchOnline,
+  onOpenDirectoryInSftp,
   onFind,
   onSelectAll,
   onClearTerminal,
@@ -225,6 +243,14 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           onSelect={onSearchOnline}
         >
           {searchOnlineLabel}
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          icon={FolderOpen}
+          disabled={!canOpenDirectoryInSftp}
+          onSelect={onOpenDirectoryInSftp}
+        >
+          {openDirectoryInSftpLabel}
         </ContextMenuItem>
 
         <ContextMenuItem

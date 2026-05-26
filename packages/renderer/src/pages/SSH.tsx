@@ -28,7 +28,12 @@ import { useToast } from '../lib/toast-context';
 import { useTerminalTextDropZone } from '../lib/use-terminal-text-drop-zone';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../types/tabs';
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
-import { parseOptionalNumberSetting, resolveSearchUrl, resolveTerminalFontWeightSetting } from './ssh/ssh-utils';
+import {
+  parseOptionalNumberSetting,
+  resolveSearchUrl,
+  resolveSftpDirectoryPathFromSelection,
+  resolveTerminalFontWeightSetting,
+} from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
@@ -41,6 +46,7 @@ type SSHProps = {
   isActive: boolean;
   connectionIntent: SshConnectionIntent;
   onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
+  onOpenDirectoryInSFTP?: (serverId: string, serverName: string, initialPath: string) => void;
   onTabTitleChange?: (title: string) => void;
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
 };
@@ -100,6 +106,7 @@ const SSH: React.FC<SSHProps> = ({
   isActive,
   connectionIntent,
   onConnectionIntentChange,
+  onOpenDirectoryInSFTP,
   onTabTitleChange,
   onTabVisualChange,
 }) => {
@@ -425,6 +432,28 @@ const SSH: React.FC<SSHProps> = ({
     ],
   );
 
+  /**
+   * Opens an SFTP tab for the SSH server behind this terminal selection.
+   *
+   * @param selectionText Terminal selection text to parse as a remote directory path.
+   * @returns Nothing.
+   */
+  const openSelectionDirectoryInSftp = React.useCallback(
+    (selectionText: string): void => {
+      const directoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+      const serverSnapshot = connectionIntent.lastResolvedSnapshot;
+
+      if (!directoryPath || serverSnapshot?.type !== 'ssh-server' || !onOpenDirectoryInSFTP) {
+        notifyWarning(t('ssh.selectionBarOpenDirectoryUnavailable'));
+        return;
+      }
+
+      onOpenDirectoryInSFTP(serverSnapshot.serverId, serverSnapshot.serverName, directoryPath);
+      dismissSelectionBar();
+    },
+    [connectionIntent.lastResolvedSnapshot, dismissSelectionBar, notifyWarning, onOpenDirectoryInSFTP],
+  );
+
   // ---------------------------------------------------------------------------
   // Orbit Bar (TerminalSelectionBar) handlers
   // ---------------------------------------------------------------------------
@@ -522,6 +551,10 @@ const SSH: React.FC<SSHProps> = ({
 
     openSearchForText(selectionText);
   }, [getSelectionText, openExternalTarget, openSearchForText]);
+
+  const handleContextMenuOpenDirectoryInSftp = React.useCallback(() => {
+    openSelectionDirectoryInSftp(getSelectionText());
+  }, [getSelectionText, openSelectionDirectoryInSftp]);
 
   /**
    * Opens in-terminal search palette and optionally seeds query text.
@@ -943,8 +976,8 @@ const SSH: React.FC<SSHProps> = ({
   }, [dismissSelectionBar]);
 
   const handleSelectionOpenDirectory = React.useCallback(() => {
-    notifyWarning(t('ssh.selectionBarOpenDirectoryComingSoon'));
-  }, [notifyWarning]);
+    openSelectionDirectoryInSftp(selectionAnchor?.selectionText ?? '');
+  }, [openSelectionDirectoryInSftp, selectionAnchor]);
 
   const handleSelectionAskAi = React.useCallback(() => {
     notifyWarning(t('ssh.selectionBarAskAiComingSoon'));
@@ -1027,6 +1060,11 @@ const SSH: React.FC<SSHProps> = ({
 
   const selectionText = selectionAnchor?.selectionText ?? '';
   const selectionLink = resolveSelectionLink(selectionText);
+  const selectedSftpDirectoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+  const canOpenSelectionDirectoryInSftp =
+    Boolean(selectedSftpDirectoryPath) &&
+    connectionIntent.lastResolvedSnapshot?.type === 'ssh-server' &&
+    Boolean(onOpenDirectoryInSFTP);
   const selectionBarSearchLabel = selectionLink ? t('ssh.selectionBarOpenLink') : t('ssh.selectionBarSearch');
   const contextMenuSearchLabel = selectionLink ? t('ssh.contextMenuOpenLink') : t('ssh.contextMenuSearchOnline');
 
@@ -1077,6 +1115,8 @@ const SSH: React.FC<SSHProps> = ({
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
           searchOnlineLabel={contextMenuSearchLabel}
+          openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
+          canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
@@ -1091,6 +1131,10 @@ const SSH: React.FC<SSHProps> = ({
           onSearchOnline={(paneId) => {
             activatePane(paneId);
             handleContextMenuSearchOnline();
+          }}
+          onOpenDirectoryInSftp={(paneId) => {
+            activatePane(paneId);
+            handleContextMenuOpenDirectoryInSftp();
           }}
           onFind={(paneId) => {
             activatePane(paneId);
@@ -1170,6 +1214,7 @@ const SSH: React.FC<SSHProps> = ({
           <TerminalSelectionBar
             ref={selectionBarRef}
             selectedText={selectionAnchor.selectionText}
+            canOpenDirectory={canOpenSelectionDirectoryInSftp}
             dragLabel={t('ssh.selectionBarDrag')}
             copyLabel={t('ssh.selectionBarCopy')}
             insertLabel={t('ssh.selectionBarInsert')}

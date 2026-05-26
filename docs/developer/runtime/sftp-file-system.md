@@ -104,6 +104,7 @@ sequenceDiagram
 Lifecycle rules:
 
 - A normal Home context-menu action reuses an existing SFTP tab for the same server when one is already open.
+- SSH Orbit Bar and terminal context-menu handoffs always create a new SFTP tab with the selected directory path, even when another SFTP tab for the same server is already open.
 - Explicit new-tab actions create a new SFTP tab and therefore a separate backend SFTP session.
 - Hidden SFTP tabs remain mounted and keep their session alive.
 - Closing the tab or changing its connection intent closes the previous SFTP session on a best-effort basis.
@@ -112,6 +113,8 @@ Lifecycle rules:
 ## 5. Directory Listing And File Operations
 
 The backend treats SFTP paths as POSIX paths regardless of the host OS running Cosmosh.
+
+SSH-to-SFTP handoff accepts only explicit remote directory path selections: absolute paths, home-relative paths, dot-relative paths, and `file://` URLs. The renderer strips simple wrapping quotes and trailing punctuation before passing the path as structured `initialPath`; it does not execute shell commands or infer the terminal's current working directory for bare relative names.
 
 Directory listing steps:
 

@@ -19,6 +19,7 @@ type TerminalSelectionBarProps = {
   askAiLabel: string;
   closeLabel: string;
   selectedText: string;
+  canOpenDirectory: boolean;
   onDragStart: (event: React.DragEvent<HTMLButtonElement>) => void;
   onCopy: () => void;
   onInsert: () => void;
@@ -36,6 +37,7 @@ type ActionButtonProps = {
   onDragStart?: (event: React.DragEvent<HTMLButtonElement>) => void;
   draggable?: boolean;
   dataActionId?: string;
+  disabled?: boolean;
 };
 
 const ActionButton: React.FC<ActionButtonProps> = ({
@@ -45,6 +47,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
   onDragStart,
   draggable,
   dataActionId,
+  disabled,
 }) => {
   return (
     <Tooltip>
@@ -54,6 +57,7 @@ const ActionButton: React.FC<ActionButtonProps> = ({
           aria-label={label}
           draggable={draggable}
           data-action-id={dataActionId}
+          disabled={disabled}
           className="h-[34px] w-[34px] rounded-lg"
           onClick={onClick}
           onDragStart={onDragStart}
@@ -79,6 +83,7 @@ const TerminalSelectionBar = React.forwardRef<HTMLDivElement, TerminalSelectionB
       askAiLabel,
       closeLabel,
       selectedText,
+      canOpenDirectory,
       onDragStart,
       onCopy,
       onInsert,
@@ -119,6 +124,7 @@ const TerminalSelectionBar = React.forwardRef<HTMLDivElement, TerminalSelectionB
             </ActionButton>
             <ActionButton
               label={openDirectoryLabel}
+              disabled={!canOpenDirectory}
               onClick={onOpenDirectory}
             >
               <FolderOpen className="h-4 w-4" />
