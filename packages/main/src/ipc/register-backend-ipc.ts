@@ -22,6 +22,8 @@ import type {
   ApiSftpCreateSessionResponse,
   ApiSftpDeleteRequest,
   ApiSftpDeleteResponse,
+  ApiSftpDownloadFileRequest,
+  ApiSftpDownloadFileResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -415,6 +417,21 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
       return options.requestBackend<ApiSftpReadFileResponse>(path, {
         method: 'GET',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-download-file',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpDownloadFileRequest,
+    ): Promise<ApiSftpDownloadFileResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpDownloadFileResponse>(path, {
+        method: 'POST',
+        body: payload,
       });
     },
   );

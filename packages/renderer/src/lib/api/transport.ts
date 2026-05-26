@@ -23,6 +23,8 @@ import type {
   ApiSftpCreateSessionResponse,
   ApiSftpDeleteRequest,
   ApiSftpDeleteResponse,
+  ApiSftpDownloadFileRequest,
+  ApiSftpDownloadFileResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -76,6 +78,7 @@ type ApiResponse =
   | ApiSftpCreateSessionHostVerificationRequiredResponse
   | ApiSftpListDirectoryResponse
   | ApiSftpReadFileResponse
+  | ApiSftpDownloadFileResponse
   | ApiSftpCreateDirectoryResponse
   | ApiSftpCreateFileResponse
   | ApiSftpRenameResponse
@@ -141,6 +144,10 @@ export type ApiTransport = {
     query?: ApiSftpListDirectoryQuery,
   ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
   readSftpFile: (sessionId: string, query: ApiSftpReadFileQuery) => Promise<ApiSftpReadFileResponse | ApiErrorResponse>;
+  downloadSftpFile: (
+    sessionId: string,
+    payload: ApiSftpDownloadFileRequest,
+  ) => Promise<ApiSftpDownloadFileResponse | ApiErrorResponse>;
   createSftpDirectory: (
     sessionId: string,
     payload: ApiSftpCreateDirectoryRequest,
@@ -302,6 +309,11 @@ const createElectronTransport = (): ApiTransport => {
     readSftpFile: async (sessionId, query) => {
       return (await window.electron!.backendSftpReadFile(sessionId, query)) as
         | ApiSftpReadFileResponse
+        | ApiErrorResponse;
+    },
+    downloadSftpFile: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpDownloadFile(sessionId, payload)) as
+        | ApiSftpDownloadFileResponse
         | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
@@ -526,6 +538,10 @@ const createBrowserTransport = (): ApiTransport => {
       return (await callBrowserApi(`${basePath}?${searchParams.toString()}`, 'GET')) as
         | ApiSftpReadFileResponse
         | ApiErrorResponse;
+    },
+    downloadSftpFile: async (sessionId, payload) => {
+      const path = API_PATHS.sftpDownloadFile.replace('{sessionId}', encodeURIComponent(sessionId));
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDownloadFileResponse | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
       const path = API_PATHS.sftpCreateDirectory.replace('{sessionId}', encodeURIComponent(sessionId));

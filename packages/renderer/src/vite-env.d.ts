@@ -96,6 +96,7 @@ declare global {
         os: string;
       }>;
       getPendingLaunchWorkingDirectory: () => Promise<string | null>;
+      getDownloadsPath: () => Promise<string>;
       getDatabaseSecurityInfo: () => Promise<{
         runtimeMode: 'development' | 'production';
         resolverMode: 'development-fixed-key' | 'safe-storage' | 'master-password-fallback';
@@ -117,6 +118,7 @@ declare global {
       showInFileManager: (targetPath?: string) => Promise<boolean>;
       openExternalUrl: (targetUrl: string) => Promise<boolean>;
       setWindowsSystemMenuSymbolColor: (symbolColor: string) => Promise<boolean>;
+      showSaveFileDialog: (defaultPath?: string) => Promise<{ canceled: boolean; filePath?: string }>;
       importPrivateKeyFromFile: () => Promise<{ canceled: boolean; content?: string }>;
       getProcessPerformanceStats: () => Promise<{
         sampledAt: number;
@@ -201,6 +203,10 @@ declare global {
         sessionId: string,
         query: ApiSftpReadFileQuery,
       ) => Promise<ApiSftpReadFileResponse | ApiErrorResponse>;
+      backendSftpDownloadFile: (
+        sessionId: string,
+        payload: ApiSftpDownloadFileRequest,
+      ) => Promise<ApiSftpDownloadFileResponse | ApiErrorResponse>;
       backendSftpCreateDirectory: (
         sessionId: string,
         payload: ApiSftpCreateDirectoryRequest,

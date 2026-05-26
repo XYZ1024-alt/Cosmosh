@@ -352,6 +352,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/download': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Download one remote SFTP file to a local path. */
+    post: operations['sftpDownloadFile'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}/directories': {
     parameters: {
       query?: never;
@@ -869,6 +886,10 @@ export interface components {
     };
     SftpCreateDirectoryRequest: components['schemas']['SftpPathRequest'];
     SftpCreateFileRequest: components['schemas']['SftpPathRequest'];
+    SftpDownloadFileRequest: {
+      path: string;
+      localPath: string;
+    };
     SftpRenameRequest: {
       sourcePath: string;
       targetPath: string;
@@ -953,6 +974,13 @@ export interface components {
       /** Format: int64 */
       size: number;
       truncated: boolean;
+    };
+    SftpDownloadFileData: {
+      sessionId: string;
+      path: string;
+      localPath: string;
+      /** Format: int64 */
+      size: number;
     };
     LocalTerminalProfile: {
       id: string;
@@ -1161,6 +1189,13 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpReadFileData'];
+    };
+    SftpDownloadFileSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_OPERATION_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpDownloadFileData'];
     };
   };
   responses: never;
@@ -2416,6 +2451,61 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['SftpReadFileSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or file not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpDownloadFile: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpDownloadFileRequest'];
+      };
+    };
+    responses: {
+      /** @description File downloaded. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpDownloadFileSuccess'];
         };
       };
       /** @description Validation failed. */

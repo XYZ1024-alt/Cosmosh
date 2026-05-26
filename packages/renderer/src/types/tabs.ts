@@ -30,6 +30,7 @@ export type SshConnectionIntent = {
   createdAt: number;
   target: SshTargetSelection | null;
   lastResolvedSnapshot: SshResolvedTargetSnapshot | null;
+  startupCommand?: string;
 };
 
 export type SshEditorState = {

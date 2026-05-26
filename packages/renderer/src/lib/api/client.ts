@@ -18,6 +18,8 @@ import type {
   ApiSftpCreateSessionResponse,
   ApiSftpDeleteRequest,
   ApiSftpDeleteResponse,
+  ApiSftpDownloadFileRequest,
+  ApiSftpDownloadFileResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -90,6 +92,7 @@ export type BackendClient = {
   ) => Promise<ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse>;
   listSftpDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => Promise<ApiSftpListDirectoryResponse>;
   readSftpFile: (sessionId: string, query: ApiSftpReadFileQuery) => Promise<ApiSftpReadFileResponse>;
+  downloadSftpFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => Promise<ApiSftpDownloadFileResponse>;
   createSftpDirectory: (
     sessionId: string,
     payload: ApiSftpCreateDirectoryRequest,
@@ -336,6 +339,15 @@ export const createBackendClient = (): BackendClient => {
     },
     readSftpFile: async (sessionId, query) => {
       const payload = await transport.readSftpFile(sessionId, query);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    downloadSftpFile: async (sessionId, requestPayload) => {
+      const payload = await transport.downloadSftpFile(sessionId, requestPayload);
 
       if (!payload.success) {
         throw new Error(payload.message);

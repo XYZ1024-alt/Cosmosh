@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from 'electron';
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
 import {
@@ -130,6 +130,10 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     return options.getPendingLaunchWorkingDirectory();
   });
 
+  ipcMain.handle('app:get-downloads-path', () => {
+    return app.getPath('downloads');
+  });
+
   ipcMain.handle('app:get-database-security-info', async (): Promise<DatabaseSecurityInfo> => {
     return options.getDatabaseSecurityInfo();
   });
@@ -226,6 +230,37 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   ipcMain.handle('app:set-windows-system-menu-symbol-color', (_event, symbolColor: string): boolean => {
     return options.setWindowsSystemMenuSymbolColor(symbolColor);
   });
+
+  ipcMain.handle(
+    'app:show-save-file-dialog',
+    async (_event, defaultPath?: string): Promise<{ canceled: boolean; filePath?: string }> => {
+      const targetWindow = resolveTargetWindow(options);
+      const dialogOptions: SaveDialogOptions = {
+        title: 'Save File',
+        buttonLabel: 'Save',
+        ...(typeof defaultPath === 'string' && defaultPath.trim().length > 0
+          ? { defaultPath: defaultPath.trim() }
+          : {}),
+      };
+
+      try {
+        const selection = targetWindow
+          ? await dialog.showSaveDialog(targetWindow, dialogOptions)
+          : await dialog.showSaveDialog(dialogOptions);
+
+        if (selection.canceled || !selection.filePath) {
+          return { canceled: true };
+        }
+
+        return {
+          canceled: false,
+          filePath: selection.filePath,
+        };
+      } catch {
+        return { canceled: true };
+      }
+    },
+  );
 
   ipcMain.handle('app:import-private-key', async (): Promise<{ canceled: boolean; content?: string }> => {
     const targetWindow = resolveTargetWindow(options);

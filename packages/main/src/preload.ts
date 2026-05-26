@@ -22,6 +22,8 @@ import type {
   ApiSftpCreateSessionResponse,
   ApiSftpDeleteRequest,
   ApiSftpDeleteResponse,
+  ApiSftpDownloadFileRequest,
+  ApiSftpDownloadFileResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -179,6 +181,9 @@ contextBridge.exposeInMainWorld('electron', {
   getPendingLaunchWorkingDirectory: () => {
     return invokeIpc<string | null>('app:get-pending-launch-working-directory');
   },
+  getDownloadsPath: () => {
+    return invokeIpc<string>('app:get-downloads-path');
+  },
   getDatabaseSecurityInfo: () => {
     return invokeIpc<{
       runtimeMode: 'development' | 'production';
@@ -222,6 +227,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   setWindowsSystemMenuSymbolColor: (symbolColor: string) => {
     return invokeIpc<boolean>('app:set-windows-system-menu-symbol-color', symbolColor);
+  },
+  showSaveFileDialog: (defaultPath?: string) => {
+    return invokeIpc<{ canceled: boolean; filePath?: string }>('app:show-save-file-dialog', defaultPath);
   },
   importPrivateKeyFromFile: () => {
     return invokeIpc<{ canceled: boolean; content?: string }>('app:import-private-key');
@@ -341,6 +349,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpReadFile: (sessionId: string, query: ApiSftpReadFileQuery) => {
     return invokeIpc<ApiSftpReadFileResponse | ApiErrorResponse>('backend:sftp-read-file', sessionId, query);
+  },
+  backendSftpDownloadFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => {
+    return invokeIpc<ApiSftpDownloadFileResponse | ApiErrorResponse>('backend:sftp-download-file', sessionId, payload);
   },
   backendSftpCreateDirectory: (sessionId: string, payload: ApiSftpCreateDirectoryRequest) => {
     return invokeIpc<ApiSftpCreateDirectoryResponse | ApiErrorResponse>(

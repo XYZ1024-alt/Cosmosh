@@ -10,6 +10,7 @@ import {
   type ApiSftpCreateSessionHostVerificationRequiredResponse,
   type ApiSftpCreateSessionResponse,
   type ApiSftpDeleteResponse,
+  type ApiSftpDownloadFileResponse,
   type ApiSftpListDirectoryResponse,
   type ApiSftpReadFileResponse,
   type ApiSftpRenameResponse,
@@ -42,6 +43,11 @@ type NormalizedSftpSessionCreateRequest = Omit<CreateSftpSessionInput, 'locale' 
 
 type NormalizedSftpPathRequest = {
   path: string;
+};
+
+type NormalizedSftpDownloadFileRequest = {
+  path: string;
+  localPath: string;
 };
 
 type NormalizedSftpRenameRequest = {
@@ -188,6 +194,41 @@ const parseSftpPathRequest = (payload: unknown): ValidationResult<NormalizedSftp
   return {
     value: {
       path: requestedPath,
+    },
+  };
+};
+
+/**
+ * Parses and validates one SFTP file download payload.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized download request or validation error.
+ */
+const parseSftpDownloadFileRequest = (payload: unknown): ValidationResult<NormalizedSftpDownloadFileRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  const requestedPath = normalizeOptionalString(payload.path);
+  if (!requestedPath) {
+    return {
+      error: buildValidationError('errors.sftp.pathRequired', 'path is required.'),
+    };
+  }
+
+  const localPath = normalizeOptionalString(payload.localPath);
+  if (!localPath) {
+    return {
+      error: buildValidationError('errors.sftp.localPathRequired', 'localPath is required.'),
+    };
+  }
+
+  return {
+    value: {
+      path: requestedPath,
+      localPath,
     },
   };
 };
@@ -588,6 +629,42 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
         content: result.content,
         size: result.size,
         truncated: result.truncated,
+      },
+    });
+
+    return c.json(payload);
+  });
+
+  app.post(API_PATHS.sftpDownloadFile.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parseSftpDownloadFileRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = await context.sftpSessionService.downloadFile(sessionId, parsed.value.path, parsed.value.localPath);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    if (result.type === 'failed') {
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    const payload: ApiSftpDownloadFileResponse = createApiSuccess({
+      code: API_CODES.sftpOperationOk,
+      message: t('success.sftp.fileDownloaded'),
+      data: {
+        sessionId: result.sessionId,
+        path: result.path,
+        localPath: result.localPath,
+        size: result.size,
       },
     });
 

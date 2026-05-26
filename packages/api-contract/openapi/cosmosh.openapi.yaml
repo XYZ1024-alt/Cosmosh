@@ -992,6 +992,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/download:
+    post:
+      tags:
+        - sftp
+      summary: Download one remote SFTP file to a local path.
+      operationId: sftpDownloadFile
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpDownloadFileRequest'
+      responses:
+        '200':
+          description: File downloaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpDownloadFileSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or file not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}/directories:
     post:
       tags:
@@ -2219,6 +2263,18 @@ components:
     SftpCreateFileRequest:
       allOf:
         - $ref: '#/components/schemas/SftpPathRequest'
+    SftpDownloadFileRequest:
+      type: object
+      required:
+        - path
+        - localPath
+      properties:
+        path:
+          type: string
+          minLength: 1
+        localPath:
+          type: string
+          minLength: 1
     SftpRenameRequest:
       type: object
       required:
@@ -2439,6 +2495,23 @@ components:
           format: int64
         truncated:
           type: boolean
+    SftpDownloadFileData:
+      type: object
+      required:
+        - sessionId
+        - path
+        - localPath
+        - size
+      properties:
+        sessionId:
+          type: string
+        path:
+          type: string
+        localPath:
+          type: string
+        size:
+          type: integer
+          format: int64
     LocalTerminalProfile:
       type: object
       required:
@@ -2952,3 +3025,20 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpReadFileData'
+    SftpDownloadFileSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_OPERATION_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpDownloadFileData'

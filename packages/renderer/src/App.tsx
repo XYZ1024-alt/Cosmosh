@@ -37,6 +37,16 @@ const SFTP = React.lazy(() => import('./pages/SFTP'));
 
 let hasCheckedInitialPendingLaunchWorkingDirectory = false;
 
+/**
+ * Quotes one POSIX shell argument for the SFTP-to-SSH startup command.
+ *
+ * @param value Raw remote path.
+ * @returns Single-quoted shell argument.
+ */
+const quotePosixShellArg = (value: string): string => {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+};
+
 const pageLoadingFallback = (
   <div
     className="h-full w-full"
@@ -579,6 +589,25 @@ const App: React.FC = () => {
                             ...intent,
                             initialPath,
                             createdAt: Date.now(),
+                          },
+                        },
+                      });
+                    }}
+                    onOpenSshAtPath={(initialPath) => {
+                      const intent = tab.state?.sftpConnectionIntent;
+                      if (!intent) {
+                        return;
+                      }
+
+                      const sshIntent = createSshConnectionIntent(intent.serverId);
+                      addTab('ssh', {
+                        title: intent.serverName,
+                        iconKey: 'ssh',
+                        iconColorKey: tab.iconColorKey,
+                        state: {
+                          sshConnectionIntent: {
+                            ...sshIntent,
+                            startupCommand: `cd ${quotePosixShellArg(initialPath)}`,
                           },
                         },
                       });

@@ -46,8 +46,10 @@
       "entryRenameFailedNoReason": "Failed to rename SFTP entry.",
       "entryTypeRequired": "entry type is required.",
       "fileCreateFailedNoReason": "Failed to create SFTP file.",
+      "fileDownloadFailedNoReason": "Failed to download SFTP file.",
       "fileReadFailedNoReason": "Failed to read SFTP file.",
       "fileReadUnsupported": "Only regular files can be opened in the SFTP preview.",
+      "localPathRequired": "localPath is required.",
       "operationFailed": "SFTP operation failed: {reason}",
       "operationFailedNoReason": "SFTP operation failed.",
       "pathRequired": "path is required.",
@@ -131,6 +133,7 @@
       "entryDeleted": "SFTP entry deleted successfully.",
       "entryRenamed": "SFTP entry renamed successfully.",
       "fileCreated": "SFTP file created successfully.",
+      "fileDownloaded": "SFTP file downloaded successfully.",
       "fileRead": "SFTP file read successfully.",
       "sessionCreated": "SFTP session created successfully."
     },

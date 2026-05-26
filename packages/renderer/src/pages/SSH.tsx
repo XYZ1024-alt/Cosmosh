@@ -278,6 +278,7 @@ const SSH: React.FC<SSHProps> = ({
     refs: { wrapperRef, terminalContainerRef, selectionBarRef, autocompleteMenuRef },
   } = sshCore;
   const terminalPaneIdsRef = React.useRef<string[]>(terminalPaneIds);
+  const dispatchedStartupCommandIntentIdRef = React.useRef<string | null>(null);
   const [terminalSearchOpen, setTerminalSearchOpen] = React.useState<boolean>(false);
   const [terminalSearchQuery, setTerminalSearchQuery] = React.useState<string>('');
   const [terminalSearchCaseSensitive, setTerminalSearchCaseSensitive] = React.useState<boolean>(false);
@@ -326,6 +327,29 @@ const SSH: React.FC<SSHProps> = ({
   React.useEffect(() => {
     terminalPaneIdsRef.current = terminalPaneIds;
   }, [terminalPaneIds]);
+
+  React.useEffect(() => {
+    const startupCommand = connectionIntent.startupCommand?.trim();
+    if (
+      connectionState !== 'connected' ||
+      !startupCommand ||
+      dispatchedStartupCommandIntentIdRef.current === connectionIntent.intentId
+    ) {
+      return;
+    }
+
+    const dispatchFrame = window.requestAnimationFrame(() => {
+      const didSend = sendInput(`${startupCommand}\r`);
+      if (didSend) {
+        dispatchedStartupCommandIntentIdRef.current = connectionIntent.intentId;
+        focusActiveTerminal();
+      }
+    });
+
+    return () => {
+      window.cancelAnimationFrame(dispatchFrame);
+    };
+  }, [connectionIntent.intentId, connectionIntent.startupCommand, connectionState, focusActiveTerminal, sendInput]);
 
   /**
    * Suspends for one short async interval used by pane/socket polling loops.

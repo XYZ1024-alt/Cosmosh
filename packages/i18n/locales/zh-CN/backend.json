@@ -46,8 +46,10 @@
       "entryRenameFailedNoReason": "重命名 SFTP 条目失败。",
       "entryTypeRequired": "entry type 为必填项。",
       "fileCreateFailedNoReason": "创建 SFTP 文件失败。",
+      "fileDownloadFailedNoReason": "下载 SFTP 文件失败。",
       "fileReadFailedNoReason": "读取 SFTP 文件失败。",
       "fileReadUnsupported": "SFTP 预览仅支持打开普通文件。",
+      "localPathRequired": "localPath 为必填项。",
       "operationFailed": "SFTP 操作失败：{reason}",
       "operationFailedNoReason": "SFTP 操作失败。",
       "pathRequired": "path 为必填项。",
@@ -131,6 +133,7 @@
       "entryDeleted": "SFTP 条目删除成功。",
       "entryRenamed": "SFTP 条目重命名成功。",
       "fileCreated": "SFTP 文件创建成功。",
+      "fileDownloaded": "SFTP 文件下载成功。",
       "fileRead": "SFTP 文件读取成功。",
       "sessionCreated": "SFTP 会话创建成功。"
     },

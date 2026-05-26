@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { createWriteStream } from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -160,6 +162,22 @@ export type ReadSftpFileResult =
       content: string;
       size: number;
       truncated: boolean;
+    }
+  | {
+      type: 'not-found';
+    }
+  | {
+      type: 'failed';
+      message: string;
+    };
+
+export type DownloadSftpFileResult =
+  | {
+      type: 'success';
+      sessionId: string;
+      path: string;
+      localPath: string;
+      size: number;
     }
   | {
       type: 'not-found';
@@ -599,6 +617,66 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.fileReadFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Downloads one regular remote file into a local workstation path.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param localPath Absolute local destination path selected by the main process.
+   * @returns Download result with final local path and byte size.
+   */
+  public async downloadFile(
+    sessionId: string,
+    requestedPath: string | undefined,
+    localPath: string | undefined,
+  ): Promise<DownloadSftpFileResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    const normalizedLocalPath = localPath?.trim();
+    if (!normalizedLocalPath) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.localPathRequired'),
+      };
+    }
+
+    try {
+      const sourceStats = await this.stat(session, normalizedPath);
+      if (!sourceStats.isFile()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileReadUnsupported'),
+        };
+      }
+
+      await this.downloadFileToLocalPath(session, normalizedPath, normalizedLocalPath);
+
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+        localPath: normalizedLocalPath,
+        size: sourceStats.size,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason')),
       };
     }
   }
@@ -1193,6 +1271,38 @@ export class SftpSessionService {
     const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
     const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode: sourceStats.mode & 0o777 });
     await pipeline(readStream, writeStream);
+  }
+
+  /**
+   * Streams one remote file to a temporary local file before replacing the final destination.
+   *
+   * @param session Live SFTP session.
+   * @param sourcePath Remote file path.
+   * @param localPath Final local destination path.
+   * @returns Nothing.
+   */
+  private async downloadFileToLocalPath(
+    session: SftpLiveSession,
+    sourcePath: string,
+    localPath: string,
+  ): Promise<void> {
+    const localDirectory = path.dirname(localPath);
+    const temporaryPath = path.join(
+      localDirectory,
+      `.${path.basename(localPath)}.cosmosh-${Date.now()}-${Math.random().toString(36).slice(2)}.tmp`,
+    );
+
+    await fs.mkdir(localDirectory, { recursive: true });
+
+    try {
+      const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
+      const writeStream = createWriteStream(temporaryPath, { flags: 'wx' });
+      await pipeline(readStream, writeStream);
+      await fs.rename(temporaryPath, localPath);
+    } catch (error: unknown) {
+      await fs.unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
   }
 
   private async copyEntryRecursive(session: SftpLiveSession, sourcePath: string, targetPath: string): Promise<void> {

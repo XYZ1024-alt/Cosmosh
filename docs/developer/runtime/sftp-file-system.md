@@ -11,13 +11,13 @@ Implemented in v1:
 - Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries, metadata details, and bounded UTF-8 file preview.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
-- Center-list context menus and the top action bar expose open, open folder in a new tab, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
 
-- upload, download, chmod, drag/drop, global search, file editing, and transfer queues.
+- upload, directory download, chmod, drag/drop, global search, file editing, and transfer queues.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -50,6 +50,7 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `POST` | `/api/v1/sftp/sessions` | Create an SFTP file-system session for one SSH server. |
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/entries?path=...` | List one remote directory for an active SFTP session. |
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file. |
+| `POST` | `/api/v1/sftp/sessions/{sessionId}/download` | Stream one regular remote file to a local destination selected by main/preload. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/files` | Create one empty remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/directories` | Create one remote directory. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/rename` | Rename or move one remote entry. |
@@ -145,6 +146,7 @@ Mutation rules:
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
 - Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, open-in-new-tab, and preview remain single-entry actions.
+- Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 - File preview reads up to the requested bounded byte limit and reports whether the result was truncated.
 
@@ -168,6 +170,7 @@ Security constraints:
 
 - Renderer and preload never receive decrypted SSH credentials.
 - SFTP paths are passed as structured API payloads, not shell commands.
+- Local save destinations are selected or resolved by main/preload and passed to backend as explicit paths; renderer does not receive filesystem write primitives.
 - Backend rejects empty mutable targets and root/current-directory markers for write operations.
 - File preview is bounded to avoid unbounded memory reads.
 

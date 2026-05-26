@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Clipboard,
   Copy,
+  Download,
   Edit3,
   File,
   FilePlus2,
@@ -19,6 +20,7 @@ import {
   Scissors,
   Search,
   ShieldAlert,
+  Terminal,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -31,6 +33,9 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '../components/ui/context-menu';
 import {
@@ -49,6 +54,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
@@ -59,6 +67,7 @@ import {
   createSftpDirectory,
   createSftpFile,
   createSftpSession,
+  downloadSftpFile,
   listSftpDirectory,
   readSftpFile,
   renameSftpEntry,
@@ -81,6 +90,7 @@ type HostFingerprintPrompt = {
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
   onOpenDirectoryInNewTab: (initialPath: string) => void;
+  onOpenSshAtPath: (initialPath: string) => void;
   onTabTitleChange: (title: string) => void;
 };
 
@@ -168,6 +178,110 @@ const NEW_DIRECTORY_NAME = 'Untitled Folder';
 const FILE_PREVIEW_MAX_BYTES = 256 * 1024;
 const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
+
+/**
+ * Returns the parent path for a POSIX-style remote path.
+ *
+ * @param remotePath Remote file or directory path.
+ * @returns Parent directory path with root/current markers preserved.
+ */
+const resolveRemoteParentPath = (remotePath: string): string => {
+  const normalizedPath = remotePath.replace(/\/+$/, '');
+  if (!normalizedPath || normalizedPath === '.') {
+    return '.';
+  }
+
+  const slashIndex = normalizedPath.lastIndexOf('/');
+  if (slashIndex <= 0) {
+    return normalizedPath.startsWith('/') ? '/' : '.';
+  }
+
+  return normalizedPath.slice(0, slashIndex);
+};
+
+/**
+ * Builds a POSIX-style relative path from one ancestor directory to a target path.
+ *
+ * @param ancestorPath Directory that acts as the relative base.
+ * @param targetPath Remote target path.
+ * @returns Relative path beginning with `./`.
+ */
+const buildRelativeRemotePath = (ancestorPath: string, targetPath: string): string => {
+  const normalizedAncestor = ancestorPath.replace(/\/+$/, '');
+  const normalizedTarget = targetPath.replace(/\/+$/, '');
+
+  if (normalizedAncestor === '/' && normalizedTarget.startsWith('/')) {
+    return `.${normalizedTarget}`;
+  }
+
+  if (normalizedAncestor === '.' || normalizedAncestor === '') {
+    return `./${normalizedTarget.replace(/^\/+/, '')}`;
+  }
+
+  const prefix = `${normalizedAncestor}/`;
+  if (normalizedTarget.startsWith(prefix)) {
+    return `./${normalizedTarget.slice(prefix.length)}`;
+  }
+
+  return `./${normalizedTarget.replace(/^\/+/, '')}`;
+};
+
+/**
+ * Resolves relative path copy choices from nearest parent to root/current base.
+ *
+ * @param targetPath Remote target path.
+ * @returns Ordered relative path choices.
+ */
+const buildRelativeRemotePathOptions = (targetPath: string): string[] => {
+  const normalizedTarget = targetPath.replace(/\/+$/, '');
+  if (!normalizedTarget || normalizedTarget === '.') {
+    return [];
+  }
+
+  const ancestors: string[] = [];
+  let currentAncestor = resolveRemoteParentPath(normalizedTarget);
+
+  while (currentAncestor && !ancestors.includes(currentAncestor)) {
+    ancestors.push(currentAncestor);
+
+    if (currentAncestor === '/' || currentAncestor === '.') {
+      break;
+    }
+
+    currentAncestor = resolveRemoteParentPath(currentAncestor);
+  }
+
+  return Array.from(new Set(ancestors.map((ancestor) => buildRelativeRemotePath(ancestor, normalizedTarget))));
+};
+
+/**
+ * Removes characters that are invalid in common local file systems.
+ *
+ * @param fileName Remote file name.
+ * @returns Local-safe file name.
+ */
+const sanitizeLocalFileName = (fileName: string): string => {
+  const sanitized = Array.from(fileName)
+    .map((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && codePoint < 32 ? '_' : character.replace(/[<>:"/\\|?*]/g, '_');
+    })
+    .join('')
+    .trim();
+  return sanitized || 'download';
+};
+
+/**
+ * Joins a local directory and file name using the active desktop platform separator.
+ *
+ * @param directory Local directory path.
+ * @param fileName Local file name.
+ * @returns Local destination path.
+ */
+const joinLocalPath = (directory: string, fileName: string): string => {
+  const separator = window.electron?.platform === 'win32' ? '\\' : '/';
+  return `${directory.replace(/[\\/]+$/, '')}${separator}${fileName}`;
+};
 
 /**
  * Formats SFTP byte sizes for the compact file list.
@@ -680,7 +794,12 @@ const resolveTreeDirectoryEntry = (node: TreeDirectoryNode): ApiSftpEntry => {
  * @param props SFTP tab runtime props.
  * @returns SFTP workbench page.
  */
-const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, onTabTitleChange }) => {
+const SFTP: React.FC<SFTPProps> = ({
+  connectionIntent,
+  onOpenDirectoryInNewTab,
+  onOpenSshAtPath,
+  onTabTitleChange,
+}) => {
   const { error: notifyError, success: notifySuccess } = useToast();
   const sftpDeleteConfirmationMode = useSettingsValue('sftpDeleteConfirmationMode');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
@@ -1595,6 +1714,85 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
     [onOpenDirectoryInNewTab],
   );
 
+  const handleOpenSshAtEntryLocation = React.useCallback(
+    (entry: ApiSftpEntry | null, targetDirectoryPath = currentPath): void => {
+      const sshPath = entry
+        ? entry.type === 'directory'
+          ? entry.path
+          : resolveRemoteParentPath(entry.path)
+        : targetDirectoryPath;
+      onOpenSshAtPath(sshPath);
+    },
+    [currentPath, onOpenSshAtPath],
+  );
+
+  const copyTextToClipboard = React.useCallback(
+    async (value: string, successMessage: string): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(value);
+        notifySuccess(successMessage);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.feedback.copyPathFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
+  const handleCopyRemotePath = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      await copyTextToClipboard(entry.path, t('sftp.feedback.pathCopied'));
+    },
+    [copyTextToClipboard],
+  );
+
+  const handleCopyRelativeRemotePath = React.useCallback(
+    async (relativePath: string): Promise<void> => {
+      await copyTextToClipboard(relativePath, t('sftp.feedback.relativePathCopied'));
+    },
+    [copyTextToClipboard],
+  );
+
+  const resolveDefaultLocalDownloadPath = React.useCallback(async (entry: ApiSftpEntry): Promise<string | null> => {
+    const downloadsPath = await window.electron?.getDownloadsPath();
+    if (!downloadsPath) {
+      return null;
+    }
+
+    return joinLocalPath(downloadsPath, sanitizeLocalFileName(entry.name));
+  }, []);
+
+  const handleDownloadEntry = React.useCallback(
+    async (entry: ApiSftpEntry, mode: 'downloads' | 'choose'): Promise<void> => {
+      if (!sessionId || entry.type !== 'file') {
+        notifyError(t('sftp.downloadUnsupported'));
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const defaultLocalPath = await resolveDefaultLocalDownloadPath(entry);
+        if (!defaultLocalPath) {
+          throw new Error(t('sftp.downloadPathUnavailable'));
+        }
+
+        const localPath =
+          mode === 'downloads'
+            ? defaultLocalPath
+            : (await window.electron?.showSaveFileDialog(defaultLocalPath))?.filePath;
+
+        if (!localPath) {
+          return;
+        }
+
+        await downloadSftpFile(sessionId, {
+          path: entry.path,
+          localPath,
+        });
+        notifySuccess(t('sftp.feedback.downloaded', { path: localPath }));
+      });
+    },
+    [notifyError, notifySuccess, resolveDefaultLocalDownloadPath, runSftpOperation, sessionId],
+  );
+
   const handleCopyEntries = React.useCallback((targetEntries: ApiSftpEntry[]): void => {
     const entriesToCopy = dedupeSftpEntries(targetEntries);
     if (entriesToCopy.length === 0) {
@@ -1741,19 +1939,32 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
       const shouldShowCreateActions = scope === 'directory' || isTreeDirectoryScope;
       const shouldShowPasteAction = scope === 'directory' || isTreeDirectoryScope;
       const shouldShowRefreshAction = isTreeDirectoryScope;
+      const shouldShowLocationActions =
+        scope === 'entry' || scope === 'toolbarMore' || scope === 'directory' || isTreeDirectoryScope;
+      const relativePathOptions = targetEntry ? buildRelativeRemotePathOptions(targetEntry.path) : [];
       const canOpenEntry = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
       const canOpenInNewTab = canOpenEntry && targetEntry?.type === 'directory';
+      const canUseSingleEntryAction = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
+      const canDownloadEntry = canUseSingleEntryAction && targetEntry?.type === 'file';
+      const canOpenSshHere = canUseFileActions && (!isMultiTarget || !targetEntry);
       const canMutateEntry = canUseFileActions && targetEntries.length > 0;
       const canRenameEntry = canMutateEntry && targetEntries.length === 1;
       const canPaste = canUseFileActions && Boolean(clipboardState);
       const canRefreshDirectory = canUseFileActions && Boolean(targetDirectoryPath);
       const shouldShowOpenSeparator =
-        shouldShowEntryMutationActions || shouldShowRefreshAction || shouldShowPasteAction || shouldShowCreateActions;
+        shouldShowLocationActions ||
+        shouldShowEntryMutationActions ||
+        shouldShowRefreshAction ||
+        shouldShowPasteAction ||
+        shouldShowCreateActions;
       const shouldShowCreateSeparator = (shouldShowPasteAction || shouldShowRefreshAction) && shouldShowCreateActions;
 
       const ShortcutComponent = menuSurface === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
       const ItemComponent = menuSurface === 'context' ? ContextMenuItem : DropdownMenuItem;
       const SeparatorComponent = menuSurface === 'context' ? ContextMenuSeparator : DropdownMenuSeparator;
+      const SubComponent = menuSurface === 'context' ? ContextMenuSub : DropdownMenuSub;
+      const SubContentComponent = menuSurface === 'context' ? ContextMenuSubContent : DropdownMenuSubContent;
+      const SubTriggerComponent = menuSurface === 'context' ? ContextMenuSubTrigger : DropdownMenuSubTrigger;
       const deleteShortcut = window.electron?.platform === 'darwin' ? 'Cmd+Backspace' : 'Del';
 
       return (
@@ -1785,6 +1996,80 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
                 {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
               </ItemComponent>
               {shouldShowOpenSeparator ? <SeparatorComponent /> : null}
+            </>
+          ) : null}
+          {shouldShowLocationActions ? (
+            <>
+              <ItemComponent
+                icon={Terminal}
+                disabled={!canOpenSshHere}
+                onSelect={() => {
+                  handleOpenSshAtEntryLocation(targetEntry, targetDirectoryPath);
+                }}
+              >
+                {t('sftp.actions.openSshHere')}
+              </ItemComponent>
+              {targetEntry ? (
+                <>
+                  <ItemComponent
+                    icon={Copy}
+                    disabled={!canUseSingleEntryAction}
+                    onSelect={() => {
+                      void handleCopyRemotePath(targetEntry);
+                    }}
+                  >
+                    {t('sftp.actions.copyPath')}
+                  </ItemComponent>
+                  <SubComponent>
+                    <SubTriggerComponent disabled={!canUseSingleEntryAction || relativePathOptions.length === 0}>
+                      {t(
+                        targetEntry.type === 'directory'
+                          ? 'sftp.actions.copyDirectoryRelativePath'
+                          : 'sftp.actions.copyFileRelativePath',
+                      )}
+                    </SubTriggerComponent>
+                    <SubContentComponent>
+                      {relativePathOptions.map((relativePath) => (
+                        <ItemComponent
+                          key={relativePath}
+                          onSelect={() => {
+                            void handleCopyRelativeRemotePath(relativePath);
+                          }}
+                        >
+                          {relativePath}
+                        </ItemComponent>
+                      ))}
+                    </SubContentComponent>
+                  </SubComponent>
+                  <ItemComponent
+                    icon={Download}
+                    disabled={!canDownloadEntry}
+                    onSelect={() => {
+                      if (targetEntry) {
+                        void handleDownloadEntry(targetEntry, 'downloads');
+                      }
+                    }}
+                  >
+                    {t('sftp.actions.saveToDownloads')}
+                  </ItemComponent>
+                  <ItemComponent
+                    disabled={!canDownloadEntry}
+                    onSelect={() => {
+                      if (targetEntry) {
+                        void handleDownloadEntry(targetEntry, 'choose');
+                      }
+                    }}
+                  >
+                    {t('sftp.actions.saveAs')}
+                  </ItemComponent>
+                </>
+              ) : null}
+              {shouldShowEntryMutationActions ||
+              shouldShowRefreshAction ||
+              shouldShowPasteAction ||
+              shouldShowCreateActions ? (
+                <SeparatorComponent />
+              ) : null}
             </>
           ) : null}
           {shouldShowEntryMutationActions ? (
@@ -1892,10 +2177,14 @@ const SFTP: React.FC<SFTPProps> = ({ connectionIntent, onOpenDirectoryInNewTab, 
       clipboardState,
       currentPath,
       handleCopyEntries,
+      handleCopyRelativeRemotePath,
+      handleCopyRemotePath,
       handleCutEntries,
       handleDeleteEntries,
+      handleDownloadEntry,
       handleOpenDirectoryInNewTab,
       handleOpenEntry,
+      handleOpenSshAtEntryLocation,
       handlePasteEntry,
       handleTreeDirectoryRefresh,
       runInlineEditMenuActionAfterClose,

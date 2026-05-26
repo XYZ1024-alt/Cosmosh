@@ -136,6 +136,10 @@ export type ApiSftpListDirectoryResponse =
 export type ApiSftpReadFileQuery = paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
 export type ApiSftpReadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpDownloadFileRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/download']['post']['requestBody']['content']['application/json'];
+export type ApiSftpDownloadFileResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/download']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateDirectoryRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['requestBody']['content']['application/json'];
 export type ApiSftpCreateDirectoryResponse =

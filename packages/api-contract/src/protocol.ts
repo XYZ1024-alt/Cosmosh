@@ -32,6 +32,7 @@ export const API_PATHS = {
   sftpCreateSession: '/api/v1/sftp/sessions',
   sftpListDirectory: '/api/v1/sftp/sessions/{sessionId}/entries',
   sftpReadFile: '/api/v1/sftp/sessions/{sessionId}/file',
+  sftpDownloadFile: '/api/v1/sftp/sessions/{sessionId}/download',
   sftpCreateDirectory: '/api/v1/sftp/sessions/{sessionId}/directories',
   sftpCreateFile: '/api/v1/sftp/sessions/{sessionId}/files',
   sftpRenameEntry: '/api/v1/sftp/sessions/{sessionId}/rename',
