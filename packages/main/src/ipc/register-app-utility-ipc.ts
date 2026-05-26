@@ -1,6 +1,8 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
+import { randomUUID } from 'node:crypto';
 import fs from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from 'electron';
 
@@ -11,6 +13,74 @@ import {
   exportMainProcessHeapSnapshot,
   type ProcessPerformanceStatsPayload,
 } from './utils/process-performance';
+
+type SftpOpenWithApplication = {
+  id: string;
+  name: string;
+  path: string;
+  bundleIdentifier?: string;
+  iconDataUrl?: string;
+};
+
+type MacOsOpenWithHelperApplication = {
+  name: string;
+  path: string;
+  bundleIdentifier?: string;
+};
+
+type MacOsHelperInvocation = {
+  command: string;
+  argsPrefix: string[];
+};
+
+const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
+const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
+const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
+const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
+const WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME = 'COSMOSH_SFTP_OPEN_WITH_PATH';
+const WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT = `
+$ErrorActionPreference = 'Stop'
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+[Console]::Error.Encoding = [System.Text.UTF8Encoding]::new()
+$targetPath = [Environment]::GetEnvironmentVariable('${WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME}', 'Process')
+if ([string]::IsNullOrWhiteSpace($targetPath)) {
+  throw 'Missing Open With file path.'
+}
+
+Start-Process -FilePath $targetPath -Verb OpenAs
+`;
+
+/**
+ * Runs a Windows child process and converts a non-zero exit into a useful error.
+ *
+ * @param command Executable to start.
+ * @param args Process arguments.
+ * @param options Spawn options that are safe for a privileged main-process helper.
+ * @returns Promise resolved when the child exits successfully.
+ */
+const runWindowsOpenWithProcess = async (
+  command: string,
+  args: string[],
+  options: Parameters<typeof spawn>[2],
+): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(command, args, options);
+    let stderr = '';
+
+    child.on('error', reject);
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString('utf8');
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+
+      reject(new Error(stderr.trim() || `${command} failed, exit code: ${code ?? 'unknown'}`));
+    });
+  });
+};
 
 /**
  * Dependency contract for registering app-level utility IPC handlers.
@@ -47,6 +117,317 @@ export type RegisterAppUtilityIpcHandlersOptions = {
  */
 const resolveTargetWindow = (options: RegisterAppUtilityIpcHandlersOptions): BrowserWindow | null => {
   return BrowserWindow.getFocusedWindow() ?? options.getMainWindow();
+};
+
+/**
+ * Removes characters that are unsafe in local file names before creating SFTP temp paths.
+ *
+ * @param fileName Renderer-provided display file name.
+ * @returns Safe local file name with a stable fallback.
+ */
+const sanitizeSftpTemporaryFileName = (fileName: string | undefined): string => {
+  const rawName = typeof fileName === 'string' ? fileName : '';
+  const sanitized = Array.from(rawName)
+    .map((character) => {
+      const codePoint = character.codePointAt(0);
+      return codePoint !== undefined && codePoint < 32 ? '_' : character.replace(/[<>:"/\\|?*]/g, '_');
+    })
+    .join('')
+    .replace(/[. ]+$/g, '')
+    .trim();
+
+  return sanitized || 'download';
+};
+
+/**
+ * Resolves the root directory that may contain renderer-opened SFTP temporary files.
+ *
+ * @returns Absolute SFTP temporary root path.
+ */
+const resolveSftpTemporaryRootPath = (): string => {
+  return path.join(app.getPath('temp'), SFTP_TEMP_ROOT_DIRECTORY_NAME);
+};
+
+/**
+ * Checks whether a candidate path is inside the expected parent directory.
+ *
+ * @param candidatePath Absolute candidate path.
+ * @param parentPath Absolute parent path.
+ * @returns True when candidatePath is parentPath or a descendant.
+ */
+const isPathInsideDirectory = (candidatePath: string, parentPath: string): boolean => {
+  const relativePath = path.relative(parentPath, candidatePath);
+  return (
+    relativePath === '' || (relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+  );
+};
+
+/**
+ * Resolves and validates an SFTP temporary path without requiring the file to exist.
+ *
+ * @param candidatePath Renderer-provided local path.
+ * @returns Normalized path inside the Cosmosh SFTP temp root.
+ */
+const resolveSftpTemporaryCandidatePath = (candidatePath: string | undefined): string => {
+  if (typeof candidatePath !== 'string' || candidatePath.trim().length === 0) {
+    throw new Error('Invalid file path.');
+  }
+
+  const normalizedPath = path.resolve(candidatePath.trim());
+  const temporaryRootPath = path.resolve(resolveSftpTemporaryRootPath());
+  if (!isPathInsideDirectory(normalizedPath, temporaryRootPath)) {
+    throw new Error('Invalid file path.');
+  }
+
+  return normalizedPath;
+};
+
+/**
+ * Resolves a renderer-provided SFTP temp path and ensures it points to an existing file.
+ *
+ * @param candidatePath Renderer-provided local path.
+ * @returns Existing local file path inside the Cosmosh SFTP temp root.
+ */
+const resolveExistingSftpTemporaryFilePath = async (candidatePath: string | undefined): Promise<string> => {
+  const normalizedPath = resolveSftpTemporaryCandidatePath(candidatePath);
+  const stats = await fs.stat(normalizedPath);
+  if (!stats.isFile()) {
+    throw new Error('Invalid file path.');
+  }
+
+  return normalizedPath;
+};
+
+/**
+ * Creates a unique destination path under the Cosmosh SFTP temp root.
+ *
+ * @param fileName Desired file name from the remote entry.
+ * @returns Absolute local path that the backend download endpoint may write to.
+ */
+const createSftpTemporaryFilePath = async (fileName: string | undefined): Promise<string> => {
+  const temporaryDirectoryPath = path.join(resolveSftpTemporaryRootPath(), randomUUID());
+  await fs.mkdir(temporaryDirectoryPath, { recursive: true });
+  return path.join(temporaryDirectoryPath, sanitizeSftpTemporaryFileName(fileName));
+};
+
+/**
+ * Opens a local temp file with the Windows shell OpenAs verb.
+ *
+ * @param filePath Existing local file path.
+ * @returns Promise resolved after the shell verb is handed off successfully.
+ */
+const openWithDialogWindows = async (filePath: string): Promise<void> => {
+  try {
+    await runWindowsOpenWithProcess(
+      'powershell.exe',
+      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT],
+      {
+        env: {
+          ...process.env,
+          [WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME]: filePath,
+        },
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true,
+      },
+    );
+    return;
+  } catch (error: unknown) {
+    try {
+      await runWindowsOpenWithProcess('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', filePath], {
+        stdio: ['ignore', 'ignore', 'pipe'],
+        windowsHide: true,
+      });
+      return;
+    } catch (fallbackError: unknown) {
+      const primaryMessage = error instanceof Error ? error.message : 'OpenAs shell verb failed.';
+      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : 'OpenAs_RunDLL failed.';
+      throw new Error(`${primaryMessage}\nFallback Open With failed: ${fallbackMessage}`);
+    }
+  }
+};
+
+/**
+ * Resolves the packaged or development macOS helper used for NSWorkspace Open With operations.
+ *
+ * @returns Helper invocation descriptor, or null when no helper is available.
+ */
+const resolveMacOsOpenWithHelperInvocation = async (): Promise<MacOsHelperInvocation | null> => {
+  const binaryCandidates = [
+    path.join(process.resourcesPath, 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
+    path.resolve(__dirname, '..', '..', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
+    path.resolve(process.cwd(), 'packages', 'main', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
+  ];
+
+  for (const helperPath of binaryCandidates) {
+    try {
+      const stats = await fs.stat(helperPath);
+      if (stats.isFile()) {
+        return { command: helperPath, argsPrefix: [] };
+      }
+    } catch {
+      // Continue checking the next helper location.
+    }
+  }
+
+  const sourceCandidates = [
+    path.join(process.resourcesPath, 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
+    path.resolve(__dirname, '..', '..', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
+    path.resolve(process.cwd(), 'packages', 'main', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
+  ];
+
+  for (const sourcePath of sourceCandidates) {
+    try {
+      const stats = await fs.stat(sourcePath);
+      if (stats.isFile()) {
+        return { command: '/usr/bin/swift', argsPrefix: [sourcePath] };
+      }
+    } catch {
+      // Continue checking the next helper source location.
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Runs the macOS NSWorkspace helper and captures bounded stdout.
+ *
+ * @param args Helper command arguments.
+ * @returns Helper stdout.
+ */
+const runMacOsOpenWithHelper = async (args: string[]): Promise<string> => {
+  const invocation = await resolveMacOsOpenWithHelperInvocation();
+  if (!invocation) {
+    throw new Error('macOS Open With helper is unavailable.');
+  }
+
+  return await new Promise<string>((resolve, reject) => {
+    const child = spawn(invocation.command, [...invocation.argsPrefix, ...args], {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+
+    child.stdout.on('data', (chunk: Buffer | string) => {
+      stdout += chunk.toString();
+      if (Buffer.byteLength(stdout, 'utf8') > MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES) {
+        child.kill();
+      }
+    });
+
+    child.stderr.on('data', (chunk: Buffer | string) => {
+      stderr += chunk.toString();
+    });
+
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+        return;
+      }
+
+      reject(new Error(stderr.trim() || `Open With helper failed, exit code: ${code ?? 'unknown'}`));
+    });
+  });
+};
+
+/**
+ * Checks whether a value is a plain object record.
+ *
+ * @param value Unknown value.
+ * @returns True when the value can be accessed as a record.
+ */
+const isRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+/**
+ * Parses one macOS helper application row.
+ *
+ * @param value Unknown helper row.
+ * @returns Normalized app descriptor, or null for invalid rows.
+ */
+const parseMacOsOpenWithHelperApplication = (value: unknown): MacOsOpenWithHelperApplication | null => {
+  if (!isRecord(value) || typeof value.path !== 'string' || typeof value.name !== 'string') {
+    return null;
+  }
+
+  const appPath = value.path.trim();
+  const appName = value.name.trim();
+  if (!appPath || !appName || !path.isAbsolute(appPath)) {
+    return null;
+  }
+
+  return {
+    name: appName,
+    path: appPath,
+    ...(typeof value.bundleIdentifier === 'string' && value.bundleIdentifier.trim()
+      ? { bundleIdentifier: value.bundleIdentifier.trim() }
+      : {}),
+  };
+};
+
+/**
+ * Lists macOS applications that Launch Services says can open a file URL.
+ *
+ * @param filePath Existing or candidate local file path inside the SFTP temp root.
+ * @returns Applications available for the file type.
+ */
+const listMacOsOpenWithApplications = async (filePath: string): Promise<SftpOpenWithApplication[]> => {
+  if (process.platform !== 'darwin') {
+    return [];
+  }
+
+  const output = await runMacOsOpenWithHelper(['list', filePath]);
+  const parsed: unknown = JSON.parse(output);
+  if (!Array.isArray(parsed)) {
+    return [];
+  }
+
+  const helperApplications = parsed
+    .map(parseMacOsOpenWithHelperApplication)
+    .filter((application): application is MacOsOpenWithHelperApplication => application !== null);
+
+  const applications = await Promise.all(
+    helperApplications.map(async (application): Promise<SftpOpenWithApplication> => {
+      const icon = await app.getFileIcon(application.path, { size: 'small' }).catch(() => null);
+      return {
+        id: application.bundleIdentifier ?? application.path,
+        name: application.name,
+        path: application.path,
+        ...(application.bundleIdentifier ? { bundleIdentifier: application.bundleIdentifier } : {}),
+        ...(icon ? { iconDataUrl: icon.toDataURL() } : {}),
+      };
+    }),
+  );
+
+  return applications;
+};
+
+/**
+ * Opens a temp file with a specific macOS application after validating the app is eligible.
+ *
+ * @param filePath Existing local file path inside the SFTP temp root.
+ * @param applicationPath Application bundle path selected by the renderer.
+ * @returns Nothing.
+ */
+const openWithApplicationMacOs = async (filePath: string, applicationPath: string | undefined): Promise<void> => {
+  if (typeof applicationPath !== 'string' || applicationPath.trim().length === 0) {
+    throw new Error('Invalid application path.');
+  }
+
+  const normalizedApplicationPath = path.resolve(applicationPath.trim());
+  const availableApplications = await listMacOsOpenWithApplications(filePath);
+  const isApplicationAllowed = availableApplications.some(
+    (application) => path.resolve(application.path) === normalizedApplicationPath,
+  );
+
+  if (!isApplicationAllowed) {
+    throw new Error('Application is not available for this file.');
+  }
+
+  await runMacOsOpenWithHelper(['open', filePath, normalizedApplicationPath]);
 };
 
 /**
@@ -133,6 +514,55 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   ipcMain.handle('app:get-downloads-path', () => {
     return app.getPath('downloads');
   });
+
+  ipcMain.handle('app:create-sftp-temporary-file', async (_event, fileName?: string): Promise<string> => {
+    return createSftpTemporaryFilePath(fileName);
+  });
+
+  ipcMain.handle('app:open-sftp-temporary-file', async (_event, localPath?: string): Promise<boolean> => {
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    const result = await shell.openPath(normalizedPath);
+    if (result.length > 0) {
+      throw new Error(result);
+    }
+
+    return true;
+  });
+
+  ipcMain.handle('app:show-sftp-open-with-dialog', async (_event, localPath?: string): Promise<boolean> => {
+    if (process.platform !== 'win32') {
+      throw new Error('Open With dialog is only implemented on Windows.');
+    }
+
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    await openWithDialogWindows(normalizedPath);
+    return true;
+  });
+
+  ipcMain.handle(
+    'app:list-sftp-open-with-applications',
+    async (_event, localPath?: string): Promise<SftpOpenWithApplication[]> => {
+      if (process.platform !== 'darwin') {
+        return [];
+      }
+
+      const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+      return listMacOsOpenWithApplications(normalizedPath);
+    },
+  );
+
+  ipcMain.handle(
+    'app:open-sftp-file-with-application',
+    async (_event, localPath?: string, applicationPath?: string): Promise<boolean> => {
+      if (process.platform !== 'darwin') {
+        throw new Error('Open With application selection is only implemented on macOS.');
+      }
+
+      const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+      await openWithApplicationMacOs(normalizedPath, applicationPath);
+      return true;
+    },
+  );
 
   ipcMain.handle('app:get-database-security-info', async (): Promise<DatabaseSecurityInfo> => {
     return options.getDatabaseSecurityInfo();

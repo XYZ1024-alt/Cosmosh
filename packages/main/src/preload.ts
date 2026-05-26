@@ -67,6 +67,14 @@ type AppMenuAction =
   | 'close-right-tabs'
   | 'show-tab-switcher';
 
+type SftpOpenWithApplication = {
+  id: string;
+  name: string;
+  path: string;
+  bundleIdentifier?: string;
+  iconDataUrl?: string;
+};
+
 const APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set<AppMenuAction>([
   'open-about',
   'open-settings',
@@ -183,6 +191,21 @@ contextBridge.exposeInMainWorld('electron', {
   },
   getDownloadsPath: () => {
     return invokeIpc<string>('app:get-downloads-path');
+  },
+  createSftpTemporaryFile: (fileName: string) => {
+    return invokeIpc<string>('app:create-sftp-temporary-file', fileName);
+  },
+  openSftpTemporaryFile: (localPath: string) => {
+    return invokeIpc<boolean>('app:open-sftp-temporary-file', localPath);
+  },
+  showSftpOpenWithDialog: (localPath: string) => {
+    return invokeIpc<boolean>('app:show-sftp-open-with-dialog', localPath);
+  },
+  listSftpOpenWithApplications: (localPath: string) => {
+    return invokeIpc<SftpOpenWithApplication[]>('app:list-sftp-open-with-applications', localPath);
+  },
+  openSftpFileWithApplication: (localPath: string, applicationPath: string) => {
+    return invokeIpc<boolean>('app:open-sftp-file-with-application', localPath, applicationPath);
   },
   getDatabaseSecurityInfo: () => {
     return invokeIpc<{

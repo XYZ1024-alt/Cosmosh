@@ -66,6 +66,13 @@ type AppMenuAction =
   | 'close-current-tab'
   | 'close-right-tabs'
   | 'show-tab-switcher';
+type SftpOpenWithApplication = {
+  id: string;
+  name: string;
+  path: string;
+  bundleIdentifier?: string;
+  iconDataUrl?: string;
+};
 
 declare global {
   interface ImportMetaEnv {
@@ -97,6 +104,11 @@ declare global {
       }>;
       getPendingLaunchWorkingDirectory: () => Promise<string | null>;
       getDownloadsPath: () => Promise<string>;
+      createSftpTemporaryFile: (fileName: string) => Promise<string>;
+      openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
+      showSftpOpenWithDialog: (localPath: string) => Promise<boolean>;
+      listSftpOpenWithApplications: (localPath: string) => Promise<SftpOpenWithApplication[]>;
+      openSftpFileWithApplication: (localPath: string, applicationPath: string) => Promise<boolean>;
       getDatabaseSecurityInfo: () => Promise<{
         runtimeMode: 'development' | 'production';
         resolverMode: 'development-fixed-key' | 'safe-storage' | 'master-password-fallback';

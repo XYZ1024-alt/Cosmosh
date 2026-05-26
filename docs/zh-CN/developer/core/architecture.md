@@ -7,7 +7,7 @@ Cosmosh 采用 Electron 双进程模型，并嵌入后端服务：
 - **Main 进程** (`packages/main/src/index.ts`)：应用生命周期、BrowserWindow 创建、preload 注入、IPC 注册、后端进程编排。
 - **Preload Bridge** (`packages/main/src/preload.ts`)：通过 `contextBridge` 暴露严格受控 API。
 - **Renderer 进程** (`packages/renderer/src`)：React UI、xterm UI、状态编排。
-- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务，以及只读 SFTP 浏览会话。
+- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务，以及 SFTP 浏览、下载与文件操作会话。
 
 ```mermaid
 flowchart LR
@@ -48,7 +48,7 @@ flowchart LR
 ### Renderer 进程 (`packages/renderer/src`)
 
 - 仅通过 `window.electron` bridge 访问能力（不直接使用 Node API）。
-- 通过后端 API 创建 SSH/本地终端会话与只读 SFTP 浏览会话。
+- 通过后端 API 创建 SSH/本地终端会话与 SFTP 浏览、下载、文件操作会话。
 - 通过 WebSocket 建立终端数据通道，并由 `xterm.js` 渲染。
 - 非 Home 的渲染页（含 SSH 与设置编辑器/Monaco）采用懒加载，避免重型资源进入默认启动路径。
 - Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
@@ -110,8 +110,9 @@ sequenceDiagram
 ## 5. 运行时能力
 
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
-- SFTP v1 使用请求/响应式 IPC + backend HTTP route 实现只读目录浏览。
-- SFTP 上传、下载、写操作、传输队列、文件预览与 SSH terminal 会话复用仍属于后续规划。
+- SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、下载、创建、重命名、复制、删除与批量文件操作。
+- SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；macOS 使用打包的 NSWorkspace helper；Linux 不显示打开方式。
+- SFTP 上传、目录下载、chmod、传输队列、完整编辑器写回与 SSH terminal 会话复用仍属于后续规划。
 
 ## 5.1 设置运行时（已实现）
 

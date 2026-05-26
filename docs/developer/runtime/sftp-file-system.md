@@ -9,9 +9,9 @@ Implemented in v1:
 - Home server context menu and file action can open an SFTP tab.
 - Each SFTP tab creates a backend SFTP session and owns that session lifecycle.
 - Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
-- The renderer shows directory entries, metadata details, and bounded UTF-8 file preview.
+- The renderer shows directory entries and metadata details. Double-clicking a regular file downloads it into the Cosmosh-controlled SFTP temp directory and opens it with the OS default application.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
-- Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
@@ -37,7 +37,7 @@ flowchart LR
 
 - **API contract**: `packages/api-contract/openapi/cosmosh.openapi.yaml` defines SFTP paths, schemas, success codes, and error codes.
 - **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
-- **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
+- **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/ipc/register-app-utility-ipc.ts` owns native save/open helpers, validates Cosmosh SFTP temp paths, and launches platform Open With behavior. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
 - **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
 - **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP delete-confirmation and parent-directory-row preferences consumed by the renderer settings store.
 
@@ -132,7 +132,7 @@ Entry types are reduced to:
 - `symlink`
 - `other`
 
-The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry, shows a selected-count summary for multiple entries, and switches to a bounded preview after opening a regular file. When `sftpShowParentDirectoryEntry` is enabled and the backend reports a parent path, the center list prepends a non-selectable `..` row that navigates to the parent directory without changing backend data.
+The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry and shows a selected-count summary for multiple entries. When `sftpShowParentDirectoryEntry` is enabled and the backend reports a parent path, the center list prepends a non-selectable `..` row that navigates to the parent directory without changing backend data.
 
 Directory results are cached in the renderer for the lifetime of the SFTP tab. Revisiting an already loaded path uses that in-memory result immediately. The refresh action bypasses the cache and requests a fresh listing from the active backend session while preserving the visible list until the new result arrives.
 
@@ -145,10 +145,11 @@ Mutation rules:
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
-- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, open-in-new-tab, and preview remain single-entry actions.
+- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, and open-in-new-tab remain single-entry actions.
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
+- Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
+- On Windows, `Open With...` is a plain menu item with no submenu and first uses the shell `openas` verb through a hidden PowerShell process; the validated temp file path is passed through the child process environment to avoid PowerShell argument parsing edge cases. If that shell verb is rejected by the OS for a file type, main falls back to `rundll32.exe shell32.dll,OpenAs_RunDLL`. On macOS, `Open With...` is a submenu populated by the NSWorkspace helper in `packages/main/resources/helpers`; `prebuild` compiles the helper binary on macOS, while development can fall back to the Swift source. Linux does not render the Open With action.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
-- File preview reads up to the requested bounded byte limit and reports whether the result was truncated.
 
 ## 6. Security And Error Model
 
@@ -171,8 +172,8 @@ Security constraints:
 - Renderer and preload never receive decrypted SSH credentials.
 - SFTP paths are passed as structured API payloads, not shell commands.
 - Local save destinations are selected or resolved by main/preload and passed to backend as explicit paths; renderer does not receive filesystem write primitives.
+- Local OS-open actions are restricted to paths under the Cosmosh SFTP temp root. Main normalizes the candidate path, verifies it stays inside that root, and checks that it is an existing file before calling `shell.openPath`, Windows `openas`, or the macOS helper.
 - Backend rejects empty mutable targets and root/current-directory markers for write operations.
-- File preview is bounded to avoid unbounded memory reads.
 
 ## 7. Renderer UX Contract
 
@@ -192,6 +193,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Inline rename and create actions launched from context or overflow menus must defer the edit-state transition until menu close handling begins, suppress menu close autofocus while the input is being mounted, and then focus/select the row input. This prevents the first menu-triggered edit from being blurred and committed or cancelled before the user can type.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
+- `Open in New Tab` is only rendered for directory targets, and `Open With...` is placed directly after it in the open-action group. `Open With...` must not include a leading icon. Windows shows it as a single item that opens the system picker. macOS shows it as a submenu with application names and icons returned from main; Linux omits the action.
 - Delete confirmation uses the shared `Dialog` wrapper and must preserve the pending operation until the user confirms or cancels. Keyboard-triggered delete passes an explicit shortcut source so the confirmation setting can distinguish shortcut-only safety prompts from toolbar and context-menu deletes.
 - The optional `..` parent-directory row belongs to the center file list only. It must render before real entries, stay out of selection and detail state, use double-click/Enter activation like regular file rows, and show a disabled state at the remote root when no parent path exists.
 - Show the current directory and all parent directories in the tree; expanding a tree row loads its child directory list and shows an inline spinner while loading.

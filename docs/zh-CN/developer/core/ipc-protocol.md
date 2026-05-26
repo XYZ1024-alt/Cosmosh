@@ -20,6 +20,11 @@ flowchart TB
 | `app:get-version-info` | `invoke` | none | `Promise<{ appName: string; version: string; buildVersion: string; buildTime: string; commit: string; electron: string; chromium: string; node: string; v8: string; os: string }>` | 为关于页返回应用名称、版本号、构建时间与运行时技术信息 |
 | `app:get-pending-launch-working-directory` | `invoke` | none | `Promise<string \| null>` | 返回当前待消费的上下文启动工作目录（来自 CLI 参数） |
 | `app:get-downloads-path` | `invoke` | none | `Promise<string>` | 返回系统下载目录，供本地保存默认路径使用 |
+| `app:create-sftp-temporary-file` | `invoke` | `fileName: string` | `Promise<string>` | 在 Cosmosh SFTP 临时根目录下创建唯一的本地目标路径，供 backend 下载与打开流程使用 |
+| `app:open-sftp-temporary-file` | `invoke` | `localPath: string` | `Promise<boolean>` | 使用系统默认应用打开 Cosmosh SFTP 临时根目录下的既有文件 |
+| `app:show-sftp-open-with-dialog` | `invoke` | `localPath: string` | `Promise<boolean>` | 仅 Windows：校验临时文件路径，并通过 shell `openas` verb 打开系统“打开方式”选择器 |
+| `app:list-sftp-open-with-applications` | `invoke` | `localPath: string` | `Promise<Array<{ id: string; name: string; path: string; bundleIdentifier?: string; iconDataUrl?: string }>>` | 仅 macOS：校验临时文件路径，并返回 NSWorkspace 判定可打开该文件的应用列表 |
+| `app:open-sftp-file-with-application` | `invoke` | `localPath: string, applicationPath: string` | `Promise<boolean>` | 仅 macOS：校验临时文件与所选应用属于可用应用列表后，使用该应用打开文件 |
 | `app:get-database-security-info` | `invoke` | none | `Promise<{ runtimeMode: 'development' \| 'production'; resolverMode: 'development-fixed-key' \| 'safe-storage' \| 'master-password-fallback'; safeStorageAvailable: boolean; databasePath: string; securityConfigPath: string; hasEncryptedDbMasterKey: boolean; hasMasterPasswordHash: boolean; hasMasterPasswordSalt: boolean; hasMasterPasswordEnv: boolean; fallbackReady: boolean }>` | 为设置 → 高级页返回非敏感的数据库加密引导诊断信息 |
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | 当第二实例触发时，向渲染层推送上下文启动工作目录 |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | 将 macOS 系统菜单触发的应用菜单命令以受控枚举形式分发到渲染层标签页/状态处理器 |

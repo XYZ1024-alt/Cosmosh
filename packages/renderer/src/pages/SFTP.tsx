@@ -69,7 +69,6 @@ import {
   createSftpSession,
   downloadSftpFile,
   listSftpDirectory,
-  readSftpFile,
   renameSftpEntry,
   runSftpBatchOperation,
   trustSshFingerprint,
@@ -158,6 +157,14 @@ type SftpDeleteConfirmationPrompt = {
 
 type InlineEditMenuAction = () => void | Promise<void>;
 
+type SftpOpenWithApplication = {
+  id: string;
+  name: string;
+  path: string;
+  bundleIdentifier?: string;
+  iconDataUrl?: string;
+};
+
 type SftpFileNavigationRow =
   | {
       kind: 'parent';
@@ -173,9 +180,10 @@ const TREE_INDENT_CLASS_NAMES = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-1
 const SFTP_CARD_CLASS_NAME = 'bg-ssh-card-bg-terminal h-full min-h-0 overflow-hidden rounded-[18px] p-1';
 const DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME = 'min-w-[600px]';
 const DIRECTORY_ROW_GRID_CLASS_NAME = 'grid-cols-[minmax(0,1fr)_92px_148px_96px_28px]';
+const SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK =
+  'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 const NEW_FILE_NAME = 'untitled.txt';
 const NEW_DIRECTORY_NAME = 'Untitled Folder';
-const FILE_PREVIEW_MAX_BYTES = 256 * 1024;
 const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
 
@@ -823,6 +831,10 @@ const SFTP: React.FC<SFTPProps> = ({
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
+  const [openWithApplicationsByPath, setOpenWithApplicationsByPath] = React.useState<
+    Record<string, SftpOpenWithApplication[]>
+  >({});
+  const [loadingOpenWithPath, setLoadingOpenWithPath] = React.useState<string>('');
   const [activeTreePath, setActiveTreePath] = React.useState<string>('');
   const [activeFileRowKey, setActiveFileRowKey] = React.useState<string>('');
   const [deleteConfirmationPrompt, setDeleteConfirmationPrompt] = React.useState<SftpDeleteConfirmationPrompt | null>(
@@ -833,6 +845,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
   const syncedTabTitleRef = React.useRef<string>('');
+  const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
   const inlineEditMenuActionTimerRef = React.useRef<number | null>(null);
@@ -1416,6 +1429,9 @@ const SFTP: React.FC<SFTPProps> = ({
         setTreeNodes({});
         setClipboardState(null);
         setFilePreview(null);
+        temporaryOpenFilePathsRef.current = {};
+        setOpenWithApplicationsByPath({});
+        setLoadingOpenWithPath('');
         setPendingCreate(null);
         setRenamingEntryPath('');
         directoryCacheRef.current = {};
@@ -1674,35 +1690,6 @@ const SFTP: React.FC<SFTPProps> = ({
     [beginCreateEntry, canUseFileActions, currentPath, navigateToPath],
   );
 
-  const handleOpenEntry = React.useCallback(
-    async (entry: ApiSftpEntry): Promise<void> => {
-      selectSingleEntry(entry);
-      if (entry.type === 'directory') {
-        await navigateToPath(entry.path);
-        return;
-      }
-
-      if (entry.type !== 'file' || !sessionId) {
-        notifyError(t('sftp.openUnsupported'));
-        return;
-      }
-
-      await runSftpOperation(async () => {
-        const response = await readSftpFile(sessionId, { path: entry.path, maxBytes: FILE_PREVIEW_MAX_BYTES });
-        setSelectedPaths([entry.path]);
-        setSelectionAnchorPath(entry.path);
-        setFilePreview({
-          path: response.data.path,
-          name: entry.name,
-          content: response.data.content,
-          size: response.data.size,
-          truncated: response.data.truncated,
-        });
-      });
-    },
-    [navigateToPath, notifyError, runSftpOperation, selectSingleEntry, sessionId],
-  );
-
   const handleOpenDirectoryInNewTab = React.useCallback(
     (entry: ApiSftpEntry): void => {
       if (entry.type !== 'directory') {
@@ -1752,6 +1739,10 @@ const SFTP: React.FC<SFTPProps> = ({
     [copyTextToClipboard],
   );
 
+  const canUseSftpOpenWith = React.useMemo(() => {
+    return window.electron?.platform === 'win32' || window.electron?.platform === 'darwin';
+  }, []);
+
   const resolveDefaultLocalDownloadPath = React.useCallback(async (entry: ApiSftpEntry): Promise<string | null> => {
     const downloadsPath = await window.electron?.getDownloadsPath();
     if (!downloadsPath) {
@@ -1760,6 +1751,135 @@ const SFTP: React.FC<SFTPProps> = ({
 
     return joinLocalPath(downloadsPath, sanitizeLocalFileName(entry.name));
   }, []);
+
+  const downloadEntryToLocalPath = React.useCallback(
+    async (entry: ApiSftpEntry, localPath: string): Promise<void> => {
+      if (!sessionId || entry.type !== 'file') {
+        throw new Error(t('sftp.downloadUnsupported'));
+      }
+
+      await downloadSftpFile(sessionId, {
+        path: entry.path,
+        localPath,
+      });
+    },
+    [sessionId],
+  );
+
+  const downloadEntryToTemporaryPath = React.useCallback(
+    async (entry: ApiSftpEntry, options: { reuseCached?: boolean } = {}): Promise<string> => {
+      const cachedLocalPath = temporaryOpenFilePathsRef.current[entry.path];
+      if (cachedLocalPath && options.reuseCached) {
+        return cachedLocalPath;
+      }
+
+      const localPath =
+        cachedLocalPath ?? (await window.electron?.createSftpTemporaryFile(sanitizeLocalFileName(entry.name)));
+      if (!localPath) {
+        throw new Error(t('sftp.temporaryPathUnavailable'));
+      }
+
+      await downloadEntryToLocalPath(entry, localPath);
+      temporaryOpenFilePathsRef.current[entry.path] = localPath;
+      return localPath;
+    },
+    [downloadEntryToLocalPath],
+  );
+
+  const handleOpenEntryWithDefaultApplication = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      if (entry.type !== 'file') {
+        notifyError(t('sftp.openUnsupported'));
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.openSftpTemporaryFile(localPath);
+        if (!didOpen) {
+          throw new Error(t('sftp.openLocalFileFailed'));
+        }
+      });
+    },
+    [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+  );
+
+  const handleOpenEntryWithPicker = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      if (!canUseSftpOpenWith || entry.type !== 'file') {
+        notifyError(t('sftp.openWithUnsupported'));
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.showSftpOpenWithDialog(localPath);
+        if (!didOpen) {
+          throw new Error(t('sftp.openWithFailed'));
+        }
+      });
+    },
+    [canUseSftpOpenWith, downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+  );
+
+  const handleOpenEntryWithApplication = React.useCallback(
+    async (entry: ApiSftpEntry, application: SftpOpenWithApplication): Promise<void> => {
+      if (entry.type !== 'file') {
+        notifyError(t('sftp.openWithUnsupported'));
+        return;
+      }
+
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.openSftpFileWithApplication(localPath, application.path);
+        if (!didOpen) {
+          throw new Error(t('sftp.openWithFailed'));
+        }
+      });
+    },
+    [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+  );
+
+  const loadOpenWithApplications = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      if (window.electron?.platform !== 'darwin' || entry.type !== 'file') {
+        return;
+      }
+
+      setLoadingOpenWithPath(entry.path);
+      try {
+        const localPath = await downloadEntryToTemporaryPath(entry, { reuseCached: true });
+        const applications = (await window.electron?.listSftpOpenWithApplications(localPath)) ?? [];
+        setOpenWithApplicationsByPath((previous) => ({
+          ...previous,
+          [entry.path]: applications,
+        }));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.openWithApplicationsUnavailable'));
+      } finally {
+        setLoadingOpenWithPath((previous) => (previous === entry.path ? '' : previous));
+      }
+    },
+    [downloadEntryToTemporaryPath, notifyError],
+  );
+
+  const handleOpenEntry = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      selectSingleEntry(entry);
+      if (entry.type === 'directory') {
+        await navigateToPath(entry.path);
+        return;
+      }
+
+      if (entry.type !== 'file' || !sessionId) {
+        notifyError(t('sftp.openUnsupported'));
+        return;
+      }
+
+      await handleOpenEntryWithDefaultApplication(entry);
+    },
+    [handleOpenEntryWithDefaultApplication, navigateToPath, notifyError, selectSingleEntry, sessionId],
+  );
 
   const handleDownloadEntry = React.useCallback(
     async (entry: ApiSftpEntry, mode: 'downloads' | 'choose'): Promise<void> => {
@@ -1783,14 +1903,18 @@ const SFTP: React.FC<SFTPProps> = ({
           return;
         }
 
-        await downloadSftpFile(sessionId, {
-          path: entry.path,
-          localPath,
-        });
+        await downloadEntryToLocalPath(entry, localPath);
         notifySuccess(t('sftp.feedback.downloaded', { path: localPath }));
       });
     },
-    [notifyError, notifySuccess, resolveDefaultLocalDownloadPath, runSftpOperation, sessionId],
+    [
+      downloadEntryToLocalPath,
+      notifyError,
+      notifySuccess,
+      resolveDefaultLocalDownloadPath,
+      runSftpOperation,
+      sessionId,
+    ],
   );
 
   const handleCopyEntries = React.useCallback((targetEntries: ApiSftpEntry[]): void => {
@@ -1908,6 +2032,16 @@ const SFTP: React.FC<SFTPProps> = ({
         setSelectedPaths((previous) => previous.filter((path) => !deletedPaths.has(path)));
         setSelectionAnchorPath((previous) => (deletedPaths.has(previous) ? '' : previous));
         setFilePreview((previous) => (previous && deletedPaths.has(previous.path) ? null : previous));
+        deletedPaths.forEach((path) => {
+          delete temporaryOpenFilePathsRef.current[path];
+        });
+        setOpenWithApplicationsByPath((previous) => {
+          const next = { ...previous };
+          deletedPaths.forEach((path) => {
+            delete next[path];
+          });
+          return next;
+        });
         await refreshCurrentDirectoryAfterOperation();
       });
     },
@@ -1943,9 +2077,16 @@ const SFTP: React.FC<SFTPProps> = ({
         scope === 'entry' || scope === 'toolbarMore' || scope === 'directory' || isTreeDirectoryScope;
       const relativePathOptions = targetEntry ? buildRelativeRemotePathOptions(targetEntry.path) : [];
       const canOpenEntry = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
-      const canOpenInNewTab = canOpenEntry && targetEntry?.type === 'directory';
+      const shouldShowOpenInNewTab = Boolean(targetEntry && !isMultiTarget && targetEntry.type === 'directory');
+      const canOpenInNewTab = canUseFileActions && shouldShowOpenInNewTab;
       const canUseSingleEntryAction = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
       const canDownloadEntry = canUseSingleEntryAction && targetEntry?.type === 'file';
+      const shouldShowOpenWithEntry = Boolean(
+        targetEntry && !isMultiTarget && targetEntry.type === 'file' && canUseSftpOpenWith,
+      );
+      const canOpenWithEntry = canUseFileActions && shouldShowOpenWithEntry;
+      const openWithApplications = targetEntry ? (openWithApplicationsByPath[targetEntry.path] ?? []) : [];
+      const isLoadingOpenWithApplications = Boolean(targetEntry && loadingOpenWithPath === targetEntry.path);
       const canOpenSshHere = canUseFileActions && (!isMultiTarget || !targetEntry);
       const canMutateEntry = canUseFileActions && targetEntries.length > 0;
       const canRenameEntry = canMutateEntry && targetEntries.length === 1;
@@ -1983,18 +2124,79 @@ const SFTP: React.FC<SFTPProps> = ({
                 {t('sftp.actions.open')}
                 {showShortcuts ? <ShortcutComponent>Enter</ShortcutComponent> : null}
               </ItemComponent>
-              <ItemComponent
-                icon={FolderOpen}
-                disabled={!canOpenInNewTab}
-                onSelect={() => {
-                  if (targetEntry) {
-                    handleOpenDirectoryInNewTab(targetEntry);
-                  }
-                }}
-              >
-                {t('sftp.actions.openInNewTab')}
-                {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
-              </ItemComponent>
+              {shouldShowOpenInNewTab ? (
+                <ItemComponent
+                  icon={FolderOpen}
+                  disabled={!canOpenInNewTab}
+                  onSelect={() => {
+                    if (targetEntry) {
+                      handleOpenDirectoryInNewTab(targetEntry);
+                    }
+                  }}
+                >
+                  {t('sftp.actions.openInNewTab')}
+                  {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
+                </ItemComponent>
+              ) : null}
+              {shouldShowOpenWithEntry && window.electron?.platform === 'win32' ? (
+                <ItemComponent
+                  disabled={!canOpenWithEntry}
+                  onSelect={() => {
+                    if (targetEntry) {
+                      void handleOpenEntryWithPicker(targetEntry);
+                    }
+                  }}
+                >
+                  {t('sftp.actions.openWith')}
+                </ItemComponent>
+              ) : null}
+              {shouldShowOpenWithEntry && window.electron?.platform === 'darwin' ? (
+                <SubComponent>
+                  <SubTriggerComponent
+                    disabled={!canOpenWithEntry}
+                    onPointerMove={() => {
+                      if (targetEntry && openWithApplications.length === 0 && !isLoadingOpenWithApplications) {
+                        void loadOpenWithApplications(targetEntry);
+                      }
+                    }}
+                    onFocus={() => {
+                      if (targetEntry && openWithApplications.length === 0 && !isLoadingOpenWithApplications) {
+                        void loadOpenWithApplications(targetEntry);
+                      }
+                    }}
+                  >
+                    {t('sftp.actions.openWith')}
+                  </SubTriggerComponent>
+                  <SubContentComponent>
+                    {isLoadingOpenWithApplications ? (
+                      <ItemComponent disabled>{t('sftp.openWithLoading')}</ItemComponent>
+                    ) : openWithApplications.length > 0 ? (
+                      openWithApplications.map((application) => (
+                        <ItemComponent
+                          key={application.id}
+                          onSelect={() => {
+                            if (targetEntry) {
+                              void handleOpenEntryWithApplication(targetEntry, application);
+                            }
+                          }}
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <img
+                              alt=""
+                              aria-hidden="true"
+                              className="h-4 w-4 shrink-0"
+                              src={application.iconDataUrl ?? SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK}
+                            />
+                            <span className="truncate">{application.name}</span>
+                          </span>
+                        </ItemComponent>
+                      ))
+                    ) : (
+                      <ItemComponent disabled>{t('sftp.openWithNoApplications')}</ItemComponent>
+                    )}
+                  </SubContentComponent>
+                </SubComponent>
+              ) : null}
               {shouldShowOpenSeparator ? <SeparatorComponent /> : null}
             </>
           ) : null}
@@ -2174,6 +2376,7 @@ const SFTP: React.FC<SFTPProps> = ({
       beginCreateEntryInDirectory,
       beginRenameEntry,
       canUseFileActions,
+      canUseSftpOpenWith,
       clipboardState,
       currentPath,
       handleCopyEntries,
@@ -2184,8 +2387,13 @@ const SFTP: React.FC<SFTPProps> = ({
       handleDownloadEntry,
       handleOpenDirectoryInNewTab,
       handleOpenEntry,
+      handleOpenEntryWithApplication,
+      handleOpenEntryWithPicker,
       handleOpenSshAtEntryLocation,
       handlePasteEntry,
+      loadOpenWithApplications,
+      loadingOpenWithPath,
+      openWithApplicationsByPath,
       handleTreeDirectoryRefresh,
       runInlineEditMenuActionAfterClose,
       selectedEntries,

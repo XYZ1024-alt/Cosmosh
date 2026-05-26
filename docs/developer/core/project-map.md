@@ -21,8 +21,11 @@ flowchart TB
 - **Role**: Electron host process.
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
+  - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
   - `src/preload.ts`: secure renderer bridge.
   - `src/security/database-encryption.ts`: DB path/key handling helpers.
+  - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
+  - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.
 
 ### `packages/renderer`
 
@@ -42,7 +45,7 @@ flowchart TB
   - `src/http/routes`: REST endpoints for settings, SSH entities, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution).
-  - `src/sftp`: read-only SFTP browser session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
+  - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults and validation parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
@@ -90,7 +93,7 @@ flowchart TD
 
 ## 5. Not Implemented Yet (Planned)
 
-- Full SFTP file transfer module (upload/download streams, write operations, transfer queue, and file preview/editor integration).
+- Full SFTP transfer queue module (upload streams, directory download, progress/cancellation, conflict handling, and editor write-back integration).
 - Dedicated shared `common` package is not present yet; current sharing is done through `api-contract` + `i18n`.
 
 ## 6. Common Change Scenarios
@@ -99,7 +102,7 @@ flowchart TD
 
 1. Define or reuse contract types in `packages/api-contract` when needed.
 2. Expose the bridge API in `packages/main/src/preload.ts`.
-3. Add `ipcMain` handler and backend proxy in `packages/main/src/index.ts`.
+3. Add `ipcMain` handler in `packages/main/src/ipc/*` and, when needed, backend proxy wiring.
 4. Wire renderer transport wrapper in `packages/renderer/src/lib`.
 5. Update `docs/developer/core/ipc-protocol.md` in the same change set.
 

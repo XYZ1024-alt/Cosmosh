@@ -32,6 +32,13 @@
       "filter": [
         "**/*"
       ]
+    },
+    {
+      "from": "resources/helpers",
+      "to": "helpers",
+      "filter": [
+        "**/*"
+      ]
     }
   ],
   "mac": {

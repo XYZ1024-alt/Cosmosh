@@ -21,8 +21,11 @@ flowchart TB
 - **角色**：Electron 宿主进程。
 - **关键文件**：
   - `src/index.ts`：应用启动、窗口配置、IPC 处理器、后端子进程管理。
+  - `src/ipc/register-app-utility-ipc.ts`：特权应用工具 IPC，例如原生对话框、文件管理器集成、SFTP 临时文件创建，以及已校验的系统打开/打开方式流程。
   - `src/preload.ts`：安全渲染层桥接。
   - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助。
+  - `resources/helpers`：打包的系统 helper，包括 macOS NSWorkspace SFTP 打开方式 helper 源码/二进制。
+  - `scripts/compile-macos-open-with-helper.mjs`：仅 macOS 生效的构建钩子，在打包前编译 SFTP 打开方式 helper。
 
 ### `packages/renderer`
 
@@ -42,7 +45,7 @@ flowchart TB
   - `src/http/routes`：设置、SSH 实体与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测）。
-  - `src/sftp`：只读 SFTP 浏览会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
+  - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值与请求校验解析。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
@@ -90,7 +93,7 @@ flowchart TD
 
 ## 5. 尚未实现（规划中）
 
-- 完整 SFTP 文件传输模块（上传/下载流、写操作、传输队列与文件预览/编辑器集成）。
+- 完整 SFTP 传输队列模块（上传流、目录下载、进度/取消、冲突处理与编辑器写回集成）。
 - 尚无独立 `common` 共享包；当前共享通过 `api-contract` + `i18n` 实现。
 
 ## 6. 常见改动场景
@@ -99,7 +102,7 @@ flowchart TD
 
 1. 需要时先在 `packages/api-contract` 定义或复用契约类型。
 2. 在 `packages/main/src/preload.ts` 暴露 bridge API。
-3. 在 `packages/main/src/index.ts` 增加 `ipcMain` 处理和后端代理。
+3. 在 `packages/main/src/ipc/*` 增加 `ipcMain` 处理，并在需要时补充后端代理 wiring。
 4. 在 `packages/renderer/src/lib` 接入 transport 封装。
 5. 同步更新 `docs/zh-CN/developer/core/ipc-protocol.md`。
 
