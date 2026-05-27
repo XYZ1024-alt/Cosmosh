@@ -16,10 +16,12 @@ import {
   FolderPlus,
   Info,
   Loader2,
+  MoreHorizontal,
   MoreVertical,
   RefreshCcw,
   Scissors,
   Search,
+  Server,
   ShieldAlert,
   Terminal,
   Trash2,
@@ -30,6 +32,7 @@ import React from 'react';
 import { Button } from '../components/ui/button';
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -61,6 +64,7 @@ import {
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
+import type { InputContextMenuItem } from '../components/ui/input-context-menu-registry';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import {
@@ -73,9 +77,10 @@ import {
   renameSftpEntry,
   runSftpBatchOperation,
   trustSshFingerprint,
+  updateAppSettings,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
-import { useSettingsValue } from '../lib/settings-store';
+import { updateSettingsStoreValues, useSettingsValue, useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import type { SftpConnectionIntent } from '../types/tabs';
 
@@ -126,6 +131,17 @@ type NavigationHistoryDirection = 'back' | 'forward';
 type NavigationHistoryMenuItem = {
   path: string;
   index: number;
+};
+
+type SftpBreadcrumbItem = {
+  label: string;
+  path: string;
+};
+
+type AddressBreadcrumbRenderState = {
+  leadingItem?: SftpBreadcrumbItem;
+  hiddenItems: SftpBreadcrumbItem[];
+  visibleItems: SftpBreadcrumbItem[];
 };
 
 type NavigationHistoryControlOptions = {
@@ -202,6 +218,8 @@ const NEW_FILE_NAME = 'untitled.txt';
 const NEW_DIRECTORY_NAME = 'Untitled Folder';
 const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
+const ADDRESS_BREADCRUMB_VISIBLE_LIMIT = 5;
+const ADDRESS_BREADCRUMB_TRAILING_COUNT = 3;
 
 /**
  * Returns the parent path for a POSIX-style remote path.
@@ -368,14 +386,14 @@ const resolveEntryIcon = (entry: ApiSftpEntry): React.ReactNode => {
  * @param directoryPath Current remote directory path.
  * @returns Ordered breadcrumb labels and paths.
  */
-const buildBreadcrumbs = (directoryPath: string): Array<{ label: string; path: string }> => {
+const buildBreadcrumbs = (directoryPath: string): SftpBreadcrumbItem[] => {
   if (!directoryPath || directoryPath === '.') {
     return [{ label: '.', path: '.' }];
   }
 
   const isAbsolute = directoryPath.startsWith('/');
   const parts = directoryPath.split('/').filter(Boolean);
-  const breadcrumbs: Array<{ label: string; path: string }> = [];
+  const breadcrumbs: SftpBreadcrumbItem[] = [];
 
   if (isAbsolute) {
     breadcrumbs.push({ label: '/', path: '/' });
@@ -387,6 +405,31 @@ const buildBreadcrumbs = (directoryPath: string): Array<{ label: string; path: s
   });
 
   return breadcrumbs.length > 0 ? breadcrumbs : [{ label: directoryPath, path: directoryPath }];
+};
+
+/**
+ * Splits breadcrumbs into visible and collapsed groups for the compact address bar.
+ *
+ * @param items Full breadcrumb chain for the current path.
+ * @returns Breadcrumb groups with old ancestors collapsed behind an ellipsis menu when needed.
+ */
+const resolveAddressBreadcrumbRenderState = (items: SftpBreadcrumbItem[]): AddressBreadcrumbRenderState => {
+  if (items.length <= ADDRESS_BREADCRUMB_VISIBLE_LIMIT) {
+    return {
+      hiddenItems: [],
+      visibleItems: items,
+    };
+  }
+
+  const leadingItem = items[0];
+  const visibleItems = items.slice(-ADDRESS_BREADCRUMB_TRAILING_COUNT);
+  const hiddenEndIndex = Math.max(1, items.length - ADDRESS_BREADCRUMB_TRAILING_COUNT);
+
+  return {
+    leadingItem,
+    hiddenItems: items.slice(1, hiddenEndIndex),
+    visibleItems,
+  };
 };
 
 /**
@@ -853,8 +896,10 @@ const SFTP: React.FC<SFTPProps> = ({
   onTabTitleChange,
 }) => {
   const { error: notifyError, success: notifySuccess } = useToast();
+  const settingsValues = useSettingsValues();
   const sftpDeleteConfirmationMode = useSettingsValue('sftpDeleteConfirmationMode');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
+  const sftpShowAddressAsText = useSettingsValue('sftpShowAddressAsText');
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
@@ -864,6 +909,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const [status, setStatus] = React.useState<'idle' | 'connecting' | 'loading' | 'ready' | 'error'>('idle');
   const [errorMessage, setErrorMessage] = React.useState<string>('');
   const [pathInput, setPathInput] = React.useState<string>('.');
+  const [isAddressInputEditing, setIsAddressInputEditing] = React.useState(false);
   const [filterQuery, setFilterQuery] = React.useState<string>('');
   const [treeNodes, setTreeNodes] = React.useState<Record<string, TreeDirectoryNode>>({});
   const [navigationState, setNavigationState] = React.useState<NavigationState>({ paths: [], index: -1 });
@@ -896,6 +942,9 @@ const SFTP: React.FC<SFTPProps> = ({
   const inlineEditMenuFocusHandoffReleaseTimerRef = React.useRef<number | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const shouldRetainAddressInputAfterContextMenuRef = React.useRef(false);
+  const addressInputContextMenuTimerRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -912,6 +961,27 @@ const SFTP: React.FC<SFTPProps> = ({
   React.useEffect(() => {
     setPathInput(currentPath);
   }, [currentPath]);
+
+  React.useEffect(() => {
+    if (!isAddressInputEditing) {
+      return;
+    }
+
+    const focusFrameId = window.requestAnimationFrame(() => {
+      addressInputRef.current?.focus();
+      addressInputRef.current?.select();
+    });
+
+    return () => window.cancelAnimationFrame(focusFrameId);
+  }, [isAddressInputEditing]);
+
+  React.useEffect(() => {
+    return () => {
+      if (addressInputContextMenuTimerRef.current !== null) {
+        window.clearTimeout(addressInputContextMenuTimerRef.current);
+      }
+    };
+  }, []);
 
   /**
    * Focuses and selects the active inline-edit input after React mounts it.
@@ -1073,6 +1143,10 @@ const SFTP: React.FC<SFTPProps> = ({
   const hasSingleSelection = selectedCount === 1;
 
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
+  const addressBreadcrumbRenderState = React.useMemo(
+    () => resolveAddressBreadcrumbRenderState(breadcrumbs),
+    [breadcrumbs],
+  );
   const isBusy = status === 'connecting' || status === 'loading';
   const isOperationRunning = operationStatus === 'running';
   const shortcutModifier = React.useMemo(() => resolveShortcutModifier(), []);
@@ -1866,6 +1940,10 @@ const SFTP: React.FC<SFTPProps> = ({
     [copyTextToClipboard],
   );
 
+  const handleCopyCurrentPath = React.useCallback(async (): Promise<void> => {
+    await copyTextToClipboard(currentPath, t('sftp.feedback.pathCopied'));
+  }, [copyTextToClipboard, currentPath]);
+
   const handleCopyRelativeRemotePath = React.useCallback(
     async (relativePath: string): Promise<void> => {
       await copyTextToClipboard(relativePath, t('sftp.feedback.relativePathCopied'));
@@ -2536,13 +2614,106 @@ const SFTP: React.FC<SFTPProps> = ({
     ],
   );
 
+  const setSftpAddressDisplayMode = React.useCallback(
+    async (showAddressAsText: boolean): Promise<void> => {
+      if (settingsValues.sftpShowAddressAsText === showAddressAsText) {
+        return;
+      }
+
+      try {
+        const response = await updateAppSettings({
+          values: {
+            ...settingsValues,
+            sftpShowAddressAsText: showAddressAsText,
+          },
+        });
+
+        await updateSettingsStoreValues(response.data.item.values);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('settings.saveFailed'));
+      }
+    },
+    [notifyError, settingsValues],
+  );
+
+  const keepAddressInputDuringContextMenu = React.useCallback((): void => {
+    shouldRetainAddressInputAfterContextMenuRef.current = true;
+    if (addressInputContextMenuTimerRef.current !== null) {
+      window.clearTimeout(addressInputContextMenuTimerRef.current);
+    }
+
+    addressInputContextMenuTimerRef.current = window.setTimeout(() => {
+      shouldRetainAddressInputAfterContextMenuRef.current = false;
+      addressInputContextMenuTimerRef.current = null;
+    }, 240);
+  }, []);
+
+  const handleAddressInputPointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLInputElement>): void => {
+      if (event.button === 2) {
+        keepAddressInputDuringContextMenu();
+      }
+    },
+    [keepAddressInputDuringContextMenu],
+  );
+
   const handlePathSubmit = React.useCallback(
     (event: React.FormEvent<HTMLFormElement>): void => {
       event.preventDefault();
-      void navigateToPath(pathInput);
+      void navigateToPath(pathInput).then((didNavigate) => {
+        if (didNavigate) {
+          setIsAddressInputEditing(false);
+        }
+      });
     },
     [navigateToPath, pathInput],
   );
+
+  const handlePathInputBlur = React.useCallback((): void => {
+    if (shouldRetainAddressInputAfterContextMenuRef.current) {
+      return;
+    }
+
+    setIsAddressInputEditing(false);
+  }, []);
+
+  const handlePathInputKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>): void => {
+      if (event.key !== 'Escape') {
+        return;
+      }
+
+      event.preventDefault();
+      setPathInput(currentPath);
+      setIsAddressInputEditing(false);
+    },
+    [currentPath],
+  );
+
+  const handleEditCurrentPath = React.useCallback((): void => {
+    setPathInput(currentPath);
+    setIsAddressInputEditing(true);
+  }, [currentPath]);
+
+  const addressInputContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
+    return [
+      {
+        key: 'toggle-sftp-address-display-mode',
+        label: t('sftp.actions.showAddressAsText'),
+        checked: sftpShowAddressAsText,
+        onSelect: () => {
+          const nextShowAddressAsText = !sftpShowAddressAsText;
+          if (nextShowAddressAsText) {
+            setIsAddressInputEditing(true);
+          } else {
+            setIsAddressInputEditing(false);
+          }
+
+          void setSftpAddressDisplayMode(nextShowAddressAsText);
+        },
+      },
+    ];
+  }, [setSftpAddressDisplayMode, sftpShowAddressAsText]);
 
   const handleParentDirectory = React.useCallback((): void => {
     if (!parentPath) {
@@ -2551,6 +2722,295 @@ const SFTP: React.FC<SFTPProps> = ({
 
     void navigateToPath(parentPath);
   }, [navigateToPath, parentPath]);
+
+  const resolveBreadcrumbMenuDirectories = React.useCallback(
+    (breadcrumbPath: string): TreeDirectoryNode[] => {
+      const treeNode = treeNodes[breadcrumbPath];
+      const directoryEntries =
+        directoryCacheRef.current[breadcrumbPath]?.entries
+          .filter((entry) => entry.type === 'directory')
+          .map((entry) => ({
+            path: entry.path,
+            name: entry.name,
+            parentPath: breadcrumbPath,
+            children: treeNodes[entry.path]?.children ?? [],
+            isExpanded: treeNodes[entry.path]?.isExpanded ?? false,
+            isLoaded: treeNodes[entry.path]?.isLoaded ?? false,
+            isLoading: treeNodes[entry.path]?.isLoading ?? false,
+          })) ?? [];
+      const treeChildren =
+        treeNode?.children
+          .map((childPath) => treeNodes[childPath])
+          .filter((node): node is TreeDirectoryNode => Boolean(node)) ?? [];
+
+      return [...directoryEntries, ...treeChildren]
+        .filter((node, index, nodes) => nodes.findIndex((candidate) => candidate.path === node.path) === index)
+        .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+    },
+    [treeNodes],
+  );
+
+  const loadBreadcrumbMenuDirectories = React.useCallback(
+    (breadcrumbPath: string): void => {
+      if (!sessionId || directoryCacheRef.current[breadcrumbPath] || treeNodes[breadcrumbPath]?.isLoading) {
+        return;
+      }
+
+      void loadTreeDirectoryChildren(sessionId, breadcrumbPath);
+    },
+    [loadTreeDirectoryChildren, sessionId, treeNodes],
+  );
+
+  const renderBreadcrumbDirectoryMenuItems = React.useCallback(
+    (breadcrumbPath: string): React.ReactNode => {
+      const directories = resolveBreadcrumbMenuDirectories(breadcrumbPath);
+      const isLoading = Boolean(treeNodes[breadcrumbPath]?.isLoading);
+
+      if (directories.length === 0) {
+        return (
+          <DropdownMenuItem disabled>
+            <span className="min-w-0 truncate">
+              {isLoading ? t('sftp.addressMenuLoading') : t('sftp.addressMenuEmpty')}
+            </span>
+          </DropdownMenuItem>
+        );
+      }
+
+      return directories.map((directory) => (
+        <DropdownMenuItem
+          key={directory.path}
+          disabled={isBusy || directory.path === currentPath}
+          onSelect={() => {
+            void navigateToPath(directory.path);
+          }}
+        >
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={directory.path}
+          >
+            {directory.name}
+          </span>
+        </DropdownMenuItem>
+      ));
+    },
+    [currentPath, isBusy, navigateToPath, resolveBreadcrumbMenuDirectories, treeNodes],
+  );
+
+  const renderCollapsedBreadcrumbMenuItems = React.useCallback(
+    (items: SftpBreadcrumbItem[]): React.ReactNode => {
+      if (items.length === 0) {
+        return <DropdownMenuItem disabled>{t('sftp.addressMenuEmpty')}</DropdownMenuItem>;
+      }
+
+      return items.map((item) => (
+        <DropdownMenuItem
+          key={item.path}
+          disabled={isBusy || item.path === currentPath}
+          onSelect={() => {
+            void navigateToPath(item.path);
+          }}
+        >
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={item.path}
+          >
+            {item.label}
+          </span>
+        </DropdownMenuItem>
+      ));
+    },
+    [currentPath, isBusy, navigateToPath],
+  );
+
+  const renderAddressBreadcrumbSegment = React.useCallback(
+    (item: SftpBreadcrumbItem, options: { isCurrent: boolean }): React.ReactNode => {
+      const isRootBreadcrumb = item.path === '/' && item.label === '/';
+
+      return (
+        <div
+          key={item.path}
+          className="flex min-w-0 shrink items-center"
+        >
+          <button
+            type="button"
+            className={classNames(
+              'focus-visible:ring-form-ring text-home-text flex h-[28px] min-w-0 shrink items-center rounded-md px-2 text-sm outline-none transition-colors hover:bg-form-control-hover focus-visible:ring-2',
+              options.isCurrent && 'bg-form-control-hover',
+            )}
+            disabled={isBusy || item.path === currentPath}
+            aria-label={isRootBreadcrumb ? t('sftp.addressRootLabel') : undefined}
+            title={item.path}
+            onClick={(event) => {
+              event.stopPropagation();
+              void navigateToPath(item.path);
+            }}
+          >
+            {isRootBreadcrumb ? (
+              <Server
+                aria-hidden
+                className="h-4 w-4 shrink-0"
+              />
+            ) : (
+              <span className="min-w-0 max-w-[180px] truncate">{item.label}</span>
+            )}
+          </button>
+          <DropdownMenu
+            onOpenChange={(open) => {
+              if (open) {
+                loadBreadcrumbMenuDirectories(item.path);
+              }
+            }}
+          >
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                aria-label={t('sftp.addressSegmentMenuLabel', { path: item.path })}
+                className="focus-visible:ring-form-ring hover:text-home-text focus-visible:text-home-text flex h-[28px] w-6 shrink-0 items-center justify-center rounded-md text-home-text-subtle outline-none transition-colors hover:bg-form-control-hover focus-visible:bg-form-control-hover focus-visible:ring-1 focus-visible:ring-inset disabled:cursor-default disabled:opacity-50"
+                disabled={!sessionId}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              className="max-h-[min(360px,var(--radix-dropdown-menu-content-available-height))] min-w-[180px] max-w-[280px] overflow-y-auto"
+              horizontalAlign="left"
+            >
+              {renderBreadcrumbDirectoryMenuItems(item.path)}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+      );
+    },
+    [currentPath, isBusy, loadBreadcrumbMenuDirectories, navigateToPath, renderBreadcrumbDirectoryMenuItems, sessionId],
+  );
+
+  const renderAddressControl = React.useCallback((): React.ReactNode => {
+    if (sftpShowAddressAsText || isAddressInputEditing) {
+      return (
+        <form
+          className="mx-1 min-w-0 flex-1"
+          onSubmit={handlePathSubmit}
+        >
+          <Input
+            ref={addressInputRef}
+            aria-label={t('sftp.pathInputLabel')}
+            className="h-[34px] min-w-0 text-sm"
+            contextMenuItems={addressInputContextMenuItems}
+            disabled={!sessionId || isBusy}
+            value={pathInput}
+            onBlur={handlePathInputBlur}
+            onChange={(event) => setPathInput(event.target.value)}
+            onContextMenu={keepAddressInputDuringContextMenu}
+            onKeyDown={handlePathInputKeyDown}
+            onPointerDown={handleAddressInputPointerDown}
+          />
+        </form>
+      );
+    }
+
+    const addressContextMenu = (
+      <>
+        <ContextMenuItem
+          icon={Copy}
+          disabled={!sessionId}
+          onSelect={() => {
+            void handleCopyCurrentPath();
+          }}
+        >
+          {t('sftp.actions.copyAddress')}
+        </ContextMenuItem>
+        <ContextMenuItem
+          icon={Edit3}
+          disabled={!sessionId}
+          onSelect={handleEditCurrentPath}
+        >
+          {t('sftp.actions.editAddress')}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuCheckboxItem
+          checked={sftpShowAddressAsText}
+          onSelect={() => {
+            setIsAddressInputEditing(true);
+            void setSftpAddressDisplayMode(true);
+          }}
+        >
+          {t('sftp.actions.showAddressAsText')}
+        </ContextMenuCheckboxItem>
+      </>
+    );
+
+    return (
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div
+            role="group"
+            aria-label={t('sftp.pathInputLabel')}
+            className="menu-menubar-field mx-1 flex h-[34px] min-w-0 flex-1 items-center overflow-hidden rounded-lg bg-form-control px-1 text-sm text-form-text outline-none [-webkit-app-region:no-drag] hover:bg-form-control-hover"
+            onClick={handleEditCurrentPath}
+            onDoubleClick={handleEditCurrentPath}
+          >
+            <div className="flex min-w-0 flex-1 items-center overflow-hidden">
+              {addressBreadcrumbRenderState.leadingItem
+                ? renderAddressBreadcrumbSegment(addressBreadcrumbRenderState.leadingItem, {
+                    isCurrent: addressBreadcrumbRenderState.leadingItem.path === currentPath,
+                  })
+                : null}
+              {addressBreadcrumbRenderState.hiddenItems.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label={t('sftp.addressCollapsedMenuLabel')}
+                      className="focus-visible:ring-form-ring text-home-text mx-0.5 flex h-[28px] w-9 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-form-control-hover focus-visible:ring-2"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <MoreHorizontal className="h-4 w-4" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    className="max-h-[min(360px,var(--radix-dropdown-menu-content-available-height))] min-w-[180px] max-w-[280px] overflow-y-auto"
+                    horizontalAlign="left"
+                  >
+                    {renderCollapsedBreadcrumbMenuItems(addressBreadcrumbRenderState.hiddenItems)}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {addressBreadcrumbRenderState.visibleItems.map((item) =>
+                renderAddressBreadcrumbSegment(item, { isCurrent: item.path === currentPath }),
+              )}
+              <button
+                type="button"
+                aria-label={t('sftp.actions.editAddress')}
+                className="min-w-[16px] flex-1 self-stretch outline-none"
+                onClick={handleEditCurrentPath}
+              />
+            </div>
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="min-w-[180px]">{addressContextMenu}</ContextMenuContent>
+      </ContextMenu>
+    );
+  }, [
+    addressBreadcrumbRenderState,
+    addressInputContextMenuItems,
+    currentPath,
+    handleCopyCurrentPath,
+    handleEditCurrentPath,
+    handleAddressInputPointerDown,
+    handlePathInputBlur,
+    handlePathInputKeyDown,
+    handlePathSubmit,
+    isAddressInputEditing,
+    isBusy,
+    keepAddressInputDuringContextMenu,
+    pathInput,
+    renderAddressBreadcrumbSegment,
+    renderCollapsedBreadcrumbMenuItems,
+    setSftpAddressDisplayMode,
+    sessionId,
+    sftpShowAddressAsText,
+  ]);
 
   const handleEntrySelect = React.useCallback(
     (entry: ApiSftpEntry, event: SftpSelectionClickEvent): void => {
@@ -3020,18 +3480,7 @@ const SFTP: React.FC<SFTPProps> = ({
             </Tooltip>
           </div>
 
-          <form
-            className="mx-1 min-w-0 flex-1"
-            onSubmit={handlePathSubmit}
-          >
-            <Input
-              aria-label={t('sftp.pathInputLabel')}
-              className="h-[34px] min-w-0 text-sm"
-              disabled={!sessionId || isBusy}
-              value={pathInput}
-              onChange={(event) => setPathInput(event.target.value)}
-            />
-          </form>
+          {renderAddressControl()}
 
           <MenubarSeparator vertical />
 

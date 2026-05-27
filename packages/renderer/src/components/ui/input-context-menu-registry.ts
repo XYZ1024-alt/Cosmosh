@@ -9,6 +9,7 @@ export type InputContextMenuItem = {
   label: string;
   onSelect: (target: InputMenuTarget) => void;
   disabled?: boolean | ((target: InputMenuTarget) => boolean);
+  checked?: boolean | ((target: InputMenuTarget) => boolean);
   icon?: MenuIconComponent;
   shortcut?: string;
 };

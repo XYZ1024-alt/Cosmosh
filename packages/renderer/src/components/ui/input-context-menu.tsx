@@ -4,6 +4,7 @@ import React from 'react';
 import { getLocale, onLocaleChange, t } from '../../lib/i18n';
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -161,6 +162,9 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
 const resolveDisabled = (item: InputContextMenuItem, target: InputMenuTarget): boolean =>
   typeof item.disabled === 'function' ? item.disabled(target) : item.disabled === true;
 
+const resolveChecked = (item: InputContextMenuItem, target: InputMenuTarget): boolean =>
+  typeof item.checked === 'function' ? item.checked(target) : item.checked === true;
+
 const InputContextMenuProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
   const triggerRef = React.useRef<HTMLSpanElement | null>(null);
   const clearTargetTimerRef = React.useRef<number | null>(null);
@@ -269,18 +273,35 @@ const InputContextMenuProvider: React.FC<React.PropsWithChildren> = ({ children 
     const nodes: React.ReactNode[] = [<ContextMenuSeparator key="sep-custom" />];
 
     items.forEach((item) => {
+      const handleSelect = (): void => {
+        if (!target) {
+          return;
+        }
+
+        item.onSelect(target);
+      };
+
+      if (item.checked !== undefined) {
+        nodes.push(
+          <ContextMenuCheckboxItem
+            key={item.key}
+            checked={resolveChecked(item, target)}
+            disabled={!target || resolveDisabled(item, target)}
+            onSelect={handleSelect}
+          >
+            {item.label}
+            {item.shortcut && <ContextMenuShortcut>{item.shortcut}</ContextMenuShortcut>}
+          </ContextMenuCheckboxItem>,
+        );
+        return;
+      }
+
       nodes.push(
         <ContextMenuItem
           key={item.key}
           icon={item.icon}
           disabled={!target || resolveDisabled(item, target)}
-          onSelect={() => {
-            if (!target) {
-              return;
-            }
-
-            item.onSelect(target);
-          }}
+          onSelect={handleSelect}
         >
           {item.label}
           {item.shortcut && <ContextMenuShortcut>{item.shortcut}</ContextMenuShortcut>}

@@ -310,6 +310,10 @@
         "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
         "title": "Confirm Before Delete"
       },
+      "sftpShowAddressAsText": {
+        "description": "Always shows the SFTP address bar as a plain editable path input instead of the breadcrumb control.",
+        "title": "Show Address as Text"
+      },
       "sftpShowParentDirectoryEntry": {
         "description": "Shows a \"..\" row at the top of the SFTP file list for navigating to the parent directory.",
         "title": "Show Parent Directory Row"
@@ -627,11 +631,13 @@
       "back": "Back",
       "collapse": "Collapse Folder",
       "copy": "Copy",
+      "copyAddress": "Copy Address",
       "copyDirectoryRelativePath": "Copy Folder Relative Path",
       "copyFileRelativePath": "Copy File Relative Path",
       "copyPath": "Copy File Address",
       "cut": "Cut",
       "delete": "Delete",
+      "editAddress": "Edit Address",
       "expand": "Expand Folder",
       "forward": "Forward",
       "historyJump": "Jump to {path}",
@@ -649,8 +655,14 @@
       "saveAs": "Save to...",
       "saveToDownloads": "Save to Downloads",
       "search": "Search Current Directory",
+      "showAddressAsText": "Show Address as Text",
       "up": "Parent Directory"
     },
+    "addressCollapsedMenuLabel": "Show hidden path levels",
+    "addressMenuEmpty": "No folders",
+    "addressMenuLoading": "Loading folders...",
+    "addressRootLabel": "Remote Server Root",
+    "addressSegmentMenuLabel": "Show folders under {path}",
     "columns": {
       "mode": "Mode",
       "modified": "Modified",

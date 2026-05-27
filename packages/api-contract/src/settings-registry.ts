@@ -67,6 +67,7 @@ export interface SettingsValues {
   sshReconnectOnFocus: boolean;
   sftpDeleteConfirmationMode: 'always' | 'batch' | 'shortcut' | 'off';
   sftpShowParentDirectoryEntry: boolean;
+  sftpShowAddressAsText: boolean;
 }
 
 export type SettingKey = keyof SettingsValues;
@@ -378,6 +379,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'sftp.browser.showParentDirectoryEntry',
     commandActionId: 'settings.sftp.browser.showParentDirectoryEntry.toggle',
     searchTerms: ['sftp', 'parent directory', 'up', '..', 'file list', 'browser'],
+  },
+  {
+    key: 'sftpShowAddressAsText',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.sftpShowAddressAsText.title',
+    descriptionI18nKey: 'settings.items.sftpShowAddressAsText.description',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'switch',
+    path: 'sftp.browser.showAddressAsText',
+    commandActionId: 'settings.sftp.browser.showAddressAsText.toggle',
+    searchTerms: ['sftp', 'address', 'path', 'breadcrumb', 'text', 'browser'],
   },
   {
     key: 'showFullServerAddress',

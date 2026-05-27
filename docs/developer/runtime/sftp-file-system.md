@@ -8,11 +8,11 @@ Implemented in v1:
 
 - Home server context menu and file action can open an SFTP tab.
 - Each SFTP tab creates a backend SFTP session and owns that session lifecycle.
-- Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
+- Directory listing supports breadcrumb path navigation with editable text fallback, persistent text-address display mode, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries and metadata details. Double-clicking a regular file downloads it into the Cosmosh-controlled SFTP temp directory and opens it with the OS default application.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
-- SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
+- SFTP settings control delete-confirmation scope, whether the center file list shows a leading `..` parent-directory row, and whether the address bar always renders as text.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
@@ -183,7 +183,8 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Keep the tree panel narrow and task-oriented, currently aligned to the 250 px Cosmosh sidebar rhythm.
 - Use internal UI wrappers (`Button`, `Tooltip`, `Dialog`) and tokenized classes.
 - SFTP tabs use a folder icon and inherit the server color background when the shared SSH/SFTP server-visual tab setting is enabled.
-- Keep the toolbar compact and ordered as path controls, remote path input, file-operation buttons, and current-directory filter.
+- Keep the toolbar compact and ordered as path controls, remote path address bar, file-operation buttons, and current-directory filter.
+- The address bar defaults to a Windows-style breadcrumb control. Segment labels navigate to that path, segment arrows open that level's available child directories from the renderer directory cache or lazy-load them from the active session, and the blank area temporarily switches back to the editable text input. The address-bar context menu keeps `Copy Address` and `Edit Address`, plus a `Show Address as Text` action that persists `sftpShowAddressAsText`. When that setting is enabled, the address bar always renders as the plain input, including when it is not actively focused; the input context menu exposes the reverse display action so users can return to the breadcrumb control without leaving the field first.
 - The back and forward toolbar controls use plain directional arrow icons. Left-click jumps one step; right-click opens a context menu only when reachable history targets exist, listing them in nearest-first order to match desktop file-manager navigation.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
@@ -199,7 +200,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - The optional `..` parent-directory row belongs to the center file list only. It must render before real entries, stay out of selection and detail state, use double-click/Enter activation like regular file rows, and show a disabled state at the remote root when no parent path exists.
 - Show the current directory and all parent directories in the tree; expanding a tree row loads its child directory list and shows an inline spinner while loading.
 - Match file-manager behavior: expanding or collapsing a tree row does not navigate the center directory list. Opening a directory from the center list or path toolbar changes the current directory.
-- Preserve stable list columns and truncate long names/paths instead of allowing layout shift.
+- Preserve stable list columns and truncate long names/paths instead of allowing layout shift. The address bar must collapse older path levels behind an ellipsis menu when the path is too deep so the current directory remains visible within narrow toolbars.
 
 ## 8. Future Scope
 

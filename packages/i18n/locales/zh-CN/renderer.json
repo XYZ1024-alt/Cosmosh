@@ -310,6 +310,10 @@
         "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
         "title": "删除前确认"
       },
+      "sftpShowAddressAsText": {
+        "description": "始终将 SFTP 地址栏显示为可编辑的纯路径输入框，而不是层级地址栏。",
+        "title": "将地址显示为文本"
+      },
       "sftpShowParentDirectoryEntry": {
         "description": "在 SFTP 文件列表顶部显示“..”行，用于返回上一级目录。",
         "title": "在文件列表中显示返回按钮"
@@ -627,11 +631,13 @@
       "back": "后退",
       "collapse": "收起文件夹",
       "copy": "复制",
+      "copyAddress": "复制地址",
       "copyDirectoryRelativePath": "复制文件夹相对地址",
       "copyFileRelativePath": "复制文件相对地址",
       "copyPath": "复制文件地址",
       "cut": "剪切",
       "delete": "删除",
+      "editAddress": "编辑地址",
       "expand": "展开文件夹",
       "forward": "前进",
       "historyJump": "跳转到 {path}",
@@ -649,8 +655,14 @@
       "saveAs": "保存到...",
       "saveToDownloads": "保存到“下载”",
       "search": "搜索当前目录",
+      "showAddressAsText": "将地址显示为文本",
       "up": "返回上级目录"
     },
+    "addressCollapsedMenuLabel": "显示隐藏的路径层级",
+    "addressMenuEmpty": "没有文件夹",
+    "addressMenuLoading": "正在加载文件夹...",
+    "addressRootLabel": "远程服务器根目录",
+    "addressSegmentMenuLabel": "显示 {path} 下的文件夹",
     "columns": {
       "mode": "Mode",
       "modified": "修改时间",
