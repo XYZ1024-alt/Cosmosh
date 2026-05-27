@@ -480,6 +480,22 @@ const resolvePathLabel = (directoryPath: string): string => {
 };
 
 /**
+ * Formats the SFTP tab title from the active folder label and source server.
+ *
+ * @param directoryPath Current remote directory path.
+ * @param serverName Source server display name.
+ * @returns Compact browser-style tab title.
+ */
+const formatSftpTabTitle = (directoryPath: string, serverName: string): string => {
+  const trimmedServerName = serverName.trim();
+  if (!trimmedServerName) {
+    return t('tabs.page.sftp');
+  }
+
+  return `${resolvePathLabel(directoryPath)} - ${trimmedServerName}`;
+};
+
+/**
  * Sorts entries in the browser order used by the SFTP page.
  *
  * @param entries Directory entries returned by the backend.
@@ -951,12 +967,19 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [sessionId]);
 
   React.useEffect(() => {
-    const nextTitle = connectionIntent?.serverName;
-    if (nextTitle && syncedTabTitleRef.current !== nextTitle) {
+    const serverName = connectionIntent?.serverName;
+    if (!serverName) {
+      return;
+    }
+
+    const hasResolvedCurrentDirectory = status === 'ready' || navigationState.index >= 0;
+    const fallbackTitle = serverName.trim() || t('tabs.page.sftp');
+    const nextTitle = hasResolvedCurrentDirectory ? formatSftpTabTitle(currentPath, serverName) : fallbackTitle;
+    if (syncedTabTitleRef.current !== nextTitle) {
       syncedTabTitleRef.current = nextTitle;
       onTabTitleChange(nextTitle);
     }
-  }, [connectionIntent?.serverName, onTabTitleChange]);
+  }, [connectionIntent?.serverName, currentPath, navigationState.index, onTabTitleChange, status]);
 
   React.useEffect(() => {
     setPathInput(currentPath);
@@ -1561,6 +1584,8 @@ const SFTP: React.FC<SFTPProps> = ({
         setPendingCreate(null);
         setRenamingEntryPath('');
         directoryCacheRef.current = {};
+        setCurrentPath(connectionIntent.initialPath ?? '.');
+        setParentPath(undefined);
         setNavigationState({ paths: [], index: -1 });
         setFilterQuery('');
       }
