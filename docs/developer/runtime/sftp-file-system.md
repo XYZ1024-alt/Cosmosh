@@ -11,13 +11,13 @@ Implemented in v1:
 - Directory listing supports path navigation, back/forward history, parent navigation, refresh, current-directory filtering, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries and metadata details. Double-clicking a regular file downloads it into the Cosmosh-controlled SFTP temp directory and opens it with the OS default application.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
-- Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The top action bar shows a task dropdown while queued, running, or recently completed SFTP operations exist. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- Center-list context menus and the top action bar expose open, open folder in a new tab, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - SFTP settings control delete-confirmation scope and whether the center file list shows a leading `..` parent-directory row.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
 
-- upload, directory download, chmod, drag/drop, global search, file editing, and durable transfer queues with cancellation.
+- upload, directory download, chmod, drag/drop, global search, file editing, and transfer queues.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -38,7 +38,7 @@ flowchart LR
 - **API contract**: `packages/api-contract/openapi/cosmosh.openapi.yaml` defines SFTP paths, schemas, success codes, and error codes.
 - **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
 - **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/ipc/register-app-utility-ipc.ts` owns native save/open helpers, validates Cosmosh SFTP temp paths, and launches platform Open With behavior. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
-- **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, the renderer task queue, inline rename/create state, and preview state.
+- **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
 - **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP delete-confirmation and parent-directory-row preferences consumed by the renderer settings store.
 
 ## 3. API Contract
@@ -139,7 +139,6 @@ Directory results are cached in the renderer for the lifetime of the SFTP tab. R
 Mutation rules:
 
 - All mutating requests target the current live SFTP session and use POSIX-style paths.
-- User-initiated file operations are enqueued by the renderer instead of blocking the whole SFTP workbench. The tab can accept additional actions while a task is running; queued tasks run sequentially against the same backend SFTP session so operations do not race on a shared remote subsystem.
 - Empty files are created with exclusive write semantics so existing remote files are not overwritten.
 - Directory copy is recursive. The backend chooses a `copy`, `copy 2`, ... suffix when the requested destination already exists.
 - Copying a directory into itself or one of its descendants is rejected.
@@ -150,7 +149,7 @@ Mutation rules:
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
 - Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
 - On Windows, `Open With...` is a plain menu item with no submenu and first uses the shell `openas` verb through a hidden PowerShell process; the validated temp file path is passed through the child process environment to avoid PowerShell argument parsing edge cases. If that shell verb is rejected by the OS for a file type, main falls back to `rundll32.exe shell32.dll,OpenAs_RunDLL`. On macOS, `Open With...` is a submenu populated by the NSWorkspace helper in `packages/main/resources/helpers`; `prebuild` compiles the helper binary on macOS, while development can fall back to the Swift source. Linux does not render the Open With action.
-- Successful operations invalidate the current visible directory cache and revalidate the listing in the background, preserving the current list, filter, and selection until the server result arrives.
+- Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 
 ## 6. Security And Error Model
 
@@ -184,9 +183,9 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Keep the tree panel narrow and task-oriented, currently aligned to the 250 px Cosmosh sidebar rhythm.
 - Use internal UI wrappers (`Button`, `Tooltip`, `Dialog`) and tokenized classes.
 - SFTP tabs use a folder icon and inherit the server color background when the shared SSH/SFTP server-visual tab setting is enabled.
-- Keep the toolbar compact and ordered as path controls, remote path input, transient task dropdown, file-operation buttons, and current-directory filter.
+- Keep the toolbar compact and ordered as path controls, remote path input, file-operation buttons, and current-directory filter.
+- The back and forward toolbar controls use plain directional arrow icons. Left-click jumps one step; right-click opens a context menu only when reachable history targets exist, listing them in nearest-first order to match desktop file-manager navigation.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
-- Render the task control only while tasks are queued, running, or inside their short completion-retention window. The trigger uses an icon, localized label, compact count badge, tooltip, and a shared `DropdownMenu` surface with a custom content slot for task rows and progress bars.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
 - Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.
 - Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, and `Shift` selects the visible range from the current anchor. Row context menus preserve an existing multi-selection when the clicked row is already selected.

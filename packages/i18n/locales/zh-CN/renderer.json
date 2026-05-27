@@ -634,6 +634,7 @@
       "delete": "删除",
       "expand": "展开文件夹",
       "forward": "前进",
+      "historyJump": "跳转到 {path}",
       "more": "更多操作",
       "newFile": "新建文件",
       "newFolder": "新建文件夹",

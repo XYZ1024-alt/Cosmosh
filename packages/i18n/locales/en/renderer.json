@@ -634,6 +634,7 @@
       "delete": "Delete",
       "expand": "Expand Folder",
       "forward": "Forward",
+      "historyJump": "Jump to {path}",
       "more": "More Actions",
       "newFile": "New File",
       "newFolder": "New Folder",

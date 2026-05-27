@@ -1,11 +1,10 @@
 import type { ApiSftpEntry, SettingsValues } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import {
+  ArrowLeft,
+  ArrowRight,
   ArrowUp,
-  ChevronLeft,
   ChevronRight,
-  CircleCheck,
-  CircleX,
   Clipboard,
   Copy,
   Download,
@@ -15,9 +14,7 @@ import {
   Folder,
   FolderOpen,
   FolderPlus,
-  Hourglass,
   Info,
-  ListTodo,
   Loader2,
   MoreVertical,
   RefreshCcw,
@@ -58,7 +55,6 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
-  DropdownMenuSlot,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -125,6 +121,21 @@ type NavigationState = {
   index: number;
 };
 
+type NavigationHistoryDirection = 'back' | 'forward';
+
+type NavigationHistoryMenuItem = {
+  path: string;
+  index: number;
+};
+
+type NavigationHistoryControlOptions = {
+  label: string;
+  icon: React.ReactNode;
+  items: NavigationHistoryMenuItem[];
+  disabled: boolean;
+  onStep: () => void;
+};
+
 type ClipboardState = {
   mode: 'copy' | 'cut';
   entries: ApiSftpEntry[];
@@ -162,41 +173,6 @@ type SftpDeleteConfirmationPrompt = {
 
 type InlineEditMenuAction = () => void | Promise<void>;
 
-type SftpTaskStatus = 'queued' | 'running' | 'success' | 'failed';
-
-type SftpTaskProgress = {
-  completed: number;
-  total: number;
-};
-
-type SftpTaskState = {
-  id: string;
-  label: string;
-  detail: string;
-  status: SftpTaskStatus;
-  createdAt: number;
-  startedAt?: number;
-  finishedAt?: number;
-  progress?: SftpTaskProgress;
-};
-
-type SftpTaskOptions = {
-  label: string;
-  detail?: string;
-  progress?: SftpTaskProgress;
-};
-
-type SftpTaskContext = {
-  taskId: string;
-  isCurrent: () => boolean;
-  update: (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>) => void;
-};
-
-type SftpQueuedTask = {
-  id: string;
-  run: () => Promise<void>;
-};
-
 type SftpOpenWithApplication = {
   id: string;
   name: string;
@@ -226,26 +202,6 @@ const NEW_FILE_NAME = 'untitled.txt';
 const NEW_DIRECTORY_NAME = 'Untitled Folder';
 const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
-const SFTP_TASK_RETENTION_MS = 4500;
-const SFTP_TASK_STATUS_ORDER: Record<SftpTaskStatus, number> = {
-  running: 0,
-  queued: 1,
-  failed: 2,
-  success: 3,
-};
-
-/**
- * Creates a stable renderer-local SFTP task id.
- *
- * @returns Unique task id for the current tab runtime.
- */
-const createSftpTaskId = (): string => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID();
-  }
-
-  return `sftp-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-};
 
 /**
  * Returns the parent path for a POSIX-style remote path.
@@ -431,6 +387,34 @@ const buildBreadcrumbs = (directoryPath: string): Array<{ label: string; path: s
   });
 
   return breadcrumbs.length > 0 ? breadcrumbs : [{ label: directoryPath, path: directoryPath }];
+};
+
+/**
+ * Builds the one-click jump targets exposed by the SFTP back/forward context menus.
+ *
+ * @param state Current in-memory path history for the tab.
+ * @param direction Direction controlled by the toolbar button.
+ * @returns Reachable history entries, ordered from nearest jump target to farthest.
+ */
+const buildNavigationHistoryMenuItems = (
+  state: NavigationState,
+  direction: NavigationHistoryDirection,
+): NavigationHistoryMenuItem[] => {
+  if (state.index < 0 || state.paths.length === 0) {
+    return [];
+  }
+
+  if (direction === 'back') {
+    return state.paths
+      .slice(0, state.index)
+      .map((path, index) => ({ path, index }))
+      .reverse();
+  }
+
+  return state.paths.slice(state.index + 1).map((path, offset) => ({
+    path,
+    index: state.index + offset + 1,
+  }));
 };
 
 /**
@@ -760,45 +744,6 @@ const formatBatchPartialFailureFeedback = (summary: {
 };
 
 /**
- * Formats a compact progress label for queued SFTP tasks.
- *
- * @param progress Optional task progress counts.
- * @returns Localized progress label.
- */
-const formatSftpTaskProgressLabel = (progress?: SftpTaskProgress): string => {
-  if (!progress) {
-    return t('sftp.tasks.progressIndeterminate');
-  }
-
-  return t('sftp.tasks.progressCount', {
-    completed: progress.completed,
-    total: progress.total,
-  });
-};
-
-/**
- * Formats a compact tooltip for the toolbar task trigger.
- *
- * @param runningCount Running task count.
- * @param queuedCount Queued task count.
- * @returns Localized toolbar task summary.
- */
-const formatSftpTaskToolbarLabel = (runningCount: number, queuedCount: number): string => {
-  if (runningCount > 0 && queuedCount > 0) {
-    return t('sftp.tasks.toolbarMixed', {
-      queued: queuedCount,
-      running: runningCount,
-    });
-  }
-
-  if (queuedCount > 0) {
-    return t('sftp.tasks.toolbarQueued', { count: queuedCount });
-  }
-
-  return t('sftp.tasks.toolbarRunning', { count: runningCount });
-};
-
-/**
  * Decides whether a destructive SFTP delete needs a confirmation prompt.
  *
  * @param mode User-configured confirmation mode.
@@ -878,26 +823,6 @@ const resolveRenameTargetPath = (entry: ApiSftpEntry, nextName: string): string 
 };
 
 /**
- * Checks whether the clipboard still matches the snapshot used by a queued task.
- *
- * @param current Current clipboard state.
- * @param mode Clipboard mode captured when the task was queued.
- * @param entries Entries captured when the task was queued.
- * @returns True when clearing the clipboard will not discard a newer user action.
- */
-const isSameClipboardSnapshot = (
-  current: ClipboardState | null,
-  mode: ClipboardState['mode'],
-  entries: readonly ApiSftpEntry[],
-): boolean => {
-  return (
-    current?.mode === mode &&
-    current.entries.length === entries.length &&
-    current.entries.every((entry, index) => entry.path === entries[index]?.path && entry.type === entries[index]?.type)
-  );
-};
-
-/**
  * Builds a minimal directory entry for tree-node menu actions.
  *
  * @param node Directory tree node opened through the context menu.
@@ -944,7 +869,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const [navigationState, setNavigationState] = React.useState<NavigationState>({ paths: [], index: -1 });
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
   const [clipboardState, setClipboardState] = React.useState<ClipboardState | null>(null);
-  const [sftpTasks, setSftpTasks] = React.useState<SftpTaskState[]>([]);
+  const [operationStatus, setOperationStatus] = React.useState<'idle' | 'running'>('idle');
   const [isRefreshingDirectory, setIsRefreshingDirectory] = React.useState(false);
   const [renamingEntryPath, setRenamingEntryPath] = React.useState<string>('');
   const [renameInput, setRenameInput] = React.useState<string>('');
@@ -963,17 +888,12 @@ const SFTP: React.FC<SFTPProps> = ({
   const pendingDeleteConfirmationResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
-  const currentPathRef = React.useRef<string>('.');
   const syncedTabTitleRef = React.useRef<string>('');
   const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
   const inlineEditMenuActionTimerRef = React.useRef<number | null>(null);
   const inlineEditMenuFocusHandoffReleaseTimerRef = React.useRef<number | null>(null);
-  const taskQueueRef = React.useRef<SftpQueuedTask[]>([]);
-  const isTaskQueueRunningRef = React.useRef(false);
-  const taskQueueGenerationRef = React.useRef(0);
-  const taskRetentionTimersRef = React.useRef<Record<string, number>>({});
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
 
@@ -991,60 +911,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   React.useEffect(() => {
     setPathInput(currentPath);
-    currentPathRef.current = currentPath;
   }, [currentPath]);
-
-  /**
-   * Clears the delayed removal timer for one completed task.
-   *
-   * @param taskId Task id to clear.
-   * @returns void.
-   */
-  const clearTaskRetentionTimer = React.useCallback((taskId: string): void => {
-    const timerId = taskRetentionTimersRef.current[taskId];
-    if (timerId === undefined) {
-      return;
-    }
-
-    window.clearTimeout(timerId);
-    delete taskRetentionTimersRef.current[taskId];
-  }, []);
-
-  /**
-   * Clears every scheduled task cleanup timer.
-   *
-   * @returns void.
-   */
-  const clearAllTaskRetentionTimers = React.useCallback((): void => {
-    Object.values(taskRetentionTimersRef.current).forEach((timerId) => window.clearTimeout(timerId));
-    taskRetentionTimersRef.current = {};
-  }, []);
-
-  /**
-   * Schedules completed tasks to disappear after users have time to inspect them.
-   *
-   * @param taskId Completed task id.
-   * @returns void.
-   */
-  const scheduleTaskRetentionCleanup = React.useCallback(
-    (taskId: string): void => {
-      clearTaskRetentionTimer(taskId);
-      taskRetentionTimersRef.current[taskId] = window.setTimeout(() => {
-        delete taskRetentionTimersRef.current[taskId];
-        setSftpTasks((previous) => previous.filter((task) => task.id !== taskId));
-      }, SFTP_TASK_RETENTION_MS);
-    },
-    [clearTaskRetentionTimer],
-  );
-
-  React.useEffect(() => {
-    return () => {
-      clearAllTaskRetentionTimers();
-      taskQueueGenerationRef.current += 1;
-      taskQueueRef.current = [];
-      isTaskQueueRunningRef.current = false;
-    };
-  }, [clearAllTaskRetentionTimers]);
 
   /**
    * Focuses and selects the active inline-edit input after React mounts it.
@@ -1207,34 +1074,19 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
   const isBusy = status === 'connecting' || status === 'loading';
-  const runningTaskCount = React.useMemo(
-    () => sftpTasks.filter((task) => task.status === 'running').length,
-    [sftpTasks],
-  );
-  const queuedTaskCount = React.useMemo(() => sftpTasks.filter((task) => task.status === 'queued').length, [sftpTasks]);
-  const activeTaskCount = runningTaskCount + queuedTaskCount;
-  const hasVisibleTasks = sftpTasks.length > 0;
-  const sortedSftpTasks = React.useMemo(() => {
-    return [...sftpTasks].sort((left, right) => {
-      const statusDelta = SFTP_TASK_STATUS_ORDER[left.status] - SFTP_TASK_STATUS_ORDER[right.status];
-      if (statusDelta !== 0) {
-        return statusDelta;
-      }
-
-      return left.createdAt - right.createdAt;
-    });
-  }, [sftpTasks]);
-  const taskToolbarLabel = React.useMemo(
-    () =>
-      activeTaskCount > 0
-        ? formatSftpTaskToolbarLabel(runningTaskCount, queuedTaskCount)
-        : t('sftp.tasks.toolbarRecent', { count: sftpTasks.length }),
-    [activeTaskCount, queuedTaskCount, runningTaskCount, sftpTasks.length],
-  );
+  const isOperationRunning = operationStatus === 'running';
   const shortcutModifier = React.useMemo(() => resolveShortcutModifier(), []);
   const canGoBack = navigationState.index > 0;
   const canGoForward = navigationState.index >= 0 && navigationState.index < navigationState.paths.length - 1;
-  const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy;
+  const backNavigationHistoryItems = React.useMemo(
+    () => buildNavigationHistoryMenuItems(navigationState, 'back'),
+    [navigationState],
+  );
+  const forwardNavigationHistoryItems = React.useMemo(
+    () => buildNavigationHistoryMenuItems(navigationState, 'forward'),
+    [navigationState],
+  );
+  const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy && !isOperationRunning;
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
 
@@ -1634,11 +1486,6 @@ const SFTP: React.FC<SFTPProps> = ({
         setLoadingOpenWithPath('');
         setPendingCreate(null);
         setRenamingEntryPath('');
-        setSftpTasks([]);
-        taskQueueGenerationRef.current += 1;
-        taskQueueRef.current = [];
-        isTaskQueueRunningRef.current = false;
-        clearAllTaskRetentionTimers();
         directoryCacheRef.current = {};
         setNavigationState({ paths: [], index: -1 });
         setFilterQuery('');
@@ -1668,7 +1515,6 @@ const SFTP: React.FC<SFTPProps> = ({
     connectionIntent?.createdAt,
     connectionIntent?.initialPath,
     connectionIntent?.serverId,
-    clearAllTaskRetentionTimers,
     createSessionForIntent,
     notifyError,
     resetSelection,
@@ -1708,6 +1554,88 @@ const SFTP: React.FC<SFTPProps> = ({
     },
     [loadDirectory, navigationState.paths, sessionId],
   );
+
+  /**
+   * Renders direct SFTP history jump choices for a toolbar navigation button.
+   *
+   * @param items Reachable history targets for the button direction.
+   * @returns Context-menu items that jump directly to the selected history entry.
+   */
+  const renderNavigationHistoryMenuItems = React.useCallback(
+    (items: NavigationHistoryMenuItem[]): React.ReactNode => {
+      return items.map((item) => (
+        <ContextMenuItem
+          key={`${item.index}:${item.path}`}
+          aria-label={t('sftp.actions.historyJump', { path: item.path })}
+          disabled={isBusy}
+          onSelect={() => {
+            void handleHistoryJump(item.index);
+          }}
+        >
+          <span
+            className="min-w-0 flex-1 truncate"
+            title={t('sftp.actions.historyJump', { path: item.path })}
+          >
+            {item.path}
+          </span>
+        </ContextMenuItem>
+      ));
+    },
+    [handleHistoryJump, isBusy],
+  );
+
+  /**
+   * Renders a toolbar history button, only mounting its context menu when it has jump targets.
+   *
+   * @param options Button label, icon, enabled state, step handler, and direct jump targets.
+   * @returns Toolbar navigation control with optional history context menu.
+   */
+  const renderNavigationHistoryControl = ({
+    label,
+    icon,
+    items,
+    disabled,
+    onStep,
+  }: NavigationHistoryControlOptions): React.ReactNode => {
+    if (items.length === 0) {
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label={label}
+              variant="ghostIcon"
+              disabled={disabled}
+              onClick={onStep}
+            >
+              {icon}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+      );
+    }
+
+    return (
+      <ContextMenu>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <ContextMenuTrigger asChild>
+              <Button
+                aria-label={label}
+                variant="ghostIcon"
+                disabled={disabled}
+                onClick={onStep}
+              >
+                {icon}
+              </Button>
+            </ContextMenuTrigger>
+          </TooltipTrigger>
+          <TooltipContent>{label}</TooltipContent>
+        </Tooltip>
+        <ContextMenuContent className="min-w-[220px]">{renderNavigationHistoryMenuItems(items)}</ContextMenuContent>
+      </ContextMenu>
+    );
+  };
 
   const navigateToPath = React.useCallback(
     async (directoryPath: string): Promise<boolean> => {
@@ -1761,179 +1689,32 @@ const SFTP: React.FC<SFTPProps> = ({
     [currentPath, invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren, sessionId],
   );
 
-  const refreshCurrentDirectoryAfterOperation = React.useCallback(
-    async (affectedDirectoryPaths: readonly string[] = []): Promise<void> => {
-      const activeSessionId = sessionIdRef.current;
-      if (!activeSessionId) {
-        return;
-      }
-
-      const activePath = currentPathRef.current;
-      const pathsToInvalidate = Array.from(new Set([activePath, ...affectedDirectoryPaths]));
-      pathsToInvalidate.forEach((directoryPath) => {
-        invalidateDirectoryCache(directoryPath);
-      });
-      pathsToInvalidate
-        .filter((directoryPath) => directoryPath !== activePath)
-        .forEach((directoryPath) => {
-          void loadTreeDirectoryChildren(activeSessionId, directoryPath);
-        });
-
-      await loadDirectory(activeSessionId, activePath, { forceRefresh: true, preserveCurrentView: true });
-    },
-    [invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
-  );
-
-  /**
-   * Starts the next queued SFTP operation while keeping the page interactive.
-   *
-   * @returns void.
-   */
-  const flushSftpTaskQueue = React.useCallback((): void => {
-    if (isTaskQueueRunningRef.current) {
+  const refreshCurrentDirectoryAfterOperation = React.useCallback(async (): Promise<void> => {
+    if (!sessionId) {
       return;
     }
 
-    if (taskQueueRef.current.length === 0) {
-      return;
-    }
+    invalidateDirectoryCache(currentPath);
+    await loadDirectory(sessionId, currentPath, { forceRefresh: true, preserveCurrentView: true });
+  }, [currentPath, invalidateDirectoryCache, loadDirectory, sessionId]);
 
-    isTaskQueueRunningRef.current = true;
-    const activeGeneration = taskQueueGenerationRef.current;
-
-    const runQueue = async (): Promise<void> => {
-      try {
-        while (taskQueueGenerationRef.current === activeGeneration) {
-          const nextTask = taskQueueRef.current.shift();
-          if (!nextTask) {
-            return;
-          }
-
-          setSftpTasks((previous) =>
-            previous.map((task) =>
-              task.id === nextTask.id
-                ? {
-                    ...task,
-                    status: 'running',
-                    startedAt: Date.now(),
-                  }
-                : task,
-            ),
-          );
-
-          try {
-            await nextTask.run();
-            if (taskQueueGenerationRef.current !== activeGeneration) {
-              continue;
-            }
-
-            setSftpTasks((previous) =>
-              previous.map((task) =>
-                task.id === nextTask.id
-                  ? {
-                      ...task,
-                      status: 'success',
-                      finishedAt: Date.now(),
-                    }
-                  : task,
-              ),
-            );
-          } catch (error: unknown) {
-            if (taskQueueGenerationRef.current !== activeGeneration) {
-              continue;
-            }
-
-            const message = error instanceof Error ? error.message : t('sftp.operationFailed');
-            setSftpTasks((previous) =>
-              previous.map((task) =>
-                task.id === nextTask.id
-                  ? {
-                      ...task,
-                      status: 'failed',
-                      detail: message,
-                      finishedAt: Date.now(),
-                    }
-                  : task,
-              ),
-            );
-            notifyError(message);
-          } finally {
-            if (taskQueueGenerationRef.current === activeGeneration) {
-              scheduleTaskRetentionCleanup(nextTask.id);
-            }
-          }
-        }
-      } finally {
-        if (taskQueueGenerationRef.current === activeGeneration) {
-          isTaskQueueRunningRef.current = false;
-        }
-      }
-    };
-
-    void runQueue();
-  }, [notifyError, scheduleTaskRetentionCleanup]);
-
-  /**
-   * Adds one renderer-managed SFTP operation to the tab-local task list.
-   *
-   * @param options User-visible task metadata.
-   * @param operation Operation implementation to run when the queue reaches this task.
-   * @returns Created task id.
-   */
-  const enqueueSftpTask = React.useCallback(
-    (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>): string => {
-      const taskId = createSftpTaskId();
-      const task: SftpTaskState = {
-        id: taskId,
-        label: options.label,
-        detail: options.detail ?? t('sftp.tasks.pending'),
-        status: 'queued',
-        createdAt: Date.now(),
-        progress: options.progress,
-      };
-
-      clearTaskRetentionTimer(taskId);
-      const taskGeneration = taskQueueGenerationRef.current;
-      setSftpTasks((previous) => [...previous, task]);
-      taskQueueRef.current.push({
-        id: taskId,
-        run: async () => {
-          const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
-          const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>): void => {
-            if (!isCurrent()) {
-              return;
-            }
-
-            setSftpTasks((previous) =>
-              previous.map((currentTask) => (currentTask.id === taskId ? { ...currentTask, ...patch } : currentTask)),
-            );
-          };
-
-          await operation({ taskId, isCurrent, update });
-        },
-      });
-      flushSftpTaskQueue();
-      return taskId;
-    },
-    [clearTaskRetentionTimer, flushSftpTaskQueue],
-  );
-
-  /**
-   * Queues a file operation only when the active SFTP session is ready for actions.
-   *
-   * @param options User-visible task metadata.
-   * @param operation Operation implementation to run when scheduled.
-   * @returns void.
-   */
   const runSftpOperation = React.useCallback(
-    (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>): void => {
+    async (operation: () => Promise<void>): Promise<void> => {
       if (!canUseFileActions) {
         return;
       }
 
-      enqueueSftpTask(options, operation);
+      setOperationStatus('running');
+      try {
+        await operation();
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : t('sftp.operationFailed');
+        notifyError(message);
+      } finally {
+        setOperationStatus('idle');
+      }
     },
-    [canUseFileActions, enqueueSftpTask],
+    [canUseFileActions, notifyError],
   );
 
   const beginRenameEntry = React.useCallback(
@@ -1960,35 +1741,17 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      const targetPath = resolveRenameTargetPath(entry, nextName);
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.rename'),
-          detail: entry.name,
-          progress: { completed: 0, total: 1 },
-        },
-        async ({ isCurrent, update }) => {
-          update({ detail: `${entry.name} -> ${nextName}`, progress: { completed: 0, total: 1 } });
-          await renameSftpEntry(sessionId, {
-            sourcePath: entry.path,
-            targetPath,
-          });
-          update({ progress: { completed: 1, total: 1 } });
-          if (!isCurrent()) {
-            return;
-          }
-
-          notifySuccess(t('sftp.feedback.renamed'));
-          await refreshCurrentDirectoryAfterOperation([
-            resolveEntryParentPath(entry.path),
-            resolveEntryParentPath(targetPath),
-          ]);
-          if (currentPathRef.current === resolveEntryParentPath(targetPath)) {
-            setSelectedPaths([targetPath]);
-            setSelectionAnchorPath(targetPath);
-          }
-        },
-      );
+      await runSftpOperation(async () => {
+        const targetPath = resolveRenameTargetPath(entry, nextName);
+        await renameSftpEntry(sessionId, {
+          sourcePath: entry.path,
+          targetPath,
+        });
+        notifySuccess(t('sftp.feedback.renamed'));
+        await refreshCurrentDirectoryAfterOperation();
+        setSelectedPaths([targetPath]);
+        setSelectionAnchorPath(targetPath);
+      });
     },
     [cancelInlineEdit, notifySuccess, refreshCurrentDirectoryAfterOperation, renameInput, runSftpOperation, sessionId],
   );
@@ -2001,35 +1764,20 @@ const SFTP: React.FC<SFTPProps> = ({
       return;
     }
 
-    const targetPath = joinRemotePath(currentPath, nextName);
-    runSftpOperation(
-      {
-        label: draft.type === 'directory' ? t('sftp.tasks.createFolder') : t('sftp.tasks.createFile'),
-        detail: nextName,
-        progress: { completed: 0, total: 1 },
-      },
-      async ({ isCurrent, update }) => {
-        if (draft.type === 'directory') {
-          await createSftpDirectory(sessionId, { path: targetPath });
-        } else {
-          await createSftpFile(sessionId, { path: targetPath });
-        }
+    await runSftpOperation(async () => {
+      const targetPath = joinRemotePath(currentPath, nextName);
+      if (draft.type === 'directory') {
+        await createSftpDirectory(sessionId, { path: targetPath });
+        notifySuccess(t('sftp.feedback.directoryCreated'));
+      } else {
+        await createSftpFile(sessionId, { path: targetPath });
+        notifySuccess(t('sftp.feedback.fileCreated'));
+      }
 
-        update({ progress: { completed: 1, total: 1 } });
-        if (!isCurrent()) {
-          return;
-        }
-
-        notifySuccess(
-          draft.type === 'directory' ? t('sftp.feedback.directoryCreated') : t('sftp.feedback.fileCreated'),
-        );
-        await refreshCurrentDirectoryAfterOperation([resolveEntryParentPath(targetPath)]);
-        if (currentPathRef.current === resolveEntryParentPath(targetPath)) {
-          setSelectedPaths([targetPath]);
-          setSelectionAnchorPath(targetPath);
-        }
-      },
-    );
+      await refreshCurrentDirectoryAfterOperation();
+      setSelectedPaths([targetPath]);
+      setSelectionAnchorPath(targetPath);
+    });
   }, [
     cancelInlineEdit,
     currentPath,
@@ -2153,10 +1901,7 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   const downloadEntryToTemporaryPath = React.useCallback(
-    async (
-      entry: ApiSftpEntry,
-      options: { reuseCached?: boolean; shouldCache?: () => boolean } = {},
-    ): Promise<string> => {
+    async (entry: ApiSftpEntry, options: { reuseCached?: boolean } = {}): Promise<string> => {
       const cachedLocalPath = temporaryOpenFilePathsRef.current[entry.path];
       if (cachedLocalPath && options.reuseCached) {
         return cachedLocalPath;
@@ -2169,9 +1914,7 @@ const SFTP: React.FC<SFTPProps> = ({
       }
 
       await downloadEntryToLocalPath(entry, localPath);
-      if (options.shouldCache?.() ?? true) {
-        temporaryOpenFilePathsRef.current[entry.path] = localPath;
-      }
+      temporaryOpenFilePathsRef.current[entry.path] = localPath;
       return localPath;
     },
     [downloadEntryToLocalPath],
@@ -2184,25 +1927,13 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.open'),
-          detail: entry.name,
-          progress: { completed: 0, total: 1 },
-        },
-        async ({ isCurrent, update }) => {
-          const localPath = await downloadEntryToTemporaryPath(entry, { shouldCache: isCurrent });
-          update({ progress: { completed: 1, total: 1 } });
-          if (!isCurrent()) {
-            return;
-          }
-
-          const didOpen = await window.electron?.openSftpTemporaryFile(localPath);
-          if (!didOpen) {
-            throw new Error(t('sftp.openLocalFileFailed'));
-          }
-        },
-      );
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.openSftpTemporaryFile(localPath);
+        if (!didOpen) {
+          throw new Error(t('sftp.openLocalFileFailed'));
+        }
+      });
     },
     [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
   );
@@ -2214,25 +1945,13 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.openWith'),
-          detail: entry.name,
-          progress: { completed: 0, total: 1 },
-        },
-        async ({ isCurrent, update }) => {
-          const localPath = await downloadEntryToTemporaryPath(entry, { shouldCache: isCurrent });
-          update({ progress: { completed: 1, total: 1 } });
-          if (!isCurrent()) {
-            return;
-          }
-
-          const didOpen = await window.electron?.showSftpOpenWithDialog(localPath);
-          if (!didOpen) {
-            throw new Error(t('sftp.openWithFailed'));
-          }
-        },
-      );
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.showSftpOpenWithDialog(localPath);
+        if (!didOpen) {
+          throw new Error(t('sftp.openWithFailed'));
+        }
+      });
     },
     [canUseSftpOpenWith, downloadEntryToTemporaryPath, notifyError, runSftpOperation],
   );
@@ -2244,25 +1963,13 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.openWith'),
-          detail: `${entry.name} - ${application.name}`,
-          progress: { completed: 0, total: 1 },
-        },
-        async ({ isCurrent, update }) => {
-          const localPath = await downloadEntryToTemporaryPath(entry, { shouldCache: isCurrent });
-          update({ progress: { completed: 1, total: 1 } });
-          if (!isCurrent()) {
-            return;
-          }
-
-          const didOpen = await window.electron?.openSftpFileWithApplication(localPath, application.path);
-          if (!didOpen) {
-            throw new Error(t('sftp.openWithFailed'));
-          }
-        },
-      );
+      await runSftpOperation(async () => {
+        const localPath = await downloadEntryToTemporaryPath(entry);
+        const didOpen = await window.electron?.openSftpFileWithApplication(localPath, application.path);
+        if (!didOpen) {
+          throw new Error(t('sftp.openWithFailed'));
+        }
+      });
     },
     [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
   );
@@ -2303,7 +2010,7 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      handleOpenEntryWithDefaultApplication(entry);
+      await handleOpenEntryWithDefaultApplication(entry);
     },
     [handleOpenEntryWithDefaultApplication, navigateToPath, notifyError, selectSingleEntry, sessionId],
   );
@@ -2315,37 +2022,24 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      const defaultLocalPath = await resolveDefaultLocalDownloadPath(entry);
-      if (!defaultLocalPath) {
-        notifyError(t('sftp.downloadPathUnavailable'));
-        return;
-      }
+      await runSftpOperation(async () => {
+        const defaultLocalPath = await resolveDefaultLocalDownloadPath(entry);
+        if (!defaultLocalPath) {
+          throw new Error(t('sftp.downloadPathUnavailable'));
+        }
 
-      const localPath =
-        mode === 'downloads'
-          ? defaultLocalPath
-          : (await window.electron?.showSaveFileDialog(defaultLocalPath))?.filePath;
+        const localPath =
+          mode === 'downloads'
+            ? defaultLocalPath
+            : (await window.electron?.showSaveFileDialog(defaultLocalPath))?.filePath;
 
-      if (!localPath) {
-        return;
-      }
+        if (!localPath) {
+          return;
+        }
 
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.download'),
-          detail: entry.name,
-          progress: { completed: 0, total: 1 },
-        },
-        async ({ isCurrent, update }) => {
-          await downloadEntryToLocalPath(entry, localPath);
-          update({ progress: { completed: 1, total: 1 } });
-          if (!isCurrent()) {
-            return;
-          }
-
-          notifySuccess(t('sftp.feedback.downloaded', { path: localPath }));
-        },
-      );
+        await downloadEntryToLocalPath(entry, localPath);
+        notifySuccess(t('sftp.feedback.downloaded', { path: localPath }));
+      });
     },
     [
       downloadEntryToLocalPath,
@@ -2385,60 +2079,48 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      const entriesToPaste = clipboardState.entries;
-      const operationLabel = clipboardState.mode === 'copy' ? t('sftp.tasks.copy') : t('sftp.tasks.move');
-      const operationMode = clipboardState.mode;
-      runSftpOperation(
-        {
-          label: operationLabel,
-          detail: targetDirectoryPath,
-          progress: { completed: 0, total: entriesToPaste.length },
-        },
-        async ({ isCurrent, update }) => {
-          const response = await runSftpBatchOperation(sessionId, {
-            operation: operationMode === 'copy' ? 'copy' : 'move',
-            targetDirectoryPath,
-            entries: entriesToPaste.map((entry) => ({
-              path: entry.path,
-              type: entry.type,
-            })),
-          });
-          update({ progress: { completed: response.data.completedCount, total: response.data.totalCount } });
-          if (!isCurrent()) {
-            return;
-          }
+      await runSftpOperation(async () => {
+        const response = await runSftpBatchOperation(sessionId, {
+          operation: clipboardState.mode === 'copy' ? 'copy' : 'move',
+          targetDirectoryPath,
+          entries: clipboardState.entries.map((entry) => ({
+            path: entry.path,
+            type: entry.type,
+          })),
+        });
 
-          if (operationMode === 'copy') {
-            if (response.data.failedCount > 0) {
-              notifyError(formatBatchPartialFailureFeedback(response.data));
-            } else {
-              notifySuccess(
-                formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
-              );
-            }
+        if (clipboardState.mode === 'copy') {
+          if (response.data.failedCount > 0) {
+            notifyError(formatBatchPartialFailureFeedback(response.data));
           } else {
-            setClipboardState((previous) =>
-              isSameClipboardSnapshot(previous, operationMode, entriesToPaste) ? null : previous,
+            notifySuccess(
+              formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
             );
-            if (response.data.failedCount > 0) {
-              notifyError(formatBatchPartialFailureFeedback(response.data));
-            } else {
-              notifySuccess(
-                formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
-              );
-            }
           }
+        } else {
+          setClipboardState(null);
+          if (response.data.failedCount > 0) {
+            notifyError(formatBatchPartialFailureFeedback(response.data));
+          } else {
+            notifySuccess(
+              formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
+            );
+          }
+        }
 
-          await refreshCurrentDirectoryAfterOperation([
-            ...entriesToPaste.map((entry) => resolveEntryParentPath(entry.path)),
-            targetDirectoryPath,
-          ]);
-        },
-      );
+        if (targetDirectoryPath !== currentPath) {
+          invalidateDirectoryCache(targetDirectoryPath);
+          void loadTreeDirectoryChildren(sessionId, targetDirectoryPath);
+        }
+
+        await refreshCurrentDirectoryAfterOperation();
+      });
     },
     [
       clipboardState,
       currentPath,
+      invalidateDirectoryCache,
+      loadTreeDirectoryChildren,
       notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
@@ -2461,55 +2143,41 @@ const SFTP: React.FC<SFTPProps> = ({
         }
       }
 
-      runSftpOperation(
-        {
-          label: t('sftp.tasks.delete'),
-          detail: formatBatchFeedback(entriesToDelete.length, 'sftp.tasks.entryCountOne', 'sftp.tasks.entryCountMany'),
-          progress: { completed: 0, total: entriesToDelete.length },
-        },
-        async ({ isCurrent, update }) => {
-          const response = await runSftpBatchOperation(sessionId, {
-            operation: 'delete',
-            entries: entriesToDelete.map((entry) => ({
-              path: entry.path,
-              type: entry.type,
-            })),
-          });
-          update({ progress: { completed: response.data.completedCount, total: response.data.totalCount } });
-          if (!isCurrent()) {
-            return;
-          }
+      await runSftpOperation(async () => {
+        const response = await runSftpBatchOperation(sessionId, {
+          operation: 'delete',
+          entries: entriesToDelete.map((entry) => ({
+            path: entry.path,
+            type: entry.type,
+          })),
+        });
+        const deletedPaths = new Set(
+          response.data.results.filter((result) => result.status === 'success').map((result) => result.path),
+        );
 
-          const deletedPaths = new Set(
-            response.data.results.filter((result) => result.status === 'success').map((result) => result.path),
+        if (response.data.failedCount > 0) {
+          notifyError(formatBatchPartialFailureFeedback(response.data));
+        } else {
+          notifySuccess(
+            formatBatchFeedback(response.data.completedCount, 'sftp.feedback.deleted', 'sftp.feedback.deletedMany'),
           );
+        }
 
-          if (response.data.failedCount > 0) {
-            notifyError(formatBatchPartialFailureFeedback(response.data));
-          } else {
-            notifySuccess(
-              formatBatchFeedback(response.data.completedCount, 'sftp.feedback.deleted', 'sftp.feedback.deletedMany'),
-            );
-          }
-
-          setSelectedPaths((previous) => previous.filter((path) => !deletedPaths.has(path)));
-          setSelectionAnchorPath((previous) => (deletedPaths.has(previous) ? '' : previous));
-          setFilePreview((previous) => (previous && deletedPaths.has(previous.path) ? null : previous));
+        setSelectedPaths((previous) => previous.filter((path) => !deletedPaths.has(path)));
+        setSelectionAnchorPath((previous) => (deletedPaths.has(previous) ? '' : previous));
+        setFilePreview((previous) => (previous && deletedPaths.has(previous.path) ? null : previous));
+        deletedPaths.forEach((path) => {
+          delete temporaryOpenFilePathsRef.current[path];
+        });
+        setOpenWithApplicationsByPath((previous) => {
+          const next = { ...previous };
           deletedPaths.forEach((path) => {
-            delete temporaryOpenFilePathsRef.current[path];
+            delete next[path];
           });
-          setOpenWithApplicationsByPath((previous) => {
-            const next = { ...previous };
-            deletedPaths.forEach((path) => {
-              delete next[path];
-            });
-            return next;
-          });
-          await refreshCurrentDirectoryAfterOperation(
-            entriesToDelete.map((entry) => resolveEntryParentPath(entry.path)),
-          );
-        },
-      );
+          return next;
+        });
+        await refreshCurrentDirectoryAfterOperation();
+      });
     },
     [
       notifyError,
@@ -3301,139 +2969,29 @@ const SFTP: React.FC<SFTPProps> = ({
     treeRootPaths,
   ]);
 
-  const taskDropdown = hasVisibleTasks ? (
-    <>
-      <MenubarSeparator vertical />
-      <DropdownMenu>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <DropdownMenuTrigger asChild>
-              <Button
-                aria-label={taskToolbarLabel}
-                variant="ghost"
-                className="h-[34px] gap-2 px-2.5"
-              >
-                {runningTaskCount > 0 ? <Loader2 className="h-4 w-4 animate-spin" /> : <ListTodo className="h-4 w-4" />}
-                <span className="max-w-[92px] truncate text-sm">{t('sftp.tasks.toolbarTitle')}</span>
-                <span className="text-home-text flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-home-chip-active px-1.5 text-xs">
-                  {activeTaskCount > 0 ? activeTaskCount : sftpTasks.length}
-                </span>
-              </Button>
-            </DropdownMenuTrigger>
-          </TooltipTrigger>
-          <TooltipContent>{taskToolbarLabel}</TooltipContent>
-        </Tooltip>
-        <DropdownMenuContent
-          horizontalAlign="right"
-          className="w-[320px]"
-        >
-          <DropdownMenuSlot className="px-2 py-2">
-            <div className="flex h-7 items-center justify-between gap-3 px-1">
-              <div className="text-sm font-medium text-header-text">{t('sftp.tasks.title')}</div>
-              <div className="truncate text-xs text-header-text-muted">{taskToolbarLabel}</div>
-            </div>
-            <div
-              role="status"
-              aria-live="polite"
-              className="divide-y divide-menu-divider"
-            >
-              {sortedSftpTasks.map((task) => {
-                const isRunningTask = task.status === 'running';
-                const progressLabel = formatSftpTaskProgressLabel(task.progress);
-                const progressPercent =
-                  task.progress && task.progress.total > 0
-                    ? Math.min(100, Math.round((task.progress.completed / task.progress.total) * 100))
-                    : undefined;
-
-                return (
-                  <div
-                    key={task.id}
-                    className="py-2 first:pt-1 last:pb-1"
-                  >
-                    <div className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2 gap-y-1.5">
-                      <span className="flex h-5 w-4 shrink-0 items-center justify-center text-header-text-muted">
-                        {task.status === 'running' ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : task.status === 'queued' ? (
-                          <Hourglass className="h-3.5 w-3.5" />
-                        ) : task.status === 'success' ? (
-                          <CircleCheck className="h-3.5 w-3.5 text-header-text" />
-                        ) : (
-                          <CircleX className="h-3.5 w-3.5 text-form-message-error" />
-                        )}
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <div className="truncate text-sm text-header-text">{task.label}</div>
-                        <div className="mt-0.5 truncate text-xs text-header-text-muted">{task.detail}</div>
-                      </div>
-                      <span className="shrink-0 self-start text-xs text-header-text-muted">
-                        {t(`sftp.tasks.status.${task.status}`)}
-                      </span>
-                      <div className="col-span-2 col-start-2 flex items-center gap-2">
-                        <div
-                          role="progressbar"
-                          aria-label={task.label}
-                          aria-valuemin={task.progress ? 0 : undefined}
-                          aria-valuemax={task.progress ? task.progress.total : undefined}
-                          aria-valuenow={task.progress ? task.progress.completed : undefined}
-                          className="h-1 flex-1 overflow-hidden rounded-sm-2 bg-menu-control-hover"
-                        >
-                          <div
-                            className={classNames(
-                              'h-full rounded-sm-2 bg-header-text transition-[width] duration-200',
-                              isRunningTask && progressPercent === undefined ? 'w-1/2 animate-pulse' : '',
-                            )}
-                            style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
-                          />
-                        </div>
-                        <span className="w-9 shrink-0 text-right text-xs text-header-text-muted">{progressLabel}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </DropdownMenuSlot>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </>
-  ) : null;
-
   const toolbar = (
     <TooltipProvider>
       <Menubar className="w-full shrink-0">
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <div className="flex shrink-0 items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label={t('sftp.actions.back')}
-                  variant="ghostIcon"
-                  disabled={!canGoBack || isBusy}
-                  onClick={() => {
-                    void handleHistoryJump(navigationState.index - 1);
-                  }}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('sftp.actions.back')}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  aria-label={t('sftp.actions.forward')}
-                  variant="ghostIcon"
-                  disabled={!canGoForward || isBusy}
-                  onClick={() => {
-                    void handleHistoryJump(navigationState.index + 1);
-                  }}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{t('sftp.actions.forward')}</TooltipContent>
-            </Tooltip>
+            {renderNavigationHistoryControl({
+              label: t('sftp.actions.back'),
+              icon: <ArrowLeft className="h-4 w-4" />,
+              items: backNavigationHistoryItems,
+              disabled: !canGoBack || isBusy,
+              onStep: () => {
+                void handleHistoryJump(navigationState.index - 1);
+              },
+            })}
+            {renderNavigationHistoryControl({
+              label: t('sftp.actions.forward'),
+              icon: <ArrowRight className="h-4 w-4" />,
+              items: forwardNavigationHistoryItems,
+              disabled: !canGoForward || isBusy,
+              onStep: () => {
+                void handleHistoryJump(navigationState.index + 1);
+              },
+            })}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -3452,7 +3010,7 @@ const SFTP: React.FC<SFTPProps> = ({
                 <Button
                   aria-label={t('sftp.actions.refresh')}
                   variant="ghostIcon"
-                  disabled={!sessionId || isBusy}
+                  disabled={!sessionId || isBusy || isOperationRunning}
                   onClick={handleRefresh}
                 >
                   <RefreshCcw className={classNames('h-4 w-4', (isBusy || isRefreshingDirectory) && 'animate-spin')} />
@@ -3474,8 +3032,6 @@ const SFTP: React.FC<SFTPProps> = ({
               onChange={(event) => setPathInput(event.target.value)}
             />
           </form>
-
-          {taskDropdown}
 
           <MenubarSeparator vertical />
 
