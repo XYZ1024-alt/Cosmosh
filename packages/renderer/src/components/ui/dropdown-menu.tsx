@@ -218,6 +218,23 @@ const DropdownMenuSeparator = React.forwardRef<
 });
 DropdownMenuSeparator.displayName = DropdownMenuPrimitive.Separator.displayName;
 
+/**
+ * Renders a non-item content region inside dropdown menus for dense custom layouts.
+ *
+ * @param props Div attributes and custom menu content.
+ * @returns Dropdown menu custom content slot.
+ */
+const DropdownMenuSlot = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+  ({ className, ...props }, ref) => (
+    <div
+      ref={ref}
+      className={classNames('px-2.5 py-1.5', className)}
+      {...props}
+    />
+  ),
+);
+DropdownMenuSlot.displayName = 'DropdownMenuSlot';
+
 const DropdownMenuShortcut: React.FC<React.HTMLAttributes<HTMLSpanElement>> = ({ className, ...props }) => (
   <span
     className={classNames(menuStyles.shortcut, className)}
@@ -235,6 +252,7 @@ export {
   DropdownMenuRadioItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
+  DropdownMenuSlot,
   DropdownMenuShortcut,
   DropdownMenuGroup,
   DropdownMenuPortal,
