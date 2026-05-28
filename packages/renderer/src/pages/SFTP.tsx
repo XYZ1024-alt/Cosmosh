@@ -2914,7 +2914,7 @@ const SFTP: React.FC<SFTPProps> = ({
     if (sftpShowAddressAsText || isAddressInputEditing) {
       return (
         <form
-          className="mx-1 min-w-0 flex-1"
+          className="min-w-0 flex-1"
           onSubmit={handlePathSubmit}
         >
           <Input
@@ -2971,7 +2971,7 @@ const SFTP: React.FC<SFTPProps> = ({
           <div
             role="group"
             aria-label={t('sftp.pathInputLabel')}
-            className="menu-menubar-field mx-1 flex h-[34px] min-w-0 flex-1 items-center overflow-hidden rounded-lg bg-form-control px-1 text-sm text-form-text outline-none [-webkit-app-region:no-drag] hover:bg-form-control-hover"
+            className="menu-menubar-field flex h-[34px] min-w-0 flex-1 items-center overflow-hidden rounded-lg bg-form-control px-1 text-sm text-form-text outline-none [-webkit-app-region:no-drag] hover:bg-form-control-hover"
             onClick={handleEditCurrentPath}
             onDoubleClick={handleEditCurrentPath}
           >
@@ -3504,6 +3504,8 @@ const SFTP: React.FC<SFTPProps> = ({
               <TooltipContent>{t('sftp.actions.refresh')}</TooltipContent>
             </Tooltip>
           </div>
+
+          <MenubarSeparator vertical />
 
           {renderAddressControl()}
 
