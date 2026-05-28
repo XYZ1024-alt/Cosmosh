@@ -335,6 +335,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/entries/details': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Get detailed metadata for selected remote SFTP entries. */
+    post: operations['sftpGetEntryDetails'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}/file': {
     parameters: {
       query?: never;
@@ -928,13 +945,55 @@ export interface components {
     SftpEntry: {
       name: string;
       path: string;
+      parentPath?: string;
       type: components['schemas']['SftpEntryType'];
       /** Format: int64 */
       size: number;
       mode: number;
       permissions: string;
+      permissionOctal: string;
+      uid: number;
+      gid: number;
       /** Format: date-time */
       modifiedAt: string;
+      /** Format: date-time */
+      accessedAt: string;
+      extension: string;
+      shellEscapedPath: string;
+      longname?: string;
+      symlinkTarget?: components['schemas']['SftpSymlinkTarget'];
+    };
+    /** @enum {string} */
+    SftpSymlinkTargetStatus: 'exists' | 'broken' | 'permission-denied' | 'unknown';
+    SftpSymlinkTarget: {
+      status: components['schemas']['SftpSymlinkTargetStatus'];
+      /** @description Raw target returned by readlink. */
+      path?: string;
+      /** @description Absolute target path resolved from the link parent when possible. */
+      resolvedPath?: string;
+      isAbsolute?: boolean;
+      type?: components['schemas']['SftpEntryType'];
+      /** Format: int64 */
+      size?: number;
+      mode?: number;
+      permissions?: string;
+      permissionOctal?: string;
+      /** Format: date-time */
+      modifiedAt?: string;
+      /** Format: date-time */
+      accessedAt?: string;
+      message?: string;
+    };
+    SftpEntryDetailsRequest: {
+      paths: string[];
+    };
+    /** @enum {string} */
+    SftpEntryDetailsItemStatus: 'success' | 'failed';
+    SftpEntryDetailsItem: {
+      path: string;
+      status: components['schemas']['SftpEntryDetailsItemStatus'];
+      entry?: components['schemas']['SftpEntry'];
+      message?: string;
     };
     SftpSessionCreateData: {
       sessionId: string;
@@ -949,6 +1008,11 @@ export interface components {
       path: string;
       parentPath?: string;
       entries: components['schemas']['SftpEntry'][];
+    };
+    SftpEntryDetailsData: {
+      sessionId: string;
+      requestedCount: number;
+      entries: components['schemas']['SftpEntryDetailsItem'][];
     };
     SftpOperationData: {
       sessionId: string;
@@ -1168,6 +1232,13 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpDirectoryListData'];
+    };
+    SftpEntryDetailsSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_ENTRY_DETAILS_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpEntryDetailsData'];
     };
     SftpOperationSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -2418,6 +2489,61 @@ export interface operations {
         };
       };
       /** @description Session or directory not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpGetEntryDetails: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpEntryDetailsRequest'];
+      };
+    };
+    responses: {
+      /** @description Detailed entry metadata fetched. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpEntryDetailsSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
       404: {
         headers: {
           [name: string]: unknown;

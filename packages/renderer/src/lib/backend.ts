@@ -20,6 +20,8 @@ import type {
   ApiSftpDeleteResponse,
   ApiSftpDownloadFileRequest,
   ApiSftpDownloadFileResponse,
+  ApiSftpEntryDetailsRequest,
+  ApiSftpEntryDetailsResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -175,6 +177,13 @@ export const listSftpDirectory = async (
   query?: ApiSftpListDirectoryQuery,
 ): Promise<ApiSftpListDirectoryResponse> => {
   return backendClient.listSftpDirectory(sessionId, query);
+};
+
+export const getSftpEntryDetails = async (
+  sessionId: string,
+  payload: ApiSftpEntryDetailsRequest,
+): Promise<ApiSftpEntryDetailsResponse> => {
+  return backendClient.getSftpEntryDetails(sessionId, payload);
 };
 
 export const readSftpFile = async (

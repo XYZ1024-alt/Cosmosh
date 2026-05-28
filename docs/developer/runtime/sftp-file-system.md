@@ -49,6 +49,7 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 |---|---|---|
 | `POST` | `/api/v1/sftp/sessions` | Create an SFTP file-system session for one SSH server. |
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/entries?path=...` | List one remote directory for an active SFTP session. |
+| `POST` | `/api/v1/sftp/sessions/{sessionId}/entries/details` | Fetch non-recursive metadata for selected remote entries, including `lstat` fields and symbolic-link target metadata. |
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/download` | Stream one regular remote file to a local destination selected by main/preload. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/files` | Create one empty remote file. |
@@ -63,6 +64,7 @@ Success codes:
 
 - `SFTP_SESSION_CREATE_OK`
 - `SFTP_DIRECTORY_LIST_OK`
+- `SFTP_ENTRY_DETAILS_OK`
 - `SFTP_FILE_READ_OK`
 - `SFTP_OPERATION_OK`
 
@@ -122,7 +124,7 @@ Directory listing steps:
 1. Normalize the requested path.
 2. Resolve it with `realpath`.
 3. Run `readdir` for the resolved directory.
-4. Map each entry to `{ name, path, type, size, mode, permissions, modifiedAt }`.
+4. Map each entry through the shared SFTP metadata mapper. The list response includes cheap, non-recursive fields: `name`, `path`, `parentPath`, `type`, `size`, `mode`, `permissions`, `permissionOctal`, `uid`, `gid`, `modifiedAt`, `accessedAt`, `extension`, `shellEscapedPath`, and optional `longname`.
 5. Sort directories first, then sort by name with numeric-aware locale comparison.
 
 Entry types are reduced to:
@@ -132,9 +134,11 @@ Entry types are reduced to:
 - `symlink`
 - `other`
 
-The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry and shows a selected-count summary for multiple entries. When `sftpShowParentDirectoryEntry` is enabled and the backend reports a parent path, the center list prepends a non-selectable `..` row that navigates to the parent directory without changing backend data.
+The renderer currently displays columns for name, size, modified time, and mode. The directory panel supports filtering entries in the current directory only; it is not a remote recursive search. The details panel shows metadata for a single selected entry and shows a selected-count summary for multiple entries. It also includes a temporary, non-localized `Raw Data` block that calls the details endpoint whenever one or more current-directory entries are selected. The raw-data request is capped at 200 selected paths and records omitted paths in the displayed selection summary. When `sftpShowParentDirectoryEntry` is enabled and the backend reports a parent path, the center list prepends a non-selectable `..` row that navigates to the parent directory without changing backend data.
 
 Directory results are cached in the renderer for the lifetime of the SFTP tab. Revisiting an already loaded path uses that in-memory result immediately. The refresh action bypasses the cache and requests a fresh listing from the active backend session while preserving the visible list until the new result arrives.
+
+Entry details use the same metadata mapper as the directory list and add only the fields that require entry-specific calls. The backend runs `lstat` for each selected path so symbolic links are described as links. For symlinks it also runs `readlink`, resolves relative targets against the link parent, and attempts `stat` on the target. Target status is reported as `exists`, `broken`, `permission-denied`, or `unknown`; target stats are included only when the target exists and is readable. Directory size is never calculated recursively by list or details requests.
 
 Mutation rules:
 

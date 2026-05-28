@@ -73,6 +73,7 @@ import {
   createSftpFile,
   createSftpSession,
   downloadSftpFile,
+  getSftpEntryDetails,
   listSftpDirectory,
   renameSftpEntry,
   runSftpBatchOperation,
@@ -165,6 +166,13 @@ type FilePreviewState = {
   truncated: boolean;
 };
 
+type SftpRawDataState = {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  selectionKey: string;
+  payload: unknown | null;
+  message?: string;
+};
+
 type PendingCreateState = {
   type: 'file' | 'directory';
   name: string;
@@ -212,6 +220,7 @@ const TREE_INDENT_CLASS_NAMES = ['pl-2', 'pl-5', 'pl-8', 'pl-11', 'pl-14', 'pl-1
 const SFTP_CARD_CLASS_NAME = 'bg-ssh-card-bg-terminal h-full min-h-0 overflow-hidden rounded-[18px] p-1';
 const DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME = 'min-w-[600px]';
 const DIRECTORY_ROW_GRID_CLASS_NAME = 'grid-cols-[minmax(0,1fr)_92px_148px_96px_28px]';
+const SFTP_RAW_DATA_SELECTION_LIMIT = 200;
 const SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 const NEW_FILE_NAME = 'untitled.txt';
@@ -349,6 +358,20 @@ const formatFileSize = (size: number): string => {
   }
 
   return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unitIndex]}`;
+};
+
+/**
+ * Serializes raw SFTP metadata for the temporary inspection panel.
+ *
+ * @param value Raw data payload.
+ * @returns Pretty-printed JSON string.
+ */
+const formatRawDataJson = (value: unknown): string => {
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
+  }
 };
 
 /**
@@ -891,11 +914,18 @@ const resolveTreeDirectoryEntry = (node: TreeDirectoryNode): ApiSftpEntry => {
   return {
     name: node.name,
     path: node.path,
+    ...(node.parentPath ? { parentPath: node.parentPath } : {}),
     type: 'directory',
     size: 0,
     mode: 0,
     permissions: '',
+    permissionOctal: '0000',
+    uid: 0,
+    gid: 0,
     modifiedAt: '',
+    accessedAt: '',
+    extension: '',
+    shellEscapedPath: node.path,
   };
 };
 
@@ -937,6 +967,11 @@ const SFTP: React.FC<SFTPProps> = ({
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
+  const [rawDataState, setRawDataState] = React.useState<SftpRawDataState>({
+    status: 'idle',
+    selectionKey: '',
+    payload: null,
+  });
   const [openWithApplicationsByPath, setOpenWithApplicationsByPath] = React.useState<
     Record<string, SftpOpenWithApplication[]>
   >({});
@@ -1164,6 +1199,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const selectedCount = selectedEntries.length;
   const hasSelection = selectedCount > 0;
   const hasSingleSelection = selectedCount === 1;
+  const selectedDetailPaths = React.useMemo(() => selectedEntries.map((entry) => entry.path), [selectedEntries]);
+  const selectedDetailsRequestKey = React.useMemo(() => selectedDetailPaths.join('\u0000'), [selectedDetailPaths]);
 
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
   const addressBreadcrumbRenderState = React.useMemo(
@@ -1208,6 +1245,71 @@ const SFTP: React.FC<SFTPProps> = ({
     setSelectionAnchorPath('');
     setFilePreview(null);
   }, []);
+
+  React.useEffect(() => {
+    if (!sessionId || selectedDetailPaths.length === 0) {
+      setRawDataState({
+        status: 'idle',
+        selectionKey: '',
+        payload: null,
+      });
+      return;
+    }
+
+    let isCancelled = false;
+    const requestedPaths = selectedDetailPaths.slice(0, SFTP_RAW_DATA_SELECTION_LIMIT);
+    const selection = {
+      totalCount: selectedDetailPaths.length,
+      requestedCount: requestedPaths.length,
+      omittedCount: Math.max(0, selectedDetailPaths.length - requestedPaths.length),
+      paths: selectedDetailPaths,
+      requestedPaths,
+    };
+
+    setRawDataState({
+      status: 'loading',
+      selectionKey: selectedDetailsRequestKey,
+      payload: {
+        selection,
+      },
+    });
+
+    void getSftpEntryDetails(sessionId, { paths: requestedPaths })
+      .then((response) => {
+        if (isCancelled) {
+          return;
+        }
+
+        setRawDataState({
+          status: 'ready',
+          selectionKey: selectedDetailsRequestKey,
+          payload: {
+            selection,
+            response,
+          },
+        });
+      })
+      .catch((error: unknown) => {
+        if (isCancelled) {
+          return;
+        }
+
+        const message = error instanceof Error ? error.message : 'Failed to load raw SFTP metadata.';
+        setRawDataState({
+          status: 'error',
+          selectionKey: selectedDetailsRequestKey,
+          payload: {
+            selection,
+            error: message,
+          },
+          message,
+        });
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [selectedDetailPaths, selectedDetailsRequestKey, sessionId]);
 
   const selectSingleEntry = React.useCallback((entry: ApiSftpEntry | null): void => {
     if (!entry) {
@@ -3950,6 +4052,32 @@ const SFTP: React.FC<SFTPProps> = ({
     </main>
   );
 
+  const isRawDataCurrent = selectedCount > 0 && rawDataState.selectionKey === selectedDetailsRequestKey;
+  const rawDataPayload = isRawDataCurrent ? rawDataState.payload : null;
+  const rawDataStatusLabel =
+    !isRawDataCurrent || rawDataState.status === 'loading'
+      ? 'Loading raw data...'
+      : rawDataState.status === 'error'
+        ? 'Failed to load raw data.'
+        : rawDataState.status === 'ready'
+          ? 'Loaded'
+          : 'No raw data.';
+  const rawDataPanel =
+    selectedCount > 0 ? (
+      <section className="border-t border-home-divider pt-3">
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="text-home-text text-sm font-medium">Raw Data</div>
+          <div className="truncate text-right text-[11px] text-home-text-subtle">{rawDataStatusLabel}</div>
+        </div>
+        {isRawDataCurrent && rawDataState.status === 'error' && rawDataState.message ? (
+          <div className="mt-2 text-xs text-status-bad">{rawDataState.message}</div>
+        ) : null}
+        <pre className="bg-home-card/60 text-home-text mt-2 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-home-divider p-2 font-mono text-[11px] leading-4">
+          {rawDataPayload ? formatRawDataJson(rawDataPayload) : rawDataStatusLabel}
+        </pre>
+      </section>
+    ) : null;
+
   const detailPanel = (
     <aside className={SFTP_CARD_CLASS_NAME}>
       <div className="flex h-full min-h-0 flex-col">
@@ -3977,8 +4105,11 @@ const SFTP: React.FC<SFTPProps> = ({
               </pre>
             </div>
           ) : selectedCount > 1 ? (
-            <div className="flex h-full items-center justify-center px-3 text-center text-sm text-home-text-subtle">
-              {t('sftp.detailSelectedMany', { count: selectedCount })}
+            <div className="space-y-3">
+              <div className="text-sm text-home-text-subtle">
+                {t('sftp.detailSelectedMany', { count: selectedCount })}
+              </div>
+              {rawDataPanel}
             </div>
           ) : selectedEntry ? (
             <div className="space-y-4">
@@ -4009,6 +4140,7 @@ const SFTP: React.FC<SFTPProps> = ({
                   <dd className="text-home-text mt-1 font-mono text-xs">{selectedEntry.permissions}</dd>
                 </div>
               </dl>
+              {rawDataPanel}
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-3 text-center text-sm text-home-text-subtle">

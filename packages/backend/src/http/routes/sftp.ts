@@ -11,6 +11,7 @@ import {
   type ApiSftpCreateSessionResponse,
   type ApiSftpDeleteResponse,
   type ApiSftpDownloadFileResponse,
+  type ApiSftpEntryDetailsResponse,
   type ApiSftpListDirectoryResponse,
   type ApiSftpReadFileResponse,
   type ApiSftpRenameResponse,
@@ -60,6 +61,10 @@ type NormalizedSftpDeleteRequest = {
   recursive: boolean;
 };
 
+type NormalizedSftpEntryDetailsRequest = {
+  paths: string[];
+};
+
 type NormalizedSftpBatchOperationRequest = RunSftpBatchOperationInput;
 
 type SuccessfulSftpBatchOperationResult = Extract<SftpBatchOperationResult, { type: 'success' }>;
@@ -70,6 +75,8 @@ type ApiSftpOperationResponse =
   | ApiSftpRenameResponse
   | ApiSftpCopyResponse
   | ApiSftpDeleteResponse;
+
+const MAX_SFTP_ENTRY_DETAILS_PATHS = 200;
 
 const buildValidationError = (
   i18nKey: string,
@@ -279,6 +286,54 @@ const parseSftpDeleteRequest = (payload: unknown): ValidationResult<NormalizedSf
     value: {
       path: parsedPath.value.path,
       recursive,
+    },
+  };
+};
+
+/**
+ * Parses SFTP entry details payloads.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized details request or validation error.
+ */
+const parseSftpEntryDetailsRequest = (payload: unknown): ValidationResult<NormalizedSftpEntryDetailsRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  if (!Array.isArray(payload.paths) || payload.paths.length === 0) {
+    return {
+      error: buildValidationError('errors.sftp.entryDetailsPathsRequired', 'paths must contain at least one item.'),
+    };
+  }
+
+  if (payload.paths.length > MAX_SFTP_ENTRY_DETAILS_PATHS) {
+    return {
+      error: buildValidationError(
+        'errors.sftp.entryDetailsPathLimit',
+        `paths must contain no more than ${MAX_SFTP_ENTRY_DETAILS_PATHS} items.`,
+        { limit: MAX_SFTP_ENTRY_DETAILS_PATHS },
+      ),
+    };
+  }
+
+  const paths: string[] = [];
+  for (const pathValue of payload.paths) {
+    const entryPath = normalizeOptionalString(pathValue);
+    if (!entryPath) {
+      return {
+        error: buildValidationError('errors.sftp.pathRequired', 'path is required.'),
+      };
+    }
+
+    paths.push(entryPath);
+  }
+
+  return {
+    value: {
+      paths,
     },
   };
 };
@@ -586,6 +641,37 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
         sessionId: result.sessionId,
         path: result.path,
         parentPath: result.parentPath,
+        entries: result.entries,
+      },
+    });
+
+    return c.json(payload);
+  });
+
+  app.post(API_PATHS.sftpGetEntryDetails.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parseSftpEntryDetailsRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = await context.sftpSessionService.getEntryDetails(sessionId, parsed.value.paths);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    const payload: ApiSftpEntryDetailsResponse = createApiSuccess({
+      code: API_CODES.sftpEntryDetailsOk,
+      message: t('success.sftp.entryDetailsFetched'),
+      data: {
+        sessionId: result.sessionId,
+        requestedCount: result.requestedCount,
         entries: result.entries,
       },
     });

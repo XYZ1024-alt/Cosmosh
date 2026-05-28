@@ -133,6 +133,10 @@ export type ApiSftpListDirectoryQuery =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['parameters']['query'];
 export type ApiSftpListDirectoryResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/entries']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpEntryDetailsRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries/details']['post']['requestBody']['content']['application/json'];
+export type ApiSftpEntryDetailsResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/entries/details']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpReadFileQuery = paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
 export type ApiSftpReadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['responses']['200']['content']['application/json'];
@@ -167,7 +171,9 @@ export type ApiSftpBatchOperationResponse =
 export type ApiSftpBatchOperationItem = components['schemas']['SftpBatchOperationItemResult'];
 export type ApiSftpCloseSessionRequest = paths['/api/v1/sftp/sessions/{sessionId}']['delete']['parameters']['path'];
 export type ApiSftpEntry = components['schemas']['SftpEntry'];
+export type ApiSftpEntryDetailsItem = components['schemas']['SftpEntryDetailsItem'];
 export type ApiSftpEntryType = components['schemas']['SftpEntryType'];
+export type ApiSftpSymlinkTarget = components['schemas']['SftpSymlinkTarget'];
 export type ApiLocalTerminalProfile = components['schemas']['LocalTerminalProfile'];
 export type ApiLocalTerminalListProfilesResponse =
   paths['/api/v1/local-terminals/profiles']['get']['responses']['200']['content']['application/json'];

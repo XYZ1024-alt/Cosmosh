@@ -31,14 +31,64 @@ export type CreateSftpSessionInput = {
 
 export type SftpEntryType = 'directory' | 'file' | 'symlink' | 'other';
 
+/**
+ * Non-recursive metadata shared by SFTP directory lists and detail views.
+ */
 export type SftpEntry = {
   name: string;
   path: string;
+  parentPath?: string;
   type: SftpEntryType;
   size: number;
   mode: number;
   permissions: string;
+  permissionOctal: string;
+  uid: number;
+  gid: number;
   modifiedAt: string;
+  accessedAt: string;
+  extension: string;
+  shellEscapedPath: string;
+  longname?: string;
+  symlinkTarget?: SftpSymlinkTarget;
+};
+
+/**
+ * Reachability state for a symbolic link target.
+ */
+export type SftpSymlinkTargetStatus = 'exists' | 'broken' | 'permission-denied' | 'unknown';
+
+/**
+ * Metadata resolved from readlink/stat for a symbolic link target.
+ */
+export type SftpSymlinkTarget = {
+  status: SftpSymlinkTargetStatus;
+  path?: string;
+  resolvedPath?: string;
+  isAbsolute?: boolean;
+  type?: SftpEntryType;
+  size?: number;
+  mode?: number;
+  permissions?: string;
+  permissionOctal?: string;
+  modifiedAt?: string;
+  accessedAt?: string;
+  message?: string;
+};
+
+/**
+ * Per-entry status returned by the details endpoint.
+ */
+export type SftpEntryDetailsItemStatus = 'success' | 'failed';
+
+/**
+ * Detailed metadata result for one requested SFTP path.
+ */
+export type SftpEntryDetailsItem = {
+  path: string;
+  status: SftpEntryDetailsItemStatus;
+  entry?: SftpEntry;
+  message?: string;
 };
 
 /**
@@ -117,6 +167,20 @@ export type ListSftpDirectoryResult =
   | {
       type: 'failed';
       message: string;
+    };
+
+/**
+ * Result envelope for fetching detailed metadata for selected SFTP entries.
+ */
+export type GetSftpEntryDetailsResult =
+  | {
+      type: 'success';
+      sessionId: string;
+      requestedCount: number;
+      entries: SftpEntryDetailsItem[];
+    }
+  | {
+      type: 'not-found';
     };
 
 export type SftpOperationResult =
@@ -209,6 +273,16 @@ type SftpLiveSession = {
   client: Client;
   sftp: SFTPWrapper;
   t: I18nInstance['t'];
+};
+
+type SftpDirectoryEntry = {
+  filename: string;
+  longname?: string;
+  attrs: Stats;
+};
+
+type SftpReadlinkWrapper = SFTPWrapper & {
+  readlink(targetPath: string, callback: (error: Error | undefined | null, linkString: string) => void): void;
 };
 
 const POSIX_PATH = path.posix;
@@ -324,6 +398,26 @@ export const formatSftpPermissions = (mode: number): string => {
   const permissions = bits.map((bit, index) => ((mode & bit) === bit ? symbols[index] : '-')).join('');
 
   return `${prefix}${permissions}`;
+};
+
+/**
+ * Formats POSIX permission bits into the octal display used by chmod.
+ *
+ * @param mode POSIX mode bits from ssh2 stats.
+ * @returns Four-digit octal permission string such as 0644.
+ */
+export const formatSftpPermissionOctal = (mode: number): string => {
+  return (mode & 0o7777).toString(8).padStart(4, '0');
+};
+
+/**
+ * Escapes a remote path for safe copy-paste into POSIX shells.
+ *
+ * @param targetPath Remote path.
+ * @returns Single-quoted shell token.
+ */
+export const escapeSftpShellPath = (targetPath: string): string => {
+  return `'${targetPath.replace(/'/g, "'\\''")}'`;
 };
 
 const sortSftpEntries = (entries: SftpEntry[]): SftpEntry[] => {
@@ -537,15 +631,12 @@ export class SftpSessionService {
             .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
             .map((entry) => {
               const entryPath = joinSftpPath(resolvedPath, entry.filename);
-              return {
+              return this.buildSftpEntry({
                 name: entry.filename,
                 path: entryPath,
-                type: resolveSftpEntryType(entry.attrs.mode),
-                size: entry.attrs.size,
-                mode: entry.attrs.mode,
-                permissions: formatSftpPermissions(entry.attrs.mode),
-                modifiedAt: new Date(entry.attrs.mtime * 1000).toISOString(),
-              };
+                stats: entry.attrs,
+                ...(entry.longname ? { longname: entry.longname } : {}),
+              });
             }),
         ),
       };
@@ -555,6 +646,42 @@ export class SftpSessionService {
         message: this.resolveErrorMessage(error, session.t('errors.sftp.directoryListFailedNoReason')),
       };
     }
+  }
+
+  /**
+   * Fetches non-recursive metadata for selected remote entries.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPaths Remote entry paths selected by the renderer.
+   * @returns Per-path metadata results without recursive directory size calculation.
+   */
+  public async getEntryDetails(sessionId: string, requestedPaths: string[]): Promise<GetSftpEntryDetailsResult> {
+    const session = this.sessions.get(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const entries: SftpEntryDetailsItem[] = [];
+    for (const requestedPath of requestedPaths) {
+      const normalizedPath = normalizeSftpPathInput(requestedPath);
+      if (!isMutableSftpEntryPath(normalizedPath)) {
+        entries.push({
+          path: normalizedPath,
+          status: 'failed',
+          message: session.t('errors.sftp.pathRequired'),
+        });
+        continue;
+      }
+
+      entries.push(await this.getSingleEntryDetails(session, normalizedPath));
+    }
+
+    return {
+      type: 'success',
+      sessionId,
+      requestedCount: requestedPaths.length,
+      entries,
+    };
   }
 
   /**
@@ -1061,6 +1188,174 @@ export class SftpSessionService {
     }
   }
 
+  /**
+   * Resolves one path into the common SFTP entry metadata contract.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Normalized remote path.
+   * @returns Per-path details item.
+   */
+  private async getSingleEntryDetails(session: SftpLiveSession, targetPath: string): Promise<SftpEntryDetailsItem> {
+    try {
+      const stats = await this.lstat(session, targetPath);
+      const entryType = resolveSftpEntryType(stats.mode);
+      const symlinkTarget =
+        entryType === 'symlink' ? await this.resolveSymlinkTargetMetadata(session, targetPath) : undefined;
+
+      return {
+        path: targetPath,
+        status: 'success',
+        entry: this.buildSftpEntry({
+          name: this.resolveEntryName(targetPath),
+          path: targetPath,
+          stats,
+          ...(symlinkTarget ? { symlinkTarget } : {}),
+        }),
+      };
+    } catch (error: unknown) {
+      return {
+        path: targetPath,
+        status: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Builds the shared SFTP entry shape used by list and details APIs.
+   *
+   * @param input Raw stats and path information.
+   * @returns API-ready SFTP entry metadata.
+   */
+  private buildSftpEntry(input: {
+    name: string;
+    path: string;
+    stats: Stats;
+    longname?: string;
+    symlinkTarget?: SftpSymlinkTarget;
+  }): SftpEntry {
+    const type = resolveSftpEntryType(input.stats.mode);
+
+    return {
+      name: input.name,
+      path: input.path,
+      parentPath: this.resolveParentPath(input.path),
+      type,
+      size: input.stats.size,
+      mode: input.stats.mode,
+      permissions: formatSftpPermissions(input.stats.mode),
+      permissionOctal: formatSftpPermissionOctal(input.stats.mode),
+      uid: input.stats.uid,
+      gid: input.stats.gid,
+      modifiedAt: this.formatStatsTimestamp(input.stats.mtime),
+      accessedAt: this.formatStatsTimestamp(input.stats.atime),
+      extension: this.resolveEntryExtension(input.name, type),
+      shellEscapedPath: escapeSftpShellPath(input.path),
+      ...(input.longname ? { longname: input.longname } : {}),
+      ...(input.symlinkTarget ? { symlinkTarget: input.symlinkTarget } : {}),
+    };
+  }
+
+  /**
+   * Reads and stats a symbolic link target without failing the link metadata fetch.
+   *
+   * @param session Live SFTP session.
+   * @param linkPath Normalized symbolic link path.
+   * @returns Target metadata or broken/permission status.
+   */
+  private async resolveSymlinkTargetMetadata(session: SftpLiveSession, linkPath: string): Promise<SftpSymlinkTarget> {
+    try {
+      const targetPath = await this.readlink(session, linkPath);
+      const resolvedPath = this.resolveSymlinkTargetPath(linkPath, targetPath);
+      const baseTarget = {
+        path: targetPath,
+        resolvedPath,
+        isAbsolute: targetPath.startsWith('/'),
+      };
+
+      try {
+        const targetStats = await this.stat(session, resolvedPath);
+        return {
+          ...baseTarget,
+          status: 'exists',
+          type: resolveSftpEntryType(targetStats.mode),
+          size: targetStats.size,
+          mode: targetStats.mode,
+          permissions: formatSftpPermissions(targetStats.mode),
+          permissionOctal: formatSftpPermissionOctal(targetStats.mode),
+          modifiedAt: this.formatStatsTimestamp(targetStats.mtime),
+          accessedAt: this.formatStatsTimestamp(targetStats.atime),
+        };
+      } catch (error: unknown) {
+        return {
+          ...baseTarget,
+          status: this.resolveSymlinkTargetStatus(error),
+          message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+        };
+      }
+    } catch (error: unknown) {
+      return {
+        status: 'unknown',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Resolves a readlink target relative to the symlink parent when needed.
+   *
+   * @param linkPath Normalized symbolic link path.
+   * @param targetPath Raw readlink target.
+   * @returns Absolute or normalized relative target path.
+   */
+  private resolveSymlinkTargetPath(linkPath: string, targetPath: string): string {
+    if (targetPath.startsWith('/')) {
+      return normalizeSftpPathInput(targetPath);
+    }
+
+    return joinSftpPath(this.resolveParentPath(linkPath) ?? '.', targetPath);
+  }
+
+  /**
+   * Formats stats timestamps defensively because some SFTP servers omit atime/mtime.
+   *
+   * @param seconds POSIX timestamp in seconds.
+   * @returns ISO timestamp.
+   */
+  private formatStatsTimestamp(seconds: number): string {
+    return new Date(seconds * 1000).toISOString();
+  }
+
+  /**
+   * Resolves the display name for an entry path.
+   *
+   * @param targetPath Normalized remote path.
+   * @returns Basename or root marker.
+   */
+  private resolveEntryName(targetPath: string): string {
+    if (targetPath === '/') {
+      return '/';
+    }
+
+    return POSIX_PATH.basename(targetPath) || targetPath;
+  }
+
+  /**
+   * Extracts a file extension for list columns and sorting.
+   *
+   * @param name Entry basename.
+   * @param type Entry type.
+   * @returns Lowercase extension without the leading dot.
+   */
+  private resolveEntryExtension(name: string, type: SftpEntryType): string {
+    if (type !== 'file' && type !== 'symlink') {
+      return '';
+    }
+
+    const extension = POSIX_PATH.extname(name).replace(/^\./, '');
+    return extension.toLowerCase();
+  }
+
   private resolveParentPath(inputPath: string): string | undefined {
     if (!inputPath || inputPath === '/') {
       return undefined;
@@ -1070,10 +1365,7 @@ export class SftpSessionService {
     return parentPath === inputPath ? undefined : parentPath || '/';
   }
 
-  private async readdir(
-    session: SftpLiveSession,
-    directoryPath: string,
-  ): Promise<Array<{ filename: string; attrs: Stats }>> {
+  private async readdir(session: SftpLiveSession, directoryPath: string): Promise<SftpDirectoryEntry[]> {
     return await new Promise((resolve, reject) => {
       session.sftp.readdir(directoryPath, (error, entries) => {
         if (error) {
@@ -1082,6 +1374,20 @@ export class SftpSessionService {
         }
 
         resolve(entries);
+      });
+    });
+  }
+
+  private async readlink(session: SftpLiveSession, targetPath: string): Promise<string> {
+    return await new Promise((resolve, reject) => {
+      const sftp = session.sftp as SftpReadlinkWrapper;
+      sftp.readlink(targetPath, (error, linkString) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(linkString);
       });
     });
   }
@@ -1377,6 +1683,88 @@ export class SftpSessionService {
       sessionId: session.sessionId,
       metadata,
     });
+  }
+
+  /**
+   * Classifies target stat failures into user-visible symlink states.
+   *
+   * @param error Raw ssh2/SFTP error.
+   * @returns Symlink target status.
+   */
+  private resolveSymlinkTargetStatus(error: unknown): SftpSymlinkTargetStatus {
+    if (this.isNoSuchFileError(error)) {
+      return 'broken';
+    }
+
+    if (this.isPermissionDeniedError(error)) {
+      return 'permission-denied';
+    }
+
+    return 'unknown';
+  }
+
+  /**
+   * Detects missing-path failures from ssh2's numeric or string error codes.
+   *
+   * @param error Raw ssh2/SFTP error.
+   * @returns True when the error indicates that the target does not exist.
+   */
+  private isNoSuchFileError(error: unknown): boolean {
+    const code = this.readSftpErrorCode(error);
+    if (code === 2 || code === 'ENOENT') {
+      return true;
+    }
+
+    return this.readSftpErrorMessage(error).includes('no such file');
+  }
+
+  /**
+   * Detects permission failures from ssh2's numeric or string error codes.
+   *
+   * @param error Raw ssh2/SFTP error.
+   * @returns True when the error indicates missing target permissions.
+   */
+  private isPermissionDeniedError(error: unknown): boolean {
+    const code = this.readSftpErrorCode(error);
+    if (code === 3 || code === 'EACCES' || code === 'EPERM') {
+      return true;
+    }
+
+    return this.readSftpErrorMessage(error).includes('permission denied');
+  }
+
+  /**
+   * Reads common error code shapes without trusting third-party error objects.
+   *
+   * @param error Raw unknown error.
+   * @returns Numeric or string code when present.
+   */
+  private readSftpErrorCode(error: unknown): string | number | undefined {
+    if (!error || typeof error !== 'object' || !('code' in error)) {
+      return undefined;
+    }
+
+    const code = (error as { code?: unknown }).code;
+    return typeof code === 'string' || typeof code === 'number' ? code : undefined;
+  }
+
+  /**
+   * Reads and normalizes an error message for classification.
+   *
+   * @param error Raw unknown error.
+   * @returns Lowercase message or an empty string.
+   */
+  private readSftpErrorMessage(error: unknown): string {
+    if (error instanceof Error) {
+      return error.message.toLowerCase();
+    }
+
+    if (!error || typeof error !== 'object' || !('message' in error)) {
+      return '';
+    }
+
+    const message = (error as { message?: unknown }).message;
+    return typeof message === 'string' ? message.toLowerCase() : '';
   }
 
   private resolveErrorMessage(error: unknown, fallback: string): string {

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  escapeSftpShellPath,
+  formatSftpPermissionOctal,
   formatSftpPermissions,
   joinSftpPath,
   normalizeSftpPathInput,
@@ -32,4 +34,15 @@ test('formatSftpPermissions returns symbolic permissions', () => {
   assert.equal(formatSftpPermissions(0o040755), 'drwxr-xr-x');
   assert.equal(formatSftpPermissions(0o100640), '-rw-r-----');
   assert.equal(formatSftpPermissions(0o120777), 'lrwxrwxrwx');
+});
+
+test('formatSftpPermissionOctal returns chmod-ready octal permissions', () => {
+  assert.equal(formatSftpPermissionOctal(0o100644), '0644');
+  assert.equal(formatSftpPermissionOctal(0o040755), '0755');
+  assert.equal(formatSftpPermissionOctal(0o041755), '1755');
+});
+
+test('escapeSftpShellPath returns single-quoted shell tokens', () => {
+  assert.equal(escapeSftpShellPath('/var/www/current'), "'/var/www/current'");
+  assert.equal(escapeSftpShellPath("/tmp/it's here"), "'/tmp/it'\\''s here'");
 });

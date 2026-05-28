@@ -941,6 +941,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/entries/details:
+    post:
+      tags:
+        - sftp
+      summary: Get detailed metadata for selected remote SFTP entries.
+      operationId: sftpGetEntryDetails
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpEntryDetailsRequest'
+      responses:
+        '200':
+          description: Detailed entry metadata fetched.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpEntryDetailsSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}/file:
     get:
       tags:
@@ -2370,11 +2414,19 @@ components:
         - size
         - mode
         - permissions
+        - permissionOctal
+        - uid
+        - gid
         - modifiedAt
+        - accessedAt
+        - extension
+        - shellEscapedPath
       properties:
         name:
           type: string
         path:
+          type: string
+        parentPath:
           type: string
         type:
           $ref: '#/components/schemas/SftpEntryType'
@@ -2385,9 +2437,94 @@ components:
           type: integer
         permissions:
           type: string
+        permissionOctal:
+          type: string
+          pattern: '^[0-7]{4}$'
+        uid:
+          type: integer
+        gid:
+          type: integer
         modifiedAt:
           type: string
           format: date-time
+        accessedAt:
+          type: string
+          format: date-time
+        extension:
+          type: string
+        shellEscapedPath:
+          type: string
+        longname:
+          type: string
+        symlinkTarget:
+          $ref: '#/components/schemas/SftpSymlinkTarget'
+    SftpSymlinkTargetStatus:
+      type: string
+      enum: ['exists', 'broken', 'permission-denied', 'unknown']
+    SftpSymlinkTarget:
+      type: object
+      required:
+        - status
+      properties:
+        status:
+          $ref: '#/components/schemas/SftpSymlinkTargetStatus'
+        path:
+          type: string
+          description: Raw target returned by readlink.
+        resolvedPath:
+          type: string
+          description: Absolute target path resolved from the link parent when possible.
+        isAbsolute:
+          type: boolean
+        type:
+          $ref: '#/components/schemas/SftpEntryType'
+        size:
+          type: integer
+          format: int64
+        mode:
+          type: integer
+        permissions:
+          type: string
+        permissionOctal:
+          type: string
+          pattern: '^[0-7]{4}$'
+        modifiedAt:
+          type: string
+          format: date-time
+        accessedAt:
+          type: string
+          format: date-time
+        message:
+          type: string
+    SftpEntryDetailsRequest:
+      type: object
+      required:
+        - paths
+      properties:
+        paths:
+          type: array
+          minItems: 1
+          maxItems: 200
+          items:
+            type: string
+            minLength: 1
+    SftpEntryDetailsItemStatus:
+      type: string
+      enum: ['success', 'failed']
+    SftpEntryDetailsItem:
+      type: object
+      required:
+        - path
+        - status
+      properties:
+        path:
+          type: string
+        status:
+          $ref: '#/components/schemas/SftpEntryDetailsItemStatus'
+        entry:
+          $ref: '#/components/schemas/SftpEntry'
+        message:
+          type: string
     SftpSessionCreateData:
       type: object
       required:
@@ -2425,6 +2562,22 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/SftpEntry'
+    SftpEntryDetailsData:
+      type: object
+      required:
+        - sessionId
+        - requestedCount
+        - entries
+      properties:
+        sessionId:
+          type: string
+        requestedCount:
+          type: integer
+          minimum: 0
+        entries:
+          type: array
+          items:
+            $ref: '#/components/schemas/SftpEntryDetailsItem'
     SftpOperationData:
       type: object
       required:
@@ -2974,6 +3127,23 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpDirectoryListData'
+    SftpEntryDetailsSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_ENTRY_DETAILS_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpEntryDetailsData'
     SftpOperationSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'

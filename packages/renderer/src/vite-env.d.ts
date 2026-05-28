@@ -22,6 +22,8 @@ import type {
   ApiSftpCreateSessionResponse,
   ApiSftpDeleteRequest,
   ApiSftpDeleteResponse,
+  ApiSftpEntryDetailsRequest,
+  ApiSftpEntryDetailsResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -211,6 +213,10 @@ declare global {
         sessionId: string,
         query?: ApiSftpListDirectoryQuery,
       ) => Promise<ApiSftpListDirectoryResponse | ApiErrorResponse>;
+      backendSftpGetEntryDetails: (
+        sessionId: string,
+        payload: ApiSftpEntryDetailsRequest,
+      ) => Promise<ApiSftpEntryDetailsResponse | ApiErrorResponse>;
       backendSftpReadFile: (
         sessionId: string,
         query: ApiSftpReadFileQuery,

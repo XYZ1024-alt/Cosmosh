@@ -24,6 +24,8 @@ import type {
   ApiSftpDeleteResponse,
   ApiSftpDownloadFileRequest,
   ApiSftpDownloadFileResponse,
+  ApiSftpEntryDetailsRequest,
+  ApiSftpEntryDetailsResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -369,6 +371,13 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpListDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => {
     return invokeIpc<ApiSftpListDirectoryResponse | ApiErrorResponse>('backend:sftp-list-directory', sessionId, query);
+  },
+  backendSftpGetEntryDetails: (sessionId: string, payload: ApiSftpEntryDetailsRequest) => {
+    return invokeIpc<ApiSftpEntryDetailsResponse | ApiErrorResponse>(
+      'backend:sftp-get-entry-details',
+      sessionId,
+      payload,
+    );
   },
   backendSftpReadFile: (sessionId: string, query: ApiSftpReadFileQuery) => {
     return invokeIpc<ApiSftpReadFileResponse | ApiErrorResponse>('backend:sftp-read-file', sessionId, query);

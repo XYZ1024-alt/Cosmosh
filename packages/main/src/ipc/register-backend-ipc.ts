@@ -24,6 +24,8 @@ import type {
   ApiSftpDeleteResponse,
   ApiSftpDownloadFileRequest,
   ApiSftpDownloadFileResponse,
+  ApiSftpEntryDetailsRequest,
+  ApiSftpEntryDetailsResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
   ApiSftpReadFileQuery,
@@ -402,6 +404,21 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
       return options.requestBackend<ApiSftpListDirectoryResponse>(path, {
         method: 'GET',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-get-entry-details',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpEntryDetailsRequest,
+    ): Promise<ApiSftpEntryDetailsResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.sftpGetEntryDetails, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpEntryDetailsResponse>(path, {
+        method: 'POST',
+        body: payload,
       });
     },
   );
