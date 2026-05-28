@@ -32,6 +32,7 @@ flowchart TB
 - **角色**：React UI 层。
 - **关键目录**：
   - `src/pages`：功能页面（`Home`、`SSH`、`SSHEditor`、`Settings`、`SettingsEditor`等）。
+  - `src/pages/sftp`：SFTP 页面子模块，负责浏览器式 UI 编排、动作菜单、目录/树/详情面板与共享 SFTP 辅助函数。
   - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
   - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。

@@ -32,6 +32,7 @@ flowchart TB
 - **Role**: React UI layer.
 - **Key folders**:
   - `src/pages`: feature pages (`Home`, `SSH`, `SSHEditor`, `Settings`, `SettingsEditor`, etc.).
+  - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
   - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
