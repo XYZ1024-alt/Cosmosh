@@ -3411,7 +3411,7 @@ const SFTP: React.FC<SFTPProps> = ({
                       treeRowRefs.current[node.path] = element;
                     }}
                     type="button"
-                    className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-sm-2 pr-2 text-left focus-visible:outline-none focus-visible:ring-2"
+                    className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-left"
                     tabIndex={resolvedActiveTreePath === node.path ? 0 : -1}
                     onClick={() => {
                       setActiveTreePath(node.path);
@@ -3853,7 +3853,7 @@ const SFTP: React.FC<SFTPProps> = ({
                                 aria-selected={isSelected}
                                 tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
                                 className={classNames(
-                                  'focus-visible:ring-form-ring grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover focus-visible:outline-none focus-visible:ring-2',
+                                  'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',
                                   DIRECTORY_ROW_GRID_CLASS_NAME,
                                   hasSelectedPreviousEntry && hasSelectedNextEntry
                                     ? 'rounded-none'
