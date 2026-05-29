@@ -10,9 +10,6 @@ export const DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME = 'min-w-[600px]';
 /** Grid columns shared by directory header and rows. */
 export const DIRECTORY_ROW_GRID_CLASS_NAME = 'grid-cols-[minmax(0,1fr)_92px_148px_96px_28px]';
 
-/** Maximum selected paths sent to the raw metadata preview in one request. */
-export const SFTP_RAW_DATA_SELECTION_LIMIT = 200;
-
 /** Transparent fallback for native applications that do not expose an icon. */
 export const SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK =
   'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';

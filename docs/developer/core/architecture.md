@@ -91,6 +91,7 @@ sequenceDiagram
 - `contextIsolation: true`
 - Renderer gets only explicit bridge APIs via `contextBridge.exposeInMainWorld`.
 - Internal privileged operations stay in Main/Backend process.
+- Renderer-requested app windows are denied by default. The current allow-list only permits same-renderer SFTP Properties popups, and those child windows reuse the secure preload with `nodeIntegration` disabled and `contextIsolation` enabled.
 
 ### Backend Access Boundary
 

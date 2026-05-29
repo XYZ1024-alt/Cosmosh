@@ -11,7 +11,6 @@ import {
   createSftpFile,
   createSftpSession,
   downloadSftpFile,
-  getSftpEntryDetails,
   listSftpDirectory,
   renameSftpEntry,
   runSftpBatchOperation,
@@ -27,8 +26,8 @@ import {
   NEW_DIRECTORY_NAME,
   NEW_FILE_NAME,
   PARENT_DIRECTORY_ROW_KEY,
-  SFTP_RAW_DATA_SELECTION_LIMIT,
 } from './sftp/sftp-constants';
+import { buildSftpEntryPropertiesWindowUrl } from './sftp/sftp-entry-properties-window';
 import type {
   ClipboardState,
   DirectoryCacheEntry,
@@ -45,7 +44,6 @@ import type {
   SftpDeleteInvocationSource,
   SftpFileNavigationRow,
   SftpOpenWithApplication,
-  SftpRawDataState,
   SftpSelectionClickEvent,
   TreeDirectoryNode,
 } from './sftp/sftp-types';
@@ -123,11 +121,6 @@ const SFTP: React.FC<SFTPProps> = ({
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
-  const [rawDataState, setRawDataState] = React.useState<SftpRawDataState>({
-    status: 'idle',
-    selectionKey: '',
-    payload: null,
-  });
   const [openWithApplicationsByPath, setOpenWithApplicationsByPath] = React.useState<
     Record<string, SftpOpenWithApplication[]>
   >({});
@@ -355,8 +348,6 @@ const SFTP: React.FC<SFTPProps> = ({
   const selectedCount = selectedEntries.length;
   const hasSelection = selectedCount > 0;
   const hasSingleSelection = selectedCount === 1;
-  const selectedDetailPaths = React.useMemo(() => selectedEntries.map((entry) => entry.path), [selectedEntries]);
-  const selectedDetailsRequestKey = React.useMemo(() => selectedDetailPaths.join('\u0000'), [selectedDetailPaths]);
 
   const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
   const addressBreadcrumbRenderState = React.useMemo(
@@ -404,71 +395,6 @@ const SFTP: React.FC<SFTPProps> = ({
     setSelectionAnchorPath('');
     setFilePreview(null);
   }, []);
-
-  React.useEffect(() => {
-    if (!sessionId || selectedDetailPaths.length === 0) {
-      setRawDataState({
-        status: 'idle',
-        selectionKey: '',
-        payload: null,
-      });
-      return;
-    }
-
-    let isCancelled = false;
-    const requestedPaths = selectedDetailPaths.slice(0, SFTP_RAW_DATA_SELECTION_LIMIT);
-    const selection = {
-      totalCount: selectedDetailPaths.length,
-      requestedCount: requestedPaths.length,
-      omittedCount: Math.max(0, selectedDetailPaths.length - requestedPaths.length),
-      paths: selectedDetailPaths,
-      requestedPaths,
-    };
-
-    setRawDataState({
-      status: 'loading',
-      selectionKey: selectedDetailsRequestKey,
-      payload: {
-        selection,
-      },
-    });
-
-    void getSftpEntryDetails(sessionId, { paths: requestedPaths })
-      .then((response) => {
-        if (isCancelled) {
-          return;
-        }
-
-        setRawDataState({
-          status: 'ready',
-          selectionKey: selectedDetailsRequestKey,
-          payload: {
-            selection,
-            response,
-          },
-        });
-      })
-      .catch((error: unknown) => {
-        if (isCancelled) {
-          return;
-        }
-
-        const message = error instanceof Error ? error.message : 'Failed to load raw SFTP metadata.';
-        setRawDataState({
-          status: 'error',
-          selectionKey: selectedDetailsRequestKey,
-          payload: {
-            selection,
-            error: message,
-          },
-          message,
-        });
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [selectedDetailPaths, selectedDetailsRequestKey, sessionId]);
 
   const selectSingleEntry = React.useCallback((entry: ApiSftpEntry | null): void => {
     if (!entry) {
@@ -1554,6 +1480,47 @@ const SFTP: React.FC<SFTPProps> = ({
     ],
   );
 
+  /**
+   * Opens a standalone metadata window for one or more remote SFTP entries.
+   *
+   * @param entries Entries whose properties should be shown.
+   * @returns void.
+   */
+  const handleOpenProperties = React.useCallback(
+    (entries: ApiSftpEntry[]): void => {
+      if (!sessionId) {
+        notifyError(t('sftp.noSession'));
+        return;
+      }
+
+      if (entries.length === 0) {
+        return;
+      }
+
+      try {
+        const windowName =
+          entries.length === 1
+            ? `cosmosh-sftp-properties:${sessionId}:${entries[0]?.path ?? ''}`
+            : `cosmosh-sftp-properties:${sessionId}:selection:${entries.map((entry) => entry.path).join('|')}`;
+        const propertiesWindow = window.open(
+          buildSftpEntryPropertiesWindowUrl(sessionId, entries),
+          windowName,
+          'popup,width=520,height=680,resizable=yes,scrollbars=yes',
+        );
+
+        if (!propertiesWindow) {
+          notifyError(t('sftp.properties.openFailed'));
+          return;
+        }
+
+        propertiesWindow.opener = null;
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.properties.openFailed'));
+      }
+    },
+    [notifyError, sessionId],
+  );
+
   const renderSftpActionMenuItems = React.useCallback(
     ({
       contextEntry,
@@ -1582,6 +1549,7 @@ const SFTP: React.FC<SFTPProps> = ({
           handleOpenEntry={handleOpenEntry}
           handleOpenEntryWithApplication={handleOpenEntryWithApplication}
           handleOpenEntryWithPicker={handleOpenEntryWithPicker}
+          handleOpenProperties={handleOpenProperties}
           handleOpenSshAtEntryLocation={handleOpenSshAtEntryLocation}
           handlePasteEntry={handlePasteEntry}
           handleTreeDirectoryRefresh={handleTreeDirectoryRefresh}
@@ -1616,6 +1584,7 @@ const SFTP: React.FC<SFTPProps> = ({
       handleOpenEntry,
       handleOpenEntryWithApplication,
       handleOpenEntryWithPicker,
+      handleOpenProperties,
       handleOpenSshAtEntryLocation,
       handlePasteEntry,
       loadOpenWithApplications,
@@ -2200,6 +2169,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onCommitRenameEntry={commitRenameEntry}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryOpen={handleEntryOpen}
+            onEntryProperties={handleOpenProperties}
             onEntrySelect={handleEntrySelect}
             onFileNavigationRowKeyDown={handleFileNavigationRowKeyDown}
             onInlineEditInputBlur={handleInlineEditInputBlur}
@@ -2211,9 +2181,7 @@ const SFTP: React.FC<SFTPProps> = ({
           />
           <SftpDetailPanel
             filePreview={filePreview}
-            rawDataState={rawDataState}
             selectedCount={selectedCount}
-            selectedDetailsRequestKey={selectedDetailsRequestKey}
             selectedEntry={selectedEntry}
           />
         </div>

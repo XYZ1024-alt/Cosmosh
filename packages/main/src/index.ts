@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs/promises';
 import net from 'node:net';
 import os from 'node:os';
+import { pathToFileURL } from 'node:url';
 
 import type { ApiErrorResponse } from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
@@ -10,7 +11,17 @@ import { createI18n, createMessages, enableI18nDevHotReload, resolveLocale } fro
 import mainEn from '@cosmosh/i18n/locales/en/main.json';
 import mainZhCN from '@cosmosh/i18n/locales/zh-CN/main.json';
 import { spawn } from 'child_process';
-import { app, BrowserWindow, dialog, Menu, nativeTheme, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  type BrowserWindowConstructorOptions,
+  dialog,
+  type HandlerDetails,
+  Menu,
+  nativeTheme,
+  shell,
+  type WindowOpenHandlerResponse,
+} from 'electron';
 import path from 'path';
 
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
@@ -49,6 +60,12 @@ const WINDOWS_TITLE_BAR_OVERLAY_COLOR = '#00000000';
 const WINDOWS_TITLE_BAR_OVERLAY_HEIGHT = 50;
 const DOCUMENTATION_URL = 'https://github.com/agoudbg/cosmosh/tree/main/docs';
 const GITHUB_REPOSITORY_URL = 'https://github.com/agoudbg/cosmosh';
+const SFTP_PROPERTIES_WINDOW_ROUTE_PARAM = 'sftp-entry-properties';
+
+type TrustedRendererWindowOpenTarget = {
+  origin: string;
+  pathname?: string;
+};
 
 let windowsSystemMenuSymbolColor = nativeTheme.shouldUseDarkColors ? '#f5f7fa' : '#111827';
 
@@ -1079,6 +1096,103 @@ const requestBackend = async <TSuccess>(
 };
 
 /**
+ * Resolves the renderer target that is allowed to open app-owned popup windows.
+ *
+ * @param isDev Whether the renderer is served from the Vite dev server.
+ * @returns Allowed renderer URL identity.
+ */
+const resolveTrustedRendererWindowOpenTarget = (isDev: boolean): TrustedRendererWindowOpenTarget => {
+  if (isDev) {
+    return {
+      origin: new URL(`http://localhost:${resolveRendererDevPort()}`).origin,
+    };
+  }
+
+  const rendererEntryPath = path.join(process.resourcesPath, 'renderer', 'index.html');
+  const rendererEntryUrl = pathToFileURL(rendererEntryPath);
+
+  return {
+    origin: rendererEntryUrl.origin,
+    pathname: rendererEntryUrl.pathname,
+  };
+};
+
+/**
+ * Checks whether a renderer popup URL targets the SFTP properties route.
+ *
+ * @param details Window-open details supplied by Electron.
+ * @param trustedTarget URL identity owned by the current renderer runtime.
+ * @returns Whether the popup should be allowed.
+ */
+const isTrustedSftpPropertiesWindowOpen = (
+  details: HandlerDetails,
+  trustedTarget: TrustedRendererWindowOpenTarget,
+): boolean => {
+  try {
+    const targetUrl = new URL(details.url);
+    if (targetUrl.searchParams.get('cosmoshWindow') !== SFTP_PROPERTIES_WINDOW_ROUTE_PARAM) {
+      return false;
+    }
+
+    if (targetUrl.origin !== trustedTarget.origin) {
+      return false;
+    }
+
+    return trustedTarget.pathname === undefined || targetUrl.pathname === trustedTarget.pathname;
+  } catch {
+    return false;
+  }
+};
+
+/**
+ * Builds constrained BrowserWindow options for an app-owned SFTP properties popup.
+ *
+ * @param preloadPath Secure preload script path shared with the main renderer.
+ * @returns BrowserWindow options merged by Electron for the child window.
+ */
+const createSftpPropertiesWindowOptions = (preloadPath: string): BrowserWindowConstructorOptions => {
+  return {
+    title: getMainI18n().t('app.title'),
+    width: 520,
+    height: 680,
+    minWidth: 420,
+    minHeight: 520,
+    show: true,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: preloadPath,
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  };
+};
+
+/**
+ * Installs the strict allow-list used by renderer-owned popup windows.
+ *
+ * @param targetWindow Main app BrowserWindow.
+ * @param preloadPath Secure preload script path shared with allowed popups.
+ * @param trustedTarget Renderer URL identity that may request app-owned popups.
+ * @returns void.
+ */
+const registerRendererWindowOpenPolicy = (
+  targetWindow: BrowserWindow,
+  preloadPath: string,
+  trustedTarget: TrustedRendererWindowOpenTarget,
+): void => {
+  targetWindow.webContents.setWindowOpenHandler((details): WindowOpenHandlerResponse => {
+    if (!isTrustedSftpPropertiesWindowOpen(details, trustedTarget)) {
+      return { action: 'deny' };
+    }
+
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: createSftpPropertiesWindowOptions(preloadPath),
+    };
+  });
+};
+
+/**
  * Creates the primary desktop window and loads renderer entry according to runtime mode.
  */
 const createWindow = async (): Promise<void> => {
@@ -1110,6 +1224,7 @@ const createWindow = async (): Promise<void> => {
           },
         }),
   });
+  registerRendererWindowOpenPolicy(mainWindow, preloadPath, resolveTrustedRendererWindowOpenTarget(isDev));
 
   // Load renderer based on environment
   if (isDev) {

@@ -7,6 +7,7 @@ import {
   FilePlus2,
   FolderOpen,
   FolderPlus,
+  Info,
   RefreshCcw,
   Scissors,
   Terminal,
@@ -56,6 +57,7 @@ type SftpActionMenuHandlers = {
   handleOpenEntry: (entry: ApiSftpEntry) => Promise<void>;
   handleOpenEntryWithApplication: (entry: ApiSftpEntry, application: SftpOpenWithApplication) => Promise<void>;
   handleOpenEntryWithPicker: (entry: ApiSftpEntry) => Promise<void>;
+  handleOpenProperties: (entries: ApiSftpEntry[]) => void;
   handleOpenSshAtEntryLocation: (entry: ApiSftpEntry | null, targetDirectoryPath?: string) => void;
   handlePasteEntry: (targetDirectoryPath?: string) => Promise<void>;
   handleTreeDirectoryRefresh: (directoryPath: string) => void;
@@ -108,6 +110,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   handleOpenEntry,
   handleOpenEntryWithApplication,
   handleOpenEntryWithPicker,
+  handleOpenProperties,
   handleOpenSshAtEntryLocation,
   handlePasteEntry,
   handleTreeDirectoryRefresh,
@@ -147,6 +150,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const openWithApplications = targetEntry ? (openWithApplicationsByPath[targetEntry.path] ?? []) : [];
   const isLoadingOpenWithApplications = Boolean(targetEntry && loadingOpenWithPath === targetEntry.path);
   const canOpenSshHere = canUseFileActions && (!isMultiTarget || !targetEntry);
+  const canOpenProperties = canUseFileActions && targetEntries.length > 0;
   const canMutateEntry = canUseFileActions && targetEntries.length > 0;
   const canRenameEntry = canMutateEntry && targetEntries.length === 1;
   const canPaste = canUseFileActions && Boolean(clipboardState);
@@ -423,6 +427,20 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
           >
             {t('sftp.actions.newFolder')}
             {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Shift+N</ShortcutComponent> : null}
+          </ItemComponent>
+        </>
+      ) : null}
+      {(scope === 'entry' || isTreeDirectoryScope) && targetEntries.length > 0 ? (
+        <>
+          <SeparatorComponent />
+          <ItemComponent
+            icon={Info}
+            disabled={!canOpenProperties}
+            onSelect={() => {
+              handleOpenProperties(targetEntries);
+            }}
+          >
+            {t('sftp.actions.properties')}
           </ItemComponent>
         </>
       ) : null}

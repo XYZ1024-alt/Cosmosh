@@ -4,59 +4,25 @@ import React from 'react';
 
 import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
-import type { FilePreviewState, SftpRawDataState } from './sftp-types';
-import { formatFileSize, formatModifiedAt, formatRawDataJson, resolveEntryIcon } from './sftp-utils';
+import type { FilePreviewState } from './sftp-types';
+import { formatFileSize, formatModifiedAt, resolveEntryIcon } from './sftp-utils';
 
 /**
  * Props for the right-side SFTP details panel.
  */
 type SftpDetailPanelProps = {
   filePreview: FilePreviewState | null;
-  rawDataState: SftpRawDataState;
   selectedCount: number;
-  selectedDetailsRequestKey: string;
   selectedEntry: ApiSftpEntry | null;
 };
 
 /**
- * Renders selected-entry details, file previews, and raw metadata inspection.
+ * Renders selected-entry details and file previews.
  *
- * @param props Selected entry, preview, and raw metadata state.
+ * @param props Selected entry and preview state.
  * @returns SFTP details panel.
  */
-export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
-  filePreview,
-  rawDataState,
-  selectedCount,
-  selectedDetailsRequestKey,
-  selectedEntry,
-}) => {
-  const isRawDataCurrent = selectedCount > 0 && rawDataState.selectionKey === selectedDetailsRequestKey;
-  const rawDataPayload = isRawDataCurrent ? rawDataState.payload : null;
-  const rawDataStatusLabel =
-    !isRawDataCurrent || rawDataState.status === 'loading'
-      ? 'Loading raw data...'
-      : rawDataState.status === 'error'
-        ? 'Failed to load raw data.'
-        : rawDataState.status === 'ready'
-          ? 'Loaded'
-          : 'No raw data.';
-  const rawDataPanel =
-    selectedCount > 0 ? (
-      <section className="border-t border-home-divider pt-3">
-        <div className="flex min-w-0 items-center justify-between gap-2">
-          <div className="text-home-text text-sm font-medium">Raw Data</div>
-          <div className="truncate text-right text-[11px] text-home-text-subtle">{rawDataStatusLabel}</div>
-        </div>
-        {isRawDataCurrent && rawDataState.status === 'error' && rawDataState.message ? (
-          <div className="mt-2 text-xs text-status-bad">{rawDataState.message}</div>
-        ) : null}
-        <pre className="bg-home-card/60 text-home-text mt-2 max-h-[360px] overflow-auto whitespace-pre-wrap break-words rounded-md border border-home-divider p-2 font-mono text-[11px] leading-4">
-          {rawDataPayload ? formatRawDataJson(rawDataPayload) : rawDataStatusLabel}
-        </pre>
-      </section>
-    ) : null;
-
+export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({ filePreview, selectedCount, selectedEntry }) => {
   return (
     <aside className={SFTP_CARD_CLASS_NAME}>
       <div className="flex h-full min-h-0 flex-col">
@@ -88,7 +54,6 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
               <div className="text-sm text-home-text-subtle">
                 {t('sftp.detailSelectedMany', { count: selectedCount })}
               </div>
-              {rawDataPanel}
             </div>
           ) : selectedEntry ? (
             <div className="space-y-4">
@@ -119,7 +84,6 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
                   <dd className="text-home-text mt-1 font-mono text-xs">{selectedEntry.permissions}</dd>
                 </div>
               </dl>
-              {rawDataPanel}
             </div>
           ) : (
             <div className="flex h-full items-center justify-center px-3 text-center text-sm text-home-text-subtle">

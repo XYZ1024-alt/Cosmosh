@@ -91,6 +91,7 @@ sequenceDiagram
 - `contextIsolation: true`
 - Renderer 仅获得显式 bridge API（`contextBridge.exposeInMainWorld`）。
 - 特权操作保留在 Main/Backend 进程。
+- Renderer 发起的应用窗口默认被拒绝。当前白名单仅允许同 renderer 的 SFTP 属性弹窗，这些子窗口复用安全 preload，并保持 `nodeIntegration` 关闭、`contextIsolation` 开启。
 
 ### Backend 访问边界
 

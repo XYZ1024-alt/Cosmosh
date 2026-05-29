@@ -150,7 +150,7 @@ export const formatFileSize = (size: number): string => {
 };
 
 /**
- * Serializes raw SFTP metadata for the temporary inspection panel.
+ * Serializes raw SFTP metadata for the properties inspection panel.
  *
  * @param value Raw data payload.
  * @returns Pretty-printed JSON string.

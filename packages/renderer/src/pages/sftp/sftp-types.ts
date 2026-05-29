@@ -117,16 +117,6 @@ export type FilePreviewState = {
 };
 
 /**
- * Raw metadata panel state for the selected entry set.
- */
-export type SftpRawDataState = {
-  status: 'idle' | 'loading' | 'ready' | 'error';
-  selectionKey: string;
-  payload: unknown | null;
-  message?: string;
-};
-
-/**
  * Pending inline create row state.
  */
 export type PendingCreateState = {
