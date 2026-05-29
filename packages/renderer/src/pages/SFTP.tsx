@@ -2629,6 +2629,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onCancelInlineEdit={cancelInlineEdit}
             onCommitPendingCreate={commitPendingCreate}
             onCommitRenameEntry={commitRenameEntry}
+            onDirectoryBlankClick={resetSelection}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryOpen={handleEntryOpen}
             onEntryProperties={handleOpenProperties}

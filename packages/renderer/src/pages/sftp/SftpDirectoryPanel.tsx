@@ -49,6 +49,7 @@ type SftpDirectoryPanelProps = {
   onCancelInlineEdit: () => void;
   onCommitPendingCreate: () => Promise<void>;
   onCommitRenameEntry: (entry: ApiSftpEntry) => Promise<void>;
+  onDirectoryBlankClick: () => void;
   onEntryContextMenu: (entry: ApiSftpEntry) => void;
   onEntryOpen: (entry: ApiSftpEntry) => void;
   onEntryProperties: (entries: ApiSftpEntry[]) => void;
@@ -80,6 +81,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   onCancelInlineEdit,
   onCommitPendingCreate,
   onCommitRenameEntry,
+  onDirectoryBlankClick,
   onEntryContextMenu,
   onEntryOpen,
   onEntryProperties,
@@ -146,7 +148,14 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                     <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
                     <span></span>
                   </div>
-                  <div className="min-h-0 flex-1">
+                  <div
+                    className="min-h-0 flex-1"
+                    onClick={(event) => {
+                      if (event.button === 0 && event.currentTarget === event.target) {
+                        onDirectoryBlankClick();
+                      }
+                    }}
+                  >
                     {status === 'idle' ? (
                       <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
                         {t('sftp.noSession')}
