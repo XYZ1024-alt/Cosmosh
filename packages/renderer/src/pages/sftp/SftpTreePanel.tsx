@@ -8,6 +8,73 @@ import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
 import type { SftpActionMenuOptions, SftpConnectionStatus, TreeDirectoryNode } from './sftp-types';
 import { resolveTreeDirectoryEntry, resolveTreeIndentClassName } from './sftp-utils';
 
+const CURRENT_DIRECTORY_SCROLL_RATIO = 1 / 3;
+
+/**
+ * Resolves the clamped scroll position that places the active directory row near the upper third of the tree viewport.
+ *
+ * @param scrollContainer Scrollable tree viewport element.
+ * @param targetRow Current directory row element.
+ * @returns ScrollTop value constrained to the viewport's scrollable range.
+ */
+const resolveCurrentDirectoryScrollTop = (scrollContainer: HTMLDivElement, targetRow: HTMLElement): number => {
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const rowRect = targetRow.getBoundingClientRect();
+  const rowOffsetTop = rowRect.top - containerRect.top;
+  const targetViewportTop = scrollContainer.clientHeight * CURRENT_DIRECTORY_SCROLL_RATIO - rowRect.height / 2;
+  const desiredScrollTop = scrollContainer.scrollTop + rowOffsetTop - targetViewportTop;
+  const maxScrollTop = Math.max(0, scrollContainer.scrollHeight - scrollContainer.clientHeight);
+
+  return Math.min(Math.max(desiredScrollTop, 0), maxScrollTop);
+};
+
+/**
+ * Resolves the mounted parent/current/child rows that should stay visible around the active directory.
+ *
+ * @param treeNodes Directory tree registry keyed by remote path.
+ * @param targetPath Active directory path.
+ * @param treeRowRefs Mounted tree row elements keyed by remote path.
+ * @returns Mounted rows that form the active directory viewport context.
+ */
+const resolveDirectoryViewportContextRows = (
+  treeNodes: Record<string, TreeDirectoryNode>,
+  targetPath: string,
+  treeRowRefs: Record<string, HTMLButtonElement | null>,
+): HTMLButtonElement[] => {
+  const node = treeNodes[targetPath];
+  const contextPaths = [node?.parentPath, targetPath, ...(node?.isExpanded ? node.children : [])].filter(
+    (path): path is string => Boolean(path),
+  );
+  const uniqueContextPaths = Array.from(new Set(contextPaths));
+
+  return uniqueContextPaths
+    .map((path) => treeRowRefs[path])
+    .filter((element): element is HTMLButtonElement => element !== null);
+};
+
+/**
+ * Checks whether the active directory context already fits inside the visible tree viewport.
+ *
+ * @param scrollContainer Scrollable tree viewport element.
+ * @param contextRows Mounted parent/current/child rows around the active directory.
+ * @returns Whether all mounted context rows fit inside the viewport.
+ */
+const isDirectoryContextInTreeViewport = (
+  scrollContainer: HTMLDivElement,
+  contextRows: HTMLButtonElement[],
+): boolean => {
+  if (contextRows.length === 0) {
+    return false;
+  }
+
+  const containerRect = scrollContainer.getBoundingClientRect();
+  const contextRects = contextRows.map((row) => row.getBoundingClientRect());
+  const contextTop = Math.min(...contextRects.map((rect) => rect.top));
+  const contextBottom = Math.max(...contextRects.map((rect) => rect.bottom));
+
+  return contextTop >= containerRect.top && contextBottom <= containerRect.bottom;
+};
+
 /**
  * Props for the SFTP directory tree panel.
  */
@@ -50,6 +117,36 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
   treeRootPaths,
   treeRowRefs,
 }) => {
+  const treeViewportRef = React.useRef<HTMLDivElement | null>(null);
+  const lastAutoScrolledPathRef = React.useRef<string>('');
+
+  React.useLayoutEffect(() => {
+    if (!currentPath || lastAutoScrolledPathRef.current === currentPath) {
+      return;
+    }
+
+    if (!treeNodes[currentPath] && !treeRootPaths.includes(currentPath)) {
+      return;
+    }
+
+    const scrollContainer = treeViewportRef.current;
+    const currentTreeRow = treeRowRefs.current[currentPath];
+    if (!scrollContainer || !currentTreeRow) {
+      return;
+    }
+
+    const directoryContextRows = resolveDirectoryViewportContextRows(treeNodes, currentPath, treeRowRefs.current);
+    if (isDirectoryContextInTreeViewport(scrollContainer, directoryContextRows)) {
+      lastAutoScrolledPathRef.current = currentPath;
+      return;
+    }
+
+    scrollContainer.scrollTo({
+      top: resolveCurrentDirectoryScrollTop(scrollContainer, currentTreeRow),
+    });
+    lastAutoScrolledPathRef.current = currentPath;
+  }, [currentPath, treeNodes, treeRootPaths, treeRowRefs]);
+
   /**
    * Recursively renders one visible tree node and its expanded descendants.
    *
@@ -163,7 +260,10 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
   return (
     <aside className={SFTP_CARD_CLASS_NAME}>
       <div className="flex h-full min-h-0 flex-col">
-        <div className="min-h-0 flex-1 overflow-auto">
+        <div
+          ref={treeViewportRef}
+          className="min-h-0 flex-1 overflow-auto"
+        >
           {status === 'connecting' && treeRootPaths.length === 0 ? (
             <div className="flex h-full items-center justify-center gap-2 text-xs text-home-text-subtle">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
