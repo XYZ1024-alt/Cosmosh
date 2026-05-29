@@ -4,6 +4,8 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import App from './App';
+import { InputContextMenuProvider } from './components/ui/input-context-menu';
+import { SelectionContextMenuProvider } from './components/ui/selection-context-menu';
 import { initializeLocale } from './lib/i18n';
 import { initializeSettingsStore } from './lib/settings-store';
 import { isSftpEntryPropertiesWindow } from './pages/sftp/sftp-entry-properties-window';
@@ -27,9 +29,14 @@ const bootstrap = async (): Promise<void> => {
   }
 
   const appNode = shouldRenderSftpPropertiesWindow ? <SftpEntryPropertiesPage /> : <App />;
+  const rootNode = (
+    <InputContextMenuProvider>
+      <SelectionContextMenuProvider>{appNode}</SelectionContextMenuProvider>
+    </InputContextMenuProvider>
+  );
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
-    shouldUseStrictMode ? <React.StrictMode>{appNode}</React.StrictMode> : appNode,
+    shouldUseStrictMode ? <React.StrictMode>{rootNode}</React.StrictMode> : rootNode,
   );
 };
 

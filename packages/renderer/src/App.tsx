@@ -6,7 +6,6 @@ import AppCommandPaletteHost from './components/AppCommandPaletteHost';
 import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
 import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
-import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { listLocalTerminalProfiles } from './lib/backend';
 import {
   readEnableHeapSnapshotPreference,
@@ -709,66 +708,64 @@ const App: React.FC = () => {
 
   return (
     <AppToastProvider>
-      <InputContextMenuProvider>
-        <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
-          {/* Header */}
-          <div
+      <div className="flex h-screen w-screen flex-col overflow-hidden bg-bg text-text">
+        {/* Header */}
+        <div
+          className="flex-shrink-0"
+          // @ts-expect-error React.CSSProperties
+          style={{ WebkitAppRegion: 'drag' }}
+        >
+          <Header
             className="flex-shrink-0"
-            // @ts-expect-error React.CSSProperties
-            style={{ WebkitAppRegion: 'drag' }}
-          >
-            <Header
-              className="flex-shrink-0"
-              tabs={tabs}
-              activeTab={activeTabId}
-              onActiveTabChange={setActiveTabId}
-              onAddTab={() => addTab('home')}
-              onCloseTab={closeTab}
-              onCloseRightTabs={closeRightTabs}
-              onCloseOtherTabs={closeOtherTabs}
-              onReorderTabs={reorderTabs}
-              onOpenSSHEditorTab={() => addTab('ssh-editor')}
-              onOpenSSHKeychainsTab={() => addTab('ssh-keychains')}
-              onOpenAuditLogsTab={() => addTab('audit-logs')}
-              onOpenSettingsTab={(options) =>
-                addTab('settings', {
-                  state: {
-                    settingsCategory: options?.categoryId,
-                  },
-                })
-              }
-              onOpenSettingsEditorTab={() => addTab('settings-editor')}
-              onOpenDebugTab={() => addTab('debug')}
-            />
-          </div>
-          {/* Content */}
-          {tabContent}
-
-          <AppCommandPaletteHost
-            activeTabId={activeTabId}
             tabs={tabs}
-            addTab={addTab}
-            closeTab={closeTab}
-            closeRightTabs={closeRightTabs}
-            setActiveTabId={setActiveTabId}
-            showSystemMonitorOverlay={showSystemMonitorOverlay}
-            enableMainHeapSnapshotExport={enableMainHeapSnapshotExport}
-            onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
-            onEnableMainHeapSnapshotExportChange={handleEnableMainHeapSnapshotExportChange}
-          />
-
-          <TabSwitcherOverlay
-            tabs={tabs}
-            activeTabId={activeTabId}
-            applySshServerVisualStyle={applySshServerVisualStyle}
-            openSignal={tabSwitcherOpenSignal}
+            activeTab={activeTabId}
+            onActiveTabChange={setActiveTabId}
+            onAddTab={() => addTab('home')}
             onCloseTab={closeTab}
-            onCommitTab={setActiveTabId}
+            onCloseRightTabs={closeRightTabs}
+            onCloseOtherTabs={closeOtherTabs}
+            onReorderTabs={reorderTabs}
+            onOpenSSHEditorTab={() => addTab('ssh-editor')}
+            onOpenSSHKeychainsTab={() => addTab('ssh-keychains')}
+            onOpenAuditLogsTab={() => addTab('audit-logs')}
+            onOpenSettingsTab={(options) =>
+              addTab('settings', {
+                state: {
+                  settingsCategory: options?.categoryId,
+                },
+              })
+            }
+            onOpenSettingsEditorTab={() => addTab('settings-editor')}
+            onOpenDebugTab={() => addTab('debug')}
           />
-
-          <SystemPerformanceOverlay visible={showSystemMonitorOverlay} />
         </div>
-      </InputContextMenuProvider>
+        {/* Content */}
+        {tabContent}
+
+        <AppCommandPaletteHost
+          activeTabId={activeTabId}
+          tabs={tabs}
+          addTab={addTab}
+          closeTab={closeTab}
+          closeRightTabs={closeRightTabs}
+          setActiveTabId={setActiveTabId}
+          showSystemMonitorOverlay={showSystemMonitorOverlay}
+          enableMainHeapSnapshotExport={enableMainHeapSnapshotExport}
+          onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
+          onEnableMainHeapSnapshotExportChange={handleEnableMainHeapSnapshotExportChange}
+        />
+
+        <TabSwitcherOverlay
+          tabs={tabs}
+          activeTabId={activeTabId}
+          applySshServerVisualStyle={applySshServerVisualStyle}
+          openSignal={tabSwitcherOpenSignal}
+          onCloseTab={closeTab}
+          onCommitTab={setActiveTabId}
+        />
+
+        <SystemPerformanceOverlay visible={showSystemMonitorOverlay} />
+      </div>
     </AppToastProvider>
   );
 };
