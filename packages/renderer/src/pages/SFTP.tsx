@@ -2632,7 +2632,6 @@ const SFTP: React.FC<SFTPProps> = ({
             onDirectoryBlankClick={resetSelection}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryOpen={handleEntryOpen}
-            onEntryProperties={handleOpenProperties}
             onEntrySelect={handleEntrySelect}
             onFileNavigationRowKeyDown={handleFileNavigationRowKeyDown}
             onInlineEditInputBlur={handleInlineEditInputBlur}

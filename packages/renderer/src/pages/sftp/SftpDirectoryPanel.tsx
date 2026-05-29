@@ -1,13 +1,12 @@
 import type { ApiSftpEntry } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { File, Folder, Info, Loader2, ShieldAlert, Undo2 } from 'lucide-react';
+import { File, Folder, Loader2, ShieldAlert, Undo2 } from 'lucide-react';
 import React from 'react';
 
 import { Button } from '../../components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '../../components/ui/context-menu';
 import { Input } from '../../components/ui/input';
 import { Menubar } from '../../components/ui/menubar';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { t } from '../../lib/i18n';
 import {
   DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME,
@@ -52,7 +51,6 @@ type SftpDirectoryPanelProps = {
   onDirectoryBlankClick: () => void;
   onEntryContextMenu: (entry: ApiSftpEntry) => void;
   onEntryOpen: (entry: ApiSftpEntry) => void;
-  onEntryProperties: (entries: ApiSftpEntry[]) => void;
   onEntrySelect: (entry: ApiSftpEntry, event: SftpSelectionClickEvent) => void;
   onFileNavigationRowKeyDown: (event: React.KeyboardEvent<HTMLElement>, row: SftpFileNavigationRow) => void;
   onInlineEditInputBlur: (commit: () => void | Promise<void>) => void;
@@ -84,7 +82,6 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   onDirectoryBlankClick,
   onEntryContextMenu,
   onEntryOpen,
-  onEntryProperties,
   onEntrySelect,
   onFileNavigationRowKeyDown,
   onInlineEditInputBlur,
@@ -131,282 +128,258 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
           {status === 'connecting' ? t('sftp.connecting') : t('sftp.loading')}
         </div>
       ) : (
-        <TooltipProvider delayDuration={180}>
-          <ContextMenu>
-            <ContextMenuTrigger asChild>
-              <div className="h-full min-h-0 overflow-auto">
-                <div className={classNames('flex min-h-full flex-col', DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME)}>
-                  <div
-                    className={classNames(
-                      'sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle',
-                      DIRECTORY_ROW_GRID_CLASS_NAME,
-                    )}
-                  >
-                    <span className="min-w-0 truncate">{t('sftp.columns.name')}</span>
-                    <span className="min-w-0 truncate">{t('sftp.columns.size')}</span>
-                    <span className="min-w-0 truncate">{t('sftp.columns.modified')}</span>
-                    <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
-                    <span></span>
-                  </div>
-                  <div
-                    className="min-h-0 flex-1"
-                    onClick={(event) => {
-                      if (event.button === 0 && event.currentTarget === event.target) {
-                        onDirectoryBlankClick();
+        <ContextMenu>
+          <ContextMenuTrigger asChild>
+            <div className="h-full min-h-0 overflow-auto">
+              <div className={classNames('flex min-h-full flex-col', DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME)}>
+                <div
+                  className={classNames(
+                    'sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle',
+                    DIRECTORY_ROW_GRID_CLASS_NAME,
+                  )}
+                >
+                  <span className="min-w-0 truncate">{t('sftp.columns.name')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.size')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.modified')}</span>
+                  <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
+                  <span></span>
+                </div>
+                <div
+                  className="min-h-0 flex-1"
+                  onClick={(event) => {
+                    if (event.button === 0 && event.currentTarget === event.target) {
+                      onDirectoryBlankClick();
+                    }
+                  }}
+                >
+                  {status === 'idle' ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.noSession')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' && entries.length === 0 && !pendingCreate && !hasParentDirectoryListEntry ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.empty')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' &&
+                  entries.length > 0 &&
+                  visibleEntries.length === 0 &&
+                  !hasParentDirectoryListEntry ? (
+                    <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
+                      {t('sftp.searchEmpty')}
+                    </div>
+                  ) : null}
+                  {status === 'ready' && hasParentDirectoryListEntry ? (
+                    <div
+                      ref={(element) => {
+                        fileRowRefs.current[PARENT_DIRECTORY_ROW_KEY] = element;
+                      }}
+                      role="button"
+                      aria-label={t('sftp.parentDirectoryEntryLabel')}
+                      aria-disabled={!canActivateParentDirectoryListEntry}
+                      tabIndex={
+                        canActivateParentDirectoryListEntry && resolvedActiveFileRowKey === PARENT_DIRECTORY_ROW_KEY
+                          ? 0
+                          : -1
                       }
-                    }}
-                  >
-                    {status === 'idle' ? (
-                      <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                        {t('sftp.noSession')}
-                      </div>
-                    ) : null}
-                    {status === 'ready' && entries.length === 0 && !pendingCreate && !hasParentDirectoryListEntry ? (
-                      <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                        {t('sftp.empty')}
-                      </div>
-                    ) : null}
-                    {status === 'ready' &&
-                    entries.length > 0 &&
-                    visibleEntries.length === 0 &&
-                    !hasParentDirectoryListEntry ? (
-                      <div className="flex h-full items-center justify-center px-4 text-sm text-home-text-subtle">
-                        {t('sftp.searchEmpty')}
-                      </div>
-                    ) : null}
-                    {status === 'ready' && hasParentDirectoryListEntry ? (
-                      <div
-                        ref={(element) => {
-                          fileRowRefs.current[PARENT_DIRECTORY_ROW_KEY] = element;
-                        }}
-                        role="button"
-                        aria-label={t('sftp.parentDirectoryEntryLabel')}
-                        aria-disabled={!canActivateParentDirectoryListEntry}
-                        tabIndex={
-                          canActivateParentDirectoryListEntry && resolvedActiveFileRowKey === PARENT_DIRECTORY_ROW_KEY
-                            ? 0
-                            : -1
+                      className={classNames(
+                        'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
+                        DIRECTORY_ROW_GRID_CLASS_NAME,
+                        canActivateParentDirectoryListEntry
+                          ? 'text-home-text hover:bg-home-card-hover'
+                          : 'cursor-default text-home-text-subtle opacity-55',
+                      )}
+                      onDoubleClick={canActivateParentDirectoryListEntry ? onParentDirectory : undefined}
+                      onFocus={() => {
+                        if (canActivateParentDirectoryListEntry) {
+                          onSetActiveFileRowKey(PARENT_DIRECTORY_ROW_KEY);
                         }
-                        className={classNames(
-                          'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
-                          DIRECTORY_ROW_GRID_CLASS_NAME,
-                          canActivateParentDirectoryListEntry
-                            ? 'text-home-text hover:bg-home-card-hover'
-                            : 'cursor-default text-home-text-subtle opacity-55',
-                        )}
-                        onDoubleClick={canActivateParentDirectoryListEntry ? onParentDirectory : undefined}
-                        onFocus={() => {
-                          if (canActivateParentDirectoryListEntry) {
-                            onSetActiveFileRowKey(PARENT_DIRECTORY_ROW_KEY);
-                          }
-                        }}
-                        onKeyDown={(event) => {
-                          if (canActivateParentDirectoryListEntry) {
-                            onFileNavigationRowKeyDown(event, {
-                              kind: 'parent',
-                              key: PARENT_DIRECTORY_ROW_KEY,
-                            });
-                          }
-                        }}
-                      >
-                        <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                          <Undo2
-                            className={classNames(
-                              'h-4 w-4 shrink-0',
-                              canActivateParentDirectoryListEntry ? 'text-home-text' : 'text-home-text-subtle',
-                            )}
-                          />
-                          <span className="truncate">..</span>
-                        </span>
-                        <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
-                        <span className="truncate text-xs text-home-text-subtle">-</span>
-                        <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
-                        <span />
-                      </div>
-                    ) : null}
-                    {pendingCreate ? (
-                      <div
-                        className={classNames(
-                          'text-home-text grid h-[34px] w-full items-center rounded-lg bg-home-card-hover px-3 text-left text-sm',
-                          DIRECTORY_ROW_GRID_CLASS_NAME,
-                        )}
-                      >
-                        <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                          {pendingCreate.type === 'directory' ? (
-                            <Folder className="text-home-text h-4 w-4 shrink-0" />
-                          ) : (
-                            <File className="text-home-text h-4 w-4 shrink-0" />
+                      }}
+                      onKeyDown={(event) => {
+                        if (canActivateParentDirectoryListEntry) {
+                          onFileNavigationRowKeyDown(event, {
+                            kind: 'parent',
+                            key: PARENT_DIRECTORY_ROW_KEY,
+                          });
+                        }
+                      }}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                        <Undo2
+                          className={classNames(
+                            'h-4 w-4 shrink-0',
+                            canActivateParentDirectoryListEntry ? 'text-home-text' : 'text-home-text-subtle',
                           )}
-                          <Input
-                            ref={renameInputRef}
-                            aria-label={t('sftp.renameInputLabel')}
-                            className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
-                            value={renameInput}
-                            onBlur={() => {
-                              onInlineEditInputBlur(onCommitPendingCreate);
-                            }}
-                            onChange={(event) => onRenameInputChange(event.target.value)}
-                            onKeyDown={(event) => {
-                              if (event.key === 'Enter') {
-                                event.preventDefault();
-                                void onCommitPendingCreate();
-                              }
+                        />
+                        <span className="truncate">..</span>
+                      </span>
+                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
+                      <span className="truncate text-xs text-home-text-subtle">-</span>
+                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                      <span />
+                    </div>
+                  ) : null}
+                  {pendingCreate ? (
+                    <div
+                      className={classNames(
+                        'text-home-text grid h-[34px] w-full items-center rounded-lg bg-home-card-hover px-3 text-left text-sm',
+                        DIRECTORY_ROW_GRID_CLASS_NAME,
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                        {pendingCreate.type === 'directory' ? (
+                          <Folder className="text-home-text h-4 w-4 shrink-0" />
+                        ) : (
+                          <File className="text-home-text h-4 w-4 shrink-0" />
+                        )}
+                        <Input
+                          ref={renameInputRef}
+                          aria-label={t('sftp.renameInputLabel')}
+                          className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                          value={renameInput}
+                          onBlur={() => {
+                            onInlineEditInputBlur(onCommitPendingCreate);
+                          }}
+                          onChange={(event) => onRenameInputChange(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault();
+                              void onCommitPendingCreate();
+                            }
 
-                              if (event.key === 'Escape') {
-                                event.preventDefault();
-                                onCancelInlineEdit();
-                              }
-                            }}
-                          />
-                        </span>
-                        <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
-                        <span className="truncate text-xs text-home-text-subtle">-</span>
-                        <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
-                        <span />
-                      </div>
-                    ) : null}
-                    {status === 'ready' && visibleEntries.length > 0
-                      ? visibleEntries.map((entry, index) => {
-                          const isSelected = selectedPathSet.has(entry.path);
-                          const hasSelectedPreviousEntry =
-                            isSelected && index > 0 && selectedPathSet.has(visibleEntries[index - 1]?.path ?? '');
-                          const hasSelectedNextEntry =
-                            isSelected &&
-                            index < visibleEntries.length - 1 &&
-                            selectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
-                          const isCut = clipboardMode === 'cut' ? clipboardPaths.has(entry.path) : false;
-                          const shouldDimHiddenEntry = sftpShowHiddenEntries && sftpDimHiddenEntries && entry.isHidden;
-                          const hiddenEntryVisualClassName = shouldDimHiddenEntry ? 'opacity-80' : undefined;
+                            if (event.key === 'Escape') {
+                              event.preventDefault();
+                              onCancelInlineEdit();
+                            }
+                          }}
+                        />
+                      </span>
+                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
+                      <span className="truncate text-xs text-home-text-subtle">-</span>
+                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                      <span />
+                    </div>
+                  ) : null}
+                  {status === 'ready' && visibleEntries.length > 0
+                    ? visibleEntries.map((entry, index) => {
+                        const isSelected = selectedPathSet.has(entry.path);
+                        const hasSelectedPreviousEntry =
+                          isSelected && index > 0 && selectedPathSet.has(visibleEntries[index - 1]?.path ?? '');
+                        const hasSelectedNextEntry =
+                          isSelected &&
+                          index < visibleEntries.length - 1 &&
+                          selectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
+                        const isCut = clipboardMode === 'cut' ? clipboardPaths.has(entry.path) : false;
+                        const shouldDimHiddenEntry = sftpShowHiddenEntries && sftpDimHiddenEntries && entry.isHidden;
+                        const hiddenEntryVisualClassName = shouldDimHiddenEntry ? 'opacity-80' : undefined;
 
-                          return (
-                            <ContextMenu key={entry.path}>
-                              <ContextMenuTrigger asChild>
-                                <div
-                                  ref={(element) => {
-                                    fileRowRefs.current[entry.path] = element;
-                                  }}
-                                  role="button"
-                                  aria-selected={isSelected}
-                                  tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
-                                  className={classNames(
-                                    'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',
-                                    DIRECTORY_ROW_GRID_CLASS_NAME,
-                                    hasSelectedPreviousEntry && hasSelectedNextEntry
-                                      ? 'rounded-none'
-                                      : hasSelectedPreviousEntry
-                                        ? 'rounded-b-lg rounded-t-none'
-                                        : hasSelectedNextEntry
-                                          ? 'rounded-b-none rounded-t-lg'
-                                          : 'rounded-lg',
-                                    isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
-                                    isCut ? 'opacity-55' : '',
+                        return (
+                          <ContextMenu key={entry.path}>
+                            <ContextMenuTrigger asChild>
+                              <div
+                                ref={(element) => {
+                                  fileRowRefs.current[entry.path] = element;
+                                }}
+                                role="button"
+                                aria-selected={isSelected}
+                                tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
+                                className={classNames(
+                                  'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',
+                                  DIRECTORY_ROW_GRID_CLASS_NAME,
+                                  hasSelectedPreviousEntry && hasSelectedNextEntry
+                                    ? 'rounded-none'
+                                    : hasSelectedPreviousEntry
+                                      ? 'rounded-b-lg rounded-t-none'
+                                      : hasSelectedNextEntry
+                                        ? 'rounded-b-none rounded-t-lg'
+                                        : 'rounded-lg',
+                                  isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
+                                  isCut ? 'opacity-55' : '',
+                                )}
+                                onClick={(event) => {
+                                  onSetActiveFileRowKey(entry.path);
+                                  onEntrySelect(entry, event);
+                                }}
+                                onDoubleClick={() => onEntryOpen(entry)}
+                                onContextMenu={() => onEntryContextMenu(entry)}
+                                onFocus={() => onSetActiveFileRowKey(entry.path)}
+                                onKeyDown={(event) => {
+                                  onFileNavigationRowKeyDown(event, {
+                                    kind: 'entry',
+                                    key: entry.path,
+                                    entry,
+                                  });
+                                }}
+                              >
+                                <span className="flex min-w-0 items-center gap-2 overflow-hidden">
+                                  {resolveEntryIcon(entry, hiddenEntryVisualClassName)}
+                                  {renamingEntryPath === entry.path ? (
+                                    <Input
+                                      ref={renameInputRef}
+                                      aria-label={t('sftp.renameInputLabel')}
+                                      className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                                      value={renameInput}
+                                      onClick={(event) => event.stopPropagation()}
+                                      onBlur={() => {
+                                        onInlineEditInputBlur(() => onCommitRenameEntry(entry));
+                                      }}
+                                      onChange={(event) => onRenameInputChange(event.target.value)}
+                                      onKeyDown={(event) => {
+                                        if (event.key === 'Enter') {
+                                          event.preventDefault();
+                                          void onCommitRenameEntry(entry);
+                                        }
+
+                                        if (event.key === 'Escape') {
+                                          event.preventDefault();
+                                          onCancelInlineEdit();
+                                        }
+                                      }}
+                                    />
+                                  ) : (
+                                    <span className={classNames('truncate', hiddenEntryVisualClassName)}>
+                                      {entry.name}
+                                    </span>
                                   )}
-                                  onClick={(event) => {
-                                    onSetActiveFileRowKey(entry.path);
-                                    onEntrySelect(entry, event);
-                                  }}
-                                  onDoubleClick={() => onEntryOpen(entry)}
-                                  onContextMenu={() => onEntryContextMenu(entry)}
-                                  onFocus={() => onSetActiveFileRowKey(entry.path)}
-                                  onKeyDown={(event) => {
-                                    onFileNavigationRowKeyDown(event, {
-                                      kind: 'entry',
-                                      key: entry.path,
-                                      entry,
-                                    });
-                                  }}
-                                >
-                                  <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                                    {resolveEntryIcon(entry, hiddenEntryVisualClassName)}
-                                    {renamingEntryPath === entry.path ? (
-                                      <Input
-                                        ref={renameInputRef}
-                                        aria-label={t('sftp.renameInputLabel')}
-                                        className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
-                                        value={renameInput}
-                                        onClick={(event) => event.stopPropagation()}
-                                        onBlur={() => {
-                                          onInlineEditInputBlur(() => onCommitRenameEntry(entry));
-                                        }}
-                                        onChange={(event) => onRenameInputChange(event.target.value)}
-                                        onKeyDown={(event) => {
-                                          if (event.key === 'Enter') {
-                                            event.preventDefault();
-                                            void onCommitRenameEntry(entry);
-                                          }
-
-                                          if (event.key === 'Escape') {
-                                            event.preventDefault();
-                                            onCancelInlineEdit();
-                                          }
-                                        }}
-                                      />
-                                    ) : (
-                                      <span className={classNames('truncate', hiddenEntryVisualClassName)}>
-                                        {entry.name}
-                                      </span>
-                                    )}
-                                  </span>
-                                  <span className="min-w-0 truncate text-xs text-home-text-subtle">
-                                    {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
-                                  </span>
-                                  <span className="truncate text-xs text-home-text-subtle">
-                                    {formatModifiedAt(entry.modifiedAt)}
-                                  </span>
-                                  <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
-                                    {entry.permissions}
-                                  </span>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <Button
-                                        aria-label={t('sftp.actions.properties')}
-                                        variant="ghostIcon"
-                                        className="h-[26px] w-[26px] justify-self-end"
-                                        onClick={(event) => {
-                                          event.stopPropagation();
-                                          onSetActiveFileRowKey(entry.path);
-                                          onEntrySelect(entry, {
-                                            ctrlKey: false,
-                                            metaKey: false,
-                                            shiftKey: false,
-                                          });
-                                          onEntryProperties([entry]);
-                                        }}
-                                        onDoubleClick={(event) => event.stopPropagation()}
-                                      >
-                                        <Info className="h-3.5 w-3.5 shrink-0 text-home-text-subtle" />
-                                      </Button>
-                                    </TooltipTrigger>
-                                    <TooltipContent>{t('sftp.actions.properties')}</TooltipContent>
-                                  </Tooltip>
-                                </div>
-                              </ContextMenuTrigger>
-                              <ContextMenuContent onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}>
-                                {renderActionMenuItems({
-                                  contextEntry: entry,
-                                  menuSurface: 'context',
-                                  scope: 'entry',
-                                  showShortcuts: true,
-                                })}
-                              </ContextMenuContent>
-                            </ContextMenu>
-                          );
-                        })
-                      : null}
-                  </div>
+                                </span>
+                                <span className="min-w-0 truncate text-xs text-home-text-subtle">
+                                  {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
+                                </span>
+                                <span className="truncate text-xs text-home-text-subtle">
+                                  {formatModifiedAt(entry.modifiedAt)}
+                                </span>
+                                <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
+                                  {entry.permissions}
+                                </span>
+                                <span />
+                              </div>
+                            </ContextMenuTrigger>
+                            <ContextMenuContent onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}>
+                              {renderActionMenuItems({
+                                contextEntry: entry,
+                                menuSurface: 'context',
+                                scope: 'entry',
+                                showShortcuts: true,
+                              })}
+                            </ContextMenuContent>
+                          </ContextMenu>
+                        );
+                      })
+                    : null}
                 </div>
               </div>
-            </ContextMenuTrigger>
-            <ContextMenuContent onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}>
-              {renderActionMenuItems({
-                contextEntry: null,
-                menuSurface: 'context',
-                scope: 'directory',
-                showShortcuts: true,
-              })}
-            </ContextMenuContent>
-          </ContextMenu>
-        </TooltipProvider>
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}>
+            {renderActionMenuItems({
+              contextEntry: null,
+              menuSurface: 'context',
+              scope: 'directory',
+              showShortcuts: true,
+            })}
+          </ContextMenuContent>
+        </ContextMenu>
       )}
     </main>
   );
