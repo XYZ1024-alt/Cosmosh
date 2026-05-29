@@ -42,6 +42,8 @@ type SftpDirectoryPanelProps = {
   resolvedActiveFileRowKey: string;
   selectedPathSet: ReadonlySet<string>;
   sessionId: string;
+  sftpDimHiddenEntries: boolean;
+  sftpShowHiddenEntries: boolean;
   status: SftpConnectionStatus;
   visibleEntries: ApiSftpEntry[];
   onCancelInlineEdit: () => void;
@@ -97,6 +99,8 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   resolvedActiveFileRowKey,
   selectedPathSet,
   sessionId,
+  sftpDimHiddenEntries,
+  sftpShowHiddenEntries,
   status,
   visibleEntries,
 }) => {
@@ -262,6 +266,8 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                             index < visibleEntries.length - 1 &&
                             selectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
                           const isCut = clipboardMode === 'cut' ? clipboardPaths.has(entry.path) : false;
+                          const shouldDimHiddenEntry = sftpShowHiddenEntries && sftpDimHiddenEntries && entry.isHidden;
+                          const hiddenEntryVisualClassName = shouldDimHiddenEntry ? 'opacity-80' : undefined;
 
                           return (
                             <ContextMenu key={entry.path}>
@@ -302,7 +308,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                   }}
                                 >
                                   <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                                    {resolveEntryIcon(entry)}
+                                    {resolveEntryIcon(entry, hiddenEntryVisualClassName)}
                                     {renamingEntryPath === entry.path ? (
                                       <Input
                                         ref={renameInputRef}
@@ -327,7 +333,9 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                         }}
                                       />
                                     ) : (
-                                      <span className="truncate">{entry.name}</span>
+                                      <span className={classNames('truncate', hiddenEntryVisualClassName)}>
+                                        {entry.name}
+                                      </span>
                                     )}
                                   </span>
                                   <span className="min-w-0 truncate text-xs text-home-text-subtle">

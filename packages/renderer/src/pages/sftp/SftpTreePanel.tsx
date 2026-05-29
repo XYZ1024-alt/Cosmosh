@@ -14,6 +14,8 @@ import { resolveTreeDirectoryEntry, resolveTreeIndentClassName } from './sftp-ut
 type SftpTreePanelProps = {
   currentPath: string;
   resolvedActiveTreePath: string;
+  sftpDimHiddenEntries: boolean;
+  sftpShowHiddenEntries: boolean;
   status: SftpConnectionStatus;
   treeNodes: Record<string, TreeDirectoryNode>;
   treeRootPaths: string[];
@@ -41,6 +43,8 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
   onTreeRowKeyDown,
   renderActionMenuItems,
   resolvedActiveTreePath,
+  sftpDimHiddenEntries,
+  sftpShowHiddenEntries,
   status,
   treeNodes,
   treeRootPaths,
@@ -63,6 +67,8 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
       const isCurrent = node.path === currentPath;
       const isExpandable = node.isLoading || node.children.length > 0 || !node.isLoaded;
       const treeContextEntry = resolveTreeDirectoryEntry(node);
+      const shouldDimHiddenNode = sftpShowHiddenEntries && sftpDimHiddenEntries && node.isHidden;
+      const hiddenNodeVisualClassName = shouldDimHiddenNode ? 'opacity-80' : undefined;
 
       return (
         <React.Fragment key={node.path}>
@@ -118,8 +124,8 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
                     onFocus={() => onSetActiveTreePath(node.path)}
                     onKeyDown={(event) => onTreeRowKeyDown(event, node.path)}
                   >
-                    <Folder className="text-home-text h-3.5 w-3.5 shrink-0" />
-                    <span className="truncate">{node.name}</span>
+                    <Folder className={classNames('text-home-text h-3.5 w-3.5 shrink-0', hiddenNodeVisualClassName)} />
+                    <span className={classNames('truncate', hiddenNodeVisualClassName)}>{node.name}</span>
                   </button>
                 </div>
               </div>
@@ -147,6 +153,8 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
       onTreeRowKeyDown,
       renderActionMenuItems,
       resolvedActiveTreePath,
+      sftpDimHiddenEntries,
+      sftpShowHiddenEntries,
       treeNodes,
       treeRowRefs,
     ],

@@ -310,9 +310,17 @@
         "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
         "title": "删除前确认"
       },
+      "sftpDimHiddenEntries": {
+        "description": "隐藏文件可见时，对隐藏 SFTP 条目的图标和名称应用 80% 透明度。",
+        "title": "弱化显示隐藏文件"
+      },
       "sftpShowAddressAsText": {
         "description": "始终将 SFTP 地址栏显示为可编辑的纯路径输入框，而不是层级地址栏。",
         "title": "将地址显示为文本"
+      },
+      "sftpShowHiddenEntries": {
+        "description": "显示服务器标记为隐藏，或名称以点号开头的 SFTP 文件与文件夹。",
+        "title": "显示隐藏文件"
       },
       "sftpShowParentDirectoryEntry": {
         "description": "在 SFTP 文件列表顶部显示“..”行，用于返回上一级目录。",
@@ -657,6 +665,7 @@
       "saveToDownloads": "保存到“下载”",
       "search": "搜索当前目录",
       "showAddressAsText": "将地址显示为文本",
+      "showHiddenFiles": "显示隐藏文件",
       "up": "返回上级目录"
     },
     "addressCollapsedMenuLabel": "显示隐藏的路径层级",
@@ -738,6 +747,7 @@
         "failed": "不可用",
         "files": "文件",
         "gid": "组 ID",
+        "hidden": "隐藏",
         "modified": "修改时间",
         "name": "名称",
         "octalMode": "八进制模式",
@@ -759,6 +769,10 @@
         "uid": "所有者 ID"
       },
       "generalTitle": "常规",
+      "hiddenState": {
+        "hidden": "是",
+        "visible": "否"
+      },
       "loadFailed": "加载 SFTP 条目属性失败。",
       "loading": "正在加载属性...",
       "missingPayload": "属性窗口缺少 SFTP 会话或路径。",

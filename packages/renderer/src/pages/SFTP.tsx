@@ -52,6 +52,7 @@ import {
   buildNavigationHistoryMenuItems,
   dedupeSftpEntries,
   filterSftpEntries,
+  filterSftpEntriesByHiddenVisibility,
   flattenVisibleTreePaths,
   formatBatchFeedback,
   formatBatchPartialFailureFeedback,
@@ -98,6 +99,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const { error: notifyError, success: notifySuccess } = useToast();
   const settingsValues = useSettingsValues();
   const sftpDeleteConfirmationMode = useSettingsValue('sftpDeleteConfirmationMode');
+  const sftpShowHiddenEntries = useSettingsValue('sftpShowHiddenEntries');
+  const sftpDimHiddenEntries = useSettingsValue('sftpDimHiddenEntries');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
   const sftpShowAddressAsText = useSettingsValue('sftpShowAddressAsText');
   const [sessionId, setSessionId] = React.useState<string>('');
@@ -134,6 +137,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const pendingDeleteConfirmationResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
+  const sftpShowHiddenEntriesRef = React.useRef(sftpShowHiddenEntries);
   const syncedTabTitleRef = React.useRef<string>('');
   const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -149,6 +153,10 @@ const SFTP: React.FC<SFTPProps> = ({
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+
+  React.useEffect(() => {
+    sftpShowHiddenEntriesRef.current = sftpShowHiddenEntries;
+  }, [sftpShowHiddenEntries]);
 
   React.useEffect(() => {
     const serverName = connectionIntent?.serverName;
@@ -334,14 +342,14 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [releaseInlineEditMenuFocusHandoff]);
 
   const visibleEntries = React.useMemo(() => {
-    return filterSftpEntries(entries, filterQuery);
-  }, [entries, filterQuery]);
+    return filterSftpEntries(filterSftpEntriesByHiddenVisibility(entries, sftpShowHiddenEntries), filterQuery);
+  }, [entries, filterQuery, sftpShowHiddenEntries]);
 
   const selectedPathSet = React.useMemo(() => new Set(selectedPaths), [selectedPaths]);
 
   const selectedEntries = React.useMemo(() => {
-    return entries.filter((entry) => selectedPathSet.has(entry.path));
-  }, [entries, selectedPathSet]);
+    return visibleEntries.filter((entry) => selectedPathSet.has(entry.path));
+  }, [selectedPathSet, visibleEntries]);
 
   const selectedEntry = selectedEntries.length === 1 ? selectedEntries[0] : null;
   const primarySelectedEntry = selectedEntries[0] ?? null;
@@ -370,6 +378,29 @@ const SFTP: React.FC<SFTPProps> = ({
   const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy && !isOperationRunning;
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
+
+  React.useEffect(() => {
+    const visiblePathSet = new Set(visibleEntries.map((entry) => entry.path));
+    setSelectedPaths((previous) => previous.filter((path) => visiblePathSet.has(path)));
+    setSelectionAnchorPath((previous) => (previous && visiblePathSet.has(previous) ? previous : ''));
+  }, [visibleEntries]);
+
+  React.useEffect(() => {
+    setTreeNodes((previous) => {
+      let next = previous;
+      Object.values(directoryCacheRef.current).forEach((cacheEntry) => {
+        next = mergeResolvedDirectoryIntoTree(
+          next,
+          cacheEntry.path,
+          cacheEntry.path,
+          cacheEntry.entries,
+          sftpShowHiddenEntries,
+        );
+      });
+
+      return next;
+    });
+  }, [sftpShowHiddenEntries]);
 
   const fileNavigationRows = React.useMemo<SftpFileNavigationRow[]>(() => {
     const rows: SftpFileNavigationRow[] = [];
@@ -490,7 +521,13 @@ const SFTP: React.FC<SFTPProps> = ({
         const cachedDirectory = directoryCacheRef.current[ancestorPath];
         if (cachedDirectory) {
           setTreeNodes((previous) =>
-            mergeResolvedDirectoryIntoTree(previous, ancestorPath, cachedDirectory.path, cachedDirectory.entries),
+            mergeResolvedDirectoryIntoTree(
+              previous,
+              ancestorPath,
+              cachedDirectory.path,
+              cachedDirectory.entries,
+              sftpShowHiddenEntriesRef.current,
+            ),
           );
           continue;
         }
@@ -518,7 +555,13 @@ const SFTP: React.FC<SFTPProps> = ({
             },
           };
           setTreeNodes((previous) =>
-            mergeResolvedDirectoryIntoTree(previous, ancestorPath, response.data.path, sortedEntries),
+            mergeResolvedDirectoryIntoTree(
+              previous,
+              ancestorPath,
+              response.data.path,
+              sortedEntries,
+              sftpShowHiddenEntriesRef.current,
+            ),
           );
         } catch {
           setTreeNodeLoading(ancestorPath, false);
@@ -536,7 +579,13 @@ const SFTP: React.FC<SFTPProps> = ({
       resetSelection();
       setFilterQuery('');
       setTreeNodes((previous) =>
-        mergeResolvedDirectoryIntoTree(previous, cacheEntry.path, cacheEntry.path, cacheEntry.entries),
+        mergeResolvedDirectoryIntoTree(
+          previous,
+          cacheEntry.path,
+          cacheEntry.path,
+          cacheEntry.entries,
+          sftpShowHiddenEntriesRef.current,
+        ),
       );
       setStatus('ready');
       setErrorMessage('');
@@ -592,7 +641,13 @@ const SFTP: React.FC<SFTPProps> = ({
           pruneSelectionToEntries(sortedEntries);
         }
         setTreeNodes((previous) =>
-          mergeResolvedDirectoryIntoTree(previous, directoryPath, response.data.path, sortedEntries),
+          mergeResolvedDirectoryIntoTree(
+            previous,
+            directoryPath,
+            response.data.path,
+            sortedEntries,
+            sftpShowHiddenEntriesRef.current,
+          ),
         );
         setIsRefreshingDirectory(false);
         directoryCacheRef.current = {
@@ -645,7 +700,13 @@ const SFTP: React.FC<SFTPProps> = ({
       const cachedDirectory = directoryCacheRef.current[directoryPath];
       if (cachedDirectory) {
         setTreeNodes((previous) =>
-          mergeResolvedDirectoryIntoTree(previous, directoryPath, cachedDirectory.path, cachedDirectory.entries),
+          mergeResolvedDirectoryIntoTree(
+            previous,
+            directoryPath,
+            cachedDirectory.path,
+            cachedDirectory.entries,
+            sftpShowHiddenEntriesRef.current,
+          ),
         );
         return;
       }
@@ -669,7 +730,13 @@ const SFTP: React.FC<SFTPProps> = ({
           },
         };
         setTreeNodes((previous) =>
-          mergeResolvedDirectoryIntoTree(previous, directoryPath, response.data.path, sortedEntries),
+          mergeResolvedDirectoryIntoTree(
+            previous,
+            directoryPath,
+            response.data.path,
+            sortedEntries,
+            sftpShowHiddenEntriesRef.current,
+          ),
         );
       } catch (error: unknown) {
         const message = error instanceof Error ? error.message : t('sftp.loadFailed');
@@ -678,6 +745,34 @@ const SFTP: React.FC<SFTPProps> = ({
       }
     },
     [notifyError, setTreeNodeLoading],
+  );
+
+  /**
+   * Persists whether hidden SFTP entries should be shown in browser surfaces.
+   *
+   * @param showHiddenEntries Next hidden-entry visibility state.
+   * @returns Promise that resolves after the settings store is synchronized.
+   */
+  const setSftpHiddenEntriesVisibility = React.useCallback(
+    async (showHiddenEntries: boolean): Promise<void> => {
+      if (settingsValues.sftpShowHiddenEntries === showHiddenEntries) {
+        return;
+      }
+
+      try {
+        const response = await updateAppSettings({
+          values: {
+            ...settingsValues,
+            sftpShowHiddenEntries: showHiddenEntries,
+          },
+        });
+
+        await updateSettingsStoreValues(response.data.item.values);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('settings.saveFailed'));
+      }
+    },
+    [notifyError, settingsValues],
   );
 
   const createSessionForIntent = React.useCallback(
@@ -1712,11 +1807,13 @@ const SFTP: React.FC<SFTPProps> = ({
       const treeNode = treeNodes[breadcrumbPath];
       const directoryEntries =
         directoryCacheRef.current[breadcrumbPath]?.entries
+          .filter((entry) => sftpShowHiddenEntries || !entry.isHidden)
           .filter((entry) => entry.type === 'directory')
           .map((entry) => ({
             path: entry.path,
             name: entry.name,
             parentPath: breadcrumbPath,
+            isHidden: entry.isHidden,
             children: treeNodes[entry.path]?.children ?? [],
             isExpanded: treeNodes[entry.path]?.isExpanded ?? false,
             isLoaded: treeNodes[entry.path]?.isLoaded ?? false,
@@ -1725,13 +1822,14 @@ const SFTP: React.FC<SFTPProps> = ({
       const treeChildren =
         treeNode?.children
           .map((childPath) => treeNodes[childPath])
-          .filter((node): node is TreeDirectoryNode => Boolean(node)) ?? [];
+          .filter((node): node is TreeDirectoryNode => Boolean(node) && (sftpShowHiddenEntries || !node.isHidden)) ??
+        [];
 
       return [...directoryEntries, ...treeChildren]
         .filter((node, index, nodes) => nodes.findIndex((candidate) => candidate.path === node.path) === index)
         .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
     },
-    [treeNodes],
+    [sftpShowHiddenEntries, treeNodes],
   );
 
   const loadBreadcrumbMenuDirectories = React.useCallback(
@@ -2109,6 +2207,7 @@ const SFTP: React.FC<SFTPProps> = ({
           selectedEntry={selectedEntry}
           sessionId={sessionId}
           sftpShowAddressAsText={sftpShowAddressAsText}
+          sftpShowHiddenEntries={sftpShowHiddenEntries}
           onAddressInputPointerDown={handleAddressInputPointerDown}
           onBeginCreateEntry={beginCreateEntry}
           onBeginRenameEntry={beginRenameEntry}
@@ -2130,12 +2229,15 @@ const SFTP: React.FC<SFTPProps> = ({
           onRefresh={handleRefresh}
           onRequestBreadcrumbDirectories={loadBreadcrumbMenuDirectories}
           onShowAddressAsText={handleShowAddressAsText}
+          onShowHiddenEntriesChange={setSftpHiddenEntriesVisibility}
         />
         <div className="grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)_minmax(240px,320px)] gap-2.5 overflow-hidden">
           <SftpTreePanel
             currentPath={currentPath}
             renderActionMenuItems={renderSftpActionMenuItems}
             resolvedActiveTreePath={resolvedActiveTreePath}
+            sftpDimHiddenEntries={sftpDimHiddenEntries}
+            sftpShowHiddenEntries={sftpShowHiddenEntries}
             status={status}
             treeNodes={treeNodes}
             treeRootPaths={treeRootPaths}
@@ -2162,6 +2264,8 @@ const SFTP: React.FC<SFTPProps> = ({
             resolvedActiveFileRowKey={resolvedActiveFileRowKey}
             selectedPathSet={selectedPathSet}
             sessionId={sessionId}
+            sftpDimHiddenEntries={sftpDimHiddenEntries}
+            sftpShowHiddenEntries={sftpShowHiddenEntries}
             status={status}
             visibleEntries={visibleEntries}
             onCancelInlineEdit={cancelInlineEdit}

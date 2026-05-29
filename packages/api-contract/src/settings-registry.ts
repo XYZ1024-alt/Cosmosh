@@ -66,6 +66,8 @@ export interface SettingsValues {
   terminalAutoCompletePromptRegex: string;
   sshReconnectOnFocus: boolean;
   sftpDeleteConfirmationMode: 'always' | 'batch' | 'shortcut' | 'off';
+  sftpShowHiddenEntries: boolean;
+  sftpDimHiddenEntries: boolean;
   sftpShowParentDirectoryEntry: boolean;
   sftpShowAddressAsText: boolean;
 }
@@ -366,6 +368,32 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.sftp.safety.deleteConfirmationMode.set',
     searchTerms: ['sftp', 'delete', 'confirm', 'confirmation', 'batch', 'shortcut', 'safety'],
     options: [{ value: 'always' }, { value: 'batch' }, { value: 'shortcut' }, { value: 'off' }],
+  },
+  {
+    key: 'sftpShowHiddenEntries',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.sftpShowHiddenEntries.title',
+    descriptionI18nKey: 'settings.items.sftpShowHiddenEntries.description',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'switch',
+    path: 'sftp.browser.showHiddenEntries',
+    commandActionId: 'settings.sftp.browser.showHiddenEntries.toggle',
+    searchTerms: ['sftp', 'hidden', 'dotfile', 'dotfiles', 'file list', 'tree', 'browser'],
+  },
+  {
+    key: 'sftpDimHiddenEntries',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.sftpDimHiddenEntries.title',
+    descriptionI18nKey: 'settings.items.sftpDimHiddenEntries.description',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'switch',
+    path: 'sftp.browser.dimHiddenEntries',
+    commandActionId: 'settings.sftp.browser.dimHiddenEntries.toggle',
+    searchTerms: ['sftp', 'hidden', 'dim', 'faded', 'file list', 'tree', 'browser'],
   },
   {
     key: 'sftpShowParentDirectoryEntry',

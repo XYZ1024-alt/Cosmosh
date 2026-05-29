@@ -49,6 +49,7 @@ export type SftpEntry = {
   accessedAt: string;
   extension: string;
   shellEscapedPath: string;
+  isHidden: boolean;
   longname?: string;
   symlinkTarget?: SftpSymlinkTarget;
 };
@@ -295,6 +296,129 @@ const DEFAULT_FILE_MODE = 0o644;
 const DEFAULT_DIRECTORY_MODE = 0o755;
 const DEFAULT_READ_FILE_MAX_BYTES = 256 * 1024;
 const MAX_READ_FILE_MAX_BYTES = 1024 * 1024;
+
+type SftpStatsWithExtendedAttributes = Stats & {
+  readonly extended?: unknown;
+};
+
+const HIDDEN_EXTENDED_ATTRIBUTE_NAMES = new Set([
+  'hidden',
+  'ishidden',
+  'filehidden',
+  'systemhidden',
+  'doshidden',
+  'attributehidden',
+  'attributeshidden',
+  'comapplefinderinfohidden',
+]);
+
+/**
+ * Checks whether an unknown value is a plain record.
+ *
+ * @param value Candidate value.
+ * @returns Whether the value can be safely inspected as an object map.
+ */
+const isUnknownRecord = (value: unknown): value is Record<string, unknown> => {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+/**
+ * Normalizes an extended attribute key for defensive hidden-marker matching.
+ *
+ * @param key Raw server-provided extended attribute key.
+ * @returns Lowercase key without separators or namespace punctuation.
+ */
+const normalizeSftpExtendedAttributeName = (key: string): string => {
+  return key.toLocaleLowerCase().replace(/[^a-z0-9]/g, '');
+};
+
+/**
+ * Parses a hidden marker payload returned through SFTP extended attributes.
+ *
+ * @param value Raw extended attribute value.
+ * @returns Parsed boolean when the payload is recognizable.
+ */
+const parseSftpHiddenMarkerValue = (value: unknown): boolean | null => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'number') {
+    return value !== 0;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLocaleLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on', 'hidden'].includes(normalized)) {
+      return true;
+    }
+
+    if (['', '0', 'false', 'no', 'n', 'off', 'visible'].includes(normalized)) {
+      return false;
+    }
+
+    return null;
+  }
+
+  if (value instanceof Uint8Array) {
+    if (value.length === 0) {
+      return false;
+    }
+
+    const decoded = Buffer.from(value).toString('utf8').replace(/\0/g, '').trim();
+    const decodedMarker = parseSftpHiddenMarkerValue(decoded);
+    if (decodedMarker !== null) {
+      return decodedMarker;
+    }
+
+    if (value.length === 1) {
+      return value[0] !== 0;
+    }
+  }
+
+  if (isUnknownRecord(value)) {
+    for (const markerKey of ['hidden', 'isHidden', 'is_hidden']) {
+      if (markerKey in value) {
+        return parseSftpHiddenMarkerValue(value[markerKey]);
+      }
+    }
+  }
+
+  return null;
+};
+
+/**
+ * Resolves whether an SFTP entry should be treated as hidden.
+ *
+ * @param name Entry basename returned by the server.
+ * @param stats SFTP stats object returned by ssh2.
+ * @returns Whether the entry is hidden by server metadata or dot-prefix convention.
+ */
+export const resolveSftpEntryHiddenState = (name: string, stats: Stats): boolean => {
+  const trimmedName = name.trim();
+  if (trimmedName.startsWith('.') && trimmedName !== '.' && trimmedName !== '..') {
+    return true;
+  }
+
+  const extended = (stats as SftpStatsWithExtendedAttributes).extended;
+  if (!isUnknownRecord(extended)) {
+    return false;
+  }
+
+  for (const [rawKey, rawValue] of Object.entries(extended)) {
+    const normalizedKey = normalizeSftpExtendedAttributeName(rawKey);
+    if (!HIDDEN_EXTENDED_ATTRIBUTE_NAMES.has(normalizedKey) && !normalizedKey.endsWith('hidden')) {
+      continue;
+    }
+
+    const markerValue = parseSftpHiddenMarkerValue(rawValue);
+    if (markerValue !== null) {
+      return markerValue;
+    }
+  }
+
+  return false;
+};
 
 /**
  * Converts user-provided SFTP paths into POSIX-style paths used by remote SFTP servers.
@@ -1251,6 +1375,7 @@ export class SftpSessionService {
       accessedAt: this.formatStatsTimestamp(input.stats.atime),
       extension: this.resolveEntryExtension(input.name, type),
       shellEscapedPath: escapeSftpShellPath(input.path),
+      isHidden: resolveSftpEntryHiddenState(input.name, input.stats),
       ...(input.longname ? { longname: input.longname } : {}),
       ...(input.symlinkTarget ? { symlinkTarget: input.symlinkTarget } : {}),
     };

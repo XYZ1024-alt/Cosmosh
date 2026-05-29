@@ -17,7 +17,13 @@ import {
 import React from 'react';
 
 import { Button } from '../../components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../../components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../../components/ui/dropdown-menu';
 import { Input } from '../../components/ui/input';
 import type { InputContextMenuItem } from '../../components/ui/input-context-menu-registry';
 import { Menubar, MenubarSeparator } from '../../components/ui/menubar';
@@ -57,6 +63,7 @@ type SftpToolbarProps = {
   selectedEntry: ApiSftpEntry | null;
   sessionId: string;
   sftpShowAddressAsText: boolean;
+  sftpShowHiddenEntries: boolean;
   getBreadcrumbDirectories: (breadcrumbPath: string) => TreeDirectoryNode[];
   isBreadcrumbLoading: (breadcrumbPath: string) => boolean;
   keepAddressInputDuringContextMenu: () => void;
@@ -81,6 +88,7 @@ type SftpToolbarProps = {
   onRefresh: () => void;
   onRequestBreadcrumbDirectories: (breadcrumbPath: string) => void;
   onShowAddressAsText: () => void;
+  onShowHiddenEntriesChange: (showHiddenEntries: boolean) => Promise<void>;
   renderActionMenuItems: (options: SftpActionMenuOptions) => React.ReactNode;
   renderNavigationHistoryControl: (options: NavigationHistoryControlOptions) => React.ReactNode;
   navigationIndex: number;
@@ -137,6 +145,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   onRefresh,
   onRequestBreadcrumbDirectories,
   onShowAddressAsText,
+  onShowHiddenEntriesChange,
   parentPath,
   pathInput,
   primarySelectedEntry,
@@ -146,6 +155,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   selectedEntry,
   sessionId,
   sftpShowAddressAsText,
+  sftpShowHiddenEntries,
 }) => {
   return (
     <TooltipProvider>
@@ -350,6 +360,15 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 horizontalAlign="left"
                 onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}
               >
+                <DropdownMenuCheckboxItem
+                  checked={sftpShowHiddenEntries}
+                  onCheckedChange={(checked) => {
+                    void onShowHiddenEntriesChange(Boolean(checked));
+                  }}
+                >
+                  {t('sftp.actions.showHiddenFiles')}
+                </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
                 {renderActionMenuItems({
                   contextEntry: primarySelectedEntry,
                   menuSurface: 'dropdown',

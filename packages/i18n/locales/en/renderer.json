@@ -310,9 +310,17 @@
         "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
         "title": "Confirm Before Delete"
       },
+      "sftpDimHiddenEntries": {
+        "description": "Applies 80% opacity to hidden SFTP entry icons and names when hidden files are visible.",
+        "title": "Dim Hidden Files"
+      },
       "sftpShowAddressAsText": {
         "description": "Always shows the SFTP address bar as a plain editable path input instead of the breadcrumb control.",
         "title": "Show Address as Text"
+      },
+      "sftpShowHiddenEntries": {
+        "description": "Shows hidden SFTP files and folders reported by the server or whose names start with a dot.",
+        "title": "Show Hidden Files"
       },
       "sftpShowParentDirectoryEntry": {
         "description": "Shows a \"..\" row at the top of the SFTP file list for navigating to the parent directory.",
@@ -657,6 +665,7 @@
       "saveToDownloads": "Save to Downloads",
       "search": "Search Current Directory",
       "showAddressAsText": "Show Address as Text",
+      "showHiddenFiles": "Show Hidden Files",
       "up": "Parent Directory"
     },
     "addressCollapsedMenuLabel": "Show hidden path levels",
@@ -738,6 +747,7 @@
         "failed": "Unavailable",
         "files": "Files",
         "gid": "Group ID",
+        "hidden": "Hidden",
         "modified": "Modified",
         "name": "Name",
         "octalMode": "Octal Mode",
@@ -759,6 +769,10 @@
         "uid": "Owner ID"
       },
       "generalTitle": "General",
+      "hiddenState": {
+        "hidden": "Yes",
+        "visible": "No"
+      },
       "loadFailed": "Failed to load SFTP entry properties.",
       "loading": "Loading properties...",
       "missingPayload": "The properties window is missing the SFTP session or path.",

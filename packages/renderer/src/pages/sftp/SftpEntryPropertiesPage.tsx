@@ -73,6 +73,16 @@ const formatOptionalProperty = (value: string | undefined): string => {
 };
 
 /**
+ * Formats the hidden metadata flag for read-only property rows.
+ *
+ * @param isHidden Whether the SFTP entry is hidden.
+ * @returns Localized hidden-state value.
+ */
+const formatHiddenStateProperty = (isHidden: boolean): string => {
+  return t(isHidden ? 'sftp.properties.hiddenState.hidden' : 'sftp.properties.hiddenState.visible');
+};
+
+/**
  * Resolves a common string value, returning null when selected entries differ.
  *
  * @param values Values collected from selected entries.
@@ -313,6 +323,10 @@ const SftpEntryPropertiesPage: React.FC = () => {
           value: formatCommonProperty(entries.map((currentEntry) => t(`sftp.entryType.${currentEntry.type}`))),
         },
         {
+          label: t('sftp.properties.field.hidden'),
+          value: formatCommonProperty(entries.map((currentEntry) => formatHiddenStateProperty(currentEntry.isHidden))),
+        },
+        {
           label: t('sftp.properties.field.parentPath'),
           value: (
             <span className="font-mono text-xs">{formatCommonProperty(entries.map((item) => item.parentPath))}</span>
@@ -373,6 +387,10 @@ const SftpEntryPropertiesPage: React.FC = () => {
       {
         label: t('sftp.properties.field.type'),
         value: t(`sftp.entryType.${entry.type}`),
+      },
+      {
+        label: t('sftp.properties.field.hidden'),
+        value: formatHiddenStateProperty(entry.isHidden),
       },
       {
         label: t('sftp.properties.field.path'),

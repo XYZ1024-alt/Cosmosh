@@ -960,6 +960,7 @@ export interface components {
       accessedAt: string;
       extension: string;
       shellEscapedPath: string;
+      isHidden: boolean;
       longname?: string;
       symlinkTarget?: components['schemas']['SftpSymlinkTarget'];
     };

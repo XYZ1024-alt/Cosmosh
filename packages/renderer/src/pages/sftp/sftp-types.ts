@@ -37,6 +37,7 @@ export type TreeDirectoryNode = {
   path: string;
   name: string;
   parentPath?: string;
+  isHidden: boolean;
   children: string[];
   isExpanded: boolean;
   isLoaded: boolean;

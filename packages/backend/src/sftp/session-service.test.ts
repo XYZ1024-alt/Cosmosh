@@ -7,6 +7,7 @@ import {
   formatSftpPermissions,
   joinSftpPath,
   normalizeSftpPathInput,
+  resolveSftpEntryHiddenState,
   resolveSftpEntryType,
 } from './session-service.js';
 
@@ -28,6 +29,33 @@ test('resolveSftpEntryType maps POSIX file bits', () => {
   assert.equal(resolveSftpEntryType(0o100644), 'file');
   assert.equal(resolveSftpEntryType(0o120777), 'symlink');
   assert.equal(resolveSftpEntryType(0o010000), 'other');
+});
+
+test('resolveSftpEntryHiddenState detects dot-prefixed entries', () => {
+  assert.equal(resolveSftpEntryHiddenState('.env', { mode: 0o100644 } as never), true);
+  assert.equal(resolveSftpEntryHiddenState('.config', { mode: 0o040755 } as never), true);
+  assert.equal(resolveSftpEntryHiddenState('visible.txt', { mode: 0o100644 } as never), false);
+});
+
+test('resolveSftpEntryHiddenState detects server-provided extended hidden markers', () => {
+  assert.equal(
+    resolveSftpEntryHiddenState('server-hidden.txt', {
+      mode: 0o100644,
+      extended: {
+        'is-hidden': Buffer.from('true'),
+      },
+    } as never),
+    true,
+  );
+  assert.equal(
+    resolveSftpEntryHiddenState('server-visible.txt', {
+      mode: 0o100644,
+      extended: {
+        hidden: 'false',
+      },
+    } as never),
+    false,
+  );
 });
 
 test('formatSftpPermissions returns symbolic permissions', () => {

@@ -1,4 +1,5 @@
 import type { ApiSftpEntry, SettingsValues } from '@cosmosh/api-contract';
+import classNames from 'classnames';
 import { File, Folder } from 'lucide-react';
 import React from 'react';
 
@@ -184,12 +185,14 @@ export const formatModifiedAt = (value: string): string => {
  * @param entry SFTP entry.
  * @returns Icon element matching the entry type.
  */
-export const resolveEntryIcon = (entry: ApiSftpEntry): React.ReactNode => {
+export const resolveEntryIcon = (entry: ApiSftpEntry, className?: string): React.ReactNode => {
+  const iconClassName = classNames('h-4 w-4 shrink-0', className ?? 'text-home-text');
+
   if (entry.type === 'directory') {
-    return <Folder className="text-home-text h-4 w-4 shrink-0" />;
+    return <Folder className={iconClassName} />;
   }
 
-  return <File className="text-home-text h-4 w-4 shrink-0" />;
+  return <File className={iconClassName} />;
 };
 
 /**
@@ -242,6 +245,16 @@ export const resolveAddressBreadcrumbRenderState = (items: SftpBreadcrumbItem[])
     hiddenItems: items.slice(1, hiddenEndIndex),
     visibleItems,
   };
+};
+
+/**
+ * Checks whether an entry-like name is hidden by POSIX dotfile convention.
+ *
+ * @param name Entry basename or breadcrumb label.
+ * @returns Whether the name should be treated as dot-hidden.
+ */
+export const isSftpDotHiddenName = (name: string): boolean => {
+  return name.startsWith('.') && name !== '.' && name !== '..';
 };
 
 /**
@@ -356,6 +369,7 @@ export const resolveAncestorDirectoryPaths = (directoryPath: string): string[] =
 export const mergePathBranchIntoTree = (
   previous: Record<string, TreeDirectoryNode>,
   directoryPath: string,
+  showHiddenEntries = true,
 ): Record<string, TreeDirectoryNode> => {
   const breadcrumbs = buildBreadcrumbs(directoryPath);
   const next: Record<string, TreeDirectoryNode> = { ...previous };
@@ -368,6 +382,7 @@ export const mergePathBranchIntoTree = (
       path: breadcrumb.path,
       name: existing?.name ?? breadcrumb.label,
       parentPath,
+      isHidden: existing?.isHidden ?? isSftpDotHiddenName(breadcrumb.label),
       children: existing?.children ?? [],
       isExpanded: true,
       isLoaded: existing?.isLoaded ?? false,
@@ -377,7 +392,9 @@ export const mergePathBranchIntoTree = (
     if (parentPath) {
       const parent = next[parentPath];
       const childSet = new Set(parent.children);
-      childSet.add(breadcrumb.path);
+      if (showHiddenEntries || !next[breadcrumb.path]?.isHidden) {
+        childSet.add(breadcrumb.path);
+      }
       next[parentPath] = {
         ...parent,
         children: Array.from(childSet),
@@ -401,13 +418,17 @@ export const mergeDirectoryEntriesIntoTree = (
   previous: Record<string, TreeDirectoryNode>,
   directoryPath: string,
   entries: ApiSftpEntry[],
+  showHiddenEntries: boolean,
 ): Record<string, TreeDirectoryNode> => {
-  const next = mergePathBranchIntoTree(previous, directoryPath);
-  const directoryChildren = sortSftpEntries(entries).filter((entry) => entry.type === 'directory');
+  const next = mergePathBranchIntoTree(previous, directoryPath, showHiddenEntries);
+  const directoryChildren = filterSftpEntriesByHiddenVisibility(sortSftpEntries(entries), showHiddenEntries).filter(
+    (entry) => entry.type === 'directory',
+  );
   const childPaths = directoryChildren.map((entry) => entry.path);
   const existing = next[directoryPath] ?? {
     path: directoryPath,
     name: resolvePathLabel(directoryPath),
+    isHidden: false,
     children: [],
     isExpanded: true,
     isLoaded: false,
@@ -428,6 +449,7 @@ export const mergeDirectoryEntriesIntoTree = (
       path: entry.path,
       name: entry.name,
       parentPath: directoryPath,
+      isHidden: entry.isHidden,
       children: childExisting?.children ?? [],
       isExpanded: childExisting?.isExpanded ?? false,
       isLoaded: childExisting?.isLoaded ?? false,
@@ -452,8 +474,9 @@ export const mergeResolvedDirectoryIntoTree = (
   requestedPath: string,
   resolvedPath: string,
   entries: ApiSftpEntry[],
+  showHiddenEntries: boolean,
 ): Record<string, TreeDirectoryNode> => {
-  const next = mergeDirectoryEntriesIntoTree(previous, resolvedPath, entries);
+  const next = mergeDirectoryEntriesIntoTree(previous, resolvedPath, entries, showHiddenEntries);
   const requestedNode = next[requestedPath];
   if (requestedPath !== resolvedPath && requestedNode) {
     if (!requestedNode.isLoaded && requestedNode.children.length === 0) {
@@ -480,6 +503,24 @@ export const filterSftpEntries = (entries: ApiSftpEntry[], query: string): ApiSf
   }
 
   return entries.filter((entry) => entry.name.toLocaleLowerCase().includes(normalizedQuery));
+};
+
+/**
+ * Filters SFTP entries by the user's hidden-entry visibility preference.
+ *
+ * @param entries Current directory entries.
+ * @param showHiddenEntries Whether hidden entries should remain visible.
+ * @returns Entries that should participate in visible browser surfaces.
+ */
+export const filterSftpEntriesByHiddenVisibility = (
+  entries: ApiSftpEntry[],
+  showHiddenEntries: boolean,
+): ApiSftpEntry[] => {
+  if (showHiddenEntries) {
+    return entries;
+  }
+
+  return entries.filter((entry) => !entry.isHidden);
 };
 
 /**
@@ -711,6 +752,7 @@ export const resolveTreeDirectoryEntry = (node: TreeDirectoryNode): ApiSftpEntry
     name: node.name,
     path: node.path,
     ...(node.parentPath ? { parentPath: node.parentPath } : {}),
+    isHidden: node.isHidden,
     type: 'directory',
     size: 0,
     mode: 0,
