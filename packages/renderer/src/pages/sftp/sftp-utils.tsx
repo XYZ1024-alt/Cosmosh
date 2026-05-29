@@ -17,8 +17,30 @@ import type {
   SftpActionMenuOptions,
   SftpBreadcrumbItem,
   SftpDeleteInvocationSource,
+  SftpTaskProgress,
+  SftpTaskStatus,
   TreeDirectoryNode,
 } from './sftp-types';
+
+export const SFTP_TASK_STATUS_ORDER: Record<SftpTaskStatus, number> = {
+  running: 0,
+  queued: 1,
+  failed: 2,
+  success: 3,
+};
+
+/**
+ * Creates a stable renderer-local SFTP task id.
+ *
+ * @returns Unique task id for the current tab runtime.
+ */
+export const createSftpTaskId = (): string => {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `sftp-task-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+};
 
 /**
  * Returns the parent path for a POSIX-style remote path.
@@ -663,6 +685,45 @@ export const formatBatchPartialFailureFeedback = (summary: {
 };
 
 /**
+ * Formats a compact progress label for queued SFTP tasks.
+ *
+ * @param progress Optional task progress counts.
+ * @returns Localized progress label.
+ */
+export const formatSftpTaskProgressLabel = (progress?: SftpTaskProgress): string => {
+  if (!progress) {
+    return t('sftp.tasks.progressIndeterminate');
+  }
+
+  return t('sftp.tasks.progressCount', {
+    completed: progress.completed,
+    total: progress.total,
+  });
+};
+
+/**
+ * Formats a compact tooltip for the toolbar task trigger.
+ *
+ * @param runningCount Running task count.
+ * @param queuedCount Queued task count.
+ * @returns Localized toolbar task summary.
+ */
+export const formatSftpTaskToolbarLabel = (runningCount: number, queuedCount: number): string => {
+  if (runningCount > 0 && queuedCount > 0) {
+    return t('sftp.tasks.toolbarMixed', {
+      queued: queuedCount,
+      running: runningCount,
+    });
+  }
+
+  if (queuedCount > 0) {
+    return t('sftp.tasks.toolbarQueued', { count: queuedCount });
+  }
+
+  return t('sftp.tasks.toolbarRunning', { count: runningCount });
+};
+
+/**
  * Decides whether a destructive SFTP delete needs a confirmation prompt.
  *
  * @param mode User-configured confirmation mode.
@@ -739,6 +800,26 @@ export const resolveEntryParentPath = (entryPath: string): string => {
  */
 export const resolveRenameTargetPath = (entry: ApiSftpEntry, nextName: string): string => {
   return joinRemotePath(resolveEntryParentPath(entry.path), nextName);
+};
+
+/**
+ * Checks whether the clipboard still matches the snapshot used by a queued task.
+ *
+ * @param current Current clipboard state.
+ * @param mode Clipboard mode captured when the task was queued.
+ * @param entries Entries captured when the task was queued.
+ * @returns True when clearing the clipboard will not discard a newer user action.
+ */
+export const isSameClipboardSnapshot = (
+  current: { mode: 'copy' | 'cut'; entries: ApiSftpEntry[] } | null,
+  mode: 'copy' | 'cut',
+  entries: readonly ApiSftpEntry[],
+): boolean => {
+  return (
+    current?.mode === mode &&
+    current.entries.length === entries.length &&
+    current.entries.every((entry, index) => entry.path === entries[index]?.path && entry.type === entries[index]?.type)
+  );
 };
 
 /**

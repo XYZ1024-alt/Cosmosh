@@ -26,6 +26,9 @@ export const PARENT_DIRECTORY_ROW_KEY = '__sftp_parent_directory__';
 /** Delay that lets nested Radix menus release focus before inline edit starts. */
 export const INLINE_EDIT_MENU_HANDOFF_RELEASE_DELAY_MS = 220;
 
+/** Time completed SFTP tasks remain visible for post-operation inspection. */
+export const SFTP_TASK_RETENTION_MS = 4500;
+
 /** Maximum breadcrumb count before old ancestors collapse behind an ellipsis menu. */
 export const ADDRESS_BREADCRUMB_VISIBLE_LIMIT = 5;
 

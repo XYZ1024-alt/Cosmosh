@@ -3,11 +3,16 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  CircleCheck,
+  CircleX,
   Clipboard,
   Copy,
   Edit3,
   FilePlus2,
   FolderPlus,
+  Hourglass,
+  ListTodo,
+  Loader2,
   MoreVertical,
   RefreshCcw,
   Scissors,
@@ -22,6 +27,7 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuSeparator,
+  DropdownMenuSlot,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
 import { Input } from '../../components/ui/input';
@@ -33,8 +39,10 @@ import type {
   AddressBreadcrumbRenderState,
   NavigationHistoryControlOptions,
   SftpActionMenuOptions,
+  SftpTaskState,
   TreeDirectoryNode,
 } from './sftp-types';
+import { formatSftpTaskProgressLabel } from './sftp-utils';
 import { SftpAddressControl } from './SftpAddressControl';
 
 /**
@@ -54,7 +62,6 @@ type SftpToolbarProps = {
   hasSingleSelection: boolean;
   isAddressInputEditing: boolean;
   isBusy: boolean;
-  isOperationRunning: boolean;
   isRefreshingDirectory: boolean;
   parentPath?: string;
   pathInput: string;
@@ -64,7 +71,11 @@ type SftpToolbarProps = {
   sessionId: string;
   sftpShowAddressAsText: boolean;
   sftpShowHiddenEntries: boolean;
+  activeTaskCount: number;
   getBreadcrumbDirectories: (breadcrumbPath: string) => TreeDirectoryNode[];
+  runningTaskCount: number;
+  sortedSftpTasks: SftpTaskState[];
+  taskToolbarLabel: string;
   isBreadcrumbLoading: (breadcrumbPath: string) => boolean;
   keepAddressInputDuringContextMenu: () => void;
   onAddressInputPointerDown: (event: React.PointerEvent<HTMLInputElement>) => void;
@@ -120,7 +131,6 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   isAddressInputEditing,
   isBreadcrumbLoading,
   isBusy,
-  isOperationRunning,
   isRefreshingDirectory,
   keepAddressInputDuringContextMenu,
   navigationIndex,
@@ -156,7 +166,117 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   sessionId,
   sftpShowAddressAsText,
   sftpShowHiddenEntries,
+  activeTaskCount,
+  runningTaskCount,
+  sortedSftpTasks,
+  taskToolbarLabel,
 }) => {
+  const taskDropdown =
+    sortedSftpTasks.length > 0 ? (
+      <>
+        <MenubarSeparator vertical />
+        <DropdownMenu>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  aria-label={taskToolbarLabel}
+                  variant="ghost"
+                  className="h-[34px] gap-2 px-2.5"
+                >
+                  {runningTaskCount > 0 ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <ListTodo className="h-4 w-4" />
+                  )}
+                  <span className="max-w-[92px] truncate text-sm">{t('sftp.tasks.toolbarTitle')}</span>
+                  <span className="text-home-text flex h-5 min-w-5 shrink-0 items-center justify-center rounded-md bg-home-chip-active px-1.5 text-xs">
+                    {activeTaskCount > 0 ? activeTaskCount : sortedSftpTasks.length}
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+            </TooltipTrigger>
+            <TooltipContent>{taskToolbarLabel}</TooltipContent>
+          </Tooltip>
+          <DropdownMenuContent
+            horizontalAlign="right"
+            className="w-[320px]"
+          >
+            <DropdownMenuSlot className="px-2 py-2">
+              <div className="flex h-7 items-center justify-between gap-3 px-1">
+                <div className="text-sm font-medium text-header-text">{t('sftp.tasks.title')}</div>
+                <div className="truncate text-xs text-header-text-muted">{taskToolbarLabel}</div>
+              </div>
+              <div
+                role="status"
+                aria-live="polite"
+                className="divide-y divide-menu-divider"
+              >
+                {sortedSftpTasks.map((task) => {
+                  const isRunningTask = task.status === 'running';
+                  const progressLabel = formatSftpTaskProgressLabel(task.progress);
+                  const progressPercent =
+                    task.progress && task.progress.total > 0
+                      ? Math.min(100, Math.round((task.progress.completed / task.progress.total) * 100))
+                      : undefined;
+
+                  return (
+                    <div
+                      key={task.id}
+                      className="py-2 first:pt-1 last:pb-1"
+                    >
+                      <div className="grid min-w-0 grid-cols-[1rem_minmax(0,1fr)_auto] gap-x-2 gap-y-1.5">
+                        <span className="flex h-5 w-4 shrink-0 items-center justify-center text-header-text-muted">
+                          {task.status === 'running' ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : task.status === 'queued' ? (
+                            <Hourglass className="h-3.5 w-3.5" />
+                          ) : task.status === 'success' ? (
+                            <CircleCheck className="h-3.5 w-3.5 text-header-text" />
+                          ) : (
+                            <CircleX className="h-3.5 w-3.5 text-form-message-error" />
+                          )}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <div className="truncate text-sm text-header-text">{task.label}</div>
+                          <div className="mt-0.5 truncate text-xs text-header-text-muted">{task.detail}</div>
+                        </div>
+                        <span className="shrink-0 self-start text-xs text-header-text-muted">
+                          {t(`sftp.tasks.status.${task.status}`)}
+                        </span>
+                        <div className="col-span-2 col-start-2 flex items-center gap-2">
+                          <div
+                            role="progressbar"
+                            aria-label={task.label}
+                            aria-valuemin={task.progress ? 0 : undefined}
+                            aria-valuemax={task.progress ? task.progress.total : undefined}
+                            aria-valuenow={task.progress ? task.progress.completed : undefined}
+                            className="h-1 flex-1 overflow-hidden rounded-sm-2 bg-menu-control-hover"
+                          >
+                            <div
+                              className={
+                                isRunningTask && progressPercent === undefined
+                                  ? 'h-full w-1/2 animate-pulse rounded-sm-2 bg-header-text transition-[width] duration-200'
+                                  : 'h-full rounded-sm-2 bg-header-text transition-[width] duration-200'
+                              }
+                              style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
+                            />
+                          </div>
+                          <span className="w-9 shrink-0 text-right text-xs text-header-text-muted">
+                            {progressLabel}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </DropdownMenuSlot>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </>
+    ) : null;
+
   return (
     <TooltipProvider>
       <Menubar className="w-full shrink-0">
@@ -198,7 +318,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 <Button
                   aria-label={t('sftp.actions.refresh')}
                   variant="ghostIcon"
-                  disabled={!sessionId || isBusy || isOperationRunning}
+                  disabled={!sessionId || isBusy}
                   onClick={onRefresh}
                 >
                   <RefreshCcw className={isBusy || isRefreshingDirectory ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
@@ -234,6 +354,8 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
             onRequestBreadcrumbDirectories={onRequestBreadcrumbDirectories}
             onShowAddressAsText={onShowAddressAsText}
           />
+
+          {taskDropdown}
 
           <MenubarSeparator vertical />
 

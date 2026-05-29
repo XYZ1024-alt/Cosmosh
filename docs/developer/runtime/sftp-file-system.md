@@ -12,12 +12,13 @@ Implemented in v1:
 - The renderer shows directory entries, metadata details, and a standalone Properties window. Double-clicking a regular file downloads it into the Cosmosh-controlled SFTP temp directory and opens it with the OS default application.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
+- Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, failed, and progress states.
 - SFTP settings control delete-confirmation scope, whether the center file list shows a leading `..` parent-directory row, and whether the address bar always renders as text.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
 
-- upload, directory download, chmod, drag/drop, global search, file editing, and transfer queues.
+- upload, directory download, chmod, drag/drop, global search, file editing, and backend-level transfer queues with cancellation/conflict handling.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -151,7 +152,8 @@ Mutation rules:
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
-- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, and open-in-new-tab remain single-entry actions.
+- Renderer file operations enter a tab-local FIFO task queue before calling the backend. The queue keeps navigation, selection, filtering, and refresh usable while work is pending, and the toolbar task menu remains visible until completed tasks expire after a short inspection window.
+- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
 - Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
 - On Windows, `Open With...` is a plain menu item with no submenu and first uses the shell `openas` verb through a hidden PowerShell process; the validated temp file path is passed through the child process environment to avoid PowerShell argument parsing edge cases. If that shell verb is rejected by the OS for a file type, main falls back to `rundll32.exe shell32.dll,OpenAs_RunDLL`. On macOS, `Open With...` is a submenu populated by the NSWorkspace helper in `packages/main/resources/helpers`; `prebuild` compiles the helper binary on macOS, while development can fall back to the Swift source. Linux does not render the Open With action.
@@ -193,6 +195,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - The address bar defaults to a Windows-style breadcrumb control. Segment labels navigate to that path, segment arrows open that level's available child directories from the renderer directory cache or lazy-load them from the active session, and the blank area temporarily switches back to the editable text input. The address-bar context menu keeps `Copy Address` and `Edit Address`, plus a `Show Address as Text` action that persists `sftpShowAddressAsText`. When that setting is enabled, the address bar always renders as the plain input, including when it is not actively focused; the input context menu exposes the reverse display action so users can return to the breadcrumb control without leaving the field first.
 - The back and forward toolbar controls use plain directional arrow icons. Left-click jumps one step; right-click opens a context menu only when reachable history targets exist, listing them in nearest-first order to match desktop file-manager navigation.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
+- Show the SFTP task trigger only while the tab has active or recently completed tasks. The trigger belongs between the address control and file-operation buttons, uses `ListTodo`/spinner iconography, and opens a right-aligned dense task menu with per-task status text and compact progress bars.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
 - Row info icons open the standalone Properties window for that entry and must not trigger row double-click open.
 - Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.

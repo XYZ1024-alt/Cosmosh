@@ -160,6 +160,59 @@ export type SftpDeleteConfirmationPrompt = {
 export type InlineEditMenuAction = () => void | Promise<void>;
 
 /**
+ * Renderer-local lifecycle state for one queued SFTP operation.
+ */
+export type SftpTaskStatus = 'queued' | 'running' | 'success' | 'failed';
+
+/**
+ * Coarse task progress shown in the SFTP toolbar task list.
+ */
+export type SftpTaskProgress = {
+  completed: number;
+  total: number;
+};
+
+/**
+ * Tab-scoped task list item for renderer-managed SFTP operations.
+ */
+export type SftpTaskState = {
+  id: string;
+  label: string;
+  detail: string;
+  status: SftpTaskStatus;
+  createdAt: number;
+  startedAt?: number;
+  finishedAt?: number;
+  progress?: SftpTaskProgress;
+};
+
+/**
+ * User-visible metadata captured when an SFTP task is queued.
+ */
+export type SftpTaskOptions = {
+  label: string;
+  detail?: string;
+  progress?: SftpTaskProgress;
+};
+
+/**
+ * Runtime helpers passed to a queued SFTP task implementation.
+ */
+export type SftpTaskContext = {
+  taskId: string;
+  isCurrent: () => boolean;
+  update: (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>) => void;
+};
+
+/**
+ * Internal queue entry for serialized renderer SFTP operations.
+ */
+export type SftpQueuedTask = {
+  id: string;
+  run: () => Promise<void>;
+};
+
+/**
  * Native application candidate for platform Open With menus.
  */
 export type SftpOpenWithApplication = {
