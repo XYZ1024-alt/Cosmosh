@@ -154,3 +154,4 @@ flowchart TD
 - Renderer 归属：
   - `packages/renderer/src/pages/SSHEditor.tsx` 负责单服务器内的钥匙链选择与内联认证回退流程。
   - `packages/renderer/src/pages/SSHKeychains.tsx` 负责独立钥匙链管理页面的增删改流程。
+  - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH / 钥匙链 / 端口转发模式正文；主页钥匙链模式复用共享 SSH 文件夹/标签与 `SSHKeychainEditorDialog` 完成创建和编辑。

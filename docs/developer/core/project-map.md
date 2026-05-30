@@ -154,3 +154,4 @@ flowchart TD
 - Renderer owner:
   - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
   - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
+  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit.
