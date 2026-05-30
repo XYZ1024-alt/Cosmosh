@@ -7,7 +7,7 @@ Cosmosh 采用 Electron 双进程模型，并嵌入后端服务：
 - **Main 进程** (`packages/main/src/index.ts`)：应用生命周期、BrowserWindow 创建、preload 注入、IPC 注册、后端进程编排。
 - **Preload Bridge** (`packages/main/src/preload.ts`)：通过 `contextBridge` 暴露严格受控 API。
 - **Renderer 进程** (`packages/renderer/src`)：React UI、xterm UI、状态编排。
-- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务，以及 SFTP 浏览、下载与文件操作会话。
+- **Backend 进程** (`packages/backend/src/index.ts`)：Hono HTTP API + SSH/本地终端 WebSocket 会话服务，以及 SFTP 浏览、下载、文件操作会话与 SSH 端口转发运行时。
 
 ```mermaid
 flowchart LR
@@ -112,10 +112,22 @@ sequenceDiagram
 
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
 - SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、下载、创建、重命名、复制、删除与批量文件操作。
+- Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
 - SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；macOS 使用打包的 NSWorkspace helper；Linux 不显示打开方式。
 - SFTP 上传、目录下载、chmod、传输队列、完整编辑器写回与 SSH terminal 会话复用仍属于后续规划。
 
-## 5.1 设置运行时（已实现）
+## 5.1 SSH 端口转发运行时（已实现）
+
+- 端口转发规则通过 `PortForwardRule` 持久化到 SQLite，并按 local、remote、dynamic SOCKS 三类保存类型专属字段。
+- `PortForwardSessionService` 负责活动 SSH client、`net.Server` 监听器、socket、channel、远端转发监听与关闭清理。
+- Start 会通过共享的 `packages/backend/src/ssh/connect.ts` helper 打开 SSH client，因此钥匙链凭据解密与 strict host key 行为与 SSH/SFTP 保持一致。
+- 本地转发在 backend 本机监听，并为每个进入的本地 socket 调用 `ssh2.Client.forwardOut(...)`。
+- 远端转发调用 `client.forwardIn(...)`，并将 accept 后的 SSH channel 从 backend 本机连接到配置的目标 host/port。
+- 动态转发实现 SOCKS5 no-auth TCP CONNECT，目标支持 IPv4、IPv6 与域名；不支持 UDP ASSOCIATE、BIND 与 SOCKS 认证。
+- 默认本地监听地址是 `127.0.0.1`；允许非 localhost 监听，但 renderer 必须显示风险提示。
+- 每条规则最多 64 个并发连接，单次连接建立超时为 15 秒。
+
+## 5.2 设置运行时（已实现）
 
 - 设置通过后端路由 `GET/PUT /api/v1/settings` 持久化。
 - 存储模型为按作用域单行 JSON（`scopeAccountId` + `scopeDeviceId`）的 `AppSettings` 表。
@@ -147,7 +159,7 @@ sequenceDiagram
   UI->>UI: 应用 language + theme
 ```
 
-## 5.2 本地优先审计运行时（已实现）
+## 5.3 本地优先审计运行时（已实现）
 
 - 安全核心操作会写入 `AuditEvent`，并保留稳定关联字段（`requestId`、`sessionId`、`entityId`、`relatedRecordId`）以支持取证追踪。
 - 现有 `SshLoginAudit` 继续保留用于 SSH 最近使用排序兼容；`AuditEvent` 作为跨领域统一审计流。
@@ -162,6 +174,7 @@ sequenceDiagram
 - `ssh-host-trust`
 - `ssh-server`
 - `ssh-keychain`
+- `port-forward`
 - `settings`
 
 ## 6. 核心数据流视图
@@ -200,14 +213,7 @@ flowchart LR
 - **Backend 边界**：负责协议校验、会话生命周期与资源清理。
 - **Remote 边界**：SSH 主机 / 本地 shell 波动视为外部故障，映射为稳定 UI 错误码。
 
-## 7. 架构决策动机
-
-- 保持 backend 为独立运行时进程，将协议与凭据处理与 renderer 攻击面隔离。
-- 保持 preload 为最小桥接面，减少 API 暴露并维持严格进程契约。
-- 终端高频 I/O 优先走 WS 数据面，避免 IPC 成为吞吐瓶颈。
-- Main 进程作为编排/代理，而非业务承载层，便于未来服务端解耦演进。
-
-### 7.1 SSH 钥匙链凭据模型（2026-03）
+## 7. SSH 钥匙链凭据模型（2026-03）
 
 - SSH 凭据改为存储在 `SshKeychain`，并通过 `SshServer.keychainId` 关联。
 - `SshServer` 继续负责连接身份与主机策略（`host`、`port`、`username`、`strictHostKey`），不再直接持有密码/私钥密文字段。
@@ -216,9 +222,16 @@ flowchart LR
 - 公用钥匙链支持多服务器复用；隐藏钥匙链用于单服务器私有凭据。
 - SSH 会话创建时统一通过 server → keychain 关系解析凭据后再建立 `ssh2` 连接。
 
-## 8. 边界案例处理手册
+## 8. 架构决策动机
 
-### 8.1 启动时 Backend 未就绪
+- 保持 backend 为独立运行时进程，将协议与凭据处理与 renderer 攻击面隔离。
+- 保持 preload 为最小桥接面，减少 API 暴露并维持严格进程契约。
+- 终端高频 I/O 优先走 WS 数据面，避免 IPC 成为吞吐瓶颈。
+- Main 进程作为编排/代理，而非业务承载层，便于未来服务端解耦演进。
+
+## 9. 边界案例处理手册
+
+### 9.1 启动时 Backend 未就绪
 
 ```mermaid
 sequenceDiagram
@@ -242,7 +255,7 @@ sequenceDiagram
 - 首个依赖 backend 的 IPC 在转发前必须确保 backend 已就绪。
 - 启动失败路径应清晰可观测。
 
-### 8.2 WS Attach Token 不匹配
+### 9.2 WS Attach Token 不匹配
 
 ```mermaid
 sequenceDiagram
@@ -260,7 +273,7 @@ sequenceDiagram
 - token/session 不匹配属于安全敏感问题，必须失败即关闭。
 - 恢复路径应通过全新 session/token 重新建立。
 
-### 8.3 活跃会话期间 Renderer 重载
+### 9.3 活跃会话期间 Renderer 重载
 
 ```mermaid
 sequenceDiagram

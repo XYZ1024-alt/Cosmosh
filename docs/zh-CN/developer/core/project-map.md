@@ -31,7 +31,7 @@ flowchart TB
 
 - **角色**：React UI 层。
 - **关键目录**：
-  - `src/pages`：功能页面（`Home`、`SSH`、`SSHEditor`、`Settings`、`SettingsEditor`等）。
+  - `src/pages`：功能页面（`Home`、`SSH`、`SSHEditor`、`Settings`、`SettingsEditor`等）。Home 负责 SSH、钥匙链与端口转发入口界面。
   - `src/pages/sftp`：SFTP 页面子模块，负责浏览器式 UI 编排、动作菜单、目录/树/详情面板与共享 SFTP 辅助函数。
   - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
   - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
@@ -43,9 +43,10 @@ flowchart TB
 
 - **角色**：内部 API + 会话编排运行时。
 - **关键目录**：
-  - `src/http/routes`：设置、SSH 实体与本地终端动作 REST 路由。
+  - `src/http/routes`：设置、SSH 实体、端口转发规则与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
-  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测）。
+  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测），以及非 shell SSH 连接共享 helper。
+  - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
   - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值与请求校验解析。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
@@ -116,6 +117,14 @@ flowchart TD
 5. 通过 main bridge 暴露给 renderer。
 6. 同步架构与运行时文档。
 
+### 新增端口转发行为
+
+1. 当路由或 payload 形状变化时，先更新 `packages/api-contract/openapi/cosmosh.openapi.yaml`。
+2. 持久化字段维护在 `packages/backend/prisma/schema.prisma` 及对应 migration 中。
+3. 运行时归属保持在 `packages/backend/src/port-forward`，并通过 `packages/backend/src/ssh/connect.ts` 复用 SSH 认证与主机信任逻辑。
+4. Bridge 变更同步到 `packages/main/src/preload.ts`、`packages/main/src/ipc/register-backend-ipc.ts`、`packages/renderer/src/vite-env.d.ts` 与 renderer API wrapper。
+5. 更新 `docs/developer/runtime/port-forwarding.md` 与 `docs/zh-CN/developer/runtime/port-forwarding.md`。
+
 ### 新增应用设置项
 
 1. 在 `packages/api-contract/src/settings-registry.ts` 中：
@@ -155,3 +164,24 @@ flowchart TD
   - `packages/renderer/src/pages/SSHEditor.tsx` 负责单服务器内的钥匙链选择与内联认证回退流程。
   - `packages/renderer/src/pages/SSHKeychains.tsx` 负责独立钥匙链管理页面的增删改流程。
   - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH / 钥匙链 / 端口转发模式正文；主页钥匙链模式复用共享 SSH 文件夹/标签与 `SSHKeychainEditorDialog` 完成创建和编辑。
+
+## 9. SSH 端口转发模块归属（2026-05）
+
+- 数据模型归属：
+  - `packages/backend/prisma/schema.prisma`（`PortForwardRule`、`PortForwardRuleType`）。
+  - `packages/backend/prisma/migrations/*port_forward_rules*` 负责运行时 schema 收敛。
+- 契约归属：
+  - `packages/api-contract/openapi/cosmosh.openapi.yaml` 负责路由、payload、API code 与生成的 `API_PATHS`。
+  - `packages/api-contract/src/index.ts` 负责 main/renderer 消费的请求/响应类型别名。
+- 运行时归属：
+  - `packages/backend/src/http/routes/port-forward.ts` 负责 CRUD/start/stop 路由。
+  - `packages/backend/src/port-forward/session-service.ts` 负责 local/remote/dynamic 活动运行时状态。
+  - `packages/backend/src/port-forward/validation.ts` 与 `socks5.ts` 负责输入与 SOCKS 协议边界。
+  - `packages/backend/src/ssh/connect.ts` 负责共享 SSH 认证与主机信任。
+- Bridge 归属：
+  - `packages/main/src/ipc/register-backend-ipc.ts`、`packages/main/src/preload.ts` 与 `packages/renderer/src/vite-env.d.ts`。
+- Renderer 归属：
+  - `packages/renderer/src/pages/Home.tsx` 负责 Home -> Port Forwarding 表格、弹窗、动作与 host trust retry。
+  - `packages/renderer/src/lib/api/*` 与 `packages/renderer/src/lib/backend.ts` 负责类型化 transport wrapper。
+- 文档归属：
+  - `docs/developer/runtime/port-forwarding.md` 与 `docs/zh-CN/developer/runtime/port-forwarding.md`。

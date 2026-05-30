@@ -6,6 +6,13 @@ import type {
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
   ApiLocalTerminalListProfilesResponse,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -253,6 +260,17 @@ declare global {
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;
       backendSshDeleteKeychain: (keychainId: string) => Promise<{ success: boolean }>;
+      backendPortForwardListRules: () => Promise<ApiPortForwardListRulesResponse | ApiErrorResponse>;
+      backendPortForwardCreateRule: (
+        payload: ApiPortForwardCreateRuleRequest,
+      ) => Promise<ApiPortForwardCreateRuleResponse | ApiErrorResponse>;
+      backendPortForwardUpdateRule: (
+        ruleId: string,
+        payload: ApiPortForwardUpdateRuleRequest,
+      ) => Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>;
+      backendPortForwardStartRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
+      backendPortForwardStopRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse>;
+      backendPortForwardDeleteRule: (ruleId: string) => Promise<{ success: boolean }>;
       backendLocalTerminalListProfiles: () => Promise<LocalTerminalListResponse | ApiErrorResponse>;
       backendLocalTerminalCreateSession: (
         payload: LocalTerminalCreateSessionRequest,

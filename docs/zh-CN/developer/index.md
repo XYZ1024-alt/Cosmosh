@@ -12,6 +12,7 @@ flowchart TD
   B --> H[本地优先审计事件]
   B --> G[数据库安全]
   B --> E[SFTP 文件系统]
+  B --> I[SSH 端口转发]
   B --> F[UI/UX 规范]
 ```
 
@@ -26,6 +27,7 @@ flowchart TD
   - [本地优先审计事件](./runtime/audit-events.md)
   - [数据库安全](./runtime/database-security.md)
   - [SFTP 文件系统](./runtime/sftp-file-system.md)
+  - [SSH 端口转发](./runtime/port-forwarding.md)
 - 设计与治理
   - [UI/UX 规范](./design/ui-ux-standards.md)
 
@@ -33,6 +35,7 @@ flowchart TD
 
 - 新增运行时能力：先看[项目地图](./core/project-map.md)，再看[架构设计](./core/architecture.md)，最后同步[IPC 协议字典](./core/ipc-protocol.md)。
 - 调整 SSH 行为：优先阅读[SSH 终端实现](./runtime/ssh-terminal.md)，并同步协议说明到[IPC 协议字典](./core/ipc-protocol.md)。
+- 调整 SSH 端口转发：优先阅读[SSH 端口转发](./runtime/port-forwarding.md)，再在[IPC 协议字典](./core/ipc-protocol.md)核对 IPC 覆盖。
 - 排查安全敏感操作链路：优先阅读[本地优先审计事件](./runtime/audit-events.md)，并在[IPC 协议字典](./core/ipc-protocol.md)核对桥接覆盖。
 - 排查数据库加密启动问题：优先阅读[数据库安全](./runtime/database-security.md)，再结合[架构设计](./core/architecture.md)核对进程职责。
 - 调整界面交互：先遵循[UI/UX 规范](./design/ui-ux-standards.md)，再落地页面样式变更。

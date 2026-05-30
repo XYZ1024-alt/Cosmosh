@@ -63,6 +63,12 @@ flowchart TB
 | `backend:ssh-delete-server` | `invoke` | `serverId: string` | `Promise<{ success: boolean }>` | DELETE SSH server |
 | `backend:ssh-delete-folder` | `invoke` | `folderId: string` | `Promise<{ success: boolean }>` | DELETE SSH folder |
 | `backend:ssh-delete-keychain` | `invoke` | `keychainId: string` | `Promise<{ success: boolean }>` | DELETE SSH keychain |
+| `backend:port-forward-list-rules` | `invoke` | none | `Promise<ApiPortForwardListRulesResponse \| ApiErrorResponse>` | GET persisted SSH port-forwarding rules and merge in-memory runtime status |
+| `backend:port-forward-create-rule` | `invoke` | `payload: ApiPortForwardCreateRuleRequest` | `Promise<ApiPortForwardCreateRuleResponse \| ApiErrorResponse>` | POST create a stopped port-forwarding rule |
+| `backend:port-forward-update-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardUpdateRuleRequest` | `Promise<ApiPortForwardUpdateRuleResponse \| ApiErrorResponse>` | PUT update a stopped port-forwarding rule |
+| `backend:port-forward-start-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST start one rule; may return shared `SSH_HOST_UNTRUSTED` payload for fingerprint trust retry |
+| `backend:port-forward-stop-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStopRuleResponse \| ApiErrorResponse>` | POST stop one active rule; stopped rules are handled idempotently by backend |
+| `backend:port-forward-delete-rule` | `invoke` | `ruleId: string` | `Promise<{ success: boolean }>` | DELETE one stopped port-forwarding rule |
 | `backend:sftp-create-session` | `invoke` | `payload: ApiSftpCreateSessionRequest` | `Promise<ApiSftpCreateSessionResponse \| ApiSftpCreateSessionHostVerificationRequiredResponse \| ApiErrorResponse>` | POST create SFTP file-system session |
 | `backend:sftp-list-directory` | `invoke` | `sessionId: string, query?: ApiSftpListDirectoryQuery` | `Promise<ApiSftpListDirectoryResponse \| ApiErrorResponse>` | GET one SFTP directory listing |
 | `backend:sftp-get-entry-details` | `invoke` | `sessionId: string, payload: ApiSftpEntryDetailsRequest` | `Promise<ApiSftpEntryDetailsResponse \| ApiErrorResponse>` | POST fetch non-recursive metadata for selected SFTP entries |
@@ -101,7 +107,27 @@ SSH security policy fields in current contract:
 - `ApiSshListServersResponse`: each server item includes persisted `strictHostKey`.
 - `ApiSshCreateSessionRequest`: optional `strictHostKey` override used for one session attempt.
 
-## 3.2 Terminal WebSocket Contract (Renderer ↔ Backend)
+### 3.2 SSH Port Forwarding Contract
+
+Port forwarding payloads are generated from the OpenAPI source and consumed by backend, main, preload, and renderer wrappers:
+
+- `ApiPortForwardListRulesResponse`
+- `ApiPortForwardCreateRuleRequest` / `ApiPortForwardCreateRuleResponse`
+- `ApiPortForwardUpdateRuleRequest` / `ApiPortForwardUpdateRuleResponse`
+- `ApiPortForwardStartRuleResponse`
+- `ApiPortForwardStopRuleResponse`
+
+Rule type is `local`, `remote`, or `dynamic`.
+
+Type-specific fields:
+
+- Local: `localBindHost`, `localBindPort`, `targetHost`, `targetPort`
+- Remote: `remoteBindHost`, `remoteBindPort`, `targetHost`, `targetPort`
+- Dynamic: `localBindHost`, `localBindPort`
+
+Runtime status is returned as `runtime.status` and is not persisted. Start can return `SSH_HOST_UNTRUSTED`; renderer must trust the fingerprint through `backend:ssh-trust-fingerprint` before retrying.
+
+## 3.3 Terminal WebSocket Contract (Renderer ↔ Backend)
 
 Although terminal stream messages are not Electron IPC channels, they are part of the same cross-process contract surface and must be versioned together.
 

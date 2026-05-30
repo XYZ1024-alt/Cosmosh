@@ -24,6 +24,12 @@ enum SshKeychainVisibility {
   shared
 }
 
+enum PortForwardRuleType {
+  local
+  remote
+  dynamic
+}
+
 model SshFolder {
   id        String      @id @default(cuid())
   name      String      @unique
@@ -68,6 +74,7 @@ model SshServer {
   keychain         SshKeychain     @relation(fields: [keychainId], references: [id], onDelete: Restrict)
   tags             SshServerTag[]
   loginAudits      SshLoginAudit[]
+  portForwardRules PortForwardRule[]
 
   @@unique([host, port, username])
   @@index([folderId])
@@ -157,6 +164,29 @@ model SshLoginAudit {
   server           SshServer      @relation(fields: [serverId], references: [id], onDelete: Cascade)
 
   @@index([serverId, attemptedAt])
+}
+
+model PortForwardRule {
+  id                 String              @id @default(cuid())
+  name               String
+  type               PortForwardRuleType
+  serverId           String
+  localBindHost      String?
+  localBindPort      Int?
+  remoteBindHost     String?
+  remoteBindPort     Int?
+  targetHost         String?
+  targetPort         Int?
+  note               String?
+  lastStartedAt      DateTime?
+  lastStoppedAt      DateTime?
+  lastFailureMessage String?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  server             SshServer           @relation(fields: [serverId], references: [id], onDelete: Cascade)
+
+  @@index([serverId])
+  @@index([type])
 }
 
 model AuditEvent {

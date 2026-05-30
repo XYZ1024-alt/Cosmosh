@@ -63,6 +63,12 @@ flowchart TB
 | `backend:ssh-delete-server` | `invoke` | `serverId: string` | `Promise<{ success: boolean }>` | DELETE SSH server |
 | `backend:ssh-delete-folder` | `invoke` | `folderId: string` | `Promise<{ success: boolean }>` | DELETE SSH folder |
 | `backend:ssh-delete-keychain` | `invoke` | `keychainId: string` | `Promise<{ success: boolean }>` | DELETE SSH 钥匙链 |
+| `backend:port-forward-list-rules` | `invoke` | none | `Promise<ApiPortForwardListRulesResponse \| ApiErrorResponse>` | GET 已持久化的 SSH 端口转发规则，并合并内存运行状态 |
+| `backend:port-forward-create-rule` | `invoke` | `payload: ApiPortForwardCreateRuleRequest` | `Promise<ApiPortForwardCreateRuleResponse \| ApiErrorResponse>` | POST 创建一条 stopped 端口转发规则 |
+| `backend:port-forward-update-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardUpdateRuleRequest` | `Promise<ApiPortForwardUpdateRuleResponse \| ApiErrorResponse>` | PUT 更新一条 stopped 端口转发规则 |
+| `backend:port-forward-start-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST 启动一条规则；可能返回共享 `SSH_HOST_UNTRUSTED` payload 供指纹信任后重试 |
+| `backend:port-forward-stop-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStopRuleResponse \| ApiErrorResponse>` | POST 停止一条活动规则；已停止规则由 backend 幂等处理 |
+| `backend:port-forward-delete-rule` | `invoke` | `ruleId: string` | `Promise<{ success: boolean }>` | DELETE 一条 stopped 端口转发规则 |
 | `backend:sftp-create-session` | `invoke` | `payload: ApiSftpCreateSessionRequest` | `Promise<ApiSftpCreateSessionResponse \| ApiSftpCreateSessionHostVerificationRequiredResponse \| ApiErrorResponse>` | POST 创建 SFTP 文件系统会话 |
 | `backend:sftp-list-directory` | `invoke` | `sessionId: string, query?: ApiSftpListDirectoryQuery` | `Promise<ApiSftpListDirectoryResponse \| ApiErrorResponse>` | GET 单个 SFTP 目录列表 |
 | `backend:sftp-get-entry-details` | `invoke` | `sessionId: string, payload: ApiSftpEntryDetailsRequest` | `Promise<ApiSftpEntryDetailsResponse \| ApiErrorResponse>` | POST 获取已选 SFTP 条目的非递归元数据 |
@@ -101,7 +107,27 @@ flowchart TB
 - `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey`。
 - `ApiSshCreateSessionRequest`：可选 `strictHostKey`，可用于单次会话尝试覆盖。
 
-## 3.2 终端 WebSocket 契约（Renderer ↔ Backend）
+### 3.2 SSH 端口转发契约
+
+端口转发 payload 由 OpenAPI 源生成，并被 backend、main、preload 与 renderer wrapper 共同消费：
+
+- `ApiPortForwardListRulesResponse`
+- `ApiPortForwardCreateRuleRequest` / `ApiPortForwardCreateRuleResponse`
+- `ApiPortForwardUpdateRuleRequest` / `ApiPortForwardUpdateRuleResponse`
+- `ApiPortForwardStartRuleResponse`
+- `ApiPortForwardStopRuleResponse`
+
+规则类型为 `local`、`remote` 或 `dynamic`。
+
+类型专属字段：
+
+- Local：`localBindHost`、`localBindPort`、`targetHost`、`targetPort`
+- Remote：`remoteBindHost`、`remoteBindPort`、`targetHost`、`targetPort`
+- Dynamic：`localBindHost`、`localBindPort`
+
+运行状态通过 `runtime.status` 返回，但不会持久化。Start 可能返回 `SSH_HOST_UNTRUSTED`；renderer 必须先通过 `backend:ssh-trust-fingerprint` 信任指纹，然后再重试。
+
+## 3.3 终端 WebSocket 契约（Renderer ↔ Backend）
 
 终端流式消息虽然不属于 Electron IPC channel，但同样属于跨进程契约面，必须与 IPC 变更一起维护版本一致性。
 

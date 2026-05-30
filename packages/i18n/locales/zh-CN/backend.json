@@ -26,6 +26,14 @@
       "sessionCreateFailedNoReason": "本地终端会话创建失败。",
       "sessionNotFound": "未找到本地终端会话。"
     },
+    "portForward": {
+      "ruleActive": "请先停止此端口转发规则，再编辑或删除。",
+      "ruleIdRequired": "ruleId 为必填项。",
+      "ruleNotFound": "未找到端口转发规则。",
+      "sshConnectionClosed": "SSH 连接已关闭。",
+      "startFailed": "启动端口转发失败：{reason}",
+      "startFailedNoReason": "启动端口转发失败。"
+    },
     "settings": {
       "invalidRequestPayload": "设置请求载荷无效。",
       "rowNotPersisted": "设置记录未持久化。"
@@ -94,6 +102,8 @@
       "invalidPayloadDetail": "请求载荷无效：{reason}",
       "noteLength": "备注长度不能超过 3000 个字符。",
       "passwordRequiredForAuthType": "所选认证类型必须提供密码。",
+      "portForwardRuleNameLength": "规则名称为必填，长度需在 1-120 个字符之间。",
+      "portForwardRuleType": "type 必须是 local、remote 或 dynamic 之一。",
       "portRange": "端口必须是 1-65535 范围内的整数。",
       "privateKeyRequiredForAuthType": "所选认证类型必须提供私钥。",
       "profileIdRequired": "profileId 为必填项。",
@@ -122,6 +132,13 @@
     "localTerminal": {
       "profilesFetched": "本地终端配置获取成功。",
       "sessionCreated": "本地终端会话创建成功。"
+    },
+    "portForward": {
+      "ruleCreated": "端口转发规则创建成功。",
+      "rulesFetched": "端口转发规则获取成功。",
+      "ruleStarted": "端口转发规则启动成功。",
+      "ruleStopped": "端口转发规则停止成功。",
+      "ruleUpdated": "端口转发规则更新成功。"
     },
     "settings": {
       "fetched": "设置获取成功。",

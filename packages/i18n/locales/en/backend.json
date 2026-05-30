@@ -26,6 +26,14 @@
       "sessionCreateFailedNoReason": "Failed to create local terminal session.",
       "sessionNotFound": "Local terminal session was not found."
     },
+    "portForward": {
+      "ruleActive": "Stop this port-forwarding rule before editing or deleting it.",
+      "ruleIdRequired": "ruleId is required.",
+      "ruleNotFound": "Port-forwarding rule was not found.",
+      "sshConnectionClosed": "SSH connection closed.",
+      "startFailed": "Failed to start port forwarding: {reason}",
+      "startFailedNoReason": "Failed to start port forwarding."
+    },
     "settings": {
       "invalidRequestPayload": "Invalid settings request payload.",
       "rowNotPersisted": "Settings row was not persisted."
@@ -94,6 +102,8 @@
       "invalidPayloadDetail": "Invalid request payload: {reason}",
       "noteLength": "Note must be 3000 characters or fewer.",
       "passwordRequiredForAuthType": "Password is required for selected authentication type.",
+      "portForwardRuleNameLength": "Rule name is required and must be 1-120 characters.",
+      "portForwardRuleType": "type must be one of: local, remote, dynamic.",
       "portRange": "Port must be an integer in range 1-65535.",
       "privateKeyRequiredForAuthType": "Private key is required for selected authentication type.",
       "profileIdRequired": "profileId is required.",
@@ -122,6 +132,13 @@
     "localTerminal": {
       "profilesFetched": "Local terminal profiles fetched successfully.",
       "sessionCreated": "Local terminal session created successfully."
+    },
+    "portForward": {
+      "ruleCreated": "Port-forwarding rule created successfully.",
+      "rulesFetched": "Port-forwarding rules fetched successfully.",
+      "ruleStarted": "Port-forwarding rule started successfully.",
+      "ruleStopped": "Port-forwarding rule stopped successfully.",
+      "ruleUpdated": "Port-forwarding rule updated successfully."
     },
     "settings": {
       "fetched": "Settings fetched successfully.",

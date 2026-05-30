@@ -2,6 +2,13 @@ import type {
   ApiAuditEventDetailResponse,
   ApiAuditEventListQuery,
   ApiAuditEventListResponse,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -86,6 +93,15 @@ export type BackendClient = {
     payload: ApiSshUpdateKeychainRequest,
   ) => Promise<ApiSshUpdateKeychainResponse>;
   getSshKeychainCredentials: (keychainId: string) => Promise<ApiSshGetKeychainCredentialsResponse>;
+  listPortForwardRules: () => Promise<ApiPortForwardListRulesResponse>;
+  createPortForwardRule: (payload: ApiPortForwardCreateRuleRequest) => Promise<ApiPortForwardCreateRuleResponse>;
+  updatePortForwardRule: (
+    ruleId: string,
+    payload: ApiPortForwardUpdateRuleRequest,
+  ) => Promise<ApiPortForwardUpdateRuleResponse>;
+  startPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse>;
+  stopPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse>;
+  deletePortForwardRule: (ruleId: string) => Promise<{ success: boolean }>;
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse>;
@@ -287,6 +303,62 @@ export const createBackendClient = (): BackendClient => {
       }
 
       return payload;
+    },
+    listPortForwardRules: async () => {
+      const payload = await transport.listPortForwardRules();
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    createPortForwardRule: async (requestPayload) => {
+      const payload = await transport.createPortForwardRule(requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    updatePortForwardRule: async (ruleId, requestPayload) => {
+      const payload = await transport.updatePortForwardRule(ruleId, requestPayload);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    startPortForwardRule: async (ruleId) => {
+      const payload = await transport.startPortForwardRule(ruleId);
+
+      if (payload.success) {
+        return payload;
+      }
+
+      if (payload.code === 'SSH_HOST_UNTRUSTED' && 'data' in payload) {
+        return payload;
+      }
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      throw new Error('Unexpected port forwarding start response.');
+    },
+    stopPortForwardRule: async (ruleId) => {
+      const payload = await transport.stopPortForwardRule(ruleId);
+
+      if (!payload.success) {
+        throw new Error(payload.message);
+      }
+
+      return payload;
+    },
+    deletePortForwardRule: async (ruleId) => {
+      return transport.deletePortForwardRule(ruleId);
     },
     createSshSession: async (requestPayload) => {
       const payload = await transport.createSshSession(requestPayload);

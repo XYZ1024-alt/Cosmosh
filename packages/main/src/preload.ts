@@ -6,6 +6,13 @@ import type {
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
   ApiLocalTerminalListProfilesResponse,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -422,6 +429,28 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSshDeleteKeychain: (keychainId: string) => {
     return invokeIpc<{ success: boolean }>('backend:ssh-delete-keychain', keychainId);
+  },
+  backendPortForwardListRules: () => {
+    return invokeIpc<ApiPortForwardListRulesResponse | ApiErrorResponse>('backend:port-forward-list-rules');
+  },
+  backendPortForwardCreateRule: (payload: ApiPortForwardCreateRuleRequest) => {
+    return invokeIpc<ApiPortForwardCreateRuleResponse | ApiErrorResponse>('backend:port-forward-create-rule', payload);
+  },
+  backendPortForwardUpdateRule: (ruleId: string, payload: ApiPortForwardUpdateRuleRequest) => {
+    return invokeIpc<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>(
+      'backend:port-forward-update-rule',
+      ruleId,
+      payload,
+    );
+  },
+  backendPortForwardStartRule: (ruleId: string) => {
+    return invokeIpc<ApiPortForwardStartRuleResponse | ApiErrorResponse>('backend:port-forward-start-rule', ruleId);
+  },
+  backendPortForwardStopRule: (ruleId: string) => {
+    return invokeIpc<ApiPortForwardStopRuleResponse | ApiErrorResponse>('backend:port-forward-stop-rule', ruleId);
+  },
+  backendPortForwardDeleteRule: (ruleId: string) => {
+    return invokeIpc<{ success: boolean }>('backend:port-forward-delete-rule', ruleId);
   },
 
   // ---------------------------------------------------------------------------

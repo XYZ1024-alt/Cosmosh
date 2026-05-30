@@ -44,6 +44,12 @@ export const API_PATHS = {
   localTerminalListProfiles: '/api/v1/local-terminals/profiles',
   localTerminalCreateSession: '/api/v1/local-terminals/sessions',
   localTerminalCloseSession: '/api/v1/local-terminals/sessions/{sessionId}',
+  portForwardListRules: '/api/v1/port-forwards/rules',
+  portForwardCreateRule: '/api/v1/port-forwards/rules',
+  portForwardUpdateRule: '/api/v1/port-forwards/rules/{ruleId}',
+  portForwardDeleteRule: '/api/v1/port-forwards/rules/{ruleId}',
+  portForwardStartRule: '/api/v1/port-forwards/rules/{ruleId}/start',
+  portForwardStopRule: '/api/v1/port-forwards/rules/{ruleId}/stop',
 } as const;
 
 export const API_HEADERS = {
@@ -71,6 +77,11 @@ export const API_CODES = {
   auditEventNotFound: 'AUDIT_EVENT_NOT_FOUND',
   localTerminalValidationFailed: 'LOCAL_TERMINAL_VALIDATION_FAILED',
   localTerminalProfileNotFound: 'LOCAL_TERMINAL_PROFILE_NOT_FOUND',
+  portForwardValidationFailed: 'PORT_FORWARD_VALIDATION_FAILED',
+  portForwardRuleNotFound: 'PORT_FORWARD_RULE_NOT_FOUND',
+  portForwardRuleActive: 'PORT_FORWARD_RULE_ACTIVE',
+  portForwardStartFailed: 'PORT_FORWARD_START_FAILED',
+  portForwardStopFailed: 'PORT_FORWARD_STOP_FAILED',
   testPingOk: 'TEST_PING_OK',
   localTerminalListOk: 'LOCAL_TERMINAL_LIST_OK',
   localTerminalSessionCreateOk: 'LOCAL_TERMINAL_SESSION_CREATE_OK',
@@ -93,6 +104,11 @@ export const API_CODES = {
   sshTagCreateOk: 'SSH_TAG_CREATE_OK',
   sshSessionCreateOk: 'SSH_SESSION_CREATE_OK',
   sshTrustFingerprintOk: 'SSH_TRUST_FINGERPRINT_OK',
+  portForwardRuleListOk: 'PORT_FORWARD_RULE_LIST_OK',
+  portForwardRuleCreateOk: 'PORT_FORWARD_RULE_CREATE_OK',
+  portForwardRuleUpdateOk: 'PORT_FORWARD_RULE_UPDATE_OK',
+  portForwardRuleStartOk: 'PORT_FORWARD_RULE_START_OK',
+  portForwardRuleStopOk: 'PORT_FORWARD_RULE_STOP_OK',
   sftpSessionCreateOk: 'SFTP_SESSION_CREATE_OK',
   sftpDirectoryListOk: 'SFTP_DIRECTORY_LIST_OK',
   sftpEntryDetailsOk: 'SFTP_ENTRY_DETAILS_OK',
@@ -100,4 +116,4 @@ export const API_CODES = {
   sftpFileReadOk: 'SFTP_FILE_READ_OK',
 } as const;
 
-export const API_CAPABILITIES = ['ssh', 'sftp'] as const;
+export const API_CAPABILITIES = ['ssh', 'sftp', 'port-forward'] as const;

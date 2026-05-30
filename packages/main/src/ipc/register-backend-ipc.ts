@@ -6,6 +6,13 @@ import type {
   ApiLocalTerminalCreateSessionRequest,
   ApiLocalTerminalCreateSessionResponse,
   ApiLocalTerminalListProfilesResponse,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -544,6 +551,63 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   registerDeleteHandler(options, 'backend:ssh-delete-server', API_PATHS.sshDeleteServer, 'serverId');
   registerDeleteHandler(options, 'backend:ssh-delete-folder', API_PATHS.sshDeleteFolder, 'folderId');
   registerDeleteHandler(options, 'backend:ssh-delete-keychain', API_PATHS.sshDeleteKeychain, 'keychainId');
+
+  ipcMain.handle(
+    'backend:port-forward-list-rules',
+    async (): Promise<ApiPortForwardListRulesResponse | ApiErrorResponse> => {
+      return options.requestBackend<ApiPortForwardListRulesResponse>(API_PATHS.portForwardListRules, { method: 'GET' });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:port-forward-create-rule',
+    async (
+      _event,
+      payload: ApiPortForwardCreateRuleRequest,
+    ): Promise<ApiPortForwardCreateRuleResponse | ApiErrorResponse> => {
+      return options.requestBackend<ApiPortForwardCreateRuleResponse>(API_PATHS.portForwardCreateRule, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:port-forward-update-rule',
+    async (
+      _event,
+      ruleId: string,
+      payload: ApiPortForwardUpdateRuleRequest,
+    ): Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
+      return options.requestBackend<ApiPortForwardUpdateRuleResponse>(path, {
+        method: 'PUT',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:port-forward-start-rule',
+    async (_event, ruleId: string): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
+      return options.requestBackend<ApiPortForwardStartRuleResponse>(path, {
+        method: 'POST',
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:port-forward-stop-rule',
+    async (_event, ruleId: string): Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse> => {
+      const path = replacePathToken(API_PATHS.portForwardStopRule, 'ruleId', ruleId);
+      return options.requestBackend<ApiPortForwardStopRuleResponse>(path, {
+        method: 'POST',
+      });
+    },
+  );
+
+  registerDeleteHandler(options, 'backend:port-forward-delete-rule', API_PATHS.portForwardDeleteRule, 'ruleId');
 };
 
 /**

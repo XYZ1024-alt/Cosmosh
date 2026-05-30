@@ -31,7 +31,7 @@ flowchart TB
 
 - **Role**: React UI layer.
 - **Key folders**:
-  - `src/pages`: feature pages (`Home`, `SSH`, `SSHEditor`, `Settings`, `SettingsEditor`, etc.).
+  - `src/pages`: feature pages (`Home`, `SSH`, `SSHEditor`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH, keychain, and port-forwarding landing surfaces.
   - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
   - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
@@ -43,9 +43,10 @@ flowchart TB
 
 - **Role**: Internal API + session orchestration runtime.
 - **Key folders**:
-  - `src/http/routes`: REST endpoints for settings, SSH entities, and local terminal actions.
+  - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
-  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution).
+  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
+  - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults and validation parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
@@ -116,6 +117,14 @@ flowchart TD
 5. Expose consumption path to renderer via main bridge.
 6. Sync architecture/runtime docs.
 
+### Add New Port Forwarding Behavior
+
+1. Update `packages/api-contract/openapi/cosmosh.openapi.yaml` first when route or payload shape changes.
+2. Keep persistence fields in `packages/backend/prisma/schema.prisma` and matching migrations.
+3. Keep runtime ownership in `packages/backend/src/port-forward`, using `packages/backend/src/ssh/connect.ts` for SSH authentication and host trust.
+4. Mirror bridge changes through `packages/main/src/preload.ts`, `packages/main/src/ipc/register-backend-ipc.ts`, `packages/renderer/src/vite-env.d.ts`, and renderer API wrappers.
+5. Update `docs/developer/runtime/port-forwarding.md` and `docs/zh-CN/developer/runtime/port-forwarding.md`.
+
 ### Add New Application Setting
 
 1. In `packages/api-contract/src/settings-registry.ts`:
@@ -155,3 +164,24 @@ flowchart TD
   - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
   - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
   - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit.
+
+## 9. SSH Port Forwarding Ownership Map (2026-05)
+
+- Data model owner:
+  - `packages/backend/prisma/schema.prisma` (`PortForwardRule`, `PortForwardRuleType`).
+  - `packages/backend/prisma/migrations/*port_forward_rules*` for runtime schema convergence.
+- Contract owner:
+  - `packages/api-contract/openapi/cosmosh.openapi.yaml` for routes, payloads, API codes, and generated `API_PATHS`.
+  - `packages/api-contract/src/index.ts` for exported request/response aliases consumed by main/renderer.
+- Runtime owner:
+  - `packages/backend/src/http/routes/port-forward.ts` for CRUD/start/stop routes.
+  - `packages/backend/src/port-forward/session-service.ts` for active local/remote/dynamic runtime state.
+  - `packages/backend/src/port-forward/validation.ts` and `socks5.ts` for input and SOCKS protocol boundaries.
+  - `packages/backend/src/ssh/connect.ts` for shared SSH authentication and host trust.
+- Bridge owner:
+  - `packages/main/src/ipc/register-backend-ipc.ts`, `packages/main/src/preload.ts`, and `packages/renderer/src/vite-env.d.ts`.
+- Renderer owner:
+  - `packages/renderer/src/pages/Home.tsx` for Home -> Port Forwarding table, dialog, actions, and host trust retry.
+  - `packages/renderer/src/lib/api/*` and `packages/renderer/src/lib/backend.ts` for typed transport wrappers.
+- Documentation owner:
+  - `docs/developer/runtime/port-forwarding.md` and `docs/zh-CN/developer/runtime/port-forwarding.md`.

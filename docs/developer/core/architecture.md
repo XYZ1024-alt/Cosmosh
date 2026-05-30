@@ -7,7 +7,7 @@ Cosmosh uses an Electron dual-process model with an embedded backend service:
 - **Main Process** (`packages/main/src/index.ts`): app lifecycle, BrowserWindow creation, preload wiring, IPC registration, backend process orchestration.
 - **Preload Bridge** (`packages/main/src/preload.ts`): strict API surface exposed via `contextBridge`.
 - **Renderer Process** (`packages/renderer/src`): React UI, xterm UI, state orchestration.
-- **Backend Process** (`packages/backend/src/index.ts`): Hono HTTP API + WebSocket session services for SSH/local terminal, plus SFTP browser, download, and file-operation sessions.
+- **Backend Process** (`packages/backend/src/index.ts`): Hono HTTP API + WebSocket session services for SSH/local terminal, plus SFTP browser, download, file-operation sessions, and SSH port-forwarding runtimes.
 
 ```mermaid
 flowchart LR
@@ -112,10 +112,22 @@ sequenceDiagram
 
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
 - SFTP uses request/response IPC + backend HTTP routes for directory browsing, download, create, rename, copy, delete, and batch file operations.
+- Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With; macOS uses the packaged NSWorkspace helper; Linux omits Open With.
 - SFTP upload, directory download, chmod, transfer queues, full editor write-back, and SSH terminal session reuse remain planned follow-up work.
 
-## 5.1 Settings Runtime (Implemented)
+## 5.1 SSH Port Forwarding Runtime (Implemented)
+
+- Port forwarding rules are persisted in SQLite through `PortForwardRule`, with type-specific fields for local, remote, and dynamic SOCKS forwarding.
+- `PortForwardSessionService` owns active SSH clients, `net.Server` listeners, sockets, channels, remote-forward listeners, and shutdown cleanup.
+- Start opens SSH clients through the shared `packages/backend/src/ssh/connect.ts` helper, so keychain credential decryption and strict host-key behavior stay aligned with SSH/SFTP.
+- Local forwarding listens on the backend host and opens `ssh2.Client.forwardOut(...)` per inbound local socket.
+- Remote forwarding calls `client.forwardIn(...)` and connects accepted SSH channels from backend to the configured target host/port.
+- Dynamic forwarding implements SOCKS5 no-auth TCP CONNECT for IPv4, IPv6, and domain targets; UDP ASSOCIATE, BIND, and SOCKS authentication are not supported.
+- Default local bind host is `127.0.0.1`; non-localhost bind hosts are allowed only with renderer risk messaging.
+- Each rule is capped at 64 concurrent connections with a 15-second connection setup timeout.
+
+## 5.2 Settings Runtime (Implemented)
 
 - Settings are now persisted by backend route `GET/PUT /api/v1/settings`.
 - Storage model is a single-row JSON payload per scope (`scopeAccountId` + `scopeDeviceId`) in `AppSettings`.
@@ -147,7 +159,7 @@ sequenceDiagram
   UI->>UI: apply language + theme
 ```
 
-## 5.2 Local-First Audit Runtime (Implemented)
+## 5.3 Local-First Audit Runtime (Implemented)
 
 - Security-core operations are persisted to `AuditEvent` with stable correlation fields (`requestId`, `sessionId`, `entityId`, `relatedRecordId`) for forensic traceability.
 - Existing `SshLoginAudit` remains active for backward-compatible SSH last-used sorting, while `AuditEvent` is used as the cross-domain audit stream.
@@ -162,6 +174,7 @@ Current event categories in runtime wiring include:
 - `ssh-host-trust`
 - `ssh-server`
 - `ssh-keychain`
+- `port-forward`
 - `settings`
 
 ## 6. Core Data-Flow Views
@@ -196,6 +209,9 @@ flowchart LR
 ### 6.3 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
+- **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.
+- **Backend boundary**: protocol validation, session lifecycle, and resource cleanup ownership.
+- **Remote boundary**: SSH host / local shell instability is treated as external and mapped to stable UI error codes.
 
 ## 7. SSH Keychain Credential Model (2026-03)
 
@@ -205,20 +221,17 @@ flowchart LR
 - Existing per-server edit UX is preserved by allowing inline credential input in the SSH editor; backend transparently materializes/updates hidden keychains.
 - Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.
 - SSH session creation resolves credentials through server → keychain relation before opening `ssh2` connections.
-- **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.
-- **Backend boundary**: protocol validation, session lifecycle, and resource cleanup ownership.
-- **Remote boundary**: SSH host / local shell instability is treated as external and mapped to stable UI error codes.
 
-## 7. Architecture Decision Rationale
+## 8. Architecture Decision Rationale
 
 - Keep the backend as a separate runtime process to isolate protocol and credential handling from renderer attack surface.
 - Use preload as a minimal bridge to reduce API exposure and preserve strict process contracts.
 - Prefer WS data plane for terminal streams to avoid IPC bottlenecks on high-frequency I/O.
 - Keep main as orchestrator/proxy instead of business-logic host for easier future server-client decoupling.
 
-## 8. Boundary Case Playbook
+## 9. Boundary Case Playbook
 
-### 8.1 Backend Not Ready at Startup
+### 9.1 Backend Not Ready at Startup
 
 ```mermaid
 sequenceDiagram
@@ -241,7 +254,7 @@ Handling principle:
 - First backend-bound IPC request must still observe backend ready-state before forwarding.
 - Startup failure paths should be explicit and observable.
 
-### 8.2 WS Attach Token Mismatch
+### 9.2 WS Attach Token Mismatch
 
 ```mermaid
 sequenceDiagram
@@ -259,7 +272,7 @@ Handling principle:
 - Token/session mismatch is security-sensitive and must fail closed.
 - Recovery should create a fresh session/token path.
 
-### 8.3 Renderer Reload During Active Session
+### 9.3 Renderer Reload During Active Session
 
 ```mermaid
 sequenceDiagram

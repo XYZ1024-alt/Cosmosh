@@ -7,6 +7,13 @@ import type {
   ApiLocalTerminalCreateSessionResponse,
   ApiLocalTerminalListProfilesResponse,
   ApiLocalTerminalProfile,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -104,6 +111,11 @@ type ApiResponse =
   | ApiSshCreateKeychainResponse
   | ApiSshUpdateKeychainResponse
   | ApiSshGetKeychainCredentialsResponse
+  | ApiPortForwardListRulesResponse
+  | ApiPortForwardCreateRuleResponse
+  | ApiPortForwardUpdateRuleResponse
+  | ApiPortForwardStartRuleResponse
+  | ApiPortForwardStopRuleResponse
   | ApiLocalTerminalListProfilesResponse
   | ApiLocalTerminalCreateSessionResponse;
 
@@ -136,6 +148,17 @@ export type ApiTransport = {
     payload: ApiSshUpdateKeychainRequest,
   ) => Promise<ApiSshUpdateKeychainResponse | ApiErrorResponse>;
   getSshKeychainCredentials: (keychainId: string) => Promise<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse>;
+  listPortForwardRules: () => Promise<ApiPortForwardListRulesResponse | ApiErrorResponse>;
+  createPortForwardRule: (
+    payload: ApiPortForwardCreateRuleRequest,
+  ) => Promise<ApiPortForwardCreateRuleResponse | ApiErrorResponse>;
+  updatePortForwardRule: (
+    ruleId: string,
+    payload: ApiPortForwardUpdateRuleRequest,
+  ) => Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>;
+  startPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
+  stopPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse>;
+  deletePortForwardRule: (ruleId: string) => Promise<{ success: boolean }>;
   createSshSession: (
     payload: ApiSshCreateSessionRequest,
   ) => Promise<ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse>;
@@ -290,6 +313,34 @@ const createElectronTransport = (): ApiTransport => {
       return (await window.electron!.backendSshGetKeychainCredentials(keychainId)) as
         | ApiSshGetKeychainCredentialsResponse
         | ApiErrorResponse;
+    },
+    listPortForwardRules: async () => {
+      return (await window.electron!.backendPortForwardListRules()) as
+        | ApiPortForwardListRulesResponse
+        | ApiErrorResponse;
+    },
+    createPortForwardRule: async (payload) => {
+      return (await window.electron!.backendPortForwardCreateRule(payload)) as
+        | ApiPortForwardCreateRuleResponse
+        | ApiErrorResponse;
+    },
+    updatePortForwardRule: async (ruleId, payload) => {
+      return (await window.electron!.backendPortForwardUpdateRule(ruleId, payload)) as
+        | ApiPortForwardUpdateRuleResponse
+        | ApiErrorResponse;
+    },
+    startPortForwardRule: async (ruleId) => {
+      return (await window.electron!.backendPortForwardStartRule(ruleId)) as
+        | ApiPortForwardStartRuleResponse
+        | ApiErrorResponse;
+    },
+    stopPortForwardRule: async (ruleId) => {
+      return (await window.electron!.backendPortForwardStopRule(ruleId)) as
+        | ApiPortForwardStopRuleResponse
+        | ApiErrorResponse;
+    },
+    deletePortForwardRule: async (ruleId) => {
+      return await window.electron!.backendPortForwardDeleteRule(ruleId);
     },
     createSshSession: async (payload) => {
       return (await window.electron!.backendSshCreateSession(payload)) as
@@ -503,6 +554,40 @@ const createBrowserTransport = (): ApiTransport => {
     getSshKeychainCredentials: async (keychainId) => {
       const path = API_PATHS.sshGetKeychainCredentials.replace('{keychainId}', encodeURIComponent(keychainId));
       return (await callBrowserApi(path, 'GET')) as ApiSshGetKeychainCredentialsResponse | ApiErrorResponse;
+    },
+    listPortForwardRules: async () => {
+      return (await callBrowserApi(API_PATHS.portForwardListRules, 'GET')) as
+        | ApiPortForwardListRulesResponse
+        | ApiErrorResponse;
+    },
+    createPortForwardRule: async (payload) => {
+      return (await callBrowserApi(API_PATHS.portForwardCreateRule, 'POST', payload)) as
+        | ApiPortForwardCreateRuleResponse
+        | ApiErrorResponse;
+    },
+    updatePortForwardRule: async (ruleId, payload) => {
+      const path = API_PATHS.portForwardUpdateRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      return (await callBrowserApi(path, 'PUT', payload)) as ApiPortForwardUpdateRuleResponse | ApiErrorResponse;
+    },
+    startPortForwardRule: async (ruleId) => {
+      const path = API_PATHS.portForwardStartRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      return (await callBrowserApi(path, 'POST')) as ApiPortForwardStartRuleResponse | ApiErrorResponse;
+    },
+    stopPortForwardRule: async (ruleId) => {
+      const path = API_PATHS.portForwardStopRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      return (await callBrowserApi(path, 'POST')) as ApiPortForwardStopRuleResponse | ApiErrorResponse;
+    },
+    deletePortForwardRule: async (ruleId) => {
+      const path = API_PATHS.portForwardDeleteRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
+        method: 'DELETE',
+        headers: {
+          Authorization: `Bearer ${resolveBrowserAuthToken() ?? ''}`,
+          [API_HEADERS.locale]: navigator.language,
+        },
+      });
+
+      return { success: response.status === 204 };
     },
     createSshSession: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateSession, 'POST', payload)) as

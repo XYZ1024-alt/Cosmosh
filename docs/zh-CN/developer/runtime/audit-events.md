@@ -9,6 +9,7 @@ Cosmosh 将安全核心操作记录为本地优先审计流，帮助运维在不
 - SSH 连接生命周期（`ssh-session`）
 - 主机指纹信任动作（`ssh-host-trust`）
 - SSH 服务器与钥匙链实体变更（`ssh-server`、`ssh-keychain`）
+- SSH 端口转发规则与运行时动作（`port-forward`）
 - 设置项变更事件（`settings`）
 
 兼容性说明：

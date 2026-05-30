@@ -556,6 +556,76 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/port-forwards/rules': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List persisted SSH port-forwarding rules. */
+    get: operations['portForwardListRules'];
+    put?: never;
+    /** Create one persisted SSH port-forwarding rule. */
+    post: operations['portForwardCreateRule'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/port-forwards/rules/{ruleId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Update one stopped SSH port-forwarding rule. */
+    put: operations['portForwardUpdateRule'];
+    post?: never;
+    /** Delete one stopped SSH port-forwarding rule. */
+    delete: operations['portForwardDeleteRule'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/port-forwards/rules/{ruleId}/start': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start one persisted SSH port-forwarding rule. */
+    post: operations['portForwardStartRule'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/port-forwards/rules/{ruleId}/stop': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Stop one active SSH port-forwarding rule. */
+    post: operations['portForwardStopRule'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -594,7 +664,12 @@ export interface components {
         | 'AUDIT_VALIDATION_FAILED'
         | 'AUDIT_EVENT_NOT_FOUND'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
-        | 'LOCAL_TERMINAL_PROFILE_NOT_FOUND';
+        | 'LOCAL_TERMINAL_PROFILE_NOT_FOUND'
+        | 'PORT_FORWARD_VALIDATION_FAILED'
+        | 'PORT_FORWARD_RULE_NOT_FOUND'
+        | 'PORT_FORWARD_RULE_ACTIVE'
+        | 'PORT_FORWARD_START_FAILED'
+        | 'PORT_FORWARD_STOP_FAILED';
       /** @enum {boolean} */
       success: false;
     };
@@ -608,7 +683,7 @@ export interface components {
       /** @enum {string} */
       mode: 'electron-main' | 'standalone';
       authenticated: boolean;
-      capabilities: ('ssh' | 'sftp')[];
+      capabilities: ('ssh' | 'sftp' | 'port-forward')[];
     };
     TestPingSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -891,6 +966,62 @@ export interface components {
     SshTrustFingerprintData: {
       /** @enum {boolean} */
       trusted: true;
+    };
+    /** @enum {string} */
+    PortForwardRuleType: 'local' | 'remote' | 'dynamic';
+    /** @enum {string} */
+    PortForwardRuleStatus: 'stopped' | 'running';
+    PortForwardRuleRuntime: {
+      status: components['schemas']['PortForwardRuleStatus'];
+      activeConnectionCount: number;
+      boundHost?: string;
+      boundPort?: number;
+      /** Format: date-time */
+      startedAt?: string;
+      lastError?: string;
+    };
+    PortForwardRuleListItem: {
+      id: string;
+      name: string;
+      type: components['schemas']['PortForwardRuleType'];
+      serverId: string;
+      serverName?: string;
+      localBindHost?: string;
+      localBindPort?: number;
+      remoteBindHost?: string;
+      remoteBindPort?: number;
+      targetHost?: string;
+      targetPort?: number;
+      note?: string;
+      /** Format: date-time */
+      lastStartedAt?: string;
+      /** Format: date-time */
+      lastStoppedAt?: string;
+      lastFailureMessage?: string;
+      runtime: components['schemas']['PortForwardRuleRuntime'];
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+    };
+    PortForwardRuleCreateRequest: {
+      name: string;
+      serverId: string;
+      type: components['schemas']['PortForwardRuleType'];
+      localBindHost?: string;
+      localBindPort?: number;
+      remoteBindHost?: string;
+      remoteBindPort?: number;
+      targetHost?: string;
+      targetPort?: number;
+      note?: string;
+    };
+    PortForwardRuleUpdateRequest: components['schemas']['PortForwardRuleCreateRequest'];
+    PortForwardRuleListData: {
+      items: components['schemas']['PortForwardRuleListItem'][];
+    };
+    PortForwardRuleData: {
+      item: components['schemas']['PortForwardRuleListItem'];
     };
     SftpSessionCreateRequest: {
       serverId: string;
@@ -1219,6 +1350,41 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SshTrustFingerprintData'];
+    };
+    PortForwardRuleListSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'PORT_FORWARD_RULE_LIST_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['PortForwardRuleListData'];
+    };
+    PortForwardRuleCreateSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'PORT_FORWARD_RULE_CREATE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['PortForwardRuleData'];
+    };
+    PortForwardRuleUpdateSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'PORT_FORWARD_RULE_UPDATE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['PortForwardRuleData'];
+    };
+    PortForwardRuleStartSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'PORT_FORWARD_RULE_START_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['PortForwardRuleData'];
+    };
+    PortForwardRuleStopSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'PORT_FORWARD_RULE_STOP_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['PortForwardRuleData'];
     };
     SftpSessionCreateSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -3148,6 +3314,305 @@ export interface operations {
         };
       };
       /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  portForwardListRules: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Port-forwarding rules listed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PortForwardRuleListSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  portForwardCreateRule: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PortForwardRuleCreateRequest'];
+      };
+    };
+    responses: {
+      /** @description Port-forwarding rule created. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PortForwardRuleCreateSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  portForwardUpdateRule: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PortForwardRuleUpdateRequest'];
+      };
+    };
+    responses: {
+      /** @description Port-forwarding rule updated. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PortForwardRuleUpdateSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule or server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule is active. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  portForwardDeleteRule: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Port-forwarding rule deleted. */
+      204: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule is active. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  portForwardStartRule: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Port-forwarding rule started. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PortForwardRuleStartSuccess'];
+        };
+      };
+      /** @description Start failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule or server not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule is already active or host fingerprint is not trusted. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'] | components['schemas']['SshHostVerificationRequired'];
+        };
+      };
+    };
+  };
+  portForwardStopRule: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        ruleId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Port-forwarding rule stopped. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['PortForwardRuleStopSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Rule not found. */
       404: {
         headers: {
           [name: string]: unknown;

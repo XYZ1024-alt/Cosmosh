@@ -12,6 +12,7 @@ flowchart TD
   B --> H[Local-First Audit Events]
   B --> G[Database Security]
   B --> E[SFTP File System]
+  B --> I[SSH Port Forwarding]
   B --> F[UI/UX Standards]
 ```
 
@@ -26,6 +27,7 @@ flowchart TD
   - [Local-First Audit Events](./runtime/audit-events.md)
   - [Database Security](./runtime/database-security.md)
   - [SFTP File System](./runtime/sftp-file-system.md)
+  - [SSH Port Forwarding](./runtime/port-forwarding.md)
 - Design & Governance
   - [UI/UX Standards](./design/ui-ux-standards.md)
 
@@ -33,6 +35,7 @@ flowchart TD
 
 - Adding a new runtime feature: start from [Project Map](./core/project-map.md), then [Architecture](./core/architecture.md), then [IPC Protocol](./core/ipc-protocol.md).
 - Updating SSH behavior: read [SSH Terminal](./runtime/ssh-terminal.md) and align protocol notes in [IPC Protocol](./core/ipc-protocol.md).
+- Updating SSH port forwarding: read [SSH Port Forwarding](./runtime/port-forwarding.md), then verify IPC coverage in [IPC Protocol](./core/ipc-protocol.md).
 - Reviewing security-sensitive action traces: read [Local-First Audit Events](./runtime/audit-events.md), then verify bridge coverage in [IPC Protocol](./core/ipc-protocol.md).
 - Debugging DB encryption startup: read [Database Security](./runtime/database-security.md), then verify process flow in [Architecture](./core/architecture.md).
 - Updating visual behavior: follow [UI/UX Standards](./design/ui-ux-standards.md) before touching page-level styles.

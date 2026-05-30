@@ -1460,6 +1460,226 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/port-forwards/rules:
+    get:
+      tags:
+        - port-forward
+      summary: List persisted SSH port-forwarding rules.
+      operationId: portForwardListRules
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      responses:
+        '200':
+          description: Port-forwarding rules listed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortForwardRuleListSuccess'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    post:
+      tags:
+        - port-forward
+      summary: Create one persisted SSH port-forwarding rule.
+      operationId: portForwardCreateRule
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortForwardRuleCreateRequest'
+      responses:
+        '200':
+          description: Port-forwarding rule created.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortForwardRuleCreateSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/port-forwards/rules/{ruleId}:
+    put:
+      tags:
+        - port-forward
+      summary: Update one stopped SSH port-forwarding rule.
+      operationId: portForwardUpdateRule
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortForwardRuleUpdateRequest'
+      responses:
+        '200':
+          description: Port-forwarding rule updated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortForwardRuleUpdateSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Rule or server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Rule is active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - port-forward
+      summary: Delete one stopped SSH port-forwarding rule.
+      operationId: portForwardDeleteRule
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Port-forwarding rule deleted.
+        '404':
+          description: Rule not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Rule is active.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/port-forwards/rules/{ruleId}/start:
+    post:
+      tags:
+        - port-forward
+      summary: Start one persisted SSH port-forwarding rule.
+      operationId: portForwardStartRule
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Port-forwarding rule started.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortForwardRuleStartSuccess'
+        '400':
+          description: Start failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Rule or server not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Rule is already active or host fingerprint is not trusted.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApiError'
+                  - $ref: '#/components/schemas/SshHostVerificationRequired'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/port-forwards/rules/{ruleId}/stop:
+    post:
+      tags:
+        - port-forward
+      summary: Stop one active SSH port-forwarding rule.
+      operationId: portForwardStopRule
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: ruleId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Port-forwarding rule stopped.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PortForwardRuleStopSuccess'
+        '404':
+          description: Rule not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
 components:
   securitySchemes:
     CosmoshInternalToken:
@@ -1534,6 +1754,11 @@ components:
                   'AUDIT_EVENT_NOT_FOUND',
                   'LOCAL_TERMINAL_VALIDATION_FAILED',
                   'LOCAL_TERMINAL_PROFILE_NOT_FOUND',
+                  'PORT_FORWARD_VALIDATION_FAILED',
+                  'PORT_FORWARD_RULE_NOT_FOUND',
+                  'PORT_FORWARD_RULE_ACTIVE',
+                  'PORT_FORWARD_START_FAILED',
+                  'PORT_FORWARD_STOP_FAILED',
                 ]
             success:
               type: boolean
@@ -1564,9 +1789,9 @@ components:
           type: array
           items:
             type: string
-            enum: ['ssh', 'sftp']
-          minItems: 2
-          maxItems: 2
+            enum: ['ssh', 'sftp', 'port-forward']
+          minItems: 3
+          maxItems: 3
     TestPingSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'
@@ -2278,6 +2503,155 @@ components:
         trusted:
           type: boolean
           enum: [true]
+    PortForwardRuleType:
+      type: string
+      enum: ['local', 'remote', 'dynamic']
+    PortForwardRuleStatus:
+      type: string
+      enum: ['stopped', 'running']
+    PortForwardRuleRuntime:
+      type: object
+      required:
+        - status
+        - activeConnectionCount
+      properties:
+        status:
+          $ref: '#/components/schemas/PortForwardRuleStatus'
+        activeConnectionCount:
+          type: integer
+          minimum: 0
+        boundHost:
+          type: string
+        boundPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        startedAt:
+          type: string
+          format: date-time
+        lastError:
+          type: string
+    PortForwardRuleListItem:
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - serverId
+        - runtime
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        type:
+          $ref: '#/components/schemas/PortForwardRuleType'
+        serverId:
+          type: string
+        serverName:
+          type: string
+        localBindHost:
+          type: string
+          maxLength: 255
+        localBindPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        remoteBindHost:
+          type: string
+          maxLength: 255
+        remoteBindPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        targetHost:
+          type: string
+          maxLength: 255
+        targetPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        note:
+          type: string
+          maxLength: 3000
+        lastStartedAt:
+          type: string
+          format: date-time
+        lastStoppedAt:
+          type: string
+          format: date-time
+        lastFailureMessage:
+          type: string
+        runtime:
+          $ref: '#/components/schemas/PortForwardRuleRuntime'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    PortForwardRuleCreateRequest:
+      type: object
+      required:
+        - name
+        - serverId
+        - type
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        serverId:
+          type: string
+        type:
+          $ref: '#/components/schemas/PortForwardRuleType'
+        localBindHost:
+          type: string
+          maxLength: 255
+        localBindPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        remoteBindHost:
+          type: string
+          maxLength: 255
+        remoteBindPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        targetHost:
+          type: string
+          maxLength: 255
+        targetPort:
+          type: integer
+          minimum: 1
+          maximum: 65535
+        note:
+          type: string
+          maxLength: 3000
+    PortForwardRuleUpdateRequest:
+      allOf:
+        - $ref: '#/components/schemas/PortForwardRuleCreateRequest'
+    PortForwardRuleListData:
+      type: object
+      required:
+        - items
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortForwardRuleListItem'
+    PortForwardRuleData:
+      type: object
+      required:
+        - item
+      properties:
+        item:
+          $ref: '#/components/schemas/PortForwardRuleListItem'
     SftpSessionCreateRequest:
       type: object
       required:
@@ -3096,6 +3470,91 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SshTrustFingerprintData'
+    PortForwardRuleListSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['PORT_FORWARD_RULE_LIST_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/PortForwardRuleListData'
+    PortForwardRuleCreateSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['PORT_FORWARD_RULE_CREATE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/PortForwardRuleData'
+    PortForwardRuleUpdateSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['PORT_FORWARD_RULE_UPDATE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/PortForwardRuleData'
+    PortForwardRuleStartSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['PORT_FORWARD_RULE_START_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/PortForwardRuleData'
+    PortForwardRuleStopSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['PORT_FORWARD_RULE_STOP_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/PortForwardRuleData'
     SftpSessionCreateSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'

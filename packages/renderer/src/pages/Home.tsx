@@ -1,4 +1,4 @@
-import type { ApiSshUpdateServerRequest, components } from '@cosmosh/api-contract';
+import type { ApiPortForwardCreateRuleRequest, ApiSshUpdateServerRequest, components } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import {
   ArrowDownAZ,
@@ -16,9 +16,12 @@ import {
   Network,
   PackageOpen,
   Pencil,
+  Play,
   Plus,
   Search,
   Server,
+  ShieldAlert,
+  Square,
   Star,
   StarOff,
   Tags,
@@ -75,19 +78,29 @@ import {
   DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
+import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator, MenuToggleGroup, MenuToggleGroupItem } from '../components/ui/menubar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Textarea } from '../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import type { LocalTerminalProfile } from '../lib/api/transport';
 import {
+  createPortForwardRule,
   createSshTag,
+  deletePortForwardRule,
   deleteSshServer,
   listLocalTerminalProfiles,
+  listPortForwardRules,
   listSshFolders,
   listSshKeychains,
   listSshServers,
   listSshTags,
+  startPortForwardRule,
+  stopPortForwardRule,
+  trustSshFingerprint,
+  updatePortForwardRule,
   updateSshServer,
 } from '../lib/backend';
 import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/entity-visuals';
@@ -119,6 +132,8 @@ type HomeProps = {
 };
 
 type SshServerListItem = components['schemas']['SshServerListItem'];
+type PortForwardRuleListItem = components['schemas']['PortForwardRuleListItem'];
+type PortForwardRuleType = components['schemas']['PortForwardRuleType'];
 type SshFolder = components['schemas']['SshFolder'];
 type HomeMode = 'ssh' | 'keychains' | 'portForwarding';
 type QuickFilter = 'none' | 'recent' | 'favorite';
@@ -151,8 +166,31 @@ type SidebarCardItem = {
   onClick: () => void;
 };
 
+type PortForwardRuleFormState = {
+  name: string;
+  serverId: string;
+  type: PortForwardRuleType;
+  localBindHost: string;
+  localBindPort: string;
+  remoteBindHost: string;
+  remoteBindPort: string;
+  targetHost: string;
+  targetPort: string;
+  note: string;
+};
+
+type PortForwardHostFingerprintPrompt = {
+  ruleId: string;
+  serverId: string;
+  host: string;
+  port: number;
+  algorithm: 'sha256';
+  fingerprint: string;
+};
+
 const LOCAL_TERMINAL_FOLDER_ID = '__local_terminals__';
 const KEYCHAIN_RECENT_LIMIT = 12;
+const LOCAL_TRUSTED_BIND_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 
 const homeModeEntityKindMap: Record<HomeMode, HomeEntityKind> = {
   ssh: 'server',
@@ -223,6 +261,160 @@ const isKeychainFavorite = (keychain: SshKeychainListItem): boolean => {
  */
 const getKeychainTimestamp = (keychain: SshKeychainListItem, field: 'createdAt' | 'updatedAt'): number => {
   return new Date(keychain[field]).getTime();
+};
+
+/**
+ * Checks whether a local bind host is constrained to the local machine.
+ *
+ * @param host Bind host typed by the user.
+ * @returns True when the host does not expose a listener to the wider network.
+ */
+const isTrustedLocalBindHost = (host: string | undefined): boolean => {
+  return LOCAL_TRUSTED_BIND_HOSTS.has((host ?? '').trim().toLowerCase());
+};
+
+/**
+ * Returns the localized label for a port forwarding type.
+ *
+ * @param type Forwarding type stored on a rule.
+ * @returns Localized display label.
+ */
+const resolvePortForwardTypeLabel = (type: PortForwardRuleType): string => {
+  if (type === 'local') {
+    return t('home.portForwardingTypeLocal');
+  }
+
+  if (type === 'remote') {
+    return t('home.portForwardingTypeRemote');
+  }
+
+  return t('home.portForwardingTypeDynamic');
+};
+
+/**
+ * Builds the listen endpoint shown for a forwarding rule.
+ *
+ * @param rule Persisted rule plus runtime state.
+ * @returns Human-readable bind endpoint.
+ */
+const formatPortForwardBindEndpoint = (rule: PortForwardRuleListItem): string => {
+  if (rule.type === 'remote') {
+    return `${rule.remoteBindHost ?? '127.0.0.1'}:${rule.remoteBindPort ?? '-'}`;
+  }
+
+  return `${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? '-'}`;
+};
+
+/**
+ * Builds the target endpoint shown for a forwarding rule.
+ *
+ * @param rule Persisted rule plus runtime state.
+ * @returns Human-readable target endpoint.
+ */
+const formatPortForwardTargetEndpoint = (rule: PortForwardRuleListItem): string => {
+  if (rule.type === 'dynamic') {
+    return t('home.portForwardingSocksTarget');
+  }
+
+  return `${rule.targetHost ?? '-'}:${rule.targetPort ?? '-'}`;
+};
+
+/**
+ * Builds a clipboard-friendly endpoint for a forwarding rule.
+ *
+ * @param rule Persisted rule plus runtime state.
+ * @returns Endpoint text copied by the row action.
+ */
+const formatPortForwardCopyEndpoint = (rule: PortForwardRuleListItem): string => {
+  if (rule.type === 'dynamic') {
+    return `socks5://${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? ''}`;
+  }
+
+  return `${formatPortForwardBindEndpoint(rule)} -> ${formatPortForwardTargetEndpoint(rule)}`;
+};
+
+/**
+ * Creates the default form state used by the New Rule dialog.
+ *
+ * @param servers Current SSH server list.
+ * @returns Form state with safe localhost defaults.
+ */
+const createDefaultPortForwardRuleFormState = (servers: SshServerListItem[]): PortForwardRuleFormState => {
+  return {
+    name: '',
+    serverId: servers[0]?.id ?? '',
+    type: 'local',
+    localBindHost: '127.0.0.1',
+    localBindPort: '8080',
+    remoteBindHost: '127.0.0.1',
+    remoteBindPort: '8080',
+    targetHost: '127.0.0.1',
+    targetPort: '80',
+    note: '',
+  };
+};
+
+/**
+ * Converts a persisted rule into editable form state.
+ *
+ * @param rule Existing port forwarding rule.
+ * @returns Form state seeded from the rule.
+ */
+const createPortForwardRuleFormStateFromRule = (rule: PortForwardRuleListItem): PortForwardRuleFormState => {
+  return {
+    name: rule.name,
+    serverId: rule.serverId,
+    type: rule.type,
+    localBindHost: rule.localBindHost ?? '127.0.0.1',
+    localBindPort: String(rule.localBindPort ?? 8080),
+    remoteBindHost: rule.remoteBindHost ?? '127.0.0.1',
+    remoteBindPort: String(rule.remoteBindPort ?? 8080),
+    targetHost: rule.targetHost ?? '127.0.0.1',
+    targetPort: String(rule.targetPort ?? 80),
+    note: rule.note ?? '',
+  };
+};
+
+/**
+ * Converts dialog form state into the API payload accepted by the backend.
+ *
+ * @param formState Current form values.
+ * @returns API payload with type-specific fields.
+ */
+const buildPortForwardRulePayload = (formState: PortForwardRuleFormState): ApiPortForwardCreateRuleRequest => {
+  const trimmedNote = formState.note.trim();
+  const basePayload: ApiPortForwardCreateRuleRequest = {
+    name: formState.name.trim(),
+    serverId: formState.serverId,
+    type: formState.type,
+    note: trimmedNote.length > 0 ? trimmedNote : undefined,
+  };
+
+  if (formState.type === 'remote') {
+    return {
+      ...basePayload,
+      remoteBindHost: formState.remoteBindHost.trim(),
+      remoteBindPort: Number(formState.remoteBindPort),
+      targetHost: formState.targetHost.trim(),
+      targetPort: Number(formState.targetPort),
+    };
+  }
+
+  if (formState.type === 'dynamic') {
+    return {
+      ...basePayload,
+      localBindHost: formState.localBindHost.trim(),
+      localBindPort: Number(formState.localBindPort),
+    };
+  }
+
+  return {
+    ...basePayload,
+    localBindHost: formState.localBindHost.trim(),
+    localBindPort: Number(formState.localBindPort),
+    targetHost: formState.targetHost.trim(),
+    targetPort: Number(formState.targetPort),
+  };
 };
 
 const resolveGreetingPeriod = (now: Date): 'morning' | 'afternoon' | 'evening' => {
@@ -608,13 +800,410 @@ const HomeSshContent: React.FC<HomeSshContentProps> = ({
   );
 };
 
+type HomePortForwardingContentProps = {
+  rules: PortForwardRuleListItem[];
+  servers: SshServerListItem[];
+  onStartRule: (ruleId: string) => void;
+  onStopRule: (ruleId: string) => void;
+  onEditRule: (rule: PortForwardRuleListItem) => void;
+  onDeleteRule: (rule: PortForwardRuleListItem) => void;
+  onCopyToClipboard: (value: string) => void;
+};
+
 /**
- * Keeps the port-forwarding tab body intentionally empty until the feature lands.
+ * Renders the high-density port forwarding rules table.
  *
- * @returns Empty layout-preserving body.
+ * @param props Rule rows and row action callbacks.
+ * @returns Port forwarding content body.
  */
-const HomePortForwardingContent: React.FC = () => {
-  return <div className="min-h-[1px]" />;
+const HomePortForwardingContent: React.FC<HomePortForwardingContentProps> = ({
+  rules,
+  servers,
+  onStartRule,
+  onStopRule,
+  onEditRule,
+  onDeleteRule,
+  onCopyToClipboard,
+}) => {
+  const serverNameById = React.useMemo(() => {
+    const map = new Map<string, string>();
+    servers.forEach((server) => map.set(server.id, server.name));
+    return map;
+  }, [servers]);
+
+  if (rules.length === 0) {
+    return (
+      <HomeEmptyState
+        text={t('home.portForwardingEmpty')}
+        icon={PackageOpen}
+      />
+    );
+  }
+
+  return (
+    <TooltipProvider delayDuration={180}>
+      <div className="pb-2">
+        <div className="overflow-x-auto rounded-sm-2 border border-home-divider">
+          <div className="bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] border-b border-home-divider px-3 py-2 text-xs font-medium text-home-text-subtle">
+            <div>{t('home.portForwardingColumnRule')}</div>
+            <div>{t('home.portForwardingColumnStatus')}</div>
+            <div>{t('home.portForwardingColumnType')}</div>
+            <div>{t('home.portForwardingColumnBind')}</div>
+            <div>{t('home.portForwardingColumnTarget')}</div>
+            <div>{t('home.portForwardingColumnServer')}</div>
+            <div className="text-end">{t('home.portForwardingColumnActions')}</div>
+          </div>
+
+          <div className="divide-y divide-home-divider">
+            {rules.map((rule) => {
+              const isRunning = rule.runtime.status === 'running';
+              const isLocalBindRisk =
+                rule.type !== 'remote' && !isTrustedLocalBindHost(rule.localBindHost ?? rule.runtime.boundHost);
+              const statusLabel = isRunning
+                ? t('home.portForwardingStatusRunningWithConnections', {
+                    count: rule.runtime.activeConnectionCount,
+                  })
+                : t('home.portForwardingStatusStopped');
+
+              return (
+                <div
+                  key={rule.id}
+                  className="bg-home-card/35 text-home-text hover:bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] items-center gap-2 px-3 py-2 text-sm"
+                >
+                  <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="truncate font-medium">{rule.name}</span>
+                      {isLocalBindRisk ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0 text-form-message-error" />
+                          </TooltipTrigger>
+                          <TooltipContent>{t('home.portForwardingBindRiskTooltip')}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                    {rule.note ? (
+                      <div className="mt-0.5 truncate text-xs text-home-text-subtle">{rule.note}</div>
+                    ) : null}
+                  </div>
+
+                  <div className="min-w-0">
+                    <div
+                      className={classNames(
+                        'flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs',
+                        isRunning ? 'text-home-text' : 'text-home-text-subtle',
+                      )}
+                    >
+                      <span
+                        className={classNames(
+                          'h-1.5 w-1.5 flex-shrink-0 rounded-full',
+                          isRunning ? 'bg-form-active' : 'bg-home-text-subtle',
+                        )}
+                      />
+                      <span className="truncate">{statusLabel}</span>
+                    </div>
+                    {!isRunning && rule.lastFailureMessage ? (
+                      <div
+                        className="mt-1 truncate text-xs text-form-message-error"
+                        title={rule.lastFailureMessage}
+                      >
+                        {t('home.portForwardingActivityFailed')}
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="truncate text-home-text-subtle">{resolvePortForwardTypeLabel(rule.type)}</div>
+                  <div className="truncate font-mono text-xs">{formatPortForwardBindEndpoint(rule)}</div>
+                  <div className="truncate font-mono text-xs">{formatPortForwardTargetEndpoint(rule)}</div>
+                  <div className="truncate text-home-text-subtle">
+                    {rule.serverName ?? serverNameById.get(rule.serverId) ?? t('home.portForwardingUnknownServer')}
+                  </div>
+
+                  <div className="flex justify-end gap-1">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghostIcon"
+                          className="h-8 w-8 rounded-sm-2"
+                          aria-label={
+                            isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')
+                          }
+                          onClick={() => {
+                            if (isRunning) {
+                              onStopRule(rule.id);
+                              return;
+                            }
+
+                            onStartRule(rule.id);
+                          }}
+                        >
+                          {isRunning ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')}
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghostIcon"
+                          className="h-8 w-8 rounded-sm-2"
+                          aria-label={t('home.portForwardingCopyEndpointAction')}
+                          onClick={() => onCopyToClipboard(formatPortForwardCopyEndpoint(rule))}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('home.portForwardingCopyEndpointAction')}</TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghostIcon"
+                          className="h-8 w-8 rounded-sm-2"
+                          disabled={isRunning}
+                          aria-label={t('home.contextEdit')}
+                          onClick={() => onEditRule(rule)}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isRunning ? t('home.portForwardingActiveEditDisabled') : t('home.contextEdit')}
+                      </TooltipContent>
+                    </Tooltip>
+
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghostIcon"
+                          className="h-8 w-8 rounded-sm-2"
+                          disabled={isRunning}
+                          aria-label={t('home.contextDelete')}
+                          onClick={() => onDeleteRule(rule)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {isRunning ? t('home.portForwardingActiveDeleteDisabled') : t('home.contextDelete')}
+                      </TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+};
+
+type PortForwardRuleDialogProps = {
+  open: boolean;
+  mode: 'create' | 'edit';
+  formState: PortForwardRuleFormState;
+  servers: SshServerListItem[];
+  isSubmitting: boolean;
+  onOpenChange: (open: boolean) => void;
+  onFormStateChange: (nextState: PortForwardRuleFormState) => void;
+  onSubmit: () => void;
+};
+
+/**
+ * Renders the create/edit dialog for a port forwarding rule.
+ *
+ * @param props Dialog state, form state, and callbacks.
+ * @returns Port forwarding rule dialog.
+ */
+const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
+  open,
+  mode,
+  formState,
+  servers,
+  isSubmitting,
+  onOpenChange,
+  onFormStateChange,
+  onSubmit,
+}) => {
+  const updateField = React.useCallback(
+    <Key extends keyof PortForwardRuleFormState>(key: Key, value: PortForwardRuleFormState[Key]) => {
+      onFormStateChange({ ...formState, [key]: value });
+    },
+    [formState, onFormStateChange],
+  );
+  const shouldShowLocalRiskWarning = formState.type !== 'remote' && !isTrustedLocalBindHost(formState.localBindHost);
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <DialogContent className="max-w-[640px]">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === 'create' ? t('home.portForwardingDialogCreateTitle') : t('home.portForwardingDialogEditTitle')}
+          </DialogTitle>
+          <DialogDescription>{t('home.portForwardingDialogDescription')}</DialogDescription>
+        </DialogHeader>
+
+        <div className="grid gap-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-3">
+            <label className={formStyles.field}>
+              <span className={formStyles.label}>{t('home.portForwardingFieldName')}</span>
+              <Input
+                value={formState.name}
+                placeholder={t('home.portForwardingFieldNamePlaceholder')}
+                onChange={(event) => updateField('name', event.target.value)}
+              />
+            </label>
+
+            <label className={formStyles.field}>
+              <span className={formStyles.label}>{t('home.portForwardingFieldServer')}</span>
+              <Select
+                disabled={servers.length === 0}
+                value={formState.serverId}
+                onValueChange={(value) => updateField('serverId', value)}
+              >
+                {servers.length === 0 ? (
+                  <SelectTrigger>
+                    <SelectValue placeholder={t('home.portForwardingNoServers')} />
+                  </SelectTrigger>
+                ) : (
+                  <>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {servers.map((server) => (
+                        <SelectItem
+                          key={server.id}
+                          value={server.id}
+                          icon={Server}
+                        >
+                          {server.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </>
+                )}
+              </Select>
+            </label>
+          </div>
+
+          <div className={formStyles.field}>
+            <span className={formStyles.label}>{t('home.portForwardingFieldType')}</span>
+            <MenuToggleGroup
+              type="single"
+              value={formState.type}
+              onValueChange={(value) => {
+                if (value === 'local' || value === 'remote' || value === 'dynamic') {
+                  updateField('type', value);
+                }
+              }}
+            >
+              <MenuToggleGroupItem value="local">{t('home.portForwardingTypeLocal')}</MenuToggleGroupItem>
+              <MenuToggleGroupItem value="remote">{t('home.portForwardingTypeRemote')}</MenuToggleGroupItem>
+              <MenuToggleGroupItem value="dynamic">{t('home.portForwardingTypeDynamic')}</MenuToggleGroupItem>
+            </MenuToggleGroup>
+          </div>
+
+          {formState.type === 'remote' ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingRemoteBindHost')}</span>
+                <Input
+                  value={formState.remoteBindHost}
+                  onChange={(event) => updateField('remoteBindHost', event.target.value)}
+                />
+              </label>
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingRemoteBindPort')}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={formState.remoteBindPort}
+                  onChange={(event) => updateField('remoteBindPort', event.target.value)}
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingLocalBindHost')}</span>
+                <Input
+                  value={formState.localBindHost}
+                  onChange={(event) => updateField('localBindHost', event.target.value)}
+                />
+              </label>
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingLocalBindPort')}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={formState.localBindPort}
+                  onChange={(event) => updateField('localBindPort', event.target.value)}
+                />
+              </label>
+            </div>
+          )}
+
+          {formState.type !== 'dynamic' ? (
+            <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-3">
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingTargetHost')}</span>
+                <Input
+                  value={formState.targetHost}
+                  onChange={(event) => updateField('targetHost', event.target.value)}
+                />
+              </label>
+              <label className={formStyles.field}>
+                <span className={formStyles.label}>{t('home.portForwardingTargetPort')}</span>
+                <Input
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={formState.targetPort}
+                  onChange={(event) => updateField('targetPort', event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
+
+          {shouldShowLocalRiskWarning ? (
+            <div className="border-form-message-error/40 bg-form-message-error/10 rounded-sm-2 border px-3 py-2 text-xs text-form-message-error">
+              {t('home.portForwardingBindRiskWarning')}
+            </div>
+          ) : null}
+
+          <label className={formStyles.field}>
+            <span className={formStyles.label}>{t('home.portForwardingFieldNote')}</span>
+            <Textarea
+              value={formState.note}
+              placeholder={t('home.portForwardingFieldNotePlaceholder')}
+              onChange={(event) => updateField('note', event.target.value)}
+            />
+          </label>
+        </div>
+
+        <DialogFooter>
+          <DialogSecondaryButton onClick={() => onOpenChange(false)}>{t('home.actionCancel')}</DialogSecondaryButton>
+          <DialogPrimaryButton
+            disabled={isSubmitting || servers.length === 0}
+            onClick={() => onSubmit()}
+          >
+            {mode === 'create' ? t('home.actionCreate') : t('home.actionSave')}
+          </DialogPrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 };
 
 const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
@@ -625,6 +1214,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [keychains, setKeychains] = React.useState<SshKeychainListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
+  const [portForwardRules, setPortForwardRules] = React.useState<PortForwardRuleListItem[]>([]);
   const [localTerminalProfiles, setLocalTerminalProfiles] = React.useState<LocalTerminalProfile[]>([]);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [errorMessage, setErrorMessage] = React.useState<string>('');
@@ -646,6 +1236,19 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     colorKey: EntityColorKey;
   } | null>(null);
   const [activeServerDraft, setActiveServerDraft] = React.useState<{ id: string; name: string } | null>(null);
+  const [activePortForwardRuleDraft, setActivePortForwardRuleDraft] = React.useState<PortForwardRuleListItem | null>(
+    null,
+  );
+  const [isPortForwardRuleDialogOpen, setIsPortForwardRuleDialogOpen] = React.useState<boolean>(false);
+  const [portForwardRuleDialogMode, setPortForwardRuleDialogMode] = React.useState<'create' | 'edit'>('create');
+  const [portForwardRuleFormState, setPortForwardRuleFormState] = React.useState<PortForwardRuleFormState>(() =>
+    createDefaultPortForwardRuleFormState([]),
+  );
+  const [isPortForwardRuleSubmitting, setIsPortForwardRuleSubmitting] = React.useState<boolean>(false);
+  const [isDeletePortForwardRuleDialogOpen, setIsDeletePortForwardRuleDialogOpen] = React.useState<boolean>(false);
+  const [isPortForwardRuleDeleting, setIsPortForwardRuleDeleting] = React.useState<boolean>(false);
+  const [portForwardHostFingerprintPrompt, setPortForwardHostFingerprintPrompt] =
+    React.useState<PortForwardHostFingerprintPrompt | null>(null);
   const [isFolderActionSubmitting, setIsFolderActionSubmitting] = React.useState<boolean>(false);
   const [isServerDeleteSubmitting, setIsServerDeleteSubmitting] = React.useState<boolean>(false);
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
@@ -657,16 +1260,24 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     setErrorMessage('');
 
     try {
-      const [foldersResponse, serversResponse, keychainsResponse, localTerminalProfilesResponse] = await Promise.all([
+      const [
+        foldersResponse,
+        serversResponse,
+        keychainsResponse,
+        localTerminalProfilesResponse,
+        portForwardRulesResponse,
+      ] = await Promise.all([
         listSshFolders(),
         listSshServers(),
         listSshKeychains(),
         listLocalTerminalProfiles(),
+        listPortForwardRules(),
       ]);
       setFolders(foldersResponse.data.items);
       setServers(serversResponse.data.items);
       setKeychains(filterSharedKeychains(keychainsResponse.data.items));
       setLocalTerminalProfiles(localTerminalProfilesResponse.data.items);
+      setPortForwardRules(portForwardRulesResponse.data.items);
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : 'Failed to load home data.');
     } finally {
@@ -783,6 +1394,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const recentKeychainIdSet = React.useMemo(() => {
     return new Set(recentKeychains.map((keychain) => keychain.id));
   }, [recentKeychains]);
+
+  const runningPortForwardCount = React.useMemo(() => {
+    return portForwardRules.filter((rule) => rule.runtime.status === 'running').length;
+  }, [portForwardRules]);
 
   const activeEntityKind = homeModeEntityKindMap[activeHomeMode];
 
@@ -915,6 +1530,35 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
       return keychain.name.toLowerCase().includes(keyword) || (keychain.note ?? '').toLowerCase().includes(keyword);
     });
   }, [activeFolderId, activeTag, keychains, quickFilter, recentKeychainIdSet, search]);
+
+  const filteredPortForwardRules = React.useMemo(() => {
+    const keyword = search.trim().toLowerCase();
+
+    return portForwardRules.filter((rule) => {
+      if (quickFilter === 'recent' && rule.runtime.status !== 'running') {
+        return false;
+      }
+
+      if (quickFilter === 'favorite') {
+        return false;
+      }
+
+      if (!keyword) {
+        return true;
+      }
+
+      const searchableValues = [
+        rule.name,
+        rule.serverName ?? '',
+        rule.type,
+        rule.note ?? '',
+        formatPortForwardBindEndpoint(rule),
+        formatPortForwardTargetEndpoint(rule),
+      ];
+
+      return searchableValues.some((value) => value.toLowerCase().includes(keyword));
+    });
+  }, [portForwardRules, quickFilter, search]);
 
   const filteredLocalTerminalProfiles = React.useMemo(() => {
     if (activeFolderId !== LOCAL_TERMINAL_FOLDER_ID) {
@@ -1162,6 +1806,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
   const selectedGroupName = React.useMemo(() => {
     if (quickFilter === 'recent') {
+      if (activeHomeMode === 'portForwarding') {
+        return t('home.portForwardingRunningGroup');
+      }
+
       return activeHomeMode === 'keychains'
         ? t('home.groupRecentlyUpdatedKeychains')
         : t('home.groupRecentConnections');
@@ -1220,9 +1868,17 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
   const quickSidebarCards = React.useMemo<SidebarCardItem[]>(() => {
     const recentTitle =
-      activeHomeMode === 'keychains' ? t('home.groupRecentlyUpdatedKeychains') : t('home.groupRecentConnections');
+      activeHomeMode === 'keychains'
+        ? t('home.groupRecentlyUpdatedKeychains')
+        : activeHomeMode === 'portForwarding'
+          ? t('home.portForwardingRunningGroup')
+          : t('home.groupRecentConnections');
     const recentItemCount =
-      activeHomeMode === 'keychains' ? recentKeychains.length : activeHomeMode === 'portForwarding' ? 0 : recentCount;
+      activeHomeMode === 'keychains'
+        ? recentKeychains.length
+        : activeHomeMode === 'portForwarding'
+          ? runningPortForwardCount
+          : recentCount;
     const favoriteItemCount =
       activeHomeMode === 'keychains' ? keychainFavoriteCount : activeHomeMode === 'portForwarding' ? 0 : favoriteCount;
 
@@ -1260,6 +1916,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     quickFilter,
     recentCount,
     recentKeychains.length,
+    runningPortForwardCount,
   ]);
 
   const folderSidebarCards = React.useMemo<SidebarCardItem[]>(() => {
@@ -1319,7 +1976,11 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
   const allSidebarCard = React.useMemo<SidebarCardItem>(() => {
     const count =
-      activeHomeMode === 'keychains' ? keychains.length : activeHomeMode === 'portForwarding' ? 0 : servers.length;
+      activeHomeMode === 'keychains'
+        ? keychains.length
+        : activeHomeMode === 'portForwarding'
+          ? portForwardRules.length
+          : servers.length;
     const title =
       activeHomeMode === 'keychains'
         ? t('home.groupAllKeychains')
@@ -1340,7 +2001,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         setQuickFilter('none');
       },
     };
-  }, [activeEntityKind, activeFolderId, activeHomeMode, keychains.length, quickFilter, servers.length]);
+  }, [
+    activeEntityKind,
+    activeFolderId,
+    activeHomeMode,
+    keychains.length,
+    portForwardRules.length,
+    quickFilter,
+    servers.length,
+  ]);
 
   const selectedFolderCardIndex = React.useMemo(() => {
     return folderSidebarCards.findIndex((item) => item.selected);
@@ -1411,6 +2080,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     columns: 3,
     initialIndex: 0,
   });
+
+  React.useEffect(() => {
+    if (servers.length > 0 && !portForwardRuleFormState.serverId) {
+      setPortForwardRuleFormState((previous) => ({
+        ...previous,
+        serverId: servers[0]?.id ?? '',
+      }));
+    }
+  }, [portForwardRuleFormState.serverId, servers]);
 
   const groupModeIcon = React.useMemo(() => {
     if (groupMode === 'tag') {
@@ -1499,6 +2177,41 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     openCreateKeychainDialog(initialFormState);
   }, [activeFolderId, openCreateKeychainDialog, quickFilter]);
 
+  const openCreatePortForwardRuleDialog = React.useCallback(() => {
+    setActivePortForwardRuleDraft(null);
+    setPortForwardRuleDialogMode('create');
+    setPortForwardRuleFormState(createDefaultPortForwardRuleFormState(servers));
+    setIsPortForwardRuleDialogOpen(true);
+  }, [servers]);
+
+  const openEditPortForwardRuleDialog = React.useCallback(
+    (rule: PortForwardRuleListItem) => {
+      if (rule.runtime.status === 'running') {
+        notifyWarning(t('home.portForwardingActiveEditDisabled'));
+        return;
+      }
+
+      setActivePortForwardRuleDraft(rule);
+      setPortForwardRuleDialogMode('edit');
+      setPortForwardRuleFormState(createPortForwardRuleFormStateFromRule(rule));
+      setIsPortForwardRuleDialogOpen(true);
+    },
+    [notifyWarning],
+  );
+
+  const openDeletePortForwardRuleDialog = React.useCallback(
+    (rule: PortForwardRuleListItem) => {
+      if (rule.runtime.status === 'running') {
+        notifyWarning(t('home.portForwardingActiveDeleteDisabled'));
+        return;
+      }
+
+      setActivePortForwardRuleDraft(rule);
+      setIsDeletePortForwardRuleDialogOpen(true);
+    },
+    [notifyWarning],
+  );
+
   const handleAddAction = React.useCallback(() => {
     if (activeHomeMode === 'keychains') {
       openCreateKeychainFromHome();
@@ -1506,11 +2219,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     }
 
     if (activeHomeMode === 'portForwarding') {
+      openCreatePortForwardRuleDialog();
       return;
     }
 
     openCreateServerDialog();
-  }, [activeHomeMode, openCreateKeychainFromHome, openCreateServerDialog]);
+  }, [activeHomeMode, openCreateKeychainFromHome, openCreatePortForwardRuleDialog, openCreateServerDialog]);
 
   const openServerFromCard = React.useCallback(
     (server: SshServerListItem, event?: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>) => {
@@ -1533,6 +2247,139 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     },
     [notifyError, notifySuccess],
   );
+
+  const handleSubmitPortForwardRule = React.useCallback(async () => {
+    if (!portForwardRuleFormState.serverId) {
+      notifyWarning(t('home.portForwardingServerRequired'));
+      return;
+    }
+
+    setIsPortForwardRuleSubmitting(true);
+    try {
+      const payload = buildPortForwardRulePayload(portForwardRuleFormState);
+
+      if (portForwardRuleDialogMode === 'edit') {
+        if (!activePortForwardRuleDraft) {
+          return;
+        }
+
+        await updatePortForwardRule(activePortForwardRuleDraft.id, payload);
+        notifySuccess(t('home.portForwardingUpdateSuccess'));
+      } else {
+        await createPortForwardRule(payload);
+        notifySuccess(t('home.portForwardingCreateSuccess'));
+      }
+
+      setIsPortForwardRuleDialogOpen(false);
+      setActivePortForwardRuleDraft(null);
+      await reloadHomeData();
+    } catch (error: unknown) {
+      notifyError(error instanceof Error ? error.message : t('home.portForwardingSaveFailed'));
+    } finally {
+      setIsPortForwardRuleSubmitting(false);
+    }
+  }, [
+    activePortForwardRuleDraft,
+    notifyError,
+    notifySuccess,
+    notifyWarning,
+    portForwardRuleDialogMode,
+    portForwardRuleFormState,
+    reloadHomeData,
+  ]);
+
+  const handleStartPortForwardRule = React.useCallback(
+    async (ruleId: string) => {
+      try {
+        const response = await startPortForwardRule(ruleId);
+
+        if (!response.success && response.code === 'SSH_HOST_UNTRUSTED' && 'data' in response) {
+          setPortForwardHostFingerprintPrompt({
+            ruleId,
+            serverId: response.data.serverId,
+            host: response.data.host,
+            port: response.data.port,
+            algorithm: response.data.algorithm,
+            fingerprint: response.data.fingerprint,
+          });
+          return;
+        }
+
+        if (!response.success) {
+          throw new Error(response.message);
+        }
+
+        setPortForwardRules((previousRules) =>
+          previousRules.map((rule) => (rule.id === ruleId ? response.data.item : rule)),
+        );
+        notifySuccess(t('home.portForwardingStartSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('home.portForwardingStartFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
+  const handleStopPortForwardRule = React.useCallback(
+    async (ruleId: string) => {
+      try {
+        const response = await stopPortForwardRule(ruleId);
+        setPortForwardRules((previousRules) =>
+          previousRules.map((rule) => (rule.id === ruleId ? response.data.item : rule)),
+        );
+        notifySuccess(t('home.portForwardingStopSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('home.portForwardingStopFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
+  const handleTrustPortForwardHostFingerprint = React.useCallback(
+    async (accepted: boolean) => {
+      const prompt = portForwardHostFingerprintPrompt;
+      setPortForwardHostFingerprintPrompt(null);
+
+      if (!prompt || !accepted) {
+        return;
+      }
+
+      try {
+        await trustSshFingerprint({
+          serverId: prompt.serverId,
+          fingerprintSha256: prompt.fingerprint,
+          algorithm: prompt.algorithm,
+        });
+        await handleStartPortForwardRule(prompt.ruleId);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('home.portForwardingStartFailed'));
+      }
+    },
+    [handleStartPortForwardRule, notifyError, portForwardHostFingerprintPrompt],
+  );
+
+  const submitDeletePortForwardRule = React.useCallback(async () => {
+    if (!activePortForwardRuleDraft) {
+      return;
+    }
+
+    setIsPortForwardRuleDeleting(true);
+    try {
+      const deleted = await deletePortForwardRule(activePortForwardRuleDraft.id);
+      if (!deleted.success) {
+        throw new Error(t('home.portForwardingDeleteFailed'));
+      }
+
+      setIsDeletePortForwardRuleDialogOpen(false);
+      setActivePortForwardRuleDraft(null);
+      await reloadHomeData();
+      notifySuccess(t('home.portForwardingDeleteSuccess'));
+    } catch (error: unknown) {
+      notifyError(error instanceof Error ? error.message : t('home.portForwardingDeleteFailed'));
+    } finally {
+      setIsPortForwardRuleDeleting(false);
+    }
+  }, [activePortForwardRuleDraft, notifyError, notifySuccess, reloadHomeData]);
 
   const handleShowInFileManager = React.useCallback(
     async (targetPath: string) => {
@@ -1984,44 +2831,54 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                         </DropdownMenuContent>
                       </DropdownMenu>
 
-                      {activeHomeMode !== 'portForwarding' ? (
-                        <>
-                          <MenubarSeparator vertical />
+                      <MenubarSeparator vertical />
 
-                          <DropdownMenu>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    type="button"
-                                    aria-label={t('home.addAction')}
-                                    className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                                  >
-                                    <Plus className="h-4 w-4" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                              </TooltipTrigger>
-                              <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
-                            </Tooltip>
-                            <DropdownMenuContent>
-                              <DropdownMenuItem
-                                icon={activeHomeMode === 'keychains' ? KeyRound : Server}
-                                onSelect={handleAddAction}
-                              >
-                                {activeHomeMode === 'keychains'
-                                  ? t('sshKeychain.newKeychain')
-                                  : t('home.quickAddServer')}
-                              </DropdownMenuItem>
-                              <DropdownMenuItem
-                                icon={FolderPlus}
-                                onSelect={() => createFolderDialog.openCreateFolderDialog()}
-                              >
-                                {t('home.quickAddFolder')}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </>
-                      ) : null}
+                      {activeHomeMode === 'portForwarding' ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={t('home.portForwardingNewRuleAction')}
+                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                              onClick={handleAddAction}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{t('home.portForwardingNewRuleAction')}</TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <DropdownMenu>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={t('home.addAction')}
+                                  className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                                >
+                                  <Plus className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
+                          </Tooltip>
+                          <DropdownMenuContent>
+                            <DropdownMenuItem
+                              icon={activeHomeMode === 'keychains' ? KeyRound : Server}
+                              onSelect={handleAddAction}
+                            >
+                              {activeHomeMode === 'keychains' ? t('sshKeychain.newKeychain') : t('home.quickAddServer')}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              icon={FolderPlus}
+                              onSelect={() => createFolderDialog.openCreateFolderDialog()}
+                            >
+                              {t('home.quickAddFolder')}
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                     </Menubar>
                   </TooltipProvider>
                 </div>
@@ -2057,7 +2914,21 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
               {!isLoading && !errorMessage ? (
                 activeHomeMode === 'portForwarding' ? (
-                  <HomePortForwardingContent />
+                  <HomePortForwardingContent
+                    rules={filteredPortForwardRules}
+                    servers={servers}
+                    onStartRule={(ruleId) => {
+                      void handleStartPortForwardRule(ruleId);
+                    }}
+                    onStopRule={(ruleId) => {
+                      void handleStopPortForwardRule(ruleId);
+                    }}
+                    onEditRule={openEditPortForwardRuleDialog}
+                    onDeleteRule={openDeletePortForwardRuleDialog}
+                    onCopyToClipboard={(value) => {
+                      void handleCopyToClipboard(value);
+                    }}
+                  />
                 ) : activeHomeMode === 'keychains' ? (
                   <HomeKeychainsContent
                     groups={groupedKeychains}
@@ -2172,6 +3043,83 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
           await reloadHomeData();
         }}
       />
+
+      <PortForwardRuleDialog
+        open={isPortForwardRuleDialogOpen}
+        mode={portForwardRuleDialogMode}
+        formState={portForwardRuleFormState}
+        servers={servers}
+        isSubmitting={isPortForwardRuleSubmitting}
+        onOpenChange={(open) => {
+          setIsPortForwardRuleDialogOpen(open);
+          if (!open) {
+            setActivePortForwardRuleDraft(null);
+          }
+        }}
+        onFormStateChange={setPortForwardRuleFormState}
+        onSubmit={() => {
+          void handleSubmitPortForwardRule();
+        }}
+      />
+
+      <Dialog
+        open={portForwardHostFingerprintPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            void handleTrustPortForwardHostFingerprint(false);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            void handleTrustPortForwardHostFingerprint(false);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('ssh.hostFingerprintDialogTitle')}</DialogTitle>
+            <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
+          </DialogHeader>
+
+          {portForwardHostFingerprintPrompt ? (
+            <div className="bg-home-card/70 space-y-2 rounded-lg border border-home-divider p-3 text-sm">
+              <div>
+                <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
+                <span className="text-home-text font-medium">
+                  {portForwardHostFingerprintPrompt.host}:{portForwardHostFingerprintPrompt.port}
+                </span>
+              </div>
+              <div>
+                <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
+                <span className="text-home-text font-medium">{portForwardHostFingerprintPrompt.algorithm}</span>
+              </div>
+              <div>
+                <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
+                <span className="break-all font-mono text-xs">{portForwardHostFingerprintPrompt.fingerprint}</span>
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <DialogSecondaryButton
+              onClick={() => {
+                void handleTrustPortForwardHostFingerprint(false);
+              }}
+            >
+              {t('ssh.hostFingerprintDialogCancel')}
+            </DialogSecondaryButton>
+            <DialogPrimaryButton
+              onClick={() => {
+                void handleTrustPortForwardHostFingerprint(true);
+              }}
+            >
+              {t('ssh.hostFingerprintDialogTrustContinue')}
+            </DialogPrimaryButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={isEditFolderDialogOpen}
@@ -2292,6 +3240,34 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
               onClick={(event) => {
                 event.preventDefault();
                 void submitDeleteServer();
+              }}
+            >
+              {t('home.contextDelete')}
+            </AlertDialogActionButton>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={isDeletePortForwardRuleDialogOpen}
+        onOpenChange={setIsDeletePortForwardRuleDialogOpen}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('home.portForwardingDeleteTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('home.portForwardingDeleteDescription', { name: activePortForwardRuleDraft?.name ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancelButton disabled={isPortForwardRuleDeleting}>
+              {t('home.actionCancel')}
+            </AlertDialogCancelButton>
+            <AlertDialogActionButton
+              disabled={isPortForwardRuleDeleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void submitDeletePortForwardRule();
               }}
             >
               {t('home.contextDelete')}

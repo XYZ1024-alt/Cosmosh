@@ -557,6 +557,7 @@ const requiredSchemaTables = [
   'AppSettings',
   'SshServerTag',
   'SshLoginAudit',
+  'PortForwardRule',
 ] as const;
 
 const RUNTIME_MIGRATION_TABLE_NAME = '_prisma_migrations';

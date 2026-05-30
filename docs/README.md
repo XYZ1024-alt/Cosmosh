@@ -17,6 +17,7 @@ docs/
       ssh-terminal.md
       database-security.md
       sftp-file-system.md
+      port-forwarding.md
     design/
       ui-ux-standards.md
   user/
@@ -41,7 +42,8 @@ flowchart TD
   B --> D[developer/runtime/ssh-terminal.md]
   B --> E[developer/runtime/database-security.md]
   B --> F[developer/runtime/sftp-file-system.md]
-  B --> G[developer/design/ui-ux-standards.md]
+  B --> G[developer/runtime/port-forwarding.md]
+  B --> H[developer/design/ui-ux-standards.md]
 ```
 
 ## Localization Policy

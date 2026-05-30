@@ -2,6 +2,13 @@ import type {
   ApiAuditEventDetailResponse,
   ApiAuditEventListQuery,
   ApiAuditEventListResponse,
+  ApiPortForwardCreateRuleRequest,
+  ApiPortForwardCreateRuleResponse,
+  ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleResponse,
+  ApiPortForwardStopRuleResponse,
+  ApiPortForwardUpdateRuleRequest,
+  ApiPortForwardUpdateRuleResponse,
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
@@ -148,6 +155,35 @@ export const updateSshKeychain = async (
 
 export const getSshKeychainCredentials = async (keychainId: string): Promise<ApiSshGetKeychainCredentialsResponse> => {
   return backendClient.getSshKeychainCredentials(keychainId);
+};
+
+export const listPortForwardRules = async (): Promise<ApiPortForwardListRulesResponse> => {
+  return backendClient.listPortForwardRules();
+};
+
+export const createPortForwardRule = async (
+  payload: ApiPortForwardCreateRuleRequest,
+): Promise<ApiPortForwardCreateRuleResponse> => {
+  return backendClient.createPortForwardRule(payload);
+};
+
+export const updatePortForwardRule = async (
+  ruleId: string,
+  payload: ApiPortForwardUpdateRuleRequest,
+): Promise<ApiPortForwardUpdateRuleResponse> => {
+  return backendClient.updatePortForwardRule(ruleId, payload);
+};
+
+export const startPortForwardRule = async (ruleId: string): Promise<ApiPortForwardStartRuleResponse> => {
+  return backendClient.startPortForwardRule(ruleId);
+};
+
+export const stopPortForwardRule = async (ruleId: string): Promise<ApiPortForwardStopRuleResponse> => {
+  return backendClient.stopPortForwardRule(ruleId);
+};
+
+export const deletePortForwardRule = async (ruleId: string): Promise<{ success: boolean }> => {
+  return backendClient.deletePortForwardRule(ruleId);
 };
 
 export const createSshSession = async (

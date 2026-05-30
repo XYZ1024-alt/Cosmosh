@@ -123,6 +123,21 @@ export type ApiSshTrustFingerprintRequest =
 export type ApiSshTrustFingerprintResponse =
   paths['/api/v1/ssh/trusted-host-keys']['post']['responses']['200']['content']['application/json'];
 export type ApiSshCloseSessionRequest = paths['/api/v1/ssh/sessions/{sessionId}']['delete']['parameters']['path'];
+export type ApiPortForwardListRulesResponse =
+  paths['/api/v1/port-forwards/rules']['get']['responses']['200']['content']['application/json'];
+export type ApiPortForwardCreateRuleRequest =
+  paths['/api/v1/port-forwards/rules']['post']['requestBody']['content']['application/json'];
+export type ApiPortForwardCreateRuleResponse =
+  paths['/api/v1/port-forwards/rules']['post']['responses']['200']['content']['application/json'];
+export type ApiPortForwardUpdateRuleRequest =
+  paths['/api/v1/port-forwards/rules/{ruleId}']['put']['requestBody']['content']['application/json'];
+export type ApiPortForwardUpdateRuleResponse =
+  paths['/api/v1/port-forwards/rules/{ruleId}']['put']['responses']['200']['content']['application/json'];
+export type ApiPortForwardStartRuleResponse =
+  | paths['/api/v1/port-forwards/rules/{ruleId}/start']['post']['responses']['200']['content']['application/json']
+  | paths['/api/v1/port-forwards/rules/{ruleId}/start']['post']['responses']['409']['content']['application/json'];
+export type ApiPortForwardStopRuleResponse =
+  paths['/api/v1/port-forwards/rules/{ruleId}/stop']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateSessionRequest =
   paths['/api/v1/sftp/sessions']['post']['requestBody']['content']['application/json'];
 export type ApiSftpCreateSessionResponse =

@@ -9,6 +9,7 @@ Current scope covers high-value operational events:
 - SSH connection lifecycle (`ssh-session`)
 - Host fingerprint trust actions (`ssh-host-trust`)
 - SSH server and keychain entity mutations (`ssh-server`, `ssh-keychain`)
+- SSH port forwarding rule and runtime actions (`port-forward`)
 - Settings mutation events (`settings`)
 
 Compatibility note:
