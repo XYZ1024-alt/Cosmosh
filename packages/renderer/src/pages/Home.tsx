@@ -191,6 +191,7 @@ type PortForwardHostFingerprintPrompt = {
 const LOCAL_TERMINAL_FOLDER_ID = '__local_terminals__';
 const KEYCHAIN_RECENT_LIMIT = 12;
 const LOCAL_TRUSTED_BIND_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
+const HOME_SECTION_LABEL_CLASS_NAME = 'px-2 pb-2.5 text-xs font-medium leading-4 text-home-text-subtle';
 
 const homeModeEntityKindMap: Record<HomeMode, HomeEntityKind> = {
   ssh: 'server',
@@ -525,9 +526,7 @@ const HomeKeychainsContent: React.FC<HomeKeychainsContentProps> = ({
     <div className="space-y-4 pb-2">
       {groups.map((group) => (
         <section key={group.key}>
-          {group.title ? (
-            <div className="px-2 pb-2.5 text-[13px] font-medium text-home-text-subtle">{group.title}</div>
-          ) : null}
+          {group.title ? <div className={HOME_SECTION_LABEL_CLASS_NAME}>{group.title}</div> : null}
           <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
             {group.items.map((keychain) => {
               const keychainEntryKey = `${group.key}:${keychain.id}`;
@@ -663,9 +662,7 @@ const HomeSshContent: React.FC<HomeSshContentProps> = ({
       ) : (
         groupedServers.map((group) => (
           <section key={group.key}>
-            {group.title ? (
-              <div className="px-2 pb-2.5 text-[13px] font-medium text-home-text-subtle">{group.title}</div>
-            ) : null}
+            {group.title ? <div className={HOME_SECTION_LABEL_CLASS_NAME}>{group.title}</div> : null}
             <div className="grid grid-cols-[repeat(auto-fill,250px)] gap-x-7 gap-y-3">
               {group.items.map((server) => {
                 const serverEntryKey = `${group.key}:${server.id}`;
@@ -2579,6 +2576,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     [activeFolderId],
   );
 
+  const tagFilterItems = React.useMemo(() => {
+    return tags.map((tagName) => ({
+      value: tagName,
+      label: tagName === 'all' ? selectedGroupName : tagName,
+      isScopeFilter: tagName === 'all',
+    }));
+  }, [selectedGroupName, tags]);
+
   return (
     <SplitWorkbenchLayout
       topSlot={
@@ -2729,183 +2734,178 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         <SplitWorkbenchMainPanel
           mode="panel-scroll"
           header={
-            <>
-              <div className="flex items-center justify-between gap-4 pb-2 ps-2">
-                <div className="min-w-0 pb-2 text-[20px] font-semibold leading-[1.02] tracking-[-0.01em] text-header-text">
-                  {selectedGroupName}
-                </div>
-
-                <div className="flex items-center">
-                  <TooltipProvider delayDuration={180}>
-                    <Menubar className="mr-1">
-                      <div className="w-50 relative">
-                        <Input
-                          value={search}
-                          placeholder={t('home.searchPlaceholder')}
-                          className="pr-9"
-                          onChange={(event) => setSearch(event.target.value)}
-                        />
-                        <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
-                      </div>
-                    </Menubar>
-                    <Menubar className="mr-1">
-                      <DropdownMenu>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                aria-label={t('home.groupModeAction')}
-                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                              >
-                                {React.createElement(groupModeIcon, { className: 'h-4 w-4' })}
-                              </button>
-                            </DropdownMenuTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">{t('home.groupModeAction')}</TooltipContent>
-                        </Tooltip>
-                        <DropdownMenuContent>
-                          <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
-                          <DropdownMenuCheckboxItem
-                            checked={groupMode === 'none'}
-                            onSelect={() => setGroupMode('none')}
-                          >
-                            {t('home.groupModeNone')}
-                          </DropdownMenuCheckboxItem>
-                          <DropdownMenuCheckboxItem
-                            checked={groupMode === 'lastUsed'}
-                            onSelect={() => setGroupMode('lastUsed')}
-                          >
-                            {t('home.groupModeLastUsed')}
-                          </DropdownMenuCheckboxItem>
-                          <DropdownMenuCheckboxItem
-                            checked={groupMode === 'tag'}
-                            onSelect={() => setGroupMode('tag')}
-                          >
-                            {t('home.groupModeTag')}
-                          </DropdownMenuCheckboxItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <DropdownMenu>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <DropdownMenuTrigger asChild>
-                              <button
-                                type="button"
-                                aria-label={t('home.sortAction')}
-                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                              >
-                                {React.createElement(sortModeIcon, { className: 'h-4 w-4' })}
-                              </button>
-                            </DropdownMenuTrigger>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">{t('home.sortAction')}</TooltipContent>
-                        </Tooltip>
-                        <DropdownMenuContent>
-                          <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                          <DropdownMenuCheckboxItem
-                            checked={sortMode === 'nameAsc'}
-                            onSelect={() => setSortMode('nameAsc')}
-                          >
-                            {t('home.sortByNameAsc')}
-                          </DropdownMenuCheckboxItem>
-                          <DropdownMenuCheckboxItem
-                            checked={sortMode === 'nameDesc'}
-                            onSelect={() => setSortMode('nameDesc')}
-                          >
-                            {t('home.sortByNameDesc')}
-                          </DropdownMenuCheckboxItem>
-                          <DropdownMenuCheckboxItem
-                            checked={sortMode === 'lastUsed'}
-                            onSelect={() => setSortMode('lastUsed')}
-                          >
-                            {t('home.sortByLastUsed')}
-                          </DropdownMenuCheckboxItem>
-                          <DropdownMenuCheckboxItem
-                            checked={sortMode === 'createdAt'}
-                            onSelect={() => setSortMode('createdAt')}
-                          >
-                            {t('home.sortByCreatedAt')}
-                          </DropdownMenuCheckboxItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-
-                      <MenubarSeparator vertical />
-
-                      {activeHomeMode === 'portForwarding' ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              aria-label={t('home.portForwardingNewRuleAction')}
-                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                              onClick={handleAddAction}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="bottom">{t('home.portForwardingNewRuleAction')}</TooltipContent>
-                        </Tooltip>
-                      ) : (
-                        <DropdownMenu>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  aria-label={t('home.addAction')}
-                                  className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
-                                >
-                                  <Plus className="h-4 w-4" />
-                                </button>
-                              </DropdownMenuTrigger>
-                            </TooltipTrigger>
-                            <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
-                          </Tooltip>
-                          <DropdownMenuContent>
-                            <DropdownMenuItem
-                              icon={activeHomeMode === 'keychains' ? KeyRound : Server}
-                              onSelect={handleAddAction}
-                            >
-                              {activeHomeMode === 'keychains' ? t('sshKeychain.newKeychain') : t('home.quickAddServer')}
-                            </DropdownMenuItem>
-                            <DropdownMenuItem
-                              icon={FolderPlus}
-                              onSelect={() => createFolderDialog.openCreateFolderDialog()}
-                            >
-                              {t('home.quickAddFolder')}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </Menubar>
-                  </TooltipProvider>
-                </div>
-              </div>
-
-              {activeHomeMode !== 'portForwarding' ? (
+            <div className="flex items-center justify-between gap-4 ps-2">
+              <div className="min-w-0 flex-1">
                 <MenuToggleGroup
                   type="single"
                   value={activeTag}
-                  className="-ms-1"
+                  className="-ms-1 max-w-full overflow-x-auto"
                   onValueChange={(value) => {
                     if (value) {
                       setActiveTag(value);
                     }
                   }}
                 >
-                  {tags.map((tagName) => (
+                  {tagFilterItems.map((tag) => (
                     <MenuToggleGroupItem
-                      key={tagName}
-                      value={tagName}
+                      key={tag.value}
+                      value={tag.value}
+                      className={classNames(tag.isScopeFilter && 'font-semibold')}
                     >
-                      {tagName === 'all' ? t('home.tagAll') : tagName}
+                      {tag.label}
                     </MenuToggleGroupItem>
                   ))}
                 </MenuToggleGroup>
-              ) : null}
-            </>
+              </div>
+
+              <div className="flex shrink-0 items-center">
+                <TooltipProvider delayDuration={180}>
+                  <Menubar className="mr-1">
+                    <div className="w-50 relative">
+                      <Input
+                        value={search}
+                        placeholder={t('home.searchPlaceholder')}
+                        className="pr-9"
+                        onChange={(event) => setSearch(event.target.value)}
+                      />
+                      <Search className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-header-text-muted" />
+                    </div>
+                  </Menubar>
+                  <Menubar className="mr-1">
+                    <DropdownMenu>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={t('home.groupModeAction')}
+                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                            >
+                              {React.createElement(groupModeIcon, { className: 'h-4 w-4' })}
+                            </button>
+                          </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{t('home.groupModeAction')}</TooltipContent>
+                      </Tooltip>
+                      <DropdownMenuContent>
+                        <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
+                        <DropdownMenuCheckboxItem
+                          checked={groupMode === 'none'}
+                          onSelect={() => setGroupMode('none')}
+                        >
+                          {t('home.groupModeNone')}
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={groupMode === 'lastUsed'}
+                          onSelect={() => setGroupMode('lastUsed')}
+                        >
+                          {t('home.groupModeLastUsed')}
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={groupMode === 'tag'}
+                          onSelect={() => setGroupMode('tag')}
+                        >
+                          {t('home.groupModeTag')}
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <DropdownMenu>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <DropdownMenuTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={t('home.sortAction')}
+                              className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                            >
+                              {React.createElement(sortModeIcon, { className: 'h-4 w-4' })}
+                            </button>
+                          </DropdownMenuTrigger>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{t('home.sortAction')}</TooltipContent>
+                      </Tooltip>
+                      <DropdownMenuContent>
+                        <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
+                        <DropdownMenuCheckboxItem
+                          checked={sortMode === 'nameAsc'}
+                          onSelect={() => setSortMode('nameAsc')}
+                        >
+                          {t('home.sortByNameAsc')}
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={sortMode === 'nameDesc'}
+                          onSelect={() => setSortMode('nameDesc')}
+                        >
+                          {t('home.sortByNameDesc')}
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={sortMode === 'lastUsed'}
+                          onSelect={() => setSortMode('lastUsed')}
+                        >
+                          {t('home.sortByLastUsed')}
+                        </DropdownMenuCheckboxItem>
+                        <DropdownMenuCheckboxItem
+                          checked={sortMode === 'createdAt'}
+                          onSelect={() => setSortMode('createdAt')}
+                        >
+                          {t('home.sortByCreatedAt')}
+                        </DropdownMenuCheckboxItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+
+                    <MenubarSeparator vertical />
+
+                    {activeHomeMode === 'portForwarding' ? (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            aria-label={t('home.portForwardingNewRuleAction')}
+                            className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                            onClick={handleAddAction}
+                          >
+                            <Plus className="h-4 w-4" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom">{t('home.portForwardingNewRuleAction')}</TooltipContent>
+                      </Tooltip>
+                    ) : (
+                      <DropdownMenu>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                aria-label={t('home.addAction')}
+                                className={classNames(menuStyles.control, menuStyles.iconOnlyControl)}
+                              >
+                                <Plus className="h-4 w-4" />
+                              </button>
+                            </DropdownMenuTrigger>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">{t('home.addAction')}</TooltipContent>
+                        </Tooltip>
+                        <DropdownMenuContent>
+                          <DropdownMenuItem
+                            icon={activeHomeMode === 'keychains' ? KeyRound : Server}
+                            onSelect={handleAddAction}
+                          >
+                            {activeHomeMode === 'keychains' ? t('sshKeychain.newKeychain') : t('home.quickAddServer')}
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            icon={FolderPlus}
+                            onSelect={() => createFolderDialog.openCreateFolderDialog()}
+                          >
+                            {t('home.quickAddFolder')}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </Menubar>
+                </TooltipProvider>
+              </div>
+            </div>
           }
           body={
             <>
