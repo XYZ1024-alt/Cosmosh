@@ -3,7 +3,7 @@ import 'monaco-editor/esm/vs/language/json/monaco.contribution';
 import { normalizeSettingsValuesStrict, type SettingsValues, type SettingValidationError } from '@cosmosh/api-contract';
 import MonacoEditor, { loader, type Monaco } from '@monaco-editor/react';
 import { Save } from 'lucide-react';
-import * as monacoEditor from 'monaco-editor';
+import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import React from 'react';

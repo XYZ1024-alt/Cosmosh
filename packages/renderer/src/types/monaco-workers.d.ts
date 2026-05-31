@@ -32,8 +32,3 @@ declare module 'monaco-editor/esm/vs/editor/editor.worker?worker' {
   };
   export default WorkerFactory;
 }
-
-declare module 'monaco-editor/esm/vs/editor/editor.api' {
-  import type * as Monaco from 'monaco-editor';
-  export = Monaco;
-}
