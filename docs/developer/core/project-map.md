@@ -49,6 +49,7 @@ flowchart TB
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults and validation parsers.
+  - `src/validation-utils.ts`: shared backend HTTP-boundary validation primitives used by route and domain payload parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
   - `src/terminal/completion`: shared terminal auto-complete domain (spec dataset, ranking engine, completion payload shaping) used by both SSH and local-terminal session services.

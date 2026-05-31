@@ -25,20 +25,18 @@ import type {
   SftpBatchOperationResult,
   SftpEntryType,
 } from '../../sftp/session-service.js';
+import {
+  buildValidationError,
+  isRecord,
+  normalizeOptionalBoolean,
+  normalizeOptionalString,
+  normalizePositiveInteger,
+  type ValidationError,
+  type ValidationResult,
+} from '../../validation-utils.js';
 import { buildErrorPayload } from '../errors.js';
 import { type BackendHttpApp, type BackendTranslator, getTranslator, translateValidationMessage } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
-
-type ValidationError = {
-  i18nKey: string;
-  fallbackMessage: string;
-  params?: Record<string, string | number | boolean>;
-};
-
-type ValidationResult<TValue> = {
-  value?: TValue;
-  error?: ValidationError;
-};
 
 type NormalizedSftpSessionCreateRequest = Omit<CreateSftpSessionInput, 'locale' | 'requestId'>;
 
@@ -78,50 +76,12 @@ type ApiSftpOperationResponse =
 
 const MAX_SFTP_ENTRY_DETAILS_PATHS = 200;
 
-const buildValidationError = (
-  i18nKey: string,
-  fallbackMessage: string,
-  params?: Record<string, string | number | boolean>,
-): ValidationError => {
-  return {
-    i18nKey,
-    fallbackMessage,
-    params,
-  };
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
-};
-
 const isSftpEntryType = (value: unknown): value is SftpEntryType => {
   return value === 'directory' || value === 'file' || value === 'symlink' || value === 'other';
 };
 
 const isSftpBatchOperation = (value: unknown): value is SftpBatchOperation => {
   return value === 'copy' || value === 'move' || value === 'delete';
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
-  return typeof value === 'boolean' ? value : undefined;
-};
-
-const normalizePositiveInteger = (value: unknown): number | undefined => {
-  if (value === undefined || value === null || value === '') {
-    return undefined;
-  }
-
-  const normalizedValue = typeof value === 'number' ? value : Number(value);
-  return Number.isInteger(normalizedValue) && normalizedValue > 0 ? normalizedValue : undefined;
 };
 
 /**

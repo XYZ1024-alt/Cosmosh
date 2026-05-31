@@ -49,6 +49,7 @@ flowchart TB
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
   - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值与请求校验解析。
+  - `src/validation-utils.ts`：后端 HTTP 边界校验共享原语，供路由与领域 payload 解析器复用。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
   - `src/terminal/completion`：终端自动补全共享领域模块（规范数据、排序引擎、补全响应组装），由 SSH 与本地终端会话服务共同使用。

@@ -9,16 +9,16 @@ import type {
 } from '@cosmosh/api-contract';
 import type { SshAuthType } from '@prisma/client';
 
-type ValidationError = {
-  i18nKey: string;
-  params?: Record<string, string | number | boolean>;
-  fallbackMessage: string;
-};
-
-type ValidationResult<TValue> = {
-  value?: TValue;
-  error?: ValidationError;
-};
+import {
+  buildValidationError,
+  isRecord,
+  isValidTcpPort as isValidPort,
+  normalizeOptionalBoolean,
+  normalizeOptionalString,
+  normalizeOptionalUniqueStringIds as toOptionalUniqueIds,
+  normalizeUniqueStringIds as toUniqueIds,
+  type ValidationResult,
+} from '../validation-utils.js';
 
 type SshVisualColorKey =
   | 'slate'
@@ -45,39 +45,6 @@ const SSH_VISUAL_COLOR_KEY_SET: ReadonlySet<SshVisualColorKey> = new Set([
   'lime',
 ]);
 
-const buildValidationError = (
-  i18nKey: string,
-  fallbackMessage: string,
-  params?: Record<string, string | number | boolean>,
-): ValidationError => {
-  return {
-    i18nKey,
-    params,
-    fallbackMessage,
-  };
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
-
-const normalizeOptionalBoolean = (value: unknown): boolean | undefined => {
-  if (typeof value !== 'boolean') {
-    return undefined;
-  }
-
-  return value;
-};
-
 const normalizeOptionalIconKey = (value: unknown): string | undefined => {
   const normalized = normalizeOptionalString(value);
   if (!normalized) {
@@ -100,30 +67,8 @@ const normalizeOptionalColorKey = (value: unknown): SshVisualColorKey | undefine
   return SSH_VISUAL_COLOR_KEY_SET.has(normalized as SshVisualColorKey) ? (normalized as SshVisualColorKey) : undefined;
 };
 
-const isValidPort = (value: number): boolean => {
-  return Number.isInteger(value) && value >= 1 && value <= 65535;
-};
-
 const isSshAuthType = (value: unknown): value is SshAuthType => {
   return value === 'password' || value === 'key' || value === 'both';
-};
-
-const toUniqueIds = (ids: unknown): string[] => {
-  if (!Array.isArray(ids)) {
-    return [];
-  }
-
-  const values = ids.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
-  return [...new Set(values)];
-};
-
-const toOptionalUniqueIds = (ids: unknown): string[] | undefined => {
-  if (!Array.isArray(ids)) {
-    return undefined;
-  }
-
-  const values = ids.map((item) => (typeof item === 'string' ? item.trim() : '')).filter(Boolean);
-  return [...new Set(values)];
 };
 
 /**

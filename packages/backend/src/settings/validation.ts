@@ -8,6 +8,8 @@ import {
   type SettingValidationError,
 } from '@cosmosh/api-contract';
 
+import { isRecord, normalizeOptionalString } from '../validation-utils.js';
+
 type SettingsUpdateRequest = ApiSettingsUpdateRequest;
 
 const MAX_SCOPE_FIELD_LENGTH = 120;
@@ -17,19 +19,6 @@ const MAX_SCOPE_FIELD_LENGTH = 120;
  */
 export const DEFAULT_SETTINGS_SCOPE: SettingsScope = {
   deviceId: 'local-device',
-};
-
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
-};
-
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
 };
 
 const normalizeScope = (scope: unknown): { value: SettingsScope; error?: string } => {

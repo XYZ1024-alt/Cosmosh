@@ -1,84 +1,19 @@
 import type { ApiPortForwardCreateRuleRequest, ApiPortForwardUpdateRuleRequest } from '@cosmosh/api-contract';
 
+import {
+  buildValidationError,
+  isRecord,
+  isValidTcpPort,
+  normalizeOptionalString,
+  normalizePort,
+  type ValidationResult,
+} from '../validation-utils.js';
+
+export { isValidTcpPort } from '../validation-utils.js';
+
 export type PortForwardRulePayload = ApiPortForwardCreateRuleRequest | ApiPortForwardUpdateRuleRequest;
 
-type ValidationError = {
-  i18nKey: string;
-  params?: Record<string, string | number | boolean>;
-  fallbackMessage: string;
-};
-
-type ValidationResult<TValue> = {
-  value?: TValue;
-  error?: ValidationError;
-};
-
 const LOCALHOST_BIND_HOST = '127.0.0.1';
-
-/**
- * Builds a route validation error payload descriptor.
- *
- * @param i18nKey Locale key describing the validation error.
- * @param fallbackMessage English fallback for logs and tests.
- * @param params Optional ICU params.
- * @returns Validation error descriptor.
- */
-const buildValidationError = (
-  i18nKey: string,
-  fallbackMessage: string,
-  params?: Record<string, string | number | boolean>,
-): ValidationError => {
-  return {
-    i18nKey,
-    fallbackMessage,
-    params,
-  };
-};
-
-/**
- * Checks whether an unknown payload can be inspected as a record.
- *
- * @param value Unknown payload.
- * @returns True when the payload is an object map.
- */
-const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-};
-
-/**
- * Normalizes optional non-empty string fields.
- *
- * @param value Unknown field value.
- * @returns Trimmed string when present.
- */
-const normalizeOptionalString = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-};
-
-/**
- * Normalizes a required integer port.
- *
- * @param value Unknown field value.
- * @returns Parsed port number.
- */
-const normalizePort = (value: unknown): number => {
-  return typeof value === 'number' ? value : Number(value);
-};
-
-/**
- * Checks whether a numeric value is a valid TCP port.
- *
- * @param value Candidate port.
- * @returns True when port is in user-addressable TCP range.
- */
-export const isValidTcpPort = (value: number): boolean => {
-  return Number.isInteger(value) && value >= 1 && value <= 65535;
-};
 
 /**
  * Checks whether a host field satisfies v1 length constraints.
