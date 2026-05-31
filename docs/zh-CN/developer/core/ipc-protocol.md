@@ -89,6 +89,7 @@ flowchart TB
 
 - API payload 类型来自 `@cosmosh/api-contract`，并由 `packages/api-contract/openapi/cosmosh.openapi.yaml` 生成。
 - Backend、Main IPC 代理与 renderer HTTP 调用端必须通过 `@cosmosh/api-contract` 中生成的 `API_PATHS` 及相关合同导出访问 API，不允许硬编码路由字符串。
+- 未由 OpenAPI 生成的 IPC-only payload（包括 `AppMenuAction` 与 `SftpOpenWithApplication`）定义在 `packages/api-contract/src/ipc.ts`，供 main、preload 与 renderer 类型声明共同消费。
 
 ### 3.1 SSH 视觉元数据字段
 

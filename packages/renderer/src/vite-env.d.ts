@@ -63,25 +63,13 @@ import type {
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
+  AppMenuAction,
+  SftpOpenWithApplication,
 } from '@cosmosh/api-contract';
 
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
 type LocalTerminalCreateSessionRequest = ApiLocalTerminalCreateSessionRequest;
 type LocalTerminalCreateSessionResponse = ApiLocalTerminalCreateSessionResponse;
-type AppMenuAction =
-  | 'open-about'
-  | 'open-settings'
-  | 'new-tab'
-  | 'close-current-tab'
-  | 'close-right-tabs'
-  | 'show-tab-switcher';
-type SftpOpenWithApplication = {
-  id: string;
-  name: string;
-  path: string;
-  bundleIdentifier?: string;
-  iconDataUrl?: string;
-};
 
 declare global {
   interface ImportMetaEnv {

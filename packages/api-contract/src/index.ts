@@ -2,6 +2,8 @@ export type { components, operations, paths } from './generated';
 export { createApiError, createApiSuccess } from './envelope';
 export { appendApiQueryParams, replaceApiPathToken, resolveApiPath } from './http';
 export type { ApiPathParams, ApiQueryParams } from './http';
+export { APP_MENU_ACTIONS, isAppMenuAction } from './ipc';
+export type { AppMenuAction, SftpOpenWithApplication } from './ipc';
 export { API_CAPABILITIES, API_CODES, API_HEADERS, API_PATHS } from './protocol';
 export {
   DEFAULT_SETTINGS_VALUES,

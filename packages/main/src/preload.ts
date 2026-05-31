@@ -65,33 +65,11 @@ import type {
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
+  AppMenuAction,
+  SftpOpenWithApplication,
 } from '@cosmosh/api-contract';
+import { isAppMenuAction } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
-
-type AppMenuAction =
-  | 'open-about'
-  | 'open-settings'
-  | 'new-tab'
-  | 'close-current-tab'
-  | 'close-right-tabs'
-  | 'show-tab-switcher';
-
-type SftpOpenWithApplication = {
-  id: string;
-  name: string;
-  path: string;
-  bundleIdentifier?: string;
-  iconDataUrl?: string;
-};
-
-const APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set<AppMenuAction>([
-  'open-about',
-  'open-settings',
-  'new-tab',
-  'close-current-tab',
-  'close-right-tabs',
-  'show-tab-switcher',
-]);
 
 /**
  * Typed IPC invoke helper used by all bridge methods.
@@ -147,11 +125,11 @@ const onIpcStringPayload = (channel: string, listener: (payload: string) => void
  */
 const onIpcAppMenuActionPayload = (listener: (action: AppMenuAction) => void): (() => void) => {
   const handler = (_event: Electron.IpcRendererEvent, action: unknown) => {
-    if (typeof action !== 'string' || !APP_MENU_ACTIONS.has(action as AppMenuAction)) {
+    if (!isAppMenuAction(action)) {
       return;
     }
 
-    listener(action as AppMenuAction);
+    listener(action);
   };
 
   ipcRenderer.on('app:menu-action', handler);

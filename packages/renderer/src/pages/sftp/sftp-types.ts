@@ -1,6 +1,8 @@
 import type { ApiSftpEntry } from '@cosmosh/api-contract';
 import type React from 'react';
 
+export type { SftpOpenWithApplication } from '@cosmosh/api-contract';
+
 /**
  * SSH host fingerprint prompt captured while an SFTP session is connecting.
  */
@@ -210,17 +212,6 @@ export type SftpTaskContext = {
 export type SftpQueuedTask = {
   id: string;
   run: () => Promise<void>;
-};
-
-/**
- * Native application candidate for platform Open With menus.
- */
-export type SftpOpenWithApplication = {
-  id: string;
-  name: string;
-  path: string;
-  bundleIdentifier?: string;
-  iconDataUrl?: string;
 };
 
 /**

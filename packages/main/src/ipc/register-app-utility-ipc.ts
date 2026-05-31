@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
+import type { SftpOpenWithApplication } from '@cosmosh/api-contract';
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from 'electron';
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
@@ -13,14 +14,6 @@ import {
   exportMainProcessHeapSnapshot,
   type ProcessPerformanceStatsPayload,
 } from './utils/process-performance';
-
-type SftpOpenWithApplication = {
-  id: string;
-  name: string;
-  path: string;
-  bundleIdentifier?: string;
-  iconDataUrl?: string;
-};
 
 type MacOsOpenWithHelperApplication = {
   name: string;

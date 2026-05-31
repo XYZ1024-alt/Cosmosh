@@ -5,7 +5,7 @@ import net from 'node:net';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
-import type { ApiErrorResponse } from '@cosmosh/api-contract';
+import type { ApiErrorResponse, AppMenuAction } from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
 import { createI18n, createMessages, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
 import mainEn from '@cosmosh/i18n/locales/en/main.json';
@@ -68,14 +68,6 @@ type TrustedRendererWindowOpenTarget = {
 };
 
 let windowsSystemMenuSymbolColor = nativeTheme.shouldUseDarkColors ? '#f5f7fa' : '#111827';
-
-type AppMenuAction =
-  | 'open-about'
-  | 'open-settings'
-  | 'new-tab'
-  | 'close-current-tab'
-  | 'close-right-tabs'
-  | 'show-tab-switcher';
 
 /**
  * Sends a menu command event to renderer if a live main window exists.

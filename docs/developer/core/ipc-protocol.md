@@ -89,6 +89,7 @@ flowchart TB
 
 - API payload types come from `@cosmosh/api-contract`, generated from `packages/api-contract/openapi/cosmosh.openapi.yaml`.
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
+- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction` and `SftpOpenWithApplication`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
 
 ### 3.1 SSH Visual Metadata Fields
 

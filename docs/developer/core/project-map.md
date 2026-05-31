@@ -60,6 +60,7 @@ flowchart TB
 Shared protocol constants, request/response types, OpenAPI source, generated contracts.
 
 - `src/http.ts`: API path-token and query-string resolution helpers shared by main IPC proxying and renderer browser transport.
+- `src/ipc.ts`: shared IPC-only payload enums and structs that are not generated from OpenAPI, such as app menu actions and SFTP Open With application descriptors.
 - `src/settings-registry.ts`: **single source of truth** for all settings definitions — types, defaults, constraints, enum sets, UI control metadata, categories, and helper functions. Adding/removing a setting only requires editing this file.
 - `src/settings.ts`: generic, registry-driven validation and normalization helpers (`normalizeSettingsValuesStrict`, `normalizeSettingsValuesWithDefaults`) shared by backend and renderer.
 - `src/sftp.ts`: shared SFTP entry/name ordering helpers consumed by backend session listings and renderer browser/tree views.
