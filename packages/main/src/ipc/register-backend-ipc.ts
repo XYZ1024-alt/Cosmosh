@@ -66,7 +66,7 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
-import { API_HEADERS, API_PATHS } from '@cosmosh/api-contract';
+import { API_HEADERS, API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
 import { ipcMain } from 'electron';
 
 /**
@@ -123,43 +123,6 @@ const requestBackendDeleteSuccess = async (
 };
 
 /**
- * Replaces one REST-style path token with URL-encoded value.
- *
- * @param templatePath API path containing token such as `{sessionId}`.
- * @param token Token name without braces.
- * @param value Runtime token value.
- * @returns Path with encoded token replacement applied.
- */
-const replacePathToken = (templatePath: string, token: string, value: string): string => {
-  return templatePath.replace(`{${token}}`, encodeURIComponent(value));
-};
-
-/**
- * Appends URL query parameters while skipping undefined/empty values.
- *
- * @param path Path without query string.
- * @param query Query key-value object.
- * @returns Path with encoded query string when parameters exist.
- */
-const appendQueryParams = (path: string, query: Record<string, unknown> | undefined): string => {
-  if (!query) {
-    return path;
-  }
-
-  const searchParams = new URLSearchParams();
-  for (const [key, value] of Object.entries(query)) {
-    if (value === undefined || value === null || value === '') {
-      continue;
-    }
-
-    searchParams.set(key, String(value));
-  }
-
-  const queryString = searchParams.toString();
-  return queryString.length > 0 ? `${path}?${queryString}` : path;
-};
-
-/**
  * Registers a DELETE-based backend IPC handler that maps HTTP 204 to success response.
  *
  * @param options Backend runtime dependencies.
@@ -175,7 +138,7 @@ const registerDeleteHandler = (
   token: string,
 ): void => {
   ipcMain.handle(channel, async (_event, tokenValue: string): Promise<{ success: boolean }> => {
-    const path = replacePathToken(pathTemplate, token, tokenValue);
+    const path = replaceApiPathToken(pathTemplate, token, tokenValue);
     return requestBackendDeleteSuccess(options, path);
   });
 };
@@ -214,7 +177,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:audit-list-events',
     async (_event, query?: ApiAuditEventListQuery): Promise<ApiAuditEventListResponse | ApiErrorResponse> => {
-      const path = appendQueryParams(API_PATHS.auditListEvents, query as Record<string, unknown> | undefined);
+      const path = appendApiQueryParams(API_PATHS.auditListEvents, query);
       return options.requestBackend<ApiAuditEventListResponse>(path, {
         method: 'GET',
       });
@@ -224,7 +187,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:audit-get-event-by-id',
     async (_event, eventId: string): Promise<ApiAuditEventDetailResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.auditGetEventById, 'eventId', eventId);
+      const path = replaceApiPathToken(API_PATHS.auditGetEventById, 'eventId', eventId);
       return options.requestBackend<ApiAuditEventDetailResponse>(path, {
         method: 'GET',
       });
@@ -252,7 +215,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       serverId: string,
       payload: ApiSshUpdateServerRequest,
     ): Promise<ApiSshUpdateServerResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sshUpdateServer, 'serverId', serverId);
+      const path = replaceApiPathToken(API_PATHS.sshUpdateServer, 'serverId', serverId);
       return options.requestBackend<ApiSshUpdateServerResponse>(path, {
         method: 'PUT',
         body: payload,
@@ -263,7 +226,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:ssh-get-server-credentials',
     async (_event, serverId: string): Promise<ApiSshGetServerCredentialsResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sshGetServerCredentials, 'serverId', serverId);
+      const path = replaceApiPathToken(API_PATHS.sshGetServerCredentials, 'serverId', serverId);
       return options.requestBackend<ApiSshGetServerCredentialsResponse>(path, {
         method: 'GET',
       });
@@ -291,7 +254,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       folderId: string,
       payload: ApiSshUpdateFolderRequest,
     ): Promise<ApiSshUpdateFolderResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sshUpdateFolder, 'folderId', folderId);
+      const path = replaceApiPathToken(API_PATHS.sshUpdateFolder, 'folderId', folderId);
       return options.requestBackend<ApiSshUpdateFolderResponse>(path, {
         method: 'PUT',
         body: payload,
@@ -334,7 +297,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       keychainId: string,
       payload: ApiSshUpdateKeychainRequest,
     ): Promise<ApiSshUpdateKeychainResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sshUpdateKeychain, 'keychainId', keychainId);
+      const path = replaceApiPathToken(API_PATHS.sshUpdateKeychain, 'keychainId', keychainId);
       return options.requestBackend<ApiSshUpdateKeychainResponse>(path, {
         method: 'PUT',
         body: payload,
@@ -345,7 +308,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:ssh-get-keychain-credentials',
     async (_event, keychainId: string): Promise<ApiSshGetKeychainCredentialsResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sshGetKeychainCredentials, 'keychainId', keychainId);
+      const path = replaceApiPathToken(API_PATHS.sshGetKeychainCredentials, 'keychainId', keychainId);
       return options.requestBackend<ApiSshGetKeychainCredentialsResponse>(path, {
         method: 'GET',
       });
@@ -407,8 +370,8 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       query?: ApiSftpListDirectoryQuery,
     ): Promise<ApiSftpListDirectoryResponse | ApiErrorResponse> => {
-      const pathTemplate = replacePathToken(API_PATHS.sftpListDirectory, 'sessionId', sessionId);
-      const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
+      const pathTemplate = replaceApiPathToken(API_PATHS.sftpListDirectory, 'sessionId', sessionId);
+      const path = appendApiQueryParams(pathTemplate, query);
       return options.requestBackend<ApiSftpListDirectoryResponse>(path, {
         method: 'GET',
       });
@@ -422,7 +385,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpEntryDetailsRequest,
     ): Promise<ApiSftpEntryDetailsResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpGetEntryDetails, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpGetEntryDetails, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpEntryDetailsResponse>(path, {
         method: 'POST',
         body: payload,
@@ -437,8 +400,8 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       query: ApiSftpReadFileQuery,
     ): Promise<ApiSftpReadFileResponse | ApiErrorResponse> => {
-      const pathTemplate = replacePathToken(API_PATHS.sftpReadFile, 'sessionId', sessionId);
-      const path = appendQueryParams(pathTemplate, query as Record<string, unknown> | undefined);
+      const pathTemplate = replaceApiPathToken(API_PATHS.sftpReadFile, 'sessionId', sessionId);
+      const path = appendApiQueryParams(pathTemplate, query);
       return options.requestBackend<ApiSftpReadFileResponse>(path, {
         method: 'GET',
       });
@@ -452,7 +415,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpDownloadFileRequest,
     ): Promise<ApiSftpDownloadFileResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpDownloadFileResponse>(path, {
         method: 'POST',
         body: payload,
@@ -467,7 +430,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpCreateDirectoryRequest,
     ): Promise<ApiSftpCreateDirectoryResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpCreateDirectoryResponse>(path, {
         method: 'POST',
         body: payload,
@@ -482,7 +445,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpCreateFileRequest,
     ): Promise<ApiSftpCreateFileResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpCreateFile, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpCreateFile, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpCreateFileResponse>(path, {
         method: 'POST',
         body: payload,
@@ -497,7 +460,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpRenameRequest,
     ): Promise<ApiSftpRenameResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpRenameEntry, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpRenameEntry, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpRenameResponse>(path, {
         method: 'POST',
         body: payload,
@@ -508,7 +471,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:sftp-copy-entry',
     async (_event, sessionId: string, payload: ApiSftpCopyRequest): Promise<ApiSftpCopyResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpCopyEntry, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpCopyEntry, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpCopyResponse>(path, {
         method: 'POST',
         body: payload,
@@ -523,7 +486,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpDeleteRequest,
     ): Promise<ApiSftpDeleteResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpDeleteEntry, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpDeleteEntry, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpDeleteResponse>(path, {
         method: 'POST',
         body: payload,
@@ -538,7 +501,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       sessionId: string,
       payload: ApiSftpBatchOperationRequest,
     ): Promise<ApiSftpBatchOperationResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpBatchOperationResponse>(path, {
         method: 'POST',
         body: payload,
@@ -579,7 +542,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       ruleId: string,
       payload: ApiPortForwardUpdateRuleRequest,
     ): Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
+      const path = replaceApiPathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
       return options.requestBackend<ApiPortForwardUpdateRuleResponse>(path, {
         method: 'PUT',
         body: payload,
@@ -590,7 +553,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:port-forward-start-rule',
     async (_event, ruleId: string): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
+      const path = replaceApiPathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
       return options.requestBackend<ApiPortForwardStartRuleResponse>(path, {
         method: 'POST',
       });
@@ -600,7 +563,7 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:port-forward-stop-rule',
     async (_event, ruleId: string): Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse> => {
-      const path = replacePathToken(API_PATHS.portForwardStopRule, 'ruleId', ruleId);
+      const path = replaceApiPathToken(API_PATHS.portForwardStopRule, 'ruleId', ruleId);
       return options.requestBackend<ApiPortForwardStopRuleResponse>(path, {
         method: 'POST',
       });
@@ -643,7 +606,7 @@ const registerBackendLocalTerminalHandlers = (options: RegisterBackendIpcHandler
   ipcMain.handle(
     'backend:local-terminal-close-session',
     async (_event, sessionId: string): Promise<{ success: boolean }> => {
-      const path = replacePathToken(API_PATHS.localTerminalCloseSession, 'sessionId', sessionId);
+      const path = replaceApiPathToken(API_PATHS.localTerminalCloseSession, 'sessionId', sessionId);
       return requestBackendDeleteSuccess(options, path);
     },
   );

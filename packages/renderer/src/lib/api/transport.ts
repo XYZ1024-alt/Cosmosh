@@ -67,7 +67,13 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
-import { API_HEADERS, API_PATHS } from '@cosmosh/api-contract';
+import {
+  API_HEADERS,
+  API_PATHS,
+  appendApiQueryParams,
+  replaceApiPathToken,
+  resolveApiPath,
+} from '@cosmosh/api-contract';
 
 type RuntimeTarget = 'electron' | 'browser';
 
@@ -476,21 +482,11 @@ const createBrowserTransport = (): ApiTransport => {
       return (await callBrowserApi(API_PATHS.testPing, 'GET')) as ApiTestPingResponse | ApiErrorResponse;
     },
     listAuditEvents: async (query) => {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(query ?? {})) {
-        if (value === undefined || value === null || value === '') {
-          continue;
-        }
-
-        searchParams.set(key, String(value));
-      }
-
-      const queryString = searchParams.toString();
-      const path = queryString.length > 0 ? `${API_PATHS.auditListEvents}?${queryString}` : API_PATHS.auditListEvents;
+      const path = appendApiQueryParams(API_PATHS.auditListEvents, query);
       return (await callBrowserApi(path, 'GET')) as ApiAuditEventListResponse | ApiErrorResponse;
     },
     getAuditEventById: async (eventId) => {
-      const path = API_PATHS.auditGetEventById.replace('{eventId}', encodeURIComponent(eventId));
+      const path = replaceApiPathToken(API_PATHS.auditGetEventById, 'eventId', eventId);
       return (await callBrowserApi(path, 'GET')) as ApiAuditEventDetailResponse | ApiErrorResponse;
     },
     getSettings: async () => {
@@ -510,11 +506,11 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiErrorResponse;
     },
     updateSshServer: async (serverId, payload) => {
-      const path = API_PATHS.sshUpdateServer.replace('{serverId}', encodeURIComponent(serverId));
+      const path = replaceApiPathToken(API_PATHS.sshUpdateServer, 'serverId', serverId);
       return (await callBrowserApi(path, 'PUT', payload)) as ApiSshUpdateServerResponse | ApiErrorResponse;
     },
     getSshServerCredentials: async (serverId) => {
-      const path = API_PATHS.sshGetServerCredentials.replace('{serverId}', encodeURIComponent(serverId));
+      const path = replaceApiPathToken(API_PATHS.sshGetServerCredentials, 'serverId', serverId);
       return (await callBrowserApi(path, 'GET')) as ApiSshGetServerCredentialsResponse | ApiErrorResponse;
     },
     listSshFolders: async () => {
@@ -526,7 +522,7 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiErrorResponse;
     },
     updateSshFolder: async (folderId, payload) => {
-      const path = API_PATHS.sshUpdateFolder.replace('{folderId}', encodeURIComponent(folderId));
+      const path = replaceApiPathToken(API_PATHS.sshUpdateFolder, 'folderId', folderId);
       return (await callBrowserApi(path, 'PUT', payload)) as ApiSshUpdateFolderResponse | ApiErrorResponse;
     },
     listSshTags: async () => {
@@ -548,11 +544,11 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiErrorResponse;
     },
     updateSshKeychain: async (keychainId, payload) => {
-      const path = API_PATHS.sshUpdateKeychain.replace('{keychainId}', encodeURIComponent(keychainId));
+      const path = replaceApiPathToken(API_PATHS.sshUpdateKeychain, 'keychainId', keychainId);
       return (await callBrowserApi(path, 'PUT', payload)) as ApiSshUpdateKeychainResponse | ApiErrorResponse;
     },
     getSshKeychainCredentials: async (keychainId) => {
-      const path = API_PATHS.sshGetKeychainCredentials.replace('{keychainId}', encodeURIComponent(keychainId));
+      const path = replaceApiPathToken(API_PATHS.sshGetKeychainCredentials, 'keychainId', keychainId);
       return (await callBrowserApi(path, 'GET')) as ApiSshGetKeychainCredentialsResponse | ApiErrorResponse;
     },
     listPortForwardRules: async () => {
@@ -566,19 +562,19 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiErrorResponse;
     },
     updatePortForwardRule: async (ruleId, payload) => {
-      const path = API_PATHS.portForwardUpdateRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      const path = replaceApiPathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
       return (await callBrowserApi(path, 'PUT', payload)) as ApiPortForwardUpdateRuleResponse | ApiErrorResponse;
     },
     startPortForwardRule: async (ruleId) => {
-      const path = API_PATHS.portForwardStartRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      const path = replaceApiPathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
       return (await callBrowserApi(path, 'POST')) as ApiPortForwardStartRuleResponse | ApiErrorResponse;
     },
     stopPortForwardRule: async (ruleId) => {
-      const path = API_PATHS.portForwardStopRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      const path = replaceApiPathToken(API_PATHS.portForwardStopRule, 'ruleId', ruleId);
       return (await callBrowserApi(path, 'POST')) as ApiPortForwardStopRuleResponse | ApiErrorResponse;
     },
     deletePortForwardRule: async (ruleId) => {
-      const path = API_PATHS.portForwardDeleteRule.replace('{ruleId}', encodeURIComponent(ruleId));
+      const path = replaceApiPathToken(API_PATHS.portForwardDeleteRule, 'ruleId', ruleId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
@@ -607,65 +603,43 @@ const createBrowserTransport = (): ApiTransport => {
         | ApiErrorResponse;
     },
     listSftpDirectory: async (sessionId, query) => {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(query ?? {})) {
-        if (value === undefined || value === null || value === '') {
-          continue;
-        }
-
-        searchParams.set(key, String(value));
-      }
-
-      const queryString = searchParams.toString();
-      const basePath = API_PATHS.sftpListDirectory.replace('{sessionId}', encodeURIComponent(sessionId));
-      const path = queryString.length > 0 ? `${basePath}?${queryString}` : basePath;
+      const path = resolveApiPath(API_PATHS.sftpListDirectory, { sessionId }, query);
       return (await callBrowserApi(path, 'GET')) as ApiSftpListDirectoryResponse | ApiErrorResponse;
     },
     getSftpEntryDetails: async (sessionId, payload) => {
-      const path = API_PATHS.sftpGetEntryDetails.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpGetEntryDetails, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpEntryDetailsResponse | ApiErrorResponse;
     },
     readSftpFile: async (sessionId, query) => {
-      const searchParams = new URLSearchParams();
-      for (const [key, value] of Object.entries(query)) {
-        if (value === undefined || value === null || value === '') {
-          continue;
-        }
-
-        searchParams.set(key, String(value));
-      }
-
-      const basePath = API_PATHS.sftpReadFile.replace('{sessionId}', encodeURIComponent(sessionId));
-      return (await callBrowserApi(`${basePath}?${searchParams.toString()}`, 'GET')) as
-        | ApiSftpReadFileResponse
-        | ApiErrorResponse;
+      const path = resolveApiPath(API_PATHS.sftpReadFile, { sessionId }, query);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpReadFileResponse | ApiErrorResponse;
     },
     downloadSftpFile: async (sessionId, payload) => {
-      const path = API_PATHS.sftpDownloadFile.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDownloadFileResponse | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
-      const path = API_PATHS.sftpCreateDirectory.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCreateDirectoryResponse | ApiErrorResponse;
     },
     createSftpFile: async (sessionId, payload) => {
-      const path = API_PATHS.sftpCreateFile.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpCreateFile, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCreateFileResponse | ApiErrorResponse;
     },
     renameSftpEntry: async (sessionId, payload) => {
-      const path = API_PATHS.sftpRenameEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpRenameEntry, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpRenameResponse | ApiErrorResponse;
     },
     copySftpEntry: async (sessionId, payload) => {
-      const path = API_PATHS.sftpCopyEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpCopyEntry, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpCopyResponse | ApiErrorResponse;
     },
     deleteSftpEntry: async (sessionId, payload) => {
-      const path = API_PATHS.sftpDeleteEntry.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpDeleteEntry, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDeleteResponse | ApiErrorResponse;
     },
     runSftpBatchOperation: async (sessionId, payload) => {
-      const path = API_PATHS.sftpBatchOperation.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpBatchOperationResponse | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
@@ -678,7 +652,7 @@ const createBrowserTransport = (): ApiTransport => {
       return { success: false };
     },
     closeSshSession: async (sessionId) => {
-      const path = API_PATHS.sshCloseSession.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sshCloseSession, 'sessionId', sessionId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
@@ -690,7 +664,7 @@ const createBrowserTransport = (): ApiTransport => {
       return { success: response.status === 204 };
     },
     closeSftpSession: async (sessionId) => {
-      const path = API_PATHS.sftpCloseSession.replace('{sessionId}', encodeURIComponent(sessionId));
+      const path = replaceApiPathToken(API_PATHS.sftpCloseSession, 'sessionId', sessionId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
@@ -702,7 +676,7 @@ const createBrowserTransport = (): ApiTransport => {
       return { success: response.status === 204 };
     },
     deleteSshServer: async (serverId) => {
-      const path = API_PATHS.sshDeleteServer.replace('{serverId}', encodeURIComponent(serverId));
+      const path = replaceApiPathToken(API_PATHS.sshDeleteServer, 'serverId', serverId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
@@ -714,7 +688,7 @@ const createBrowserTransport = (): ApiTransport => {
       return { success: response.status === 204 };
     },
     deleteSshFolder: async (folderId) => {
-      const path = API_PATHS.sshDeleteFolder.replace('{folderId}', encodeURIComponent(folderId));
+      const path = replaceApiPathToken(API_PATHS.sshDeleteFolder, 'folderId', folderId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
@@ -726,7 +700,7 @@ const createBrowserTransport = (): ApiTransport => {
       return { success: response.status === 204 };
     },
     deleteSshKeychain: async (keychainId) => {
-      const path = API_PATHS.sshDeleteKeychain.replace('{keychainId}', encodeURIComponent(keychainId));
+      const path = replaceApiPathToken(API_PATHS.sshDeleteKeychain, 'keychainId', keychainId);
       const response = await fetch(`${resolveBrowserBaseUrl()}${path}`, {
         method: 'DELETE',
         headers: {
