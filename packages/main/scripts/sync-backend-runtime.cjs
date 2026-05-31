@@ -346,6 +346,39 @@ const copyExportedRuntimeAssets = async (sourcePackageDir, targetPackageDir, pac
 };
 
 /**
+ * Minifies JSON runtime assets after copy while keeping source locale files readable.
+ */
+const minifyJsonFilesInDirectory = async (directoryPath) => {
+  let entries;
+
+  try {
+    entries = await fs.readdir(directoryPath, { withFileTypes: true });
+  } catch {
+    return;
+  }
+
+  for (const entry of entries) {
+    const entryPath = path.join(directoryPath, entry.name);
+
+    if (entry.isDirectory()) {
+      await minifyJsonFilesInDirectory(entryPath);
+      continue;
+    }
+
+    if (!entry.isFile() || !entry.name.toLowerCase().endsWith('.json')) {
+      continue;
+    }
+
+    try {
+      const rawJson = await fs.readFile(entryPath, 'utf8');
+      await fs.writeFile(entryPath, `${JSON.stringify(JSON.parse(rawJson))}\n`, 'utf8');
+    } catch (error) {
+      throw new Error(`Failed to minify runtime JSON asset: ${entryPath}`, { cause: error });
+    }
+  }
+};
+
+/**
  * Starts recursion from a curated list of backend entry dependencies.
  */
 const syncThirdPartyDependencies = async () => {
@@ -397,6 +430,9 @@ const syncWorkspaceRuntimePackages = async () => {
     });
 
     await copyExportedRuntimeAssets(sourcePackageDir, targetPackageDir, sourcePackageJsonObject);
+    if (packageName === 'i18n') {
+      await minifyJsonFilesInDirectory(path.join(targetPackageDir, 'locales'));
+    }
     await fs.copyFile(sourcePackageJsonPath, targetPackageJsonPath);
 
     if (packageName === 'backend') {
