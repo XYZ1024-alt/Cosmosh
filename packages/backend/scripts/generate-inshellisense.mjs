@@ -8,6 +8,7 @@ const OUTPUT_FILE = new URL('../src/terminal/completion/generated-inshellisense.
 const I18N_EN_OUTPUT_FILE = new URL('../../i18n/locales/en/backend-inshellisense.json', import.meta.url);
 const I18N_ZH_CN_OUTPUT_FILE = new URL('../../i18n/locales/zh-CN/backend-inshellisense.json', import.meta.url);
 const require = createRequire(import.meta.url);
+const DESCRIPTION_I18N_KEY_PREFIX = 'completion.inshellisenseDescriptions.';
 
 const toArray = (value) => {
   if (!value) {
@@ -48,8 +49,49 @@ const toDescriptionI18nKey = (seed) => {
     .replace(/^_+|_+$/g, '');
 
   const keyPart = sanitizedReadable ? `${sanitizedReadable}_${hash}` : hash;
-  return `completion.inshellisenseDescriptions.${keyPart}`;
+  return `${DESCRIPTION_I18N_KEY_PREFIX}${keyPart}`;
 };
+
+const compactDescriptionI18nKey = (descriptionI18nKey) => {
+  if (typeof descriptionI18nKey !== 'string' || !descriptionI18nKey.startsWith(DESCRIPTION_I18N_KEY_PREFIX)) {
+    return descriptionI18nKey ?? null;
+  }
+
+  return descriptionI18nKey.slice(DESCRIPTION_I18N_KEY_PREFIX.length);
+};
+
+const trimTrailingEmptyFields = (fields) => {
+  while (fields.length > 0 && fields[fields.length - 1] === null) {
+    fields.pop();
+  }
+
+  return fields;
+};
+
+const toCompactOption = (option) =>
+  trimTrailingEmptyFields([
+    option.name,
+    compactDescriptionI18nKey(option.descriptionI18nKey),
+    option.takesValue ? 1 : null,
+    option.insertText ?? null,
+    option.valueSuggestions ?? null,
+  ]);
+
+const toCompactSubcommand = (subcommand) =>
+  trimTrailingEmptyFields([
+    subcommand.name,
+    compactDescriptionI18nKey(subcommand.descriptionI18nKey),
+    subcommand.subcommands?.map(toCompactSubcommand) ?? null,
+    subcommand.options?.map(toCompactOption) ?? null,
+  ]);
+
+const toCompactCommandSpec = (spec) =>
+  trimTrailingEmptyFields([
+    spec.command,
+    compactDescriptionI18nKey(spec.descriptionI18nKey),
+    spec.subcommands?.map(toCompactSubcommand) ?? null,
+    spec.options?.map(toCompactOption) ?? null,
+  ]);
 
 const ensureTreePath = (target, pathKey, value) => {
   const segments = String(pathKey || '')
@@ -514,7 +556,8 @@ const generate = async () => {
     }
   });
 
-  const fileContent = `/* eslint-disable */\n/* prettier-ignore */\nimport type { TerminalCommandSpec } from './types.js';\n\n/**\n * Auto-generated from @withfig/autocomplete resources.\n * Run \`pnpm --filter @cosmosh/backend completion:generate\` to refresh.\n */\nexport const INSHELLISENSE_COMMAND_SPECS: ReadonlyArray<TerminalCommandSpec> = ${JSON.stringify(entries)};\n`;
+  const compactEntries = entries.map(toCompactCommandSpec);
+  const fileContent = `/* eslint-disable */\n/* prettier-ignore */\nimport type {\n  TerminalCommandSpec,\n  TerminalCommandSpecOption,\n  TerminalCommandSpecSubcommand,\n} from './types.js';\n\nconst DESCRIPTION_I18N_KEY_PREFIX = '${DESCRIPTION_I18N_KEY_PREFIX}';\n\ntype CompactOption = readonly [\n  name: string,\n  descriptionKey?: string | null,\n  takesValue?: 1 | null,\n  insertText?: string | null,\n  valueSuggestions?: readonly string[] | null,\n];\n\ntype CompactSubcommand = readonly [\n  name: string,\n  descriptionKey?: string | null,\n  subcommands?: readonly CompactSubcommand[] | null,\n  options?: readonly CompactOption[] | null,\n];\n\ntype CompactCommandSpec = readonly [\n  command: string,\n  descriptionKey?: string | null,\n  subcommands?: readonly CompactSubcommand[] | null,\n  options?: readonly CompactOption[] | null,\n];\n\nconst expandDescriptionI18nKey = (descriptionKey: string | null | undefined): string | undefined => {\n  if (!descriptionKey) {\n    return undefined;\n  }\n\n  return descriptionKey.includes('.') ? descriptionKey : \`\${DESCRIPTION_I18N_KEY_PREFIX}\${descriptionKey}\`;\n};\n\nconst inflateOptions = (options: readonly CompactOption[] | null | undefined): TerminalCommandSpecOption[] | undefined => {\n  if (!options) {\n    return undefined;\n  }\n\n  return options.map(([name, descriptionKey, takesValue, insertText, valueSuggestions]) => {\n    const descriptionI18nKey = expandDescriptionI18nKey(descriptionKey);\n\n    return {\n      name,\n      ...(descriptionI18nKey ? { descriptionI18nKey } : {}),\n      ...(takesValue === 1 ? { takesValue: true } : {}),\n      ...(typeof insertText === 'string' ? { insertText } : {}),\n      ...(Array.isArray(valueSuggestions) ? { valueSuggestions: [...valueSuggestions] } : {}),\n    };\n  });\n};\n\nconst inflateSubcommands = (\n  subcommands: readonly CompactSubcommand[] | null | undefined,\n): TerminalCommandSpecSubcommand[] | undefined => {\n  if (!subcommands) {\n    return undefined;\n  }\n\n  return subcommands.map(([name, descriptionKey, nestedSubcommands, options]) => {\n    const descriptionI18nKey = expandDescriptionI18nKey(descriptionKey);\n\n    return {\n      name,\n      ...(descriptionI18nKey ? { descriptionI18nKey } : {}),\n      ...(Array.isArray(nestedSubcommands) ? { subcommands: inflateSubcommands(nestedSubcommands) ?? [] } : {}),\n      ...(Array.isArray(options) ? { options: inflateOptions(options) ?? [] } : {}),\n    };\n  });\n};\n\nconst inflateCommandSpecs = (specs: readonly CompactCommandSpec[]): ReadonlyArray<TerminalCommandSpec> => {\n  return specs.map(([command, descriptionKey, subcommands, options]) => {\n    const descriptionI18nKey = expandDescriptionI18nKey(descriptionKey);\n\n    return {\n      command,\n      ...(descriptionI18nKey ? { descriptionI18nKey } : {}),\n      ...(Array.isArray(subcommands) ? { subcommands: inflateSubcommands(subcommands) ?? [] } : {}),\n      ...(Array.isArray(options) ? { options: inflateOptions(options) ?? [] } : {}),\n    };\n  });\n};\n\n/**\n * Auto-generated from @withfig/autocomplete resources.\n * Run \`pnpm --filter @cosmosh/backend completion:generate\` to refresh.\n */\nexport const INSHELLISENSE_COMMAND_SPECS: ReadonlyArray<TerminalCommandSpec> = inflateCommandSpecs(${JSON.stringify(compactEntries)});\n`;
   const safeFileContent = fileContent.replaceAll('\u2028', '\\u2028').replaceAll('\u2029', '\\u2029');
   const enLocaleContent = `${JSON.stringify(enInshellisenseLocaleTree, null, 2)}\n`;
   const zhCnLocaleContent = `${JSON.stringify(zhCnInshellisenseLocaleTree, null, 2)}\n`;
@@ -531,4 +574,3 @@ generate().catch((error) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
   process.exitCode = 1;
 });
-

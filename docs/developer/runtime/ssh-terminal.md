@@ -128,7 +128,7 @@ sequenceDiagram
   - runtime providers (path provider and interactive secret-prompt provider) composed in the same ranking pipeline.
 - Token parsing is shell-aware in completion engine: SSH uses POSIX tokenization, local PowerShell/CMD sessions use Windows-friendly tokenization where backslash is preserved as a literal path character instead of generic escape.
 - `packages/backend/scripts/generate-inshellisense.mjs` generates spec dataset plus locale resources with language-specific policy:
-  - `packages/backend/src/terminal/completion/generated-inshellisense.ts` keeps command structure and `descriptionI18nKey` only (no duplicated raw description text payload).
+  - `packages/backend/src/terminal/completion/generated-inshellisense.ts` keeps command structure as a compact tuple payload and inflates it at module load; generated entries keep `descriptionI18nKey` references only (no duplicated raw description text payload).
   - `packages/i18n/locales/en/backend-inshellisense.json` is fully regenerated from upstream descriptions.
   - `packages/i18n/locales/zh-CN/backend-inshellisense.json` keeps only manually translated keys whose English source text is unchanged; new keys are not auto-filled, and keys are pruned when source text changes or is removed.
 - Backend scope i18n merges `backend-inshellisense.json` into `backend.json`, so completion descriptions can be translated without mixing generated keys into base backend locale files.
