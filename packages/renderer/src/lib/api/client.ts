@@ -2,6 +2,7 @@ import type {
   ApiAuditEventDetailResponse,
   ApiAuditEventListQuery,
   ApiAuditEventListResponse,
+  ApiErrorResponse,
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
@@ -135,6 +136,64 @@ export type BackendClient = {
   deleteSshServer: (serverId: string) => Promise<{ success: boolean }>;
   deleteSshFolder: (folderId: string) => Promise<{ success: boolean }>;
   deleteSshKeychain: (keychainId: string) => Promise<{ success: boolean }>;
+};
+
+/**
+ * Error thrown when the backend returns a structured API failure envelope.
+ */
+export class BackendApiError extends Error {
+  public readonly code: ApiErrorResponse['code'];
+
+  public readonly requestId: string;
+
+  public readonly timestamp: string;
+
+  /**
+   * Creates a renderer error while preserving backend failure metadata.
+   *
+   * @param payload Backend API error response.
+   */
+  public constructor(payload: ApiErrorResponse) {
+    super(payload.message);
+    this.name = 'BackendApiError';
+    this.code = payload.code;
+    this.requestId = payload.requestId;
+    this.timestamp = payload.timestamp;
+  }
+}
+
+/**
+ * Checks whether an unknown value is a structured backend API error.
+ *
+ * @param error Candidate error thrown by the backend client.
+ * @returns Whether the error preserves backend API metadata.
+ */
+export const isBackendApiError = (error: unknown): error is BackendApiError => {
+  return error instanceof BackendApiError;
+};
+
+/**
+ * Throws a structured API error instead of losing the backend error code.
+ *
+ * @param payload Backend API error response.
+ * @returns Never returns because it always throws.
+ */
+const throwBackendApiError = (payload: ApiErrorResponse): never => {
+  throw new BackendApiError(payload);
+};
+
+/**
+ * Returns a successful transport response or throws a structured backend error.
+ *
+ * @param payload Transport response envelope.
+ * @returns Successful API response.
+ */
+const unwrapApiResponse = <TResponse extends { success: true }>(payload: TResponse | ApiErrorResponse): TResponse => {
+  if (!payload.success) {
+    throwBackendApiError(payload);
+  }
+
+  return payload as TResponse;
 };
 
 export const createBackendClient = (): BackendClient => {
@@ -404,94 +463,34 @@ export const createBackendClient = (): BackendClient => {
       throw new Error('Unexpected SFTP session response.');
     },
     listSftpDirectory: async (sessionId, query) => {
-      const payload = await transport.listSftpDirectory(sessionId, query);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.listSftpDirectory(sessionId, query));
     },
     getSftpEntryDetails: async (sessionId, requestPayload) => {
-      const payload = await transport.getSftpEntryDetails(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.getSftpEntryDetails(sessionId, requestPayload));
     },
     readSftpFile: async (sessionId, query) => {
-      const payload = await transport.readSftpFile(sessionId, query);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.readSftpFile(sessionId, query));
     },
     downloadSftpFile: async (sessionId, requestPayload) => {
-      const payload = await transport.downloadSftpFile(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.downloadSftpFile(sessionId, requestPayload));
     },
     createSftpDirectory: async (sessionId, requestPayload) => {
-      const payload = await transport.createSftpDirectory(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.createSftpDirectory(sessionId, requestPayload));
     },
     createSftpFile: async (sessionId, requestPayload) => {
-      const payload = await transport.createSftpFile(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.createSftpFile(sessionId, requestPayload));
     },
     renameSftpEntry: async (sessionId, requestPayload) => {
-      const payload = await transport.renameSftpEntry(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.renameSftpEntry(sessionId, requestPayload));
     },
     copySftpEntry: async (sessionId, requestPayload) => {
-      const payload = await transport.copySftpEntry(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.copySftpEntry(sessionId, requestPayload));
     },
     deleteSftpEntry: async (sessionId, requestPayload) => {
-      const payload = await transport.deleteSftpEntry(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.deleteSftpEntry(sessionId, requestPayload));
     },
     runSftpBatchOperation: async (sessionId, requestPayload) => {
-      const payload = await transport.runSftpBatchOperation(sessionId, requestPayload);
-
-      if (!payload.success) {
-        throw new Error(payload.message);
-      }
-
-      return payload;
+      return unwrapApiResponse(await transport.runSftpBatchOperation(sessionId, requestPayload));
     },
     listLocalTerminalProfiles: async () => {
       const payload = await transport.listLocalTerminalProfiles();

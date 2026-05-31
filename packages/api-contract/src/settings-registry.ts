@@ -65,6 +65,7 @@ export interface SettingsValues {
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalAutoCompletePromptRegex: string;
   sshReconnectOnFocus: boolean;
+  sftpReconnectMode: 'passive' | 'active' | 'off';
   sftpDeleteConfirmationMode: 'always' | 'batch' | 'shortcut' | 'off';
   sftpShowHiddenEntries: boolean;
   sftpDimHiddenEntries: boolean;
@@ -353,6 +354,21 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'connection.ssh.reconnectOnFocus',
     commandActionId: 'settings.connection.ssh.reconnectOnFocus.toggle',
     searchTerms: ['ssh', 'reconnect', 'tab', 'focus', 'auto reconnect', 'connection'],
+  },
+  {
+    key: 'sftpReconnectMode',
+    valueType: 'string',
+    defaultValue: 'passive',
+    nameI18nKey: 'settings.items.sftpReconnectMode.title',
+    descriptionI18nKey: 'settings.items.sftpReconnectMode.description',
+    optionI18nNamespace: 'sftpReconnectMode',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.safety,
+    control: 'select',
+    path: 'sftp.safety.reconnectMode',
+    commandActionId: 'settings.sftp.safety.reconnectMode.set',
+    searchTerms: ['sftp', 'reconnect', 'disconnect', 'auto reconnect', 'connection', 'passive', 'active'],
+    options: [{ value: 'passive' }, { value: 'active' }, { value: 'off' }],
   },
   {
     key: 'sftpDeleteConfirmationMode',

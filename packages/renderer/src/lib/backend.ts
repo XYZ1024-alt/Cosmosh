@@ -70,6 +70,8 @@ import type {
   LocalTerminalListResponse,
 } from './api/transport';
 
+export { isBackendApiError } from './api/client';
+
 export const testBackendPing = async (): Promise<ApiTestPingResponse> => {
   return backendClient.testPing();
 };

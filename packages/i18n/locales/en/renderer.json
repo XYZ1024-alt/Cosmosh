@@ -378,6 +378,10 @@
         "description": "Applies 80% opacity to hidden SFTP entry icons and names when hidden files are visible.",
         "title": "Dim Hidden Files"
       },
+      "sftpReconnectMode": {
+        "description": "Controls how SFTP recovers when the remote connection drops while the tab remains open.",
+        "title": "SFTP Auto-Reconnect"
+      },
       "sftpShowAddressAsText": {
         "description": "Always shows the SFTP address bar as a plain editable path input instead of the breadcrumb control.",
         "title": "Show Address as Text"
@@ -612,6 +616,11 @@
         "batch": "Enabled for batch operations",
         "off": "Off",
         "shortcut": "Enabled for keyboard shortcuts"
+      },
+      "sftpReconnectMode": {
+        "active": "Active",
+        "off": "Off",
+        "passive": "Passive"
       },
       "terminalAutoCompleteAcceptKeys": {
         "enter": "Enter",
@@ -859,6 +868,7 @@
       "windowTitleWithCount": "{count} Items Properties",
       "windowTitleWithName": "{name} Properties"
     },
+    "reconnectFailed": "Failed to reconnect SFTP session.",
     "renameInputLabel": "Entry name",
     "searchEmpty": "No entries match this search.",
     "searchPlaceholder": "Search files...",
@@ -877,6 +887,9 @@
       "pending": "Waiting to start",
       "progressCount": "{completed}/{total}",
       "progressIndeterminate": "...",
+      "reconnect": "Reconnect",
+      "reconnectComplete": "Reconnected",
+      "reconnecting": "Reconnecting SFTP session...",
       "rename": "Rename",
       "status": {
         "failed": "Failed",

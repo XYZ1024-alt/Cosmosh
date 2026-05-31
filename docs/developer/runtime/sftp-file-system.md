@@ -13,7 +13,7 @@ Implemented in v1:
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, automatically scrolls the current directory row near the upper third of the tree viewport after directory navigation only when the mounted parent/current/expanded-child context is outside the visible viewport, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports multi-selection with `Ctrl`/`Cmd` toggle and `Shift` range selection.
 - Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, failed, and progress states.
-- SFTP settings control delete-confirmation scope, whether the center file list shows a leading `..` parent-directory row, and whether the address bar always renders as text.
+- SFTP settings control reconnect mode, delete-confirmation scope, whether the center file list shows a leading `..` parent-directory row, and whether the address bar always renders as text.
 - Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
@@ -40,7 +40,7 @@ flowchart LR
 - **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
 - **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/ipc/register-app-utility-ipc.ts` owns native save/open helpers, validates Cosmosh SFTP temp paths, and launches platform Open With behavior. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
 - **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
-- **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP delete-confirmation and parent-directory-row preferences consumed by the renderer settings store.
+- **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP reconnect, delete-confirmation, parent-directory-row, hidden-entry, and address-display preferences consumed by the renderer settings store.
 
 ## 3. API Contract
 
@@ -112,6 +112,10 @@ Lifecycle rules:
 - Explicit new-tab actions create a new SFTP tab and therefore a separate backend SFTP session.
 - Hidden SFTP tabs remain mounted and keep their session alive.
 - Closing the tab or changing its connection intent closes the previous SFTP session on a best-effort basis.
+- `SftpSessionService` watches the underlying `ssh2` client and SFTP stream for `close`, `end`, and `error`. Once either transport becomes unusable, the session is evicted from the registry so later requests return `SFTP_SESSION_NOT_FOUND` quickly instead of hanging behind a dead socket.
+- `sftpReconnectMode` defaults to `passive`. In passive mode, renderer SFTP requests that receive `SFTP_SESSION_NOT_FOUND` create one replacement session, update the tab `sessionId`, and retry the original request once.
+- `active` is currently a user-selectable setting that uses the same reconnect pipeline when the page already knows the current session expired. It does not add backend push events or polling.
+- `off` disables renderer retry. The backend still evicts closed sessions, so operations fail quickly with the session-not-found message instead of remaining pending.
 - Backend shutdown closes all registered SFTP sessions.
 
 ## 5. Directory Listing And File Operations
@@ -153,6 +157,8 @@ Mutation rules:
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
 - Renderer file operations enter a tab-local FIFO task queue before calling the backend. The queue keeps navigation, selection, filtering, and refresh usable while work is pending, and the toolbar task menu remains visible until completed tasks expire after a short inspection window.
+- Passive reconnect is surfaced as a regular `Reconnect` task in the same task menu. Concurrent SFTP operations that observe the same stale session share one in-flight reconnect promise, then each operation retries once against the new session id. If reconnect succeeds but the original operation still fails, the renderer reports that operation failure and does not start a second reconnect loop.
+- Reconnect prefers the tab's current path (`currentPathRef.current`) when creating the replacement session and falls back to the original connection intent path, or `.` when no initial path was provided.
 - Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
 - Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
@@ -167,11 +173,12 @@ SFTP uses the same server, keychain, credential decryption, and host fingerprint
 - Decrypted secrets never cross into renderer or preload.
 - Main injects the internal backend auth token and locale headers.
 - Unknown or untrusted host fingerprints are returned through the same confirmation flow used by SSH.
+- Reconnect creates a normal new SFTP session and therefore reuses the same host fingerprint trust confirmation flow. If the user rejects the fingerprint prompt, the reconnect task fails and the original operation is not retried.
 
 Error mapping:
 
 - Missing or invalid request data -> `SFTP_VALIDATION_FAILED`.
-- Missing session id or closed session -> `SFTP_SESSION_NOT_FOUND`.
+- Missing session id, evicted session, or closed SSH/SFTP transport -> `SFTP_SESSION_NOT_FOUND`.
 - Connection failures, permission errors, unreadable paths, copy/delete/rename failures, and remote SFTP errors -> `SFTP_OPERATION_FAILED`.
 - Unknown host fingerprint -> `SSH_HOST_UNTRUSTED` with fingerprint confirmation data.
 
@@ -196,6 +203,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - The back and forward toolbar controls use plain directional arrow icons. Left-click jumps one step; right-click opens a context menu only when reachable history targets exist, listing them in nearest-first order to match desktop file-manager navigation.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Show the SFTP task trigger only while the tab has active or recently completed tasks. The trigger belongs between the address control and file-operation buttons, uses `ListTodo`/spinner iconography, and opens a right-aligned dense task menu with per-task status text and compact progress bars.
+- Reconnect progress must use that task trigger instead of adding a separate banner, toast-only state, floating overlay, or persistent warning region.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
 - Row and toolbar overflow menu `Properties` items open the standalone Properties window for the selected entry or selection.
 - Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.
@@ -203,6 +211,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - The left directory tree and center file list use roving focus: `Tab` enters each list once, then `ArrowUp`/`ArrowDown` move between rows. In the file list, arrow navigation selects the focused file row while the optional `..` parent row remains activation-only.
 - Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, tree context menus focus on the clicked directory, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - The Properties surface is a separate Electron/browser window. Its first version reuses existing SFTP card, text, and button styles, keeps field labels and values selectable, and reserves permissions editing through a standard edit button at the end of the permissions section.
+- The Properties window receives the session id that was current when it opened. If that session expires, the window shows the existing properties-load failure state and does not start an independent reconnect flow.
 - Inline rename and create inputs stay inside the row grid without changing icon or text baseline position.
 - Inline rename and create actions launched from context or overflow menus must defer the edit-state transition until menu close handling begins, suppress menu close autofocus while the input is being mounted, and then focus/select the row input. This prevents the first menu-triggered edit from being blurred and committed or cancelled before the user can type.
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.

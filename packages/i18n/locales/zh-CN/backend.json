@@ -66,7 +66,7 @@
       "sessionCreateFailed": "SFTP 会话创建失败：{reason}",
       "sessionCreateFailedNoReason": "SFTP 会话创建失败。",
       "sessionIdRequired": "sessionId 为必填项。",
-      "sessionNotFound": "未找到 SFTP 会话。",
+      "sessionNotFound": "未找到 SFTP 会话，或该会话已过期。",
       "sourceTargetRequired": "sourcePath 和 targetPath 为必填项。"
     },
     "ssh": {

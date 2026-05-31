@@ -378,6 +378,10 @@
         "description": "隐藏文件可见时，对隐藏 SFTP 条目的图标和名称应用 80% 透明度。",
         "title": "弱化显示隐藏文件"
       },
+      "sftpReconnectMode": {
+        "description": "控制远程连接在 SFTP 标签页保持打开时断开后如何恢复。",
+        "title": "SFTP 自动重连"
+      },
       "sftpShowAddressAsText": {
         "description": "始终将 SFTP 地址栏显示为可编辑的纯路径输入框，而不是层级地址栏。",
         "title": "将地址显示为文本"
@@ -612,6 +616,11 @@
         "batch": "批量操作时开启",
         "off": "关闭",
         "shortcut": "使用快捷键时开启"
+      },
+      "sftpReconnectMode": {
+        "active": "主动",
+        "off": "关闭",
+        "passive": "被动"
       },
       "terminalAutoCompleteAcceptKeys": {
         "enter": "回车",
@@ -859,6 +868,7 @@
       "windowTitleWithCount": "{count} 个项目属性",
       "windowTitleWithName": "{name} 属性"
     },
+    "reconnectFailed": "SFTP 会话重连失败。",
     "renameInputLabel": "条目名称",
     "searchEmpty": "没有匹配的条目。",
     "searchPlaceholder": "搜索文件...",
@@ -877,6 +887,9 @@
       "pending": "等待开始",
       "progressCount": "{completed}/{total}",
       "progressIndeterminate": "...",
+      "reconnect": "重连",
+      "reconnectComplete": "已重连",
+      "reconnecting": "正在重连 SFTP 会话...",
       "rename": "重命名",
       "status": {
         "failed": "失败",

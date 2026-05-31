@@ -11,6 +11,7 @@ import {
   createSftpFile,
   createSftpSession,
   downloadSftpFile,
+  isBackendApiError,
   listSftpDirectory,
   renameSftpEntry,
   runSftpBatchOperation,
@@ -113,6 +114,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpDimHiddenEntries = useSettingsValue('sftpDimHiddenEntries');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
   const sftpShowAddressAsText = useSettingsValue('sftpShowAddressAsText');
+  const sftpReconnectMode = useSettingsValue('sftpReconnectMode');
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
@@ -159,6 +161,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const isTaskQueueRunningRef = React.useRef(false);
   const taskQueueGenerationRef = React.useRef(0);
   const taskRetentionTimersRef = React.useRef<Record<string, number>>({});
+  const reconnectPromiseRef = React.useRef<Promise<string> | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -460,6 +463,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const shortcutModifier = React.useMemo(() => resolveShortcutModifier(), []);
   const canGoBack = navigationState.index > 0;
   const canGoForward = navigationState.index >= 0 && navigationState.index < navigationState.paths.length - 1;
+  const hasSftpSession = Boolean(sessionId);
   const backNavigationHistoryItems = React.useMemo(
     () => buildNavigationHistoryMenuItems(navigationState, 'back'),
     [navigationState],
@@ -468,7 +472,7 @@ const SFTP: React.FC<SFTPProps> = ({
     () => buildNavigationHistoryMenuItems(navigationState, 'forward'),
     [navigationState],
   );
-  const canUseFileActions = Boolean(sessionId) && status === 'ready' && !isBusy;
+  const canUseFileActions = hasSftpSession && status === 'ready' && !isBusy;
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
 
@@ -584,6 +588,225 @@ const SFTP: React.FC<SFTPProps> = ({
     setDeleteConfirmationPrompt(null);
   }, []);
 
+  /**
+   * Detects the stale-session error that should trigger SFTP reconnect.
+   *
+   * @param error Error thrown by the renderer backend client.
+   * @returns Whether this failure represents a missing or closed SFTP session.
+   */
+  const isSftpSessionNotFoundError = React.useCallback((error: unknown): boolean => {
+    return isBackendApiError(error) && error.code === 'SFTP_SESSION_NOT_FOUND';
+  }, []);
+
+  /**
+   * Shows SFTP reconnect progress in the task list without entering the FIFO operation queue.
+   *
+   * @param operation Reconnect implementation to run immediately.
+   * @returns Promise resolved with the new active session id.
+   */
+  const runSftpReconnectTask = React.useCallback(
+    (operation: (context: SftpTaskContext) => Promise<string>): Promise<string> => {
+      const taskId = createSftpTaskId();
+      const task: SftpTaskState = {
+        id: taskId,
+        label: t('sftp.tasks.reconnect'),
+        detail: t('sftp.tasks.reconnecting'),
+        status: 'running',
+        createdAt: Date.now(),
+        startedAt: Date.now(),
+        progress: { completed: 0, total: 1 },
+      };
+
+      clearTaskRetentionTimer(taskId);
+      setSftpTasks((previous) => [...previous, task]);
+
+      const taskGeneration = taskQueueGenerationRef.current;
+      const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
+      const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>): void => {
+        if (!isCurrent()) {
+          return;
+        }
+
+        setSftpTasks((previous) =>
+          previous.map((currentTask) => (currentTask.id === taskId ? { ...currentTask, ...patch } : currentTask)),
+        );
+      };
+
+      return operation({ taskId, isCurrent, update })
+        .then((nextSessionId) => {
+          if (isCurrent()) {
+            setSftpTasks((previous) =>
+              previous.map((currentTask) =>
+                currentTask.id === taskId
+                  ? {
+                      ...currentTask,
+                      detail: t('sftp.tasks.reconnectComplete'),
+                      status: 'success',
+                      finishedAt: Date.now(),
+                      progress: { completed: 1, total: 1 },
+                    }
+                  : currentTask,
+              ),
+            );
+            scheduleTaskRetentionCleanup(taskId);
+          }
+
+          return nextSessionId;
+        })
+        .catch((error: unknown) => {
+          if (isCurrent()) {
+            const message = error instanceof Error ? error.message : t('sftp.reconnectFailed');
+            setSftpTasks((previous) =>
+              previous.map((currentTask) =>
+                currentTask.id === taskId
+                  ? {
+                      ...currentTask,
+                      detail: message,
+                      status: 'failed',
+                      finishedAt: Date.now(),
+                    }
+                  : currentTask,
+              ),
+            );
+            scheduleTaskRetentionCleanup(taskId);
+          }
+
+          throw error;
+        });
+    },
+    [clearTaskRetentionTimer, scheduleTaskRetentionCleanup],
+  );
+
+  /**
+   * Creates a replacement SFTP session for the current tab after the old one expires.
+   *
+   * @param preferredPath Current remote path that should be restored when possible.
+   * @returns New active backend session id.
+   */
+  const reconnectSftpSession = React.useCallback(
+    async (preferredPath: string): Promise<string> => {
+      if (!connectionIntent?.serverId) {
+        throw new Error(t('sftp.noSession'));
+      }
+
+      const fallbackPath = connectionIntent.initialPath ?? '.';
+      const candidatePaths = Array.from(new Set([preferredPath.trim() || fallbackPath, fallbackPath]));
+      const trustRejectedMessage = t('ssh.hostFingerprintNotTrusted');
+
+      for (const initialPath of candidatePaths) {
+        try {
+          let shouldRetryTrust = true;
+          while (shouldRetryTrust) {
+            shouldRetryTrust = false;
+            const response = await createSftpSession({
+              serverId: connectionIntent.serverId,
+              initialPath,
+              connectTimeoutSec: 45,
+            });
+
+            if (!response.success && response.code === 'SSH_HOST_UNTRUSTED') {
+              const accepted = await requestHostFingerprintTrust({
+                serverId: response.data.serverId,
+                host: response.data.host,
+                port: response.data.port,
+                algorithm: response.data.algorithm,
+                fingerprint: response.data.fingerprint,
+              });
+
+              if (!accepted) {
+                throw new Error(trustRejectedMessage);
+              }
+
+              await trustSshFingerprint({
+                serverId: response.data.serverId,
+                fingerprintSha256: response.data.fingerprint,
+                algorithm: response.data.algorithm,
+              });
+              shouldRetryTrust = true;
+              continue;
+            }
+
+            const nextSessionId = response.data.sessionId;
+            sessionIdRef.current = nextSessionId;
+            setSessionId(nextSessionId);
+            return nextSessionId;
+          }
+        } catch (error: unknown) {
+          if (error instanceof Error && error.message === trustRejectedMessage) {
+            throw error;
+          }
+
+          if (initialPath === candidatePaths[candidatePaths.length - 1]) {
+            throw error;
+          }
+        }
+      }
+
+      throw new Error(t('sftp.reconnectFailed'));
+    },
+    [connectionIntent?.initialPath, connectionIntent?.serverId, requestHostFingerprintTrust],
+  );
+
+  /**
+   * Ensures one reconnect attempt is shared by every operation that observes the same stale session.
+   *
+   * @returns New active backend session id.
+   */
+  const ensureSftpSessionForOperation = React.useCallback(async (): Promise<string> => {
+    const existingReconnect = reconnectPromiseRef.current;
+    if (existingReconnect) {
+      return existingReconnect;
+    }
+
+    const reconnectPromise = runSftpReconnectTask(async ({ update }) => {
+      update({ detail: t('sftp.tasks.reconnecting'), progress: { completed: 0, total: 1 } });
+      const nextSessionId = await reconnectSftpSession(currentPathRef.current);
+      update({ progress: { completed: 1, total: 1 } });
+      return nextSessionId;
+    }).finally(() => {
+      if (reconnectPromiseRef.current === reconnectPromise) {
+        reconnectPromiseRef.current = null;
+      }
+    });
+
+    reconnectPromiseRef.current = reconnectPromise;
+    return reconnectPromise;
+  }, [reconnectSftpSession, runSftpReconnectTask]);
+
+  /**
+   * Runs one SFTP backend request and retries once after passive session recovery.
+   *
+   * @param operation Operation that receives the session id to call.
+   * @returns Operation result.
+   */
+  const runWithSftpReconnect = React.useCallback(
+    async function runWithSftpReconnectRequest<TResult>(
+      operation: (activeSessionId: string) => Promise<TResult>,
+    ): Promise<TResult> {
+      const initialSessionId = sessionIdRef.current;
+      if (!initialSessionId) {
+        throw new Error(t('sftp.noSession'));
+      }
+
+      try {
+        return await operation(initialSessionId);
+      } catch (error: unknown) {
+        if (sftpReconnectMode === 'off' || !isSftpSessionNotFoundError(error)) {
+          throw error;
+        }
+
+        const latestSessionId = sessionIdRef.current;
+        if (latestSessionId && latestSessionId !== initialSessionId) {
+          return await operation(latestSessionId);
+        }
+
+        const nextSessionId = await ensureSftpSessionForOperation();
+        return await operation(nextSessionId);
+      }
+    },
+    [ensureSftpSessionForOperation, isSftpSessionNotFoundError, sftpReconnectMode],
+  );
+
   const setTreeNodeLoading = React.useCallback((directoryPath: string, isLoading: boolean): void => {
     setTreeNodes((previous) => {
       const existing = previous[directoryPath];
@@ -603,7 +826,7 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   const syncAncestorDirectories = React.useCallback(
-    async (nextSessionId: string, directoryPath: string, isCancelled?: () => boolean): Promise<void> => {
+    async (directoryPath: string, isCancelled?: () => boolean): Promise<void> => {
       const ancestorPaths = resolveAncestorDirectoryPaths(directoryPath);
 
       for (const ancestorPath of ancestorPaths) {
@@ -628,7 +851,9 @@ const SFTP: React.FC<SFTPProps> = ({
         setTreeNodeLoading(ancestorPath, true);
 
         try {
-          const response = await listSftpDirectory(nextSessionId, { path: ancestorPath });
+          const response = await runWithSftpReconnect((activeSessionId) =>
+            listSftpDirectory(activeSessionId, { path: ancestorPath }),
+          );
           if (isCancelled?.()) {
             return;
           }
@@ -661,7 +886,7 @@ const SFTP: React.FC<SFTPProps> = ({
         }
       }
     },
-    [setTreeNodeLoading],
+    [runWithSftpReconnect, setTreeNodeLoading],
   );
 
   const applyDirectoryCacheEntry = React.useCallback(
@@ -698,11 +923,11 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   const loadDirectory = React.useCallback(
-    async (nextSessionId: string, directoryPath: string, options?: DirectoryLoadOptions): Promise<string | null> => {
+    async (directoryPath: string, options?: DirectoryLoadOptions): Promise<string | null> => {
       const cachedDirectory = directoryCacheRef.current[directoryPath];
       if (cachedDirectory && !options?.forceRefresh) {
         applyDirectoryCacheEntry(cachedDirectory);
-        void syncAncestorDirectories(nextSessionId, cachedDirectory.path, options?.isCancelled);
+        void syncAncestorDirectories(cachedDirectory.path, options?.isCancelled);
         return cachedDirectory.path;
       }
 
@@ -717,7 +942,9 @@ const SFTP: React.FC<SFTPProps> = ({
       setTreeNodeLoading(directoryPath, true);
 
       try {
-        const response = await listSftpDirectory(nextSessionId, { path: directoryPath });
+        const response = await runWithSftpReconnect((activeSessionId) =>
+          listSftpDirectory(activeSessionId, { path: directoryPath }),
+        );
         if (options?.isCancelled?.()) {
           setIsRefreshingDirectory(false);
           return null;
@@ -757,7 +984,7 @@ const SFTP: React.FC<SFTPProps> = ({
           },
         };
         setStatus('ready');
-        void syncAncestorDirectories(nextSessionId, response.data.path, options?.isCancelled);
+        void syncAncestorDirectories(response.data.path, options?.isCancelled);
         return response.data.path;
       } catch (error: unknown) {
         if (options?.isCancelled?.()) {
@@ -768,7 +995,7 @@ const SFTP: React.FC<SFTPProps> = ({
         const message = error instanceof Error ? error.message : t('sftp.loadFailed');
         setIsRefreshingDirectory(false);
         setTreeNodeLoading(directoryPath, false);
-        void syncAncestorDirectories(nextSessionId, directoryPath, options?.isCancelled);
+        void syncAncestorDirectories(directoryPath, options?.isCancelled);
         setErrorMessage(message);
         if (!shouldPreserveCurrentView) {
           setStatus('error');
@@ -783,13 +1010,14 @@ const SFTP: React.FC<SFTPProps> = ({
       notifyError,
       pruneSelectionToEntries,
       resetSelection,
+      runWithSftpReconnect,
       setTreeNodeLoading,
       syncAncestorDirectories,
     ],
   );
 
   const loadTreeDirectoryChildren = React.useCallback(
-    async (nextSessionId: string, directoryPath: string): Promise<void> => {
+    async (directoryPath: string): Promise<void> => {
       const cachedDirectory = directoryCacheRef.current[directoryPath];
       if (cachedDirectory) {
         setTreeNodes((previous) =>
@@ -807,7 +1035,9 @@ const SFTP: React.FC<SFTPProps> = ({
       setTreeNodeLoading(directoryPath, true);
 
       try {
-        const response = await listSftpDirectory(nextSessionId, { path: directoryPath });
+        const response = await runWithSftpReconnect((activeSessionId) =>
+          listSftpDirectory(activeSessionId, { path: directoryPath }),
+        );
         const sortedEntries = sortSftpEntries(response.data.entries);
         directoryCacheRef.current = {
           ...directoryCacheRef.current,
@@ -837,7 +1067,7 @@ const SFTP: React.FC<SFTPProps> = ({
         notifyError(message);
       }
     },
-    [notifyError, setTreeNodeLoading],
+    [notifyError, runWithSftpReconnect, setTreeNodeLoading],
   );
 
   /**
@@ -917,7 +1147,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
         sessionIdRef.current = nextSessionId;
         setSessionId(nextSessionId);
-        const loadedPath = await loadDirectory(nextSessionId, response.data.currentPath, { isCancelled });
+        const loadedPath = await loadDirectory(response.data.currentPath, { isCancelled });
 
         if (!isCancelled() && loadedPath) {
           setNavigationState({ paths: [loadedPath], index: 0 });
@@ -1012,7 +1242,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const handleHistoryJump = React.useCallback(
     async (nextIndex: number): Promise<void> => {
-      if (!sessionId || nextIndex < 0 || nextIndex >= navigationState.paths.length) {
+      if (!hasSftpSession || nextIndex < 0 || nextIndex >= navigationState.paths.length) {
         return;
       }
 
@@ -1021,7 +1251,7 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      const loadedPath = await loadDirectory(sessionId, targetPath);
+      const loadedPath = await loadDirectory(targetPath);
       if (!loadedPath) {
         return;
       }
@@ -1032,7 +1262,7 @@ const SFTP: React.FC<SFTPProps> = ({
         return { paths: nextPaths, index: nextIndex };
       });
     },
-    [loadDirectory, navigationState.paths, sessionId],
+    [hasSftpSession, loadDirectory, navigationState.paths],
   );
 
   /**
@@ -1120,11 +1350,11 @@ const SFTP: React.FC<SFTPProps> = ({
   const navigateToPath = React.useCallback(
     async (directoryPath: string): Promise<boolean> => {
       const trimmedPath = directoryPath.trim();
-      if (!sessionId || !trimmedPath) {
+      if (!hasSftpSession || !trimmedPath) {
         return false;
       }
 
-      const loadedPath = await loadDirectory(sessionId, trimmedPath);
+      const loadedPath = await loadDirectory(trimmedPath);
       if (!loadedPath) {
         return false;
       }
@@ -1141,38 +1371,37 @@ const SFTP: React.FC<SFTPProps> = ({
       });
       return true;
     },
-    [loadDirectory, sessionId],
+    [hasSftpSession, loadDirectory],
   );
 
   const handleRefresh = React.useCallback(() => {
-    if (!sessionId) {
+    if (!hasSftpSession) {
       return;
     }
 
-    void loadDirectory(sessionId, currentPath, { forceRefresh: true, preserveCurrentView: true });
-  }, [currentPath, loadDirectory, sessionId]);
+    void loadDirectory(currentPath, { forceRefresh: true, preserveCurrentView: true });
+  }, [currentPath, hasSftpSession, loadDirectory]);
 
   const handleTreeDirectoryRefresh = React.useCallback(
     (directoryPath: string): void => {
-      if (!sessionId) {
+      if (!hasSftpSession) {
         return;
       }
 
       invalidateDirectoryCache(directoryPath);
       if (directoryPath === currentPath) {
-        void loadDirectory(sessionId, directoryPath, { forceRefresh: true, preserveCurrentView: true });
+        void loadDirectory(directoryPath, { forceRefresh: true, preserveCurrentView: true });
         return;
       }
 
-      void loadTreeDirectoryChildren(sessionId, directoryPath);
+      void loadTreeDirectoryChildren(directoryPath);
     },
-    [currentPath, invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren, sessionId],
+    [currentPath, hasSftpSession, invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
   );
 
   const refreshCurrentDirectoryAfterOperation = React.useCallback(
     async (affectedDirectoryPaths: readonly string[] = []): Promise<void> => {
-      const activeSessionId = sessionIdRef.current;
-      if (!activeSessionId) {
+      if (!sessionIdRef.current) {
         return;
       }
 
@@ -1184,10 +1413,13 @@ const SFTP: React.FC<SFTPProps> = ({
       pathsToInvalidate
         .filter((directoryPath) => directoryPath !== activePath)
         .forEach((directoryPath) => {
-          void loadTreeDirectoryChildren(activeSessionId, directoryPath);
+          void loadTreeDirectoryChildren(directoryPath);
         });
 
-      await loadDirectory(activeSessionId, activePath, { forceRefresh: true, preserveCurrentView: true });
+      await loadDirectory(activePath, {
+        forceRefresh: true,
+        preserveCurrentView: true,
+      });
     },
     [invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
   );
@@ -1360,7 +1592,7 @@ const SFTP: React.FC<SFTPProps> = ({
     async (entry: ApiSftpEntry): Promise<void> => {
       const nextName = renameInput.trim();
       cancelInlineEdit();
-      if (!nextName || nextName === entry.name || !sessionId) {
+      if (!nextName || nextName === entry.name || !hasSftpSession) {
         return;
       }
 
@@ -1373,10 +1605,12 @@ const SFTP: React.FC<SFTPProps> = ({
         },
         async ({ isCurrent, update }) => {
           update({ detail: `${entry.name} -> ${nextName}`, progress: { completed: 0, total: 1 } });
-          await renameSftpEntry(sessionId, {
-            sourcePath: entry.path,
-            targetPath,
-          });
+          await runWithSftpReconnect((activeSessionId) =>
+            renameSftpEntry(activeSessionId, {
+              sourcePath: entry.path,
+              targetPath,
+            }),
+          );
           update({ progress: { completed: 1, total: 1 } });
           if (!isCurrent()) {
             return;
@@ -1394,14 +1628,22 @@ const SFTP: React.FC<SFTPProps> = ({
         },
       );
     },
-    [cancelInlineEdit, notifySuccess, refreshCurrentDirectoryAfterOperation, renameInput, runSftpOperation, sessionId],
+    [
+      cancelInlineEdit,
+      notifySuccess,
+      hasSftpSession,
+      refreshCurrentDirectoryAfterOperation,
+      renameInput,
+      runSftpOperation,
+      runWithSftpReconnect,
+    ],
   );
 
   const commitPendingCreate = React.useCallback(async (): Promise<void> => {
     const draft = pendingCreate;
     const nextName = renameInput.trim();
     cancelInlineEdit();
-    if (!draft || !nextName || !sessionId) {
+    if (!draft || !nextName || !hasSftpSession) {
       return;
     }
 
@@ -1413,11 +1655,11 @@ const SFTP: React.FC<SFTPProps> = ({
         progress: { completed: 0, total: 1 },
       },
       async ({ isCurrent, update }) => {
-        if (draft.type === 'directory') {
-          await createSftpDirectory(sessionId, { path: targetPath });
-        } else {
-          await createSftpFile(sessionId, { path: targetPath });
-        }
+        await runWithSftpReconnect((activeSessionId) =>
+          draft.type === 'directory'
+            ? createSftpDirectory(activeSessionId, { path: targetPath })
+            : createSftpFile(activeSessionId, { path: targetPath }),
+        );
 
         update({ progress: { completed: 1, total: 1 } });
         if (!isCurrent()) {
@@ -1437,12 +1679,13 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [
     cancelInlineEdit,
     currentPath,
+    hasSftpSession,
     notifySuccess,
     pendingCreate,
     refreshCurrentDirectoryAfterOperation,
     renameInput,
     runSftpOperation,
-    sessionId,
+    runWithSftpReconnect,
   ]);
 
   const beginCreateEntry = React.useCallback(
@@ -1548,16 +1791,18 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const downloadEntryToLocalPath = React.useCallback(
     async (entry: ApiSftpEntry, localPath: string): Promise<void> => {
-      if (!sessionId || entry.type !== 'file') {
+      if (!hasSftpSession || entry.type !== 'file') {
         throw new Error(t('sftp.downloadUnsupported'));
       }
 
-      await downloadSftpFile(sessionId, {
-        path: entry.path,
-        localPath,
-      });
+      await runWithSftpReconnect((activeSessionId) =>
+        downloadSftpFile(activeSessionId, {
+          path: entry.path,
+          localPath,
+        }),
+      );
     },
-    [sessionId],
+    [hasSftpSession, runWithSftpReconnect],
   );
 
   const downloadEntryToTemporaryPath = React.useCallback(
@@ -1706,19 +1951,19 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
-      if (entry.type !== 'file' || !sessionId) {
+      if (entry.type !== 'file' || !hasSftpSession) {
         notifyError(t('sftp.openUnsupported'));
         return;
       }
 
       handleOpenEntryWithDefaultApplication(entry);
     },
-    [handleOpenEntryWithDefaultApplication, navigateToPath, notifyError, selectSingleEntry, sessionId],
+    [handleOpenEntryWithDefaultApplication, hasSftpSession, navigateToPath, notifyError, selectSingleEntry],
   );
 
   const handleDownloadEntry = React.useCallback(
     async (entry: ApiSftpEntry, mode: 'downloads' | 'choose'): Promise<void> => {
-      if (!sessionId || entry.type !== 'file') {
+      if (!hasSftpSession || entry.type !== 'file') {
         notifyError(t('sftp.downloadUnsupported'));
         return;
       }
@@ -1761,7 +2006,7 @@ const SFTP: React.FC<SFTPProps> = ({
       notifySuccess,
       resolveDefaultLocalDownloadPath,
       runSftpOperation,
-      sessionId,
+      hasSftpSession,
     ],
   );
 
@@ -1789,7 +2034,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const handlePasteEntry = React.useCallback(
     async (targetDirectoryPath = currentPath): Promise<void> => {
-      if (!clipboardState || !sessionId || clipboardState.entries.length === 0) {
+      if (!clipboardState || !hasSftpSession || clipboardState.entries.length === 0) {
         return;
       }
 
@@ -1803,14 +2048,16 @@ const SFTP: React.FC<SFTPProps> = ({
           progress: { completed: 0, total: entriesToPaste.length },
         },
         async ({ isCurrent, update }) => {
-          const response = await runSftpBatchOperation(sessionId, {
-            operation: operationMode === 'copy' ? 'copy' : 'move',
-            targetDirectoryPath,
-            entries: entriesToPaste.map((entry) => ({
-              path: entry.path,
-              type: entry.type,
-            })),
-          });
+          const response = await runWithSftpReconnect((activeSessionId) =>
+            runSftpBatchOperation(activeSessionId, {
+              operation: operationMode === 'copy' ? 'copy' : 'move',
+              targetDirectoryPath,
+              entries: entriesToPaste.map((entry) => ({
+                path: entry.path,
+                type: entry.type,
+              })),
+            }),
+          );
           update({ progress: { completed: response.data.completedCount, total: response.data.totalCount } });
           if (!isCurrent()) {
             return;
@@ -1847,18 +2094,19 @@ const SFTP: React.FC<SFTPProps> = ({
     [
       clipboardState,
       currentPath,
+      hasSftpSession,
       notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       runSftpOperation,
-      sessionId,
+      runWithSftpReconnect,
     ],
   );
 
   const handleDeleteEntries = React.useCallback(
     async (targetEntries: ApiSftpEntry[], source: SftpDeleteInvocationSource = 'action'): Promise<void> => {
       const entriesToDelete = dedupeSftpEntries(targetEntries);
-      if (!sessionId || entriesToDelete.length === 0) {
+      if (!hasSftpSession || entriesToDelete.length === 0) {
         return;
       }
 
@@ -1876,13 +2124,15 @@ const SFTP: React.FC<SFTPProps> = ({
           progress: { completed: 0, total: entriesToDelete.length },
         },
         async ({ isCurrent, update }) => {
-          const response = await runSftpBatchOperation(sessionId, {
-            operation: 'delete',
-            entries: entriesToDelete.map((entry) => ({
-              path: entry.path,
-              type: entry.type,
-            })),
-          });
+          const response = await runWithSftpReconnect((activeSessionId) =>
+            runSftpBatchOperation(activeSessionId, {
+              operation: 'delete',
+              entries: entriesToDelete.map((entry) => ({
+                path: entry.path,
+                type: entry.type,
+              })),
+            }),
+          );
           update({ progress: { completed: response.data.completedCount, total: response.data.totalCount } });
           if (!isCurrent()) {
             return;
@@ -1920,12 +2170,13 @@ const SFTP: React.FC<SFTPProps> = ({
       );
     },
     [
+      hasSftpSession,
       notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       requestDeleteConfirmation,
       runSftpOperation,
-      sessionId,
+      runWithSftpReconnect,
       sftpDeleteConfirmationMode,
     ],
   );
@@ -1938,7 +2189,7 @@ const SFTP: React.FC<SFTPProps> = ({
    */
   const handleOpenProperties = React.useCallback(
     (entries: ApiSftpEntry[]): void => {
-      if (!sessionId) {
+      if (!hasSftpSession) {
         notifyError(t('sftp.noSession'));
         return;
       }
@@ -1968,7 +2219,7 @@ const SFTP: React.FC<SFTPProps> = ({
         notifyError(error instanceof Error ? error.message : t('sftp.properties.openFailed'));
       }
     },
-    [notifyError, sessionId],
+    [hasSftpSession, notifyError, sessionId],
   );
 
   const renderSftpActionMenuItems = React.useCallback(
@@ -2189,13 +2440,13 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const loadBreadcrumbMenuDirectories = React.useCallback(
     (breadcrumbPath: string): void => {
-      if (!sessionId || directoryCacheRef.current[breadcrumbPath] || treeNodes[breadcrumbPath]?.isLoading) {
+      if (!hasSftpSession || directoryCacheRef.current[breadcrumbPath] || treeNodes[breadcrumbPath]?.isLoading) {
         return;
       }
 
-      void loadTreeDirectoryChildren(sessionId, breadcrumbPath);
+      void loadTreeDirectoryChildren(breadcrumbPath);
     },
-    [loadTreeDirectoryChildren, sessionId, treeNodes],
+    [hasSftpSession, loadTreeDirectoryChildren, treeNodes],
   );
 
   const isBreadcrumbLoading = React.useCallback(
@@ -2438,11 +2689,11 @@ const SFTP: React.FC<SFTPProps> = ({
         };
       });
 
-      if (shouldExpand && !node.isLoaded && sessionId) {
-        void loadTreeDirectoryChildren(sessionId, nodePath);
+      if (shouldExpand && !node.isLoaded && hasSftpSession) {
+        void loadTreeDirectoryChildren(nodePath);
       }
     },
-    [loadTreeDirectoryChildren, sessionId, treeNodes],
+    [hasSftpSession, loadTreeDirectoryChildren, treeNodes],
   );
 
   const treeRootPaths = React.useMemo(() => {

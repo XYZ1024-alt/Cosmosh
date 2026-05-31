@@ -273,6 +273,7 @@ type SftpLiveSession = {
   serverId: string;
   client: Client;
   sftp: SFTPWrapper;
+  isClosed: boolean;
   t: I18nInstance['t'];
 };
 
@@ -680,10 +681,12 @@ export class SftpSessionService {
       serverId: server.id,
       client: openResult.client,
       sftp: openResult.sftp,
+      isClosed: false,
       t: i18n.t,
     };
 
     this.sessions.set(sessionId, session);
+    this.watchSessionTransport(session);
 
     const resolvedInitialPath = await this.resolveRealPath(session, initialPath);
 
@@ -729,7 +732,7 @@ export class SftpSessionService {
    * @returns Directory list result.
    */
   public async listDirectory(sessionId: string, requestedPath: string | undefined): Promise<ListSftpDirectoryResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -780,7 +783,7 @@ export class SftpSessionService {
    * @returns Per-path metadata results without recursive directory size calculation.
    */
   public async getEntryDetails(sessionId: string, requestedPaths: string[]): Promise<GetSftpEntryDetailsResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -821,7 +824,7 @@ export class SftpSessionService {
     requestedPath: string | undefined,
     requestedMaxBytes?: number,
   ): Promise<ReadSftpFileResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -885,7 +888,7 @@ export class SftpSessionService {
     requestedPath: string | undefined,
     localPath: string | undefined,
   ): Promise<DownloadSftpFileResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -940,7 +943,7 @@ export class SftpSessionService {
    * @returns File creation result.
    */
   public async createFile(sessionId: string, requestedPath: string | undefined): Promise<SftpOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -976,7 +979,7 @@ export class SftpSessionService {
    * @returns Directory creation result.
    */
   public async createDirectory(sessionId: string, requestedPath: string | undefined): Promise<SftpOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -1017,7 +1020,7 @@ export class SftpSessionService {
     requestedSourcePath: string | undefined,
     requestedTargetPath: string | undefined,
   ): Promise<SftpOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -1073,7 +1076,7 @@ export class SftpSessionService {
     requestedSourcePath: string | undefined,
     requestedTargetPath: string | undefined,
   ): Promise<SftpOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -1126,7 +1129,7 @@ export class SftpSessionService {
     requestedPath: string | undefined,
     recursive: boolean,
   ): Promise<SftpOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -1169,7 +1172,7 @@ export class SftpSessionService {
     sessionId: string,
     input: RunSftpBatchOperationInput,
   ): Promise<SftpBatchOperationResult> {
-    const session = this.sessions.get(sessionId);
+    const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
     }
@@ -1275,6 +1278,7 @@ export class SftpSessionService {
     }
 
     this.sessions.delete(sessionId);
+    session.isClosed = true;
     try {
       session.client.end();
     } catch (error: unknown) {
@@ -1293,6 +1297,51 @@ export class SftpSessionService {
     for (const sessionId of [...this.sessions.keys()]) {
       this.closeSession(sessionId);
     }
+  }
+
+  /**
+   * Resolves an active session and evicts stale transport handles before work starts.
+   *
+   * @param sessionId Candidate live SFTP session id.
+   * @returns Open session when it can still accept SFTP work.
+   */
+  private getOpenSession(sessionId: string): SftpLiveSession | null {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.isClosed) {
+      if (session?.isClosed) {
+        this.sessions.delete(sessionId);
+      }
+
+      return null;
+    }
+
+    return session;
+  }
+
+  /**
+   * Removes a session as soon as the underlying SSH transport is no longer usable.
+   *
+   * @param session Live session whose transport should be watched.
+   * @returns void.
+   */
+  private watchSessionTransport(session: SftpLiveSession): void {
+    const markClosed = (): void => {
+      if (session.isClosed) {
+        return;
+      }
+
+      session.isClosed = true;
+      if (this.sessions.get(session.sessionId) === session) {
+        this.sessions.delete(session.sessionId);
+      }
+    };
+
+    session.client.once('close', markClosed);
+    session.client.once('end', markClosed);
+    session.client.once('error', markClosed);
+    session.sftp.once('close', markClosed);
+    session.sftp.once('end', markClosed);
+    session.sftp.once('error', markClosed);
   }
 
   private async resolveRealPath(session: SftpLiveSession, inputPath: string): Promise<string | null> {

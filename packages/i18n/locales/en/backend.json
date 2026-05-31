@@ -66,7 +66,7 @@
       "sessionCreateFailed": "Failed to create SFTP session: {reason}",
       "sessionCreateFailedNoReason": "Failed to create SFTP session.",
       "sessionIdRequired": "sessionId is required.",
-      "sessionNotFound": "SFTP session was not found.",
+      "sessionNotFound": "SFTP session was not found or has expired.",
       "sourceTargetRequired": "sourcePath and targetPath are required."
     },
     "ssh": {
