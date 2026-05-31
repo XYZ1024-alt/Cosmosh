@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
+import { sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ConnectConfig, type SFTPWrapper, type Stats } from 'ssh2';
 
@@ -545,20 +546,6 @@ export const escapeSftpShellPath = (targetPath: string): string => {
   return `'${targetPath.replace(/'/g, "'\\''")}'`;
 };
 
-const sortSftpEntries = (entries: SftpEntry[]): SftpEntry[] => {
-  return [...entries].sort((left, right) => {
-    if (left.type === 'directory' && right.type !== 'directory') {
-      return -1;
-    }
-
-    if (left.type !== 'directory' && right.type === 'directory') {
-      return 1;
-    }
-
-    return left.name.localeCompare(right.name, undefined, { sensitivity: 'base', numeric: true });
-  });
-};
-
 /**
  * Manages SFTP file-system sessions created for renderer tabs.
  */
@@ -753,7 +740,7 @@ export class SftpSessionService {
         sessionId,
         path: resolvedPath,
         parentPath: this.resolveParentPath(resolvedPath),
-        entries: sortSftpEntries(
+        entries: sortSftpEntriesByBrowserOrder(
           entries
             .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
             .map((entry) => {

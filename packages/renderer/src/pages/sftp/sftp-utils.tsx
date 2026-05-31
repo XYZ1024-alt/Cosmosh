@@ -1,4 +1,4 @@
-import type { ApiSftpEntry, SettingsValues } from '@cosmosh/api-contract';
+import { type ApiSftpEntry, type SettingsValues, sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import { File, Folder } from 'lucide-react';
 import React from 'react';
@@ -347,15 +347,7 @@ export const formatSftpTabTitle = (directoryPath: string, serverName: string): s
  * @returns Entries sorted with directories first, then by name.
  */
 export const sortSftpEntries = (entries: ApiSftpEntry[]): ApiSftpEntry[] => {
-  return [...entries].sort((left, right) => {
-    const leftDirectoryRank = left.type === 'directory' ? 0 : 1;
-    const rightDirectoryRank = right.type === 'directory' ? 0 : 1;
-    if (leftDirectoryRank !== rightDirectoryRank) {
-      return leftDirectoryRank - rightDirectoryRank;
-    }
-
-    return left.name.localeCompare(right.name, undefined, { sensitivity: 'base' });
-  });
+  return sortSftpEntriesByBrowserOrder(entries);
 };
 
 /**

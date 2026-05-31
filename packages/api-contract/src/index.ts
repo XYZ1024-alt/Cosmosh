@@ -8,6 +8,13 @@ export {
 } from './settings';
 export type { SettingValidationError } from './settings';
 export {
+  compareSftpEntriesByBrowserOrder,
+  compareSftpEntryNames,
+  compareSftpNames,
+  sortSftpEntriesByBrowserOrder,
+} from './sftp';
+export type { SftpNamedItem, SftpSortableEntry } from './sftp';
+export {
   getVisibleCategories,
   paginateSettingsByCategory,
   resolveCategoryId,

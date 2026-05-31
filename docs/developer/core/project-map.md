@@ -61,6 +61,7 @@ Shared protocol constants, request/response types, OpenAPI source, generated con
 
 - `src/settings-registry.ts`: **single source of truth** for all settings definitions — types, defaults, constraints, enum sets, UI control metadata, categories, and helper functions. Adding/removing a setting only requires editing this file.
 - `src/settings.ts`: generic, registry-driven validation and normalization helpers (`normalizeSettingsValuesStrict`, `normalizeSettingsValuesWithDefaults`) shared by backend and renderer.
+- `src/sftp.ts`: shared SFTP entry/name ordering helpers consumed by backend session listings and renderer browser/tree views.
 
 ### `packages/i18n`
 

@@ -1,4 +1,4 @@
-import type { ApiSftpEntry } from '@cosmosh/api-contract';
+import { type ApiSftpEntry, compareSftpEntryNames, compareSftpNames } from '@cosmosh/api-contract';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -2433,7 +2433,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
       return [...directoryEntries, ...treeChildren]
         .filter((node, index, nodes) => nodes.findIndex((candidate) => candidate.path === node.path) === index)
-        .sort((left, right) => left.name.localeCompare(right.name, undefined, { sensitivity: 'base' }));
+        .sort(compareSftpEntryNames);
     },
     [sftpShowHiddenEntries, treeNodes],
   );
@@ -2700,7 +2700,7 @@ const SFTP: React.FC<SFTPProps> = ({
     const rootPaths = Object.values(treeNodes)
       .filter((node) => !node.parentPath)
       .map((node) => node.path)
-      .sort((left, right) => left.localeCompare(right, undefined, { sensitivity: 'base' }));
+      .sort(compareSftpNames);
 
     if (rootPaths.length > 0) {
       return rootPaths;
