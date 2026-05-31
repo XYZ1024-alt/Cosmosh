@@ -1,8 +1,14 @@
 import type { components } from '@cosmosh/api-contract';
 
-import { createSshTag } from './backend';
+import { createSshServer, createSshTag, updateSshServer } from './backend';
+import { isEntityColorKey } from './entity-visuals';
 import type { KeychainEditorInitialFormState } from './ssh-keychain-editor-shared';
-import type { ServerEditorFormState } from './ssh-server-editor-shared';
+import {
+  parsePort,
+  type ServerEditorFormState,
+  type SshAuthType,
+  type SshServerListItem,
+} from './ssh-server-editor-shared';
 
 type SshTag = components['schemas']['SshTag'];
 
@@ -62,6 +68,39 @@ type ImportPrivateKeyFromFileParams = {
 };
 
 /**
+ * Credential fields that were intentionally submitted with a server save request.
+ */
+export type ServerCredentialSubmission = {
+  authType: SshAuthType;
+  password?: string;
+  privateKey?: string;
+  privateKeyPassphrase?: string;
+};
+
+type SaveServerFromEditorParams = {
+  serverId: string | null;
+  activeServer: SshServerListItem | null;
+  formState: ServerEditorFormState;
+  isUsingInlineCredentials: boolean;
+  requiresPassword: boolean;
+  requiresPrivateKey: boolean;
+  onWarning: (message: string) => void;
+  validationRequiredFieldsMessage: string;
+  validationInvalidPortMessage: string;
+  validationServerNotFoundMessage: string;
+  validationPasswordRequiredMessage: string;
+  validationPrivateKeyRequiredMessage: string;
+};
+
+/**
+ * Persisted server result plus the credential fields needed to refresh local editor caches.
+ */
+export type SaveServerFromEditorResult = {
+  savedServer: SshServerListItem;
+  submittedCredentialPayload: ServerCredentialSubmission;
+};
+
+/**
  * Imports a private key from file picker and applies it to editor state.
  *
  * @param params Import flow parameters.
@@ -95,6 +134,99 @@ export const importServerEditorPrivateKeyFromFile = async ({
   } catch (error: unknown) {
     onError(error instanceof Error ? error.message : importFailedMessage);
   }
+};
+
+/**
+ * Persists SSH server editor form state with validation shared by the full editor and dialog editor.
+ *
+ * @param params Save parameters.
+ * @param params.serverId Server id in edit mode, null in create mode.
+ * @param params.activeServer Active server metadata used for credential placeholder validation.
+ * @param params.formState Current server form state.
+ * @param params.isUsingInlineCredentials Whether credentials should be submitted with the server payload.
+ * @param params.requiresPassword Whether password is required by current credential mode.
+ * @param params.requiresPrivateKey Whether private key is required by current credential mode.
+ * @param params.onWarning Warning notifier callback.
+ * @param params.validationRequiredFieldsMessage Localized required-fields warning.
+ * @param params.validationInvalidPortMessage Localized invalid-port warning.
+ * @param params.validationServerNotFoundMessage Localized missing-server warning.
+ * @param params.validationPasswordRequiredMessage Localized password-required warning.
+ * @param params.validationPrivateKeyRequiredMessage Localized private-key-required warning.
+ * @returns Save result containing persisted server and submitted credential payload, or null when validation blocks save.
+ */
+export const saveServerFromEditor = async ({
+  serverId,
+  activeServer,
+  formState,
+  isUsingInlineCredentials,
+  requiresPassword,
+  requiresPrivateKey,
+  onWarning,
+  validationRequiredFieldsMessage,
+  validationInvalidPortMessage,
+  validationServerNotFoundMessage,
+  validationPasswordRequiredMessage,
+  validationPrivateKeyRequiredMessage,
+}: SaveServerFromEditorParams): Promise<SaveServerFromEditorResult | null> => {
+  const port = parsePort(formState.port);
+  if (!formState.name.trim() || !formState.host.trim() || !formState.username.trim()) {
+    onWarning(validationRequiredFieldsMessage);
+    return null;
+  }
+
+  if (port === null) {
+    onWarning(validationInvalidPortMessage);
+    return null;
+  }
+
+  if (serverId && !activeServer) {
+    onWarning(validationServerNotFoundMessage);
+    return null;
+  }
+
+  if (requiresPassword && !formState.password.trim() && !activeServer?.hasPassword) {
+    onWarning(validationPasswordRequiredMessage);
+    return null;
+  }
+
+  if (requiresPrivateKey && !formState.privateKey.trim() && !activeServer?.hasPrivateKey) {
+    onWarning(validationPrivateKeyRequiredMessage);
+    return null;
+  }
+
+  const selectedKeychainId = isUsingInlineCredentials ? undefined : formState.keychainId || undefined;
+  const submittedCredentialPayload: ServerCredentialSubmission = {
+    authType: formState.authType,
+    password: formState.password.trim() || undefined,
+    privateKey: formState.privateKey.trim() || undefined,
+    privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
+  };
+  const payload = {
+    name: formState.name.trim(),
+    host: formState.host.trim(),
+    port,
+    username: formState.username.trim(),
+    keychainId: selectedKeychainId,
+    authType: isUsingInlineCredentials ? submittedCredentialPayload.authType : undefined,
+    iconKey: formState.iconKey,
+    colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
+    password: isUsingInlineCredentials ? submittedCredentialPayload.password : undefined,
+    privateKey: isUsingInlineCredentials ? submittedCredentialPayload.privateKey : undefined,
+    privateKeyPassphrase: isUsingInlineCredentials ? submittedCredentialPayload.privateKeyPassphrase : undefined,
+    folderId: formState.folderId || undefined,
+    tagIds: formState.tagIds,
+    note: formState.note.trim() || undefined,
+    strictHostKey: formState.strictHostKey,
+  };
+
+  const savedServer = serverId
+    ? (await updateSshServer(serverId, payload)).data.item
+    : (await createSshServer(payload)).data.item;
+
+  return {
+    savedServer,
+    submittedCredentialPayload,
+  };
 };
 
 type InlineCredentialKeychainDraftSource = Pick<

@@ -2,21 +2,20 @@ import type { components } from '@cosmosh/api-contract';
 import { FileUp, RefreshCcw } from 'lucide-react';
 import React from 'react';
 
-import { createSshServer, listSshKeychains, listSshTags, updateSshServer } from '../../lib/backend';
-import { isEntityColorKey } from '../../lib/entity-visuals';
+import { listSshKeychains, listSshTags } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
 import {
   buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
   importServerEditorPrivateKeyFromFile,
+  saveServerFromEditor,
 } from '../../lib/ssh-server-editor-actions';
 import {
   applySubmittedCredentialsToCache,
   createInitialServerFormState,
   deriveServerEditorCredentialMode,
   mapServerToFormState,
-  parsePort,
   type ServerCredentialCache,
   type ServerEditorFormState,
   type SshServerListItem,
@@ -344,107 +343,37 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
 
-      const port = parsePort(formState.port);
-      if (!formState.name.trim() || !formState.host.trim() || !formState.username.trim()) {
-        notifyWarning(t('ssh.validationRequiredFields'));
-        return;
-      }
-
-      if (port === null) {
-        notifyWarning(t('ssh.validationInvalidPort'));
-        return;
-      }
-
       setIsSubmitting(true);
       try {
-        let successMessage = t('ssh.serverCreatedSuccessfully');
-        const selectedKeychainId = isUsingInlineCredentials ? undefined : formState.keychainId || undefined;
-        const submittedCredentialPayload = {
-          authType: formState.authType,
-          password: formState.password.trim() || undefined,
-          privateKey: formState.privateKey.trim() || undefined,
-          privateKeyPassphrase: formState.privateKeyPassphrase.trim() || undefined,
-        };
-
-        if (serverId) {
-          const targetServer = servers.find((server) => server.id === serverId);
-          if (!targetServer) {
-            notifyWarning(t('ssh.validationServerNotFound'));
-            return;
-          }
-
-          if (requiresPassword && !formState.password.trim() && !targetServer.hasPassword) {
-            notifyWarning(t('ssh.validationPasswordRequired'));
-            return;
-          }
-
-          if (requiresPrivateKey && !formState.privateKey.trim() && !targetServer.hasPrivateKey) {
-            notifyWarning(t('ssh.validationPrivateKeyRequired'));
-            return;
-          }
-
-          await updateSshServer(serverId, {
-            name: formState.name.trim(),
-            host: formState.host.trim(),
-            port,
-            username: formState.username.trim(),
-            keychainId: selectedKeychainId,
-            authType: isUsingInlineCredentials ? submittedCredentialPayload.authType : undefined,
-            iconKey: formState.iconKey,
-            colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
-            password: isUsingInlineCredentials ? submittedCredentialPayload.password : undefined,
-            privateKey: isUsingInlineCredentials ? submittedCredentialPayload.privateKey : undefined,
-            privateKeyPassphrase: isUsingInlineCredentials
-              ? submittedCredentialPayload.privateKeyPassphrase
-              : undefined,
-            folderId: formState.folderId || undefined,
-            tagIds: formState.tagIds,
-            note: formState.note.trim() || undefined,
-            strictHostKey: formState.strictHostKey,
-          });
-
-          if (isUsingInlineCredentials) {
-            credentialsCacheRef.current[serverId] = applySubmittedCredentialsToCache(
-              credentialsCacheRef.current[serverId],
-              submittedCredentialPayload,
-            );
-          }
-
-          await refreshServerCredentialsAfterSave(serverId);
-          successMessage = t('ssh.serverUpdatedSuccessfully');
-        } else {
-          const created = await createSshServer({
-            name: formState.name.trim(),
-            host: formState.host.trim(),
-            port,
-            username: formState.username.trim(),
-            keychainId: selectedKeychainId,
-            authType: isUsingInlineCredentials ? submittedCredentialPayload.authType : undefined,
-            iconKey: formState.iconKey,
-            colorKey: isEntityColorKey(formState.colorKey) ? formState.colorKey : undefined,
-            password: isUsingInlineCredentials ? submittedCredentialPayload.password : undefined,
-            privateKey: isUsingInlineCredentials ? submittedCredentialPayload.privateKey : undefined,
-            privateKeyPassphrase: isUsingInlineCredentials
-              ? submittedCredentialPayload.privateKeyPassphrase
-              : undefined,
-            folderId: formState.folderId || undefined,
-            tagIds: formState.tagIds,
-            note: formState.note.trim() || undefined,
-            strictHostKey: formState.strictHostKey,
-          });
-
-          const createdServerId = created.data.item.id;
-          if (isUsingInlineCredentials) {
-            credentialsCacheRef.current[createdServerId] = applySubmittedCredentialsToCache(
-              undefined,
-              submittedCredentialPayload,
-            );
-          }
-          await refreshServerCredentialsAfterSave(createdServerId);
+        const result = await saveServerFromEditor({
+          serverId,
+          activeServer,
+          formState,
+          isUsingInlineCredentials,
+          requiresPassword,
+          requiresPrivateKey,
+          onWarning: notifyWarning,
+          validationRequiredFieldsMessage: t('ssh.validationRequiredFields'),
+          validationInvalidPortMessage: t('ssh.validationInvalidPort'),
+          validationServerNotFoundMessage: t('ssh.validationServerNotFound'),
+          validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
+          validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
+        });
+        if (!result) {
+          return;
         }
 
+        const savedServerId = serverId ?? result.savedServer.id;
+        if (isUsingInlineCredentials) {
+          credentialsCacheRef.current[savedServerId] = applySubmittedCredentialsToCache(
+            credentialsCacheRef.current[savedServerId],
+            result.submittedCredentialPayload,
+          );
+        }
+
+        await refreshServerCredentialsAfterSave(savedServerId);
         await onSaved();
-        notifySuccess(successMessage);
+        notifySuccess(serverId ? t('ssh.serverUpdatedSuccessfully') : t('ssh.serverCreatedSuccessfully'));
         onOpenChange(false);
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('ssh.saveServerFailed'));
@@ -453,6 +382,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
       }
     },
     [
+      activeServer,
       formState,
       isUsingInlineCredentials,
       notifyError,
@@ -464,7 +394,6 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
       requiresPassword,
       requiresPrivateKey,
       serverId,
-      servers,
     ],
   );
 
