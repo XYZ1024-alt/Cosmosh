@@ -103,7 +103,7 @@ import {
   updatePortForwardRule,
   updateSshServer,
 } from '../lib/backend';
-import { createEntityIconNode, EntityColorKey, isEntityColorKey } from '../lib/entity-visuals';
+import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } from '../lib/entity-visuals';
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
@@ -429,17 +429,6 @@ const resolveGreetingPeriod = (now: Date): 'morning' | 'afternoon' | 'evening' =
   }
 
   return 'evening';
-};
-
-const hashString = (value: string): number => {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-  }
-
-  return hash >>> 0;
 };
 
 type HomeModeTabsProps = {

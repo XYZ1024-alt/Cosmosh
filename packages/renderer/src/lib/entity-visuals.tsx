@@ -52,7 +52,13 @@ const entityColorClassNameMap: Record<EntityColorKey, string> = {
   lime: 'bg-home-icon-lime text-home-icon-lime-ink',
 };
 
-const hashString = (value: string): number => {
+/**
+ * Hashes a string into a stable unsigned 32-bit seed.
+ *
+ * @param value Input string.
+ * @returns Stable FNV-1a-style unsigned hash.
+ */
+export const hashString = (value: string): number => {
   let hash = 2166136261;
 
   for (let index = 0; index < value.length; index += 1) {
@@ -63,7 +69,14 @@ const hashString = (value: string): number => {
   return hash >>> 0;
 };
 
-function pickBySeed<T>(seed: string, pool: readonly T[]): T {
+/**
+ * Picks a deterministic item from a non-empty pool using a stable string seed.
+ *
+ * @param seed String seed used to pick the item.
+ * @param pool Non-empty candidate pool.
+ * @returns Deterministically selected pool item.
+ */
+export function pickBySeed<T>(seed: string, pool: readonly T[]): T {
   const value = hashString(seed);
   return pool[value % pool.length] as T;
 }

@@ -3,6 +3,7 @@ import {
   entityColorKeys,
   getEntityColorClassName,
   isEntityColorKey,
+  pickBySeed,
   pickRandomEntityVisual,
 } from './entity-visuals';
 
@@ -31,22 +32,6 @@ type HomeVisualStore = {
 const folderIconPool: HomeIconKey[] = ['Folder', 'Folders', 'Package2', 'Network', 'Cloud', 'Database'];
 const colorPool: HomeColorKey[] = [...entityColorKeys];
 const HOME_VISUALS_STORAGE_KEY = 'cosmosh.home.visual-overrides.v1';
-
-const hashString = (value: string): number => {
-  let hash = 2166136261;
-
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash += (hash << 1) + (hash << 4) + (hash << 7) + (hash << 8) + (hash << 24);
-  }
-
-  return hash >>> 0;
-};
-
-const pickBySeed = <T>(seed: string, pool: T[]): T => {
-  const value = hashString(seed);
-  return pool[value % pool.length];
-};
 
 const emptyStore = (): HomeVisualStore => {
   return {
