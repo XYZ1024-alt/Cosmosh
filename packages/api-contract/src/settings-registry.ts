@@ -17,6 +17,9 @@
 
 export interface SettingsValues {
   language: 'en' | 'zh-CN';
+  dateTimeTimeZone: string;
+  dateFormat: 'yyyy-MM-dd' | 'yyyy/MM/dd' | 'dd/MM/yy' | 'MM/dd/yyyy' | 'MMM d, yyyy';
+  timeFormat: 'HH:mm:ss' | 'HH:mm' | 'h:mm:ss a' | 'h:mm a';
   theme: 'dark' | 'light' | 'auto';
   showFullServerAddress: boolean;
   sshTabApplyServerVisualStyle: boolean;
@@ -218,6 +221,57 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.general.language.set',
     searchTerms: ['language', 'locale', 'ui language', 'english', 'chinese'],
     options: [{ value: 'en' }, { value: 'zh-CN' }],
+  },
+  {
+    key: 'dateTimeTimeZone',
+    valueType: 'string',
+    defaultValue: 'system',
+    nameI18nKey: 'settings.items.dateTimeTimeZone.title',
+    descriptionI18nKey: 'settings.items.dateTimeTimeZone.description',
+    optionI18nNamespace: 'dateTimeTimeZone',
+    category: SETTINGS_CATEGORIES.general,
+    section: SETTINGS_CATEGORIES.general.sections.localization,
+    control: 'select',
+    path: 'general.dateTime.timeZone',
+    commandActionId: 'settings.general.dateTime.timeZone.set',
+    searchTerms: ['time', 'date', 'timezone', 'time zone', 'iana', 'utc', 'local time'],
+    maxLength: 100,
+  },
+  {
+    key: 'dateFormat',
+    valueType: 'string',
+    defaultValue: 'yyyy-MM-dd',
+    nameI18nKey: 'settings.items.dateFormat.title',
+    descriptionI18nKey: 'settings.items.dateFormat.description',
+    optionI18nNamespace: 'dateFormat',
+    category: SETTINGS_CATEGORIES.general,
+    section: SETTINGS_CATEGORIES.general.sections.localization,
+    control: 'select',
+    path: 'general.dateTime.dateFormat',
+    commandActionId: 'settings.general.dateTime.dateFormat.set',
+    searchTerms: ['date', 'format', 'yyyy', 'month', 'day'],
+    options: [
+      { value: 'yyyy-MM-dd' },
+      { value: 'yyyy/MM/dd' },
+      { value: 'dd/MM/yy' },
+      { value: 'MM/dd/yyyy' },
+      { value: 'MMM d, yyyy' },
+    ],
+  },
+  {
+    key: 'timeFormat',
+    valueType: 'string',
+    defaultValue: 'HH:mm:ss',
+    nameI18nKey: 'settings.items.timeFormat.title',
+    descriptionI18nKey: 'settings.items.timeFormat.description',
+    optionI18nNamespace: 'timeFormat',
+    category: SETTINGS_CATEGORIES.general,
+    section: SETTINGS_CATEGORIES.general.sections.localization,
+    control: 'select',
+    path: 'general.dateTime.timeFormat',
+    commandActionId: 'settings.general.dateTime.timeFormat.set',
+    searchTerms: ['time', 'format', 'clock', '12 hour', '24 hour', 'seconds'],
+    options: [{ value: 'HH:mm:ss' }, { value: 'HH:mm' }, { value: 'h:mm:ss a' }, { value: 'h:mm a' }],
   },
   {
     key: 'accountSyncEnabled',

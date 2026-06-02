@@ -186,19 +186,17 @@ export const formatRawDataJson = (value: unknown): string => {
   }
 };
 
+export type DateTimeDisplayFormatter = (value: string | number | Date, fallback?: string) => string;
+
 /**
- * Formats an SFTP timestamp for the local workstation locale.
+ * Formats an SFTP timestamp through the shared application date-time formatter.
  *
  * @param value ISO timestamp returned by the backend.
+ * @param formatDateTime Formatter derived from current settings.
  * @returns Localized timestamp or a placeholder when parsing fails.
  */
-export const formatModifiedAt = (value: string): string => {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return '-';
-  }
-
-  return date.toLocaleString();
+export const formatModifiedAt = (value: string, formatDateTime: DateTimeDisplayFormatter): string => {
+  return formatDateTime(value, '-');
 };
 
 /**

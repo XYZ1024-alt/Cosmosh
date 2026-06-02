@@ -2,6 +2,7 @@ import type { ApiSftpEntry } from '@cosmosh/api-contract';
 import { File, Info } from 'lucide-react';
 import React from 'react';
 
+import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
 import type { FilePreviewState } from './sftp-types';
@@ -23,6 +24,8 @@ type SftpDetailPanelProps = {
  * @returns SFTP details panel.
  */
 export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({ filePreview, selectedCount, selectedEntry }) => {
+  const { formatDateTime } = useDateTimeFormatter();
+
   return (
     <aside className={SFTP_CARD_CLASS_NAME}>
       <div className="flex h-full min-h-0 flex-col">
@@ -77,7 +80,7 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({ filePreview, s
                 </div>
                 <div>
                   <dt className="text-xs text-home-text-subtle">{t('sftp.detail.modified')}</dt>
-                  <dd className="text-home-text mt-1">{formatModifiedAt(selectedEntry.modifiedAt)}</dd>
+                  <dd className="text-home-text mt-1">{formatModifiedAt(selectedEntry.modifiedAt, formatDateTime)}</dd>
                 </div>
                 <div>
                   <dt className="text-xs text-home-text-subtle">{t('sftp.detail.permissions')}</dt>

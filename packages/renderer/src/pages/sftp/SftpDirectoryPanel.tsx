@@ -7,6 +7,7 @@ import { Button } from '../../components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '../../components/ui/context-menu';
 import { Input } from '../../components/ui/input';
 import { Menubar } from '../../components/ui/menubar';
+import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
 import {
   DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME,
@@ -103,6 +104,8 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   status,
   visibleEntries,
 }) => {
+  const { formatDateTime } = useDateTimeFormatter();
+
   return (
     <main className={SFTP_CARD_CLASS_NAME}>
       {status === 'error' ? (
@@ -347,7 +350,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                   {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
                                 </span>
                                 <span className="truncate text-xs text-home-text-subtle">
-                                  {formatModifiedAt(entry.modifiedAt)}
+                                  {formatModifiedAt(entry.modifiedAt, formatDateTime)}
                                 </span>
                                 <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
                                   {entry.permissions}

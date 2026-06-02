@@ -4,9 +4,16 @@ import React from 'react';
 
 import { Button } from '../../components/ui/button';
 import { getBackendRuntimeTarget, getSftpEntryDetails } from '../../lib/backend';
+import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
-import { formatFileSize, formatModifiedAt, formatRawDataJson, resolveEntryIcon } from './sftp-utils';
+import {
+  type DateTimeDisplayFormatter,
+  formatFileSize,
+  formatModifiedAt,
+  formatRawDataJson,
+  resolveEntryIcon,
+} from './sftp-utils';
 
 type SftpPropertiesParams = {
   entryName: string;
@@ -132,13 +139,13 @@ const formatCommonNumericProperty = (values: number[]): string => {
  * @param values Timestamp values collected from selected entries.
  * @returns Localized common timestamp, mixed marker, or placeholder.
  */
-const formatCommonDateProperty = (values: string[]): string => {
+const formatCommonDateProperty = (values: string[], formatDateTime: DateTimeDisplayFormatter): string => {
   const commonValue = resolveCommonTextValue(values);
   if (commonValue === null) {
     return t('sftp.properties.mixed');
   }
 
-  return commonValue ? formatModifiedAt(commonValue) : '-';
+  return commonValue ? formatModifiedAt(commonValue, formatDateTime) : '-';
 };
 
 /**
@@ -223,6 +230,7 @@ const PropertiesSection: React.FC<{ footer?: React.ReactNode; rows: PropertyRow[
  * @returns SFTP entry properties page.
  */
 const SftpEntryPropertiesPage: React.FC = () => {
+  const { formatDateTime } = useDateTimeFormatter();
   const params = React.useMemo(readSftpPropertiesParams, []);
   const [detailsItems, setDetailsItems] = React.useState<ApiSftpEntryDetailsItem[]>([]);
   const [status, setStatus] = React.useState<'loading' | 'ready' | 'error' | 'unsupported'>('loading');
@@ -374,11 +382,17 @@ const SftpEntryPropertiesPage: React.FC = () => {
         },
         {
           label: t('sftp.properties.field.modified'),
-          value: formatCommonDateProperty(entries.map((currentEntry) => currentEntry.modifiedAt)),
+          value: formatCommonDateProperty(
+            entries.map((currentEntry) => currentEntry.modifiedAt),
+            formatDateTime,
+          ),
         },
         {
           label: t('sftp.properties.field.accessed'),
-          value: formatCommonDateProperty(entries.map((currentEntry) => currentEntry.accessedAt)),
+          value: formatCommonDateProperty(
+            entries.map((currentEntry) => currentEntry.accessedAt),
+            formatDateTime,
+          ),
         },
       ];
     }
@@ -410,14 +424,14 @@ const SftpEntryPropertiesPage: React.FC = () => {
       },
       {
         label: t('sftp.properties.field.modified'),
-        value: formatModifiedAt(entry.modifiedAt),
+        value: formatModifiedAt(entry.modifiedAt, formatDateTime),
       },
       {
         label: t('sftp.properties.field.accessed'),
-        value: formatModifiedAt(entry.accessedAt),
+        value: formatModifiedAt(entry.accessedAt, formatDateTime),
       },
     ];
-  }, [entries, entry, failedCount, isMultiEntry, params.entryPaths.length, totalSize, typeCounts]);
+  }, [entries, entry, failedCount, formatDateTime, isMultiEntry, params.entryPaths.length, totalSize, typeCounts]);
 
   const permissionRows = React.useMemo<PropertyRow[]>(() => {
     if (entries.length === 0 || !entry) {

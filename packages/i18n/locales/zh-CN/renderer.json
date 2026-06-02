@@ -353,6 +353,14 @@
         "description": "自动保存对设置的更改。",
         "title": "自动保存"
       },
+      "dateFormat": {
+        "description": "控制 SFTP、审计日志和诊断信息中的日期显示方式。",
+        "title": "日期格式"
+      },
+      "dateTimeTimeZone": {
+        "description": "使用操作系统时区，或选择 UTC、Asia/Shanghai 等受支持的 IANA 时区。",
+        "title": "时区"
+      },
       "defaultLocalTerminalProfile": {
         "description": "通过上下文打开终端时使用的默认本地终端。",
         "title": "默认本地终端"
@@ -579,6 +587,10 @@
         "description": "控制在界面中使用的颜色主题。",
         "title": "主题"
       },
+      "timeFormat": {
+        "description": "控制显示时间时是否包含秒，以及使用 12 小时制或 24 小时制。",
+        "title": "时间格式"
+      },
       "userMenuDebugEntryEnabled": {
         "description": "在用户菜单中显示“调试”入口。该选项面向开发和高级诊断场景。",
         "title": "在用户菜单显示调试入口"
@@ -595,6 +607,16 @@
         "bar": "竖条",
         "block": "方块",
         "underline": "下划线"
+      },
+      "dateFormat": {
+        "dd/MM/yy": "21/12/25",
+        "MM/dd/yyyy": "12/21/2025",
+        "MMM d, yyyy": "12月 21, 2025",
+        "yyyy-MM-dd": "2025-12-21",
+        "yyyy/MM/dd": "2025/12/21"
+      },
+      "dateTimeTimeZone": {
+        "system": "系统时区"
       },
       "defaultLocalTerminalProfile": {
         "auto": "自动（选取首个可用的本地终端）",
@@ -653,6 +675,12 @@
         "auto": "跟随系统",
         "dark": "深色",
         "light": "浅色"
+      },
+      "timeFormat": {
+        "h:mm a": "11:45 PM",
+        "h:mm:ss a": "11:45:30 PM",
+        "HH:mm": "23:45",
+        "HH:mm:ss": "23:45:30"
       }
     },
     "query": "关键词",
@@ -690,6 +718,7 @@
       "missingKey": "“{name}”为必填项。",
       "notObject": "设置值必须是 JSON 对象。",
       "stringRequired": "“{name}”必须是字符串。",
+      "timeZoneUnsupported": "“{name}”必须是 system 或受支持的 IANA 时区。",
       "unknownKeys": "设置包含未知键：“{keys}”。",
       "unsupportedKey": "不支持的设置键：“{key}”。",
       "unsupportedType": "不支持的设置值类型，键：“{key}”。"

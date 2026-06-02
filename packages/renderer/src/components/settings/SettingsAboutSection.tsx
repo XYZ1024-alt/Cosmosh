@@ -1,6 +1,7 @@
 import { Info } from 'lucide-react';
 import React from 'react';
 
+import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
 import {
   Dialog,
@@ -32,17 +33,14 @@ type SettingsAboutSectionProps = {
 
 const APP_LOGO_URL = new URL('../../assets/logo.svg', import.meta.url).href;
 
-const formatBuildTime = (buildTime: string): string => {
+type DateTimeDisplayFormatter = (value: string | number | Date, fallback?: string) => string;
+
+const formatBuildTime = (buildTime: string, formatDateTime: DateTimeDisplayFormatter): string => {
   if (!buildTime) {
     return t('settings.about.buildTimeUnknown');
   }
 
-  const parsed = new Date(buildTime);
-  if (Number.isNaN(parsed.getTime())) {
-    return t('settings.about.buildTimeUnknown');
-  }
-
-  return parsed.toLocaleString();
+  return formatDateTime(buildTime, t('settings.about.buildTimeUnknown'));
 };
 
 const formatTechnicalValue = (value: string): string => {
@@ -54,6 +52,7 @@ const formatTechnicalValue = (value: string): string => {
 };
 
 const SettingsAboutSection: React.FC<SettingsAboutSectionProps> = ({ appVersionInfo, onOpenFailed }) => {
+  const { formatDateTime } = useDateTimeFormatter();
   const [iconLoadFailed, setIconLoadFailed] = React.useState<boolean>(false);
   const [isTechnicalInfoDialogOpen, setIsTechnicalInfoDialogOpen] = React.useState<boolean>(false);
 
@@ -64,14 +63,14 @@ const SettingsAboutSection: React.FC<SettingsAboutSectionProps> = ({ appVersionI
         value: `${appVersionInfo.version || '0.0.0'} (build ${appVersionInfo.buildVersion || '0'})`,
       },
       { key: 'technicalCommit', value: appVersionInfo.commit },
-      { key: 'technicalDate', value: formatBuildTime(appVersionInfo.buildTime) },
+      { key: 'technicalDate', value: formatBuildTime(appVersionInfo.buildTime, formatDateTime) },
       { key: 'technicalElectron', value: appVersionInfo.electron },
       { key: 'technicalChromium', value: appVersionInfo.chromium },
       { key: 'technicalNode', value: appVersionInfo.node },
       { key: 'technicalV8', value: appVersionInfo.v8 },
       { key: 'technicalOs', value: appVersionInfo.os },
     ],
-    [appVersionInfo],
+    [appVersionInfo, formatDateTime],
   );
 
   const technicalInfoText = React.useMemo(() => {
@@ -159,7 +158,9 @@ const SettingsAboutSection: React.FC<SettingsAboutSectionProps> = ({ appVersionI
           </div>
           <div className="flex items-center justify-between py-1 text-sm">
             <span className="text-home-text-subtle">{t('settings.about.buildTimeLabel')}</span>
-            <span className="text-home-text select-text">{formatBuildTime(appVersionInfo.buildTime)}</span>
+            <span className="text-home-text select-text">
+              {formatBuildTime(appVersionInfo.buildTime, formatDateTime)}
+            </span>
           </div>
           <div className="flex items-center justify-between py-1 text-sm">
             <span className="text-home-text-subtle">{t('settings.about.technicalInfo')}</span>

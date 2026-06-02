@@ -16,6 +16,7 @@ import { menuStyles } from '../components/ui/menu-styles';
 import { Menubar, MenubarSeparator } from '../components/ui/menubar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { getAuditEventById, listAuditEvents } from '../lib/backend';
+import { useDateTimeFormatter } from '../lib/date-time-format';
 import { t } from '../lib/i18n';
 import { useToast } from '../lib/toast-context';
 
@@ -56,21 +57,6 @@ const resolvePresetStartAt = (preset: TimeRangePreset): Date => {
 };
 
 /**
- * Formats ISO timestamp into compact local display.
- *
- * @param isoValue ISO date-time string.
- * @returns Localized timestamp text.
- */
-const formatOccurredAt = (isoValue: string): string => {
-  const parsedDate = new Date(isoValue);
-  if (Number.isNaN(parsedDate.getTime())) {
-    return isoValue;
-  }
-
-  return parsedDate.toLocaleString();
-};
-
-/**
  * Formats metadata object to readable JSON block.
  *
  * @param metadata Metadata object.
@@ -86,6 +72,7 @@ const formatMetadataJson = (metadata: Record<string, unknown>): string => {
 
 const AuditLogs: React.FC = () => {
   const { warning: notifyWarning } = useToast();
+  const { formatDateTime } = useDateTimeFormatter();
 
   const [searchKeyword, setSearchKeyword] = React.useState<string>('');
   const [categoryFilter, setCategoryFilter] = React.useState<string>('');
@@ -390,7 +377,7 @@ const AuditLogs: React.FC = () => {
                           onClick={() => setSelectedEventId(item.eventId)}
                         >
                           <span className="truncate text-[12px] text-home-text-subtle">
-                            {formatOccurredAt(item.occurredAt)}
+                            {formatDateTime(item.occurredAt, item.occurredAt)}
                           </span>
                           <span className="truncate font-medium">{eventName}</span>
                           <span className="truncate text-home-text-subtle">{targetName}</span>
@@ -435,7 +422,7 @@ const AuditLogs: React.FC = () => {
                         <div className={AUDIT_DETAIL_ROW_CLASS}>
                           <span className="text-xs text-home-text-subtle">occurredAt</span>
                           <span className="text-home-text select-text break-all">
-                            {formatOccurredAt(detail.occurredAt)}
+                            {formatDateTime(detail.occurredAt, detail.occurredAt)}
                           </span>
                         </div>
                         <div className={AUDIT_DETAIL_ROW_CLASS}>
@@ -486,7 +473,7 @@ const AuditLogs: React.FC = () => {
                         <div className={AUDIT_DETAIL_ROW_CLASS}>
                           <span className="text-xs text-home-text-subtle">retentionUntilAt</span>
                           <span className="text-home-text select-text break-all">
-                            {formatOccurredAt(detail.retentionUntilAt)}
+                            {formatDateTime(detail.retentionUntilAt, detail.retentionUntilAt)}
                           </span>
                         </div>
                       </div>

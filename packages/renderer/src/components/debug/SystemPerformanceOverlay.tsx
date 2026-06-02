@@ -1,5 +1,6 @@
 import React from 'react';
 
+import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { formatMemoryBytes } from '../../lib/debug-tools';
 
 type MainProcessStats = {
@@ -166,6 +167,7 @@ const collectOverlaySnapshot = async (): Promise<OverlaySnapshot> => {
  * Renders a compact floating system monitor for debug profiling.
  */
 const SystemPerformanceOverlay: React.FC<SystemPerformanceOverlayProps> = ({ visible }) => {
+  const { formatTime } = useDateTimeFormatter();
   const overlayRef = React.useRef<HTMLElement | null>(null);
   const dragPointerOffsetRef = React.useRef<OverlayPosition | null>(null);
   const [snapshot, setSnapshot] = React.useState<OverlaySnapshot>({
@@ -358,7 +360,7 @@ const SystemPerformanceOverlay: React.FC<SystemPerformanceOverlayProps> = ({ vis
   }
 
   const sampledAtText =
-    typeof snapshot.sampledAt === 'number' ? new Date(snapshot.sampledAt).toLocaleTimeString() : '--:--:--';
+    typeof snapshot.sampledAt === 'number' ? formatTime(snapshot.sampledAt, '--:--:--') : '--:--:--';
 
   const style: React.CSSProperties = {
     left: position?.x ?? OVERLAY_MARGIN_PX,

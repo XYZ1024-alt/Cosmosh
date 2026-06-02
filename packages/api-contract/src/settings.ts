@@ -42,6 +42,26 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
 };
 
 /**
+ * Checks whether a user-provided time zone can be used with Intl formatting.
+ *
+ * @param value Candidate IANA time zone or the `system` sentinel.
+ * @returns Whether the candidate is supported by the current runtime.
+ */
+const isSupportedTimeZoneSetting = (value: string): boolean => {
+  const normalizedValue = value.trim();
+  if (normalizedValue === 'system') {
+    return true;
+  }
+
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: normalizedValue });
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+/**
  * Validate and parse a single setting value based on its registry definition.
  * Validation rules (type check, enum options, integer range, string maxLength)
  * are derived entirely from the definition — no per-key branching.
@@ -114,6 +134,21 @@ const parseSettingValue = (key: SettingKey, input: unknown): { value?: unknown; 
             `${key} must be a string.`,
           ),
         };
+      }
+
+      if (key === 'dateTimeTimeZone') {
+        const normalizedInput = input.trim();
+        if (!isSupportedTimeZoneSetting(normalizedInput)) {
+          return {
+            error: validationError(
+              'settings.validation.timeZoneUnsupported',
+              { nameI18nKey: nameKey, key },
+              `${key} must be "system" or a supported IANA time zone.`,
+            ),
+          };
+        }
+
+        return { value: normalizedInput };
       }
 
       // Enum validation: when options exist, only listed values are accepted.

@@ -74,6 +74,21 @@ const AUTOCOMPLETE_DEPENDENT_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>
   'terminalAutoCompletePromptRegex',
 ]);
 
+const FALLBACK_TIME_ZONE_OPTIONS = [
+  'UTC',
+  'Africa/Cairo',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/New_York',
+  'Asia/Shanghai',
+  'Asia/Singapore',
+  'Asia/Tokyo',
+  'Australia/Sydney',
+  'Europe/Berlin',
+  'Europe/London',
+] as const;
+
 type SettingKey = keyof AppSettingsValues;
 
 type DatabaseSecurityInfo = {
@@ -227,6 +242,124 @@ const toDefaultFormValue = (item: SettingDefinition): string | boolean => {
   }
 
   return String(item.defaultValue);
+};
+
+/**
+ * Resolves time zones supported by the current JavaScript runtime.
+ *
+ * @returns Sorted selectable time-zone values, excluding the system sentinel.
+ */
+const resolveSupportedTimeZoneOptions = (): string[] => {
+  const supportedValuesOf = Intl.supportedValuesOf;
+  const runtimeOptions =
+    typeof supportedValuesOf === 'function' ? supportedValuesOf.call(Intl, 'timeZone') : FALLBACK_TIME_ZONE_OPTIONS;
+  return [...new Set(['UTC', ...runtimeOptions])].sort((left, right) => left.localeCompare(right));
+};
+
+/**
+ * Reads a numeric Intl date-time part.
+ *
+ * @param parts Intl formatted parts.
+ * @param type Part type to read.
+ * @returns Numeric value or zero when unavailable.
+ */
+const readNumericDateTimePart = (parts: Intl.DateTimeFormatPart[], type: Intl.DateTimeFormatPartTypes): number => {
+  return Number(parts.find((part) => part.type === type)?.value ?? '0');
+};
+
+/**
+ * Resolves the current UTC offset for an IANA time zone.
+ *
+ * @param timeZone IANA time zone.
+ * @param referenceDate Date used for daylight-saving aware offset calculation.
+ * @returns Offset in minutes, or null when the runtime rejects the time zone.
+ */
+const resolveTimeZoneOffsetMinutes = (timeZone: string, referenceDate: Date): number | null => {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      day: '2-digit',
+      hour: '2-digit',
+      hourCycle: 'h23',
+      minute: '2-digit',
+      month: '2-digit',
+      second: '2-digit',
+      timeZone,
+      year: 'numeric',
+    }).formatToParts(referenceDate);
+
+    const timeZoneTimestamp = Date.UTC(
+      readNumericDateTimePart(parts, 'year'),
+      readNumericDateTimePart(parts, 'month') - 1,
+      readNumericDateTimePart(parts, 'day'),
+      readNumericDateTimePart(parts, 'hour'),
+      readNumericDateTimePart(parts, 'minute'),
+      readNumericDateTimePart(parts, 'second'),
+    );
+
+    return Math.round((timeZoneTimestamp - referenceDate.getTime()) / 60_000);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Formats an offset in minutes using compact UTC notation.
+ *
+ * @param offsetMinutes Offset in minutes.
+ * @returns Display text such as (+8) or (-3:30).
+ */
+const formatTimeZoneOffsetLabel = (offsetMinutes: number): string => {
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteMinutes = Math.abs(offsetMinutes);
+  const hours = Math.floor(absoluteMinutes / 60);
+  const minutes = absoluteMinutes % 60;
+
+  if (minutes === 0) {
+    return `(${sign}${hours})`;
+  }
+
+  return `(${sign}${hours}:${String(minutes).padStart(2, '0')})`;
+};
+
+/**
+ * Formats an offset in minutes without wrapper parentheses.
+ *
+ * @param offsetMinutes Offset in minutes.
+ * @returns Display text such as +8 or -3:30.
+ */
+const formatTimeZoneOffsetValue = (offsetMinutes: number): string => {
+  return formatTimeZoneOffsetLabel(offsetMinutes).slice(1, -1);
+};
+
+/**
+ * Builds a selectable time-zone label with its current UTC offset.
+ *
+ * @param timeZone IANA time zone.
+ * @param referenceDate Date used for daylight-saving aware offset calculation.
+ * @returns Display label for a time-zone option.
+ */
+const formatTimeZoneOptionLabel = (timeZone: string, referenceDate: Date): string => {
+  const offsetMinutes = resolveTimeZoneOffsetMinutes(timeZone, referenceDate);
+  return offsetMinutes === null ? timeZone : `${timeZone} ${formatTimeZoneOffsetLabel(offsetMinutes)}`;
+};
+
+/**
+ * Builds the system time-zone option label with the resolved OS time zone when available.
+ *
+ * @param referenceDate Date used for daylight-saving aware offset calculation.
+ * @returns Localized system time-zone label.
+ */
+const formatSystemTimeZoneOptionLabel = (referenceDate: Date): string => {
+  const systemLabel = t('settings.options.dateTimeTimeZone.system');
+  const resolvedTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+
+  if (!resolvedTimeZone) {
+    return systemLabel;
+  }
+
+  const offsetMinutes = resolveTimeZoneOffsetMinutes(resolvedTimeZone, referenceDate);
+  const offsetLabel = offsetMinutes === null ? '' : `, ${formatTimeZoneOffsetValue(offsetMinutes)}`;
+  return `${systemLabel} (${resolvedTimeZone}${offsetLabel})`;
 };
 
 type SettingsProps = {
@@ -648,6 +781,47 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               </SelectTrigger>
               <SelectContent>
                 {dynamicOptions.map((option) => (
+                  <SelectItem
+                    key={option.value}
+                    value={option.value}
+                  >
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
+
+        if (item.key === 'dateTimeTimeZone') {
+          const currentValue = value.trim();
+          const referenceDate = new Date();
+          const timeZoneOptions = resolveSupportedTimeZoneOptions();
+          const hasCurrentValue =
+            currentValue.length > 0 && currentValue !== 'system' && timeZoneOptions.includes(currentValue);
+          const options = [
+            { value: 'system', label: formatSystemTimeZoneOptionLabel(referenceDate) },
+            ...(currentValue.length > 0 && currentValue !== 'system' && !hasCurrentValue
+              ? [{ value: currentValue, label: formatTimeZoneOptionLabel(currentValue, referenceDate) }]
+              : []),
+            ...timeZoneOptions.map((timeZone) => ({
+              value: timeZone,
+              label: formatTimeZoneOptionLabel(timeZone, referenceDate),
+            })),
+          ];
+
+          return (
+            <Select
+              value={currentValue || 'system'}
+              onValueChange={(nextValue) => {
+                updateField(item.key, nextValue);
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {options.map((option) => (
                   <SelectItem
                     key={option.value}
                     value={option.value}
