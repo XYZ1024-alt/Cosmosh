@@ -1,11 +1,10 @@
-import 'monaco-editor/esm/vs/language/json/monaco.contribution';
-
 import { normalizeSettingsValuesStrict, type SettingsValues, type SettingValidationError } from '@cosmosh/api-contract';
-import MonacoEditor, { loader, type Monaco } from '@monaco-editor/react';
+import MonacoEditor, { loader } from '@monaco-editor/react';
 import { Save } from 'lucide-react';
 import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
+import { jsonDefaults } from 'monaco-editor/esm/vs/language/json/monaco.contribution';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -158,7 +157,6 @@ const parseSettingsJson = (rawJson: string): { value?: SettingsValues; error?: s
 const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSettingKey }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const [, setLocaleTick] = React.useState<number>(0);
-  const monacoRef = React.useRef<Monaco | null>(null);
   const editorRef = React.useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
 
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
@@ -175,24 +173,8 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
 
   const schema = buildSettingsSchema();
 
-  const configureJsonLanguage = React.useCallback((monaco: Monaco, activeSchema: JsonSchemaDocument): void => {
-    const jsonLanguageApi = monaco.languages.json as unknown as {
-      jsonDefaults: {
-        setDiagnosticsOptions: (options: {
-          validate: boolean;
-          allowComments: boolean;
-          enableSchemaRequest: boolean;
-          trailingCommas: 'error' | 'warning' | 'ignore';
-          schemas: Array<{
-            uri: string;
-            fileMatch: string[];
-            schema: JsonSchemaDocument;
-          }>;
-        }) => void;
-      };
-    };
-
-    jsonLanguageApi.jsonDefaults.setDiagnosticsOptions({
+  const configureJsonLanguage = React.useCallback((activeSchema: JsonSchemaDocument): void => {
+    jsonDefaults.setDiagnosticsOptions({
       validate: true,
       allowComments: false,
       enableSchemaRequest: false,
@@ -208,12 +190,7 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
   }, []);
 
   React.useEffect(() => {
-    const monaco = monacoRef.current;
-    if (!monaco) {
-      return;
-    }
-
-    configureJsonLanguage(monaco, schema);
+    configureJsonLanguage(schema);
   }, [configureJsonLanguage, schema]);
 
   React.useEffect(() => {
@@ -368,9 +345,8 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
                 formatOnType: true,
               }}
               theme="vs-dark"
-              beforeMount={(monaco: Monaco) => {
-                monacoRef.current = monaco;
-                configureJsonLanguage(monaco, schema);
+              beforeMount={() => {
+                configureJsonLanguage(schema);
               }}
               onMount={(editor) => {
                 editorRef.current = editor;

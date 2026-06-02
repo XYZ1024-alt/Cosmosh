@@ -32,3 +32,9 @@ declare module 'monaco-editor/esm/vs/editor/editor.worker?worker' {
   };
   export default WorkerFactory;
 }
+
+declare module 'monaco-editor/esm/vs/language/json/monaco.contribution' {
+  import type { json } from 'monaco-editor/esm/vs/editor/editor.main.js';
+
+  export const jsonDefaults: typeof json.jsonDefaults;
+}
