@@ -90,6 +90,7 @@ sequenceDiagram
 - `nodeIntegration: false`
 - `contextIsolation: true`
 - Renderer gets only explicit bridge APIs via `contextBridge.exposeInMainWorld`.
+- The sandboxed preload script must not import workspace packages at runtime. It may use shared API contract types at compile time, but runtime validators used inside preload must stay local or be bundled so Electron does not need to resolve project modules before the bridge loads.
 - Internal privileged operations stay in Main/Backend process.
 - Renderer-requested app windows are denied by default. The current allow-list only permits same-renderer SFTP Properties popups, and those child windows reuse the secure preload with `nodeIntegration` disabled and `contextIsolation` enabled.
 

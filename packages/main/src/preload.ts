@@ -68,8 +68,26 @@ import type {
   AppMenuAction,
   SftpOpenWithApplication,
 } from '@cosmosh/api-contract';
-import { isAppMenuAction } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
+
+const PRELOAD_APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set([
+  'open-about',
+  'open-settings',
+  'new-tab',
+  'close-current-tab',
+  'close-right-tabs',
+  'show-tab-switcher',
+]);
+
+/**
+ * Checks whether an app-menu IPC payload is safe to forward into the renderer.
+ *
+ * @param value Unknown IPC payload.
+ * @returns Whether the payload is a supported app menu action.
+ */
+const isAppMenuAction = (value: unknown): value is AppMenuAction => {
+  return typeof value === 'string' && PRELOAD_APP_MENU_ACTIONS.has(value as AppMenuAction);
+};
 
 /**
  * Typed IPC invoke helper used by all bridge methods.
