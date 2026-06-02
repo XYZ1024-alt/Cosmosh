@@ -59,8 +59,10 @@ import {
   type SettingsCategoryId,
 } from './settings-registry';
 
+type SettingsFormValue = string | boolean | AppSettingsValues[keyof AppSettingsValues];
+
 type SettingsFormState = {
-  [K in keyof AppSettingsValues]: string | boolean;
+  [K in keyof AppSettingsValues]: SettingsFormValue;
 };
 
 const AUTOCOMPLETE_DEPENDENT_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>([
@@ -130,6 +132,16 @@ const DEFAULT_DATABASE_SECURITY_INFO: DatabaseSecurityInfo = {
   fallbackReady: false,
 };
 
+/**
+ * Clones a JSON setting value so form state never mutates registry defaults.
+ *
+ * @param value Structured JSON setting value.
+ * @returns Detached JSON-compatible value copy.
+ */
+function cloneJsonSettingValue<TValue>(value: TValue): TValue {
+  return JSON.parse(JSON.stringify(value)) as TValue;
+}
+
 const categoryIconMap: Record<SettingsCategoryId, React.ComponentType<{ className?: string }>> = {
   general: Settings2,
   'account-sync': Cloud,
@@ -146,13 +158,22 @@ const toFormState = (values: AppSettingsValues): SettingsFormState => {
 
   SETTINGS_REGISTRY.forEach((item) => {
     const raw = values[item.key];
+    if (item.control === 'json') {
+      formState[item.key] = cloneJsonSettingValue(raw);
+      return;
+    }
+
     formState[item.key] = item.control === 'switch' ? Boolean(raw) : String(raw);
   });
 
   return formState;
 };
 
-const toValidationCandidateValue = (item: SettingDefinition, draftValue: string | boolean): unknown => {
+const toValidationCandidateValue = (item: SettingDefinition, draftValue: SettingsFormValue): unknown => {
+  if (item.control === 'json') {
+    return draftValue;
+  }
+
   if (item.control === 'switch') {
     return Boolean(draftValue);
   }
@@ -236,7 +257,11 @@ const resolveLocalizedOptionLabel = (item: SettingDefinition, value: string): st
   return value;
 };
 
-const toDefaultFormValue = (item: SettingDefinition): string | boolean => {
+const toDefaultFormValue = (item: SettingDefinition): SettingsFormValue => {
+  if (item.control === 'json') {
+    return cloneJsonSettingValue(item.defaultValue);
+  }
+
   if (item.control === 'switch') {
     return Boolean(item.defaultValue);
   }
@@ -740,6 +765,21 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         );
       }
 
+      if (item.control === 'json') {
+        return (
+          <div className="px-2.5">
+            <button
+              type="button"
+              className="text-home-text inline-flex text-sm underline underline-offset-2 hover:text-home-text-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline disabled:pointer-events-none disabled:opacity-55"
+              disabled={!onOpenSettingInEditor}
+              onClick={() => onOpenSettingInEditor?.(item.key)}
+            >
+              {t('settings.itemActions.editInSettingsEditor')}
+            </button>
+          </div>
+        );
+      }
+
       if (item.control === 'select') {
         const value = formState[item.key] as string;
 
@@ -899,7 +939,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         />
       );
     },
-    [formState, localTerminalProfiles, persistSettings, updateField],
+    [formState, localTerminalProfiles, onOpenSettingInEditor, persistSettings, updateField],
   );
 
   return (
@@ -1019,12 +1059,14 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                                 >
                                   {t('settings.itemActions.resetToDefault')}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem
-                                  icon={Settings2}
-                                  onSelect={() => onOpenSettingInEditor?.(item.key)}
-                                >
-                                  {t('settings.itemActions.editInSettingsEditor')}
-                                </DropdownMenuItem>
+                                {item.control !== 'json' ? (
+                                  <DropdownMenuItem
+                                    icon={Settings2}
+                                    onSelect={() => onOpenSettingInEditor?.(item.key)}
+                                  >
+                                    {t('settings.itemActions.editInSettingsEditor')}
+                                  </DropdownMenuItem>
+                                ) : null}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>

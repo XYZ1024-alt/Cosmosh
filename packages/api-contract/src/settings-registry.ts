@@ -13,6 +13,12 @@
  * and enum sets live here exclusively.
  */
 
+import {
+  DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+  SFTP_DIRECTORY_LIST_COLUMN_IDS,
+  type SftpDirectoryListViewSetting,
+} from './sftp';
+
 // ── SettingsValues — strict canonical TypeScript interface ────
 
 export interface SettingsValues {
@@ -74,6 +80,7 @@ export interface SettingsValues {
   sftpDimHiddenEntries: boolean;
   sftpShowParentDirectoryEntry: boolean;
   sftpShowAddressAsText: boolean;
+  sftpDirectoryListView: SftpDirectoryListViewSetting;
 }
 
 export type SettingKey = keyof SettingsValues;
@@ -161,13 +168,31 @@ export const SETTINGS_CATEGORY_IDS: ReadonlyArray<SettingsCategoryId> = Object.k
 
 // ── Setting Definition ───────────────────────────────────────
 
-type SettingValueType = 'string' | 'number' | 'boolean';
+type SettingValueType = 'string' | 'number' | 'boolean' | 'json';
 type SettingSelectOption = { value: string };
+type SettingDefaultValue = string | number | boolean | SftpDirectoryListViewSetting;
+
+export type SettingsJsonSchemaNode = {
+  readonly type?: 'object' | 'array' | 'string' | 'boolean' | 'integer';
+  readonly title?: string;
+  readonly description?: string;
+  readonly markdownDescription?: string;
+  readonly default?: unknown;
+  readonly enum?: ReadonlyArray<string | number | boolean>;
+  readonly minimum?: number;
+  readonly maximum?: number;
+  readonly maxLength?: number;
+  readonly minItems?: number;
+  readonly items?: SettingsJsonSchemaNode;
+  readonly properties?: Readonly<Record<string, SettingsJsonSchemaNode>>;
+  readonly required?: ReadonlyArray<string>;
+  readonly additionalProperties?: boolean;
+};
 
 type SettingDefinitionBase = {
   key: SettingKey;
   valueType: SettingValueType;
-  defaultValue: string | number | boolean;
+  defaultValue: SettingDefaultValue;
   nameI18nKey: string;
   descriptionI18nKey: string;
   category: SettingsCategory;
@@ -202,7 +227,21 @@ type SwitchSettingDefinition = SettingDefinitionBase & {
   placeholderI18nKey?: never;
 };
 
-export type SettingDefinition = SelectSettingDefinition | InputLikeSettingDefinition | SwitchSettingDefinition;
+type JsonSettingDefinition = SettingDefinitionBase & {
+  valueType: 'json';
+  control: 'json';
+  defaultValue: SftpDirectoryListViewSetting;
+  jsonSchema: SettingsJsonSchemaNode;
+  optionI18nNamespace?: never;
+  options?: never;
+  placeholderI18nKey?: never;
+};
+
+export type SettingDefinition =
+  | SelectSettingDefinition
+  | InputLikeSettingDefinition
+  | SwitchSettingDefinition
+  | JsonSettingDefinition;
 
 // ── The Registry ─────────────────────────────────────────────
 
@@ -490,6 +529,64 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'sftp.browser.showAddressAsText',
     commandActionId: 'settings.sftp.browser.showAddressAsText.toggle',
     searchTerms: ['sftp', 'address', 'path', 'breadcrumb', 'text', 'browser'],
+  },
+  {
+    key: 'sftpDirectoryListView',
+    valueType: 'json',
+    defaultValue: DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+    nameI18nKey: 'settings.items.sftpDirectoryListView.title',
+    descriptionI18nKey: 'settings.items.sftpDirectoryListView.description',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'json',
+    path: 'sftp.browser.directoryListView',
+    commandActionId: 'settings.sftp.browser.directoryListView.edit',
+    searchTerms: ['sftp', 'file list', 'directory list', 'columns', 'sort', 'json', 'metadata'],
+    jsonSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['version', 'columns', 'sort'],
+      properties: {
+        version: {
+          type: 'integer',
+          enum: [1],
+          default: 1,
+        },
+        columns: {
+          type: 'array',
+          minItems: 1,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['id', 'visible'],
+            properties: {
+              id: {
+                type: 'string',
+                enum: SFTP_DIRECTORY_LIST_COLUMN_IDS,
+              },
+              visible: {
+                type: 'boolean',
+              },
+            },
+          },
+        },
+        sort: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['field', 'direction'],
+          properties: {
+            field: {
+              type: 'string',
+              enum: SFTP_DIRECTORY_LIST_COLUMN_IDS,
+            },
+            direction: {
+              type: 'string',
+              enum: ['asc', 'desc'],
+            },
+          },
+        },
+      },
+    },
   },
   {
     key: 'showFullServerAddress',

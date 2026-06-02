@@ -19,6 +19,7 @@ export {
 export type {
   SettingDefinition,
   SettingKey,
+  SettingsJsonSchemaNode,
   SettingsCategory,
   SettingsCategoryId,
   SettingsSection,

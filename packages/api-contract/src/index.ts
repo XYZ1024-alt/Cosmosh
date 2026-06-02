@@ -12,12 +12,23 @@ export {
 } from './settings';
 export type { SettingValidationError } from './settings';
 export {
+  DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+  SFTP_DIRECTORY_LIST_COLUMN_IDS,
   compareSftpEntriesByBrowserOrder,
   compareSftpEntryNames,
   compareSftpNames,
+  isSftpDirectoryListColumnId,
   sortSftpEntriesByBrowserOrder,
 } from './sftp';
-export type { SftpNamedItem, SftpSortableEntry } from './sftp';
+export type {
+  SftpDirectoryListColumnId,
+  SftpDirectoryListColumnSetting,
+  SftpDirectoryListSortDirection,
+  SftpDirectoryListSortSetting,
+  SftpDirectoryListViewSetting,
+  SftpNamedItem,
+  SftpSortableEntry,
+} from './sftp';
 export {
   getVisibleCategories,
   paginateSettingsByCategory,
@@ -32,6 +43,7 @@ export type {
   SettingKey,
   SettingsCategory,
   SettingsCategoryId,
+  SettingsJsonSchemaNode,
   SettingsSection,
   SettingsValues,
 } from './settings-registry';

@@ -8,6 +8,15 @@
 
 import type { SettingKey, SettingsValues } from './settings-registry';
 import { DEFAULT_SETTINGS_VALUES, SETTINGS_DEFINITION_MAP, SETTINGS_REGISTRY } from './settings-registry';
+import {
+  DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+  SFTP_DIRECTORY_LIST_COLUMN_IDS,
+  isSftpDirectoryListColumnId,
+  type SftpDirectoryListColumnId,
+  type SftpDirectoryListColumnSetting,
+  type SftpDirectoryListSortDirection,
+  type SftpDirectoryListViewSetting,
+} from './sftp';
 
 export { DEFAULT_SETTINGS_VALUES };
 
@@ -38,7 +47,57 @@ const SETTINGS_KEYS: ReadonlyArray<SettingKey> = SETTINGS_REGISTRY.map((item) =>
 const SETTINGS_KEY_SET = new Set<string>(SETTINGS_KEYS as ReadonlyArray<string>);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
-  return typeof value === 'object' && value !== null;
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+};
+
+/**
+ * Clones the structured SFTP directory-list setting before storing or exposing it.
+ *
+ * @param value Valid SFTP directory-list view setting.
+ * @returns A new object graph safe for caller-side mutation.
+ */
+const cloneSftpDirectoryListViewSetting = (
+  value: SftpDirectoryListViewSetting,
+): SftpDirectoryListViewSetting => ({
+  version: 1,
+  columns: value.columns.map((column) => ({
+    id: column.id,
+    visible: column.visible,
+  })),
+  sort: {
+    field: value.sort.field,
+    direction: value.sort.direction,
+  },
+});
+
+/**
+ * Clones default settings that carry structured JSON values.
+ *
+ * @param key Setting key.
+ * @param value Default setting value.
+ * @returns Safe default value copy.
+ */
+const cloneSettingValue = (key: SettingKey, value: SettingsValues[SettingKey]): unknown => {
+  if (key === 'sftpDirectoryListView') {
+    return cloneSftpDirectoryListViewSetting(value as SftpDirectoryListViewSetting);
+  }
+
+  return value;
+};
+
+/**
+ * Builds a settings record with JSON defaults detached from registry constants.
+ *
+ * @returns New settings record seeded with default values.
+ */
+const createDefaultSettingsRecord = (): Record<SettingKey, unknown> => {
+  const result = {} as Record<SettingKey, unknown>;
+
+  for (const key of SETTINGS_REGISTRY.map((item) => item.key)) {
+    result[key] = cloneSettingValue(key, DEFAULT_SETTINGS_VALUES[key]);
+  }
+
+  return result;
 };
 
 /**
@@ -59,6 +118,99 @@ const isSupportedTimeZoneSetting = (value: string): boolean => {
   } catch {
     return false;
   }
+};
+
+/**
+ * Validates and normalizes the SFTP directory-list JSON setting.
+ *
+ * @param key Setting key used in error messages.
+ * @param nameKey Setting title i18n key.
+ * @param input Raw JSON value.
+ * @returns Parsed view setting or a validation error.
+ */
+const parseSftpDirectoryListViewSetting = (
+  key: SettingKey,
+  nameKey: string,
+  input: unknown,
+): { value?: SftpDirectoryListViewSetting; error?: SettingValidationError } => {
+  const invalid = (fallbackDetail: string): { error: SettingValidationError } => ({
+    error: validationError(
+      'settings.validation.invalid',
+      { nameI18nKey: nameKey, key },
+      `${key} must be a valid SFTP directory-list view setting. ${fallbackDetail}`,
+    ),
+  });
+
+  if (!isRecord(input)) {
+    return invalid('Expected a JSON object.');
+  }
+
+  if (input.version !== 1) {
+    return invalid('Expected version 1.');
+  }
+
+  if (!Array.isArray(input.columns)) {
+    return invalid('Expected a columns array.');
+  }
+
+  const defaultColumnsById = new Map<SftpDirectoryListColumnId, SftpDirectoryListColumnSetting>(
+    DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING.columns.map((column) => [column.id, column]),
+  );
+  const seenColumnIds = new Set<SftpDirectoryListColumnId>();
+  const parsedColumns: SftpDirectoryListColumnSetting[] = [];
+
+  for (const rawColumn of input.columns) {
+    if (!isRecord(rawColumn)) {
+      return invalid('Every column entry must be an object.');
+    }
+
+    const { id, visible } = rawColumn;
+    if (!isSftpDirectoryListColumnId(id) || typeof visible !== 'boolean') {
+      return invalid('Every column entry must include a supported id and boolean visible flag.');
+    }
+
+    if (seenColumnIds.has(id)) {
+      return invalid(`Duplicate column id: ${id}.`);
+    }
+
+    if (id === 'name' && !visible) {
+      return invalid('The name column must stay visible.');
+    }
+
+    seenColumnIds.add(id);
+    parsedColumns.push({ id, visible });
+  }
+
+  for (const columnId of SFTP_DIRECTORY_LIST_COLUMN_IDS) {
+    if (!seenColumnIds.has(columnId)) {
+      const defaultColumn = defaultColumnsById.get(columnId);
+      parsedColumns.push({
+        id: columnId,
+        visible: defaultColumn?.visible ?? false,
+      });
+    }
+  }
+
+  if (!isRecord(input.sort)) {
+    return invalid('Expected a sort object.');
+  }
+
+  const sortField = input.sort.field;
+  const sortDirection = input.sort.direction;
+  if (!isSftpDirectoryListColumnId(sortField) || (sortDirection !== 'asc' && sortDirection !== 'desc')) {
+    return invalid('Sort must include a supported field and asc/desc direction.');
+  }
+
+  return {
+    value: {
+      version: 1,
+      columns: parsedColumns,
+      sort: {
+        field: sortField,
+        direction: sortDirection as SftpDirectoryListSortDirection,
+      },
+    },
+  };
 };
 
 /**
@@ -182,6 +334,20 @@ const parseSettingValue = (key: SettingKey, input: unknown): { value?: unknown; 
       return { value: input };
     }
 
+    case 'json': {
+      if (key === 'sftpDirectoryListView') {
+        return parseSftpDirectoryListViewSetting(key, nameKey, input);
+      }
+
+      return {
+        error: validationError(
+          'settings.validation.unsupportedType',
+          { key: String(key) },
+          `Unsupported JSON setting key: ${String(key)}.`,
+        ),
+      };
+    }
+
     default:
       return {
         error: validationError(
@@ -213,7 +379,7 @@ export const normalizeSettingsValuesStrict = (
     };
   }
 
-  const result = { ...DEFAULT_SETTINGS_VALUES } as Record<SettingKey, unknown>;
+  const result = createDefaultSettingsRecord();
 
   for (const key of SETTINGS_KEYS) {
     if (!(key in value)) {
@@ -242,10 +408,10 @@ export const normalizeSettingsValuesStrict = (
 
 export const normalizeSettingsValuesWithDefaults = (value: unknown): SettingsValues => {
   if (!isRecord(value)) {
-    return { ...DEFAULT_SETTINGS_VALUES };
+    return createDefaultSettingsRecord() as SettingsValues;
   }
 
-  const result = { ...DEFAULT_SETTINGS_VALUES } as Record<SettingKey, unknown>;
+  const result = createDefaultSettingsRecord();
 
   for (const key of SETTINGS_KEYS) {
     if (!(key in value)) {

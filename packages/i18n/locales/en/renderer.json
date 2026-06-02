@@ -386,6 +386,10 @@
         "description": "Applies 80% opacity to hidden SFTP entry icons and names when hidden files are visible.",
         "title": "Dim Hidden Files"
       },
+      "sftpDirectoryListView": {
+        "description": "Controls the SFTP file list columns, column order, and sort preference.",
+        "title": "SFTP File List View"
+      },
       "sftpReconnectMode": {
         "description": "Controls how SFTP recovers when the remote connection drops while the tab remains open.",
         "title": "SFTP Auto-Reconnect"
@@ -776,10 +780,27 @@
     "addressRootLabel": "Remote Server Root",
     "addressSegmentMenuLabel": "Show folders under {path}",
     "columns": {
+      "accessedAt": "Accessed",
+      "extension": "Extension",
+      "gid": "GID",
+      "hiddenValue": {
+        "hidden": "Hidden",
+        "visible": "Visible"
+      },
+      "isHidden": "Hidden",
+      "longname": "Raw Listing",
       "mode": "Mode",
       "modified": "Modified",
+      "modifiedAt": "Modified",
       "name": "Name",
-      "size": "Size"
+      "parentPath": "Parent Path",
+      "path": "Path",
+      "permissionOctal": "Octal",
+      "permissions": "Permissions",
+      "shellEscapedPath": "Shell Path",
+      "size": "Size",
+      "type": "Type",
+      "uid": "UID"
     },
     "connecting": "Connecting SFTP...",
     "deleteConfirmAccept": "Delete",
@@ -935,7 +956,14 @@
     },
     "temporaryPathUnavailable": "The temporary local file path is unavailable.",
     "title": "SFTP",
-    "untitledServer": "SFTP Server"
+    "untitledServer": "SFTP Server",
+    "viewMenu": {
+      "ascending": "Ascending",
+      "columns": "Columns",
+      "descending": "Descending",
+      "sortBy": "Sort By",
+      "sortDirection": "Sort Direction"
+    }
   },
   "ssh": {
     "authTypeBoth": "Password and Private Key",

@@ -1,4 +1,11 @@
-import { type ApiSftpEntry, compareSftpEntryNames, compareSftpNames } from '@cosmosh/api-contract';
+import {
+  type ApiSftpEntry,
+  compareSftpEntryNames,
+  compareSftpNames,
+  type SftpDirectoryListColumnId,
+  type SftpDirectoryListSortDirection,
+  type SftpDirectoryListViewSetting,
+} from '@cosmosh/api-contract';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -29,6 +36,7 @@ import {
   PARENT_DIRECTORY_ROW_KEY,
   SFTP_TASK_RETENTION_MS,
 } from './sftp/sftp-constants';
+import { sortSftpEntriesByDirectoryListView } from './sftp/sftp-directory-view';
 import { buildSftpEntryPropertiesWindowUrl } from './sftp/sftp-entry-properties-window';
 import type {
   ClipboardState,
@@ -88,6 +96,14 @@ import { SftpDirectoryPanel } from './sftp/SftpDirectoryPanel';
 import { SftpToolbar } from './sftp/SftpToolbar';
 import { SftpTreePanel } from './sftp/SftpTreePanel';
 
+/**
+ * Serializes the SFTP directory list view for cheap equality checks.
+ *
+ * @param value Directory-list view setting value.
+ * @returns Stable JSON representation for registry-backed settings.
+ */
+const stringifySftpDirectoryListView = (value: SftpDirectoryListViewSetting): string => JSON.stringify(value);
+
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
   onOpenDirectoryInNewTab: (initialPath: string) => void;
@@ -114,7 +130,10 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpDimHiddenEntries = useSettingsValue('sftpDimHiddenEntries');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
   const sftpShowAddressAsText = useSettingsValue('sftpShowAddressAsText');
+  const registrySftpDirectoryListView = useSettingsValue('sftpDirectoryListView');
   const sftpReconnectMode = useSettingsValue('sftpReconnectMode');
+  const [directoryListViewDraft, setDirectoryListViewDraft] = React.useState<SftpDirectoryListViewSetting | null>(null);
+  const sftpDirectoryListView = directoryListViewDraft ?? registrySftpDirectoryListView;
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
@@ -179,6 +198,19 @@ const SFTP: React.FC<SFTPProps> = ({
   React.useEffect(() => {
     sftpShowHiddenEntriesRef.current = sftpShowHiddenEntries;
   }, [sftpShowHiddenEntries]);
+
+  React.useEffect(() => {
+    if (!directoryListViewDraft) {
+      return;
+    }
+
+    if (
+      stringifySftpDirectoryListView(directoryListViewDraft) ===
+      stringifySftpDirectoryListView(registrySftpDirectoryListView)
+    ) {
+      setDirectoryListViewDraft(null);
+    }
+  }, [directoryListViewDraft, registrySftpDirectoryListView]);
 
   /**
    * Clears the delayed removal timer for one completed task.
@@ -416,8 +448,12 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [releaseInlineEditMenuFocusHandoff]);
 
   const visibleEntries = React.useMemo(() => {
-    return filterSftpEntries(filterSftpEntriesByHiddenVisibility(entries, sftpShowHiddenEntries), filterQuery);
-  }, [entries, filterQuery, sftpShowHiddenEntries]);
+    const filteredEntries = filterSftpEntries(
+      filterSftpEntriesByHiddenVisibility(entries, sftpShowHiddenEntries),
+      filterQuery,
+    );
+    return sortSftpEntriesByDirectoryListView(filteredEntries, sftpDirectoryListView.sort);
+  }, [entries, filterQuery, sftpDirectoryListView.sort, sftpShowHiddenEntries]);
 
   const selectedPathSet = React.useMemo(() => new Set(selectedPaths), [selectedPaths]);
 
@@ -1096,6 +1132,95 @@ const SFTP: React.FC<SFTPProps> = ({
       }
     },
     [notifyError, settingsValues],
+  );
+
+  const persistSftpDirectoryListView = React.useCallback(
+    async (nextDirectoryListView: SftpDirectoryListViewSetting): Promise<void> => {
+      const currentDirectoryListView = directoryListViewDraft ?? settingsValues.sftpDirectoryListView;
+      if (
+        stringifySftpDirectoryListView(currentDirectoryListView) ===
+        stringifySftpDirectoryListView(nextDirectoryListView)
+      ) {
+        return;
+      }
+
+      setDirectoryListViewDraft(nextDirectoryListView);
+
+      try {
+        const response = await updateAppSettings({
+          values: {
+            ...settingsValues,
+            sftpDirectoryListView: nextDirectoryListView,
+          },
+        });
+
+        await updateSettingsStoreValues(response.data.item.values);
+      } catch (error: unknown) {
+        setDirectoryListViewDraft(null);
+        notifyError(error instanceof Error ? error.message : t('settings.saveFailed'));
+      }
+    },
+    [directoryListViewDraft, notifyError, settingsValues],
+  );
+
+  const setSftpDirectoryListSort = React.useCallback(
+    (sort: { field: SftpDirectoryListColumnId; direction: SftpDirectoryListSortDirection }): void => {
+      void persistSftpDirectoryListView({
+        ...sftpDirectoryListView,
+        sort,
+      });
+    },
+    [persistSftpDirectoryListView, sftpDirectoryListView],
+  );
+
+  const handleSftpDirectoryListSortFieldClick = React.useCallback(
+    (columnId: SftpDirectoryListColumnId): void => {
+      const isCurrentSortField = sftpDirectoryListView.sort.field === columnId;
+      const nextDirection: SftpDirectoryListSortDirection =
+        isCurrentSortField && sftpDirectoryListView.sort.direction === 'asc' ? 'desc' : 'asc';
+
+      setSftpDirectoryListSort({
+        field: columnId,
+        direction: isCurrentSortField ? nextDirection : 'asc',
+      });
+    },
+    [setSftpDirectoryListSort, sftpDirectoryListView.sort],
+  );
+
+  const setSftpDirectoryListColumnVisibility = React.useCallback(
+    (columnId: SftpDirectoryListColumnId, visible: boolean): void => {
+      void persistSftpDirectoryListView({
+        ...sftpDirectoryListView,
+        columns: sftpDirectoryListView.columns.map((column) =>
+          column.id === columnId
+            ? {
+                ...column,
+                visible: column.id === 'name' ? true : visible,
+              }
+            : column,
+        ),
+      });
+    },
+    [persistSftpDirectoryListView, sftpDirectoryListView],
+  );
+
+  const setSftpDirectoryListColumnOrder = React.useCallback(
+    (columnIds: SftpDirectoryListColumnId[]): void => {
+      const currentColumnsById = new Map(sftpDirectoryListView.columns.map((column) => [column.id, column]));
+      const nextColumns = columnIds.map((columnId) => {
+        const currentColumn = currentColumnsById.get(columnId);
+        return {
+          id: columnId,
+          visible: columnId === 'name' ? true : Boolean(currentColumn?.visible),
+        };
+      });
+
+      void persistSftpDirectoryListView({
+        ...sftpDirectoryListView,
+        columns: nextColumns,
+      });
+    },
+    [persistSftpDirectoryListView, sftpDirectoryListView],
   );
 
   const createSessionForIntent = React.useCallback(
@@ -2792,6 +2917,7 @@ const SFTP: React.FC<SFTPProps> = ({
           canUseFileActions={canUseFileActions}
           clipboardStateExists={Boolean(clipboardState)}
           currentPath={currentPath}
+          directoryListView={sftpDirectoryListView}
           filterQuery={filterQuery}
           forwardNavigationHistoryItems={forwardNavigationHistoryItems}
           getBreadcrumbDirectories={resolveBreadcrumbMenuDirectories}
@@ -2824,6 +2950,8 @@ const SFTP: React.FC<SFTPProps> = ({
           onCopyEntries={handleCopyEntries}
           onCutEntries={handleCutEntries}
           onDeleteEntries={handleDeleteEntries}
+          onDirectoryListColumnVisibilityChange={setSftpDirectoryListColumnVisibility}
+          onDirectoryListSortChange={setSftpDirectoryListSort}
           onEditCurrentPath={handleEditCurrentPath}
           onFilterQueryChange={setFilterQuery}
           onHistoryJump={handleHistoryJump}
@@ -2861,6 +2989,7 @@ const SFTP: React.FC<SFTPProps> = ({
             canActivateParentDirectoryListEntry={canActivateParentDirectoryListEntry}
             clipboardMode={clipboardState?.mode}
             clipboardPaths={clipboardPaths}
+            directoryListView={sftpDirectoryListView}
             entries={entries}
             errorMessage={errorMessage}
             fileRowRefs={fileRowRefs}
@@ -2881,6 +3010,10 @@ const SFTP: React.FC<SFTPProps> = ({
             onCommitPendingCreate={commitPendingCreate}
             onCommitRenameEntry={commitRenameEntry}
             onDirectoryBlankClick={resetSelection}
+            onDirectoryListColumnOrderChange={setSftpDirectoryListColumnOrder}
+            onDirectoryListColumnVisibilityChange={setSftpDirectoryListColumnVisibility}
+            onDirectoryListSortChange={setSftpDirectoryListSort}
+            onDirectoryListSortFieldClick={handleSftpDirectoryListSortFieldClick}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryOpen={handleEntryOpen}
             onEntrySelect={handleEntrySelect}

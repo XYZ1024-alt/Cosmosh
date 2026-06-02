@@ -1,4 +1,9 @@
-import type { ApiSftpEntry } from '@cosmosh/api-contract';
+import type {
+  ApiSftpEntry,
+  SftpDirectoryListColumnId,
+  SftpDirectoryListSortDirection,
+  SftpDirectoryListViewSetting,
+} from '@cosmosh/api-contract';
 import {
   ArrowLeft,
   ArrowRight,
@@ -44,6 +49,7 @@ import type {
 } from './sftp-types';
 import { formatSftpTaskProgressLabel } from './sftp-utils';
 import { SftpAddressControl } from './SftpAddressControl';
+import { SftpDirectoryViewMenuItems } from './SftpDirectoryViewMenuItems';
 
 /**
  * Props for the SFTP toolbar.
@@ -57,6 +63,7 @@ type SftpToolbarProps = {
   canUseFileActions: boolean;
   clipboardStateExists: boolean;
   currentPath: string;
+  directoryListView: SftpDirectoryListViewSetting;
   filterQuery: string;
   hasSelection: boolean;
   hasSingleSelection: boolean;
@@ -85,6 +92,11 @@ type SftpToolbarProps = {
   onCopyEntries: (targetEntries: ApiSftpEntry[]) => void;
   onCutEntries: (targetEntries: ApiSftpEntry[]) => void;
   onDeleteEntries: (targetEntries: ApiSftpEntry[]) => Promise<void>;
+  onDirectoryListColumnVisibilityChange: (columnId: SftpDirectoryListColumnId, visible: boolean) => void;
+  onDirectoryListSortChange: (sort: {
+    field: SftpDirectoryListColumnId;
+    direction: SftpDirectoryListSortDirection;
+  }) => void;
   onEditCurrentPath: () => void;
   onFilterQueryChange: (value: string) => void;
   onHistoryJump: (nextIndex: number) => Promise<void>;
@@ -123,6 +135,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   canUseFileActions,
   clipboardStateExists,
   currentPath,
+  directoryListView,
   filterQuery,
   forwardNavigationHistoryItems,
   getBreadcrumbDirectories,
@@ -141,6 +154,8 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   onCopyEntries,
   onCutEntries,
   onDeleteEntries,
+  onDirectoryListColumnVisibilityChange,
+  onDirectoryListSortChange,
   onEditCurrentPath,
   onFilterQueryChange,
   onHistoryJump,
@@ -490,6 +505,13 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 >
                   {t('sftp.actions.showHiddenFiles')}
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuSeparator />
+                <SftpDirectoryViewMenuItems
+                  directoryListView={directoryListView}
+                  menuSurface="dropdown"
+                  onColumnVisibilityChange={onDirectoryListColumnVisibilityChange}
+                  onSortChange={onDirectoryListSortChange}
+                />
                 <DropdownMenuSeparator />
                 {renderActionMenuItems({
                   contextEntry: primarySelectedEntry,

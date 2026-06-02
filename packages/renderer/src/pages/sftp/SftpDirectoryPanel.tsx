@@ -1,6 +1,30 @@
-import type { ApiSftpEntry } from '@cosmosh/api-contract';
+import {
+  type ApiSftpEntry,
+  isSftpDirectoryListColumnId,
+  type SftpDirectoryListColumnId,
+  type SftpDirectoryListSortDirection,
+  type SftpDirectoryListViewSetting,
+} from '@cosmosh/api-contract';
+import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  MouseSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
+import {
+  arrayMove,
+  horizontalListSortingStrategy,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import classNames from 'classnames';
-import { File, Folder, Loader2, ShieldAlert, Undo2 } from 'lucide-react';
+import { ArrowDown, ArrowUp, File, Folder, Loader2, ShieldAlert, Undo2 } from 'lucide-react';
 import React from 'react';
 
 import { Button } from '../../components/ui/button';
@@ -9,12 +33,14 @@ import { Input } from '../../components/ui/input';
 import { Menubar } from '../../components/ui/menubar';
 import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
+import { PARENT_DIRECTORY_ROW_KEY, SFTP_CARD_CLASS_NAME } from './sftp-constants';
 import {
-  DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME,
-  DIRECTORY_ROW_GRID_CLASS_NAME,
-  PARENT_DIRECTORY_ROW_KEY,
-  SFTP_CARD_CLASS_NAME,
-} from './sftp-constants';
+  buildSftpDirectoryGridTemplate,
+  formatSftpDirectoryColumnValue,
+  resolveSftpDirectoryListMinWidth,
+  resolveVisibleSftpDirectoryColumns,
+  type SftpDirectoryColumnDefinition,
+} from './sftp-directory-view';
 import type {
   PendingCreateState,
   SftpActionMenuOptions,
@@ -22,7 +48,66 @@ import type {
   SftpFileNavigationRow,
   SftpSelectionClickEvent,
 } from './sftp-types';
-import { formatFileSize, formatModifiedAt, resolveEntryIcon } from './sftp-utils';
+import { resolveEntryIcon } from './sftp-utils';
+import { SftpDirectoryViewMenuItems } from './SftpDirectoryViewMenuItems';
+
+type SortableHeaderCellProps = {
+  column: SftpDirectoryColumnDefinition;
+  sort: SftpDirectoryListViewSetting['sort'];
+  onSortFieldClick: (columnId: SftpDirectoryListColumnId) => void;
+};
+
+/**
+ * Renders one draggable, sortable directory-list header cell.
+ *
+ * @param props Column definition, active sort state, and sort callback.
+ * @returns Sortable header cell.
+ */
+const SortableHeaderCell: React.FC<SortableHeaderCellProps> = ({ column, sort, onSortFieldClick }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: column.id,
+  });
+  const isSorted = sort.field === column.id;
+  const transformStyle = transform
+    ? CSS.Transform.toString({
+        x: transform.x,
+        y: 0,
+        scaleX: 1,
+        scaleY: 1,
+      })
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{
+        transform: transformStyle,
+        transition: isDragging ? undefined : transition,
+      }}
+      className={classNames('h-full min-w-0', isDragging ? 'relative z-20 opacity-70' : '')}
+    >
+      <button
+        type="button"
+        className={classNames(
+          'flex h-full w-full min-w-0 items-center gap-1.5 rounded-sm-2 text-xs font-medium text-home-text-subtle outline-none transition-colors hover:bg-home-card-hover focus-visible:ring-1 focus-visible:ring-outline',
+          column.align === 'right' ? 'justify-end text-right' : 'justify-start text-left',
+        )}
+        {...attributes}
+        {...listeners}
+        onClick={() => onSortFieldClick(column.id)}
+      >
+        <span className="min-w-0 truncate">{t(column.labelI18nKey)}</span>
+        {isSorted ? (
+          sort.direction === 'asc' ? (
+            <ArrowUp className="h-3.5 w-3.5 shrink-0" />
+          ) : (
+            <ArrowDown className="h-3.5 w-3.5 shrink-0" />
+          )
+        ) : null}
+      </button>
+    </div>
+  );
+};
 
 /**
  * Props for the central SFTP directory listing panel.
@@ -31,6 +116,7 @@ type SftpDirectoryPanelProps = {
   canActivateParentDirectoryListEntry: boolean;
   clipboardMode?: 'copy' | 'cut';
   clipboardPaths: ReadonlySet<string>;
+  directoryListView: SftpDirectoryListViewSetting;
   entries: ApiSftpEntry[];
   errorMessage: string;
   fileRowRefs: React.MutableRefObject<Record<string, HTMLElement | null>>;
@@ -50,6 +136,13 @@ type SftpDirectoryPanelProps = {
   onCommitPendingCreate: () => Promise<void>;
   onCommitRenameEntry: (entry: ApiSftpEntry) => Promise<void>;
   onDirectoryBlankClick: () => void;
+  onDirectoryListColumnOrderChange: (columnIds: SftpDirectoryListColumnId[]) => void;
+  onDirectoryListColumnVisibilityChange: (columnId: SftpDirectoryListColumnId, visible: boolean) => void;
+  onDirectoryListSortChange: (sort: {
+    field: SftpDirectoryListColumnId;
+    direction: SftpDirectoryListSortDirection;
+  }) => void;
+  onDirectoryListSortFieldClick: (columnId: SftpDirectoryListColumnId) => void;
   onEntryContextMenu: (entry: ApiSftpEntry) => void;
   onEntryOpen: (entry: ApiSftpEntry) => void;
   onEntrySelect: (entry: ApiSftpEntry, event: SftpSelectionClickEvent) => void;
@@ -73,6 +166,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   canActivateParentDirectoryListEntry,
   clipboardMode,
   clipboardPaths,
+  directoryListView,
   entries,
   errorMessage,
   fileRowRefs,
@@ -81,6 +175,10 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   onCommitPendingCreate,
   onCommitRenameEntry,
   onDirectoryBlankClick,
+  onDirectoryListColumnOrderChange,
+  onDirectoryListColumnVisibilityChange,
+  onDirectoryListSortChange,
+  onDirectoryListSortFieldClick,
   onEntryContextMenu,
   onEntryOpen,
   onEntrySelect,
@@ -105,6 +203,63 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   visibleEntries,
 }) => {
   const { formatDateTime } = useDateTimeFormatter();
+  const visibleColumns = React.useMemo(
+    () => resolveVisibleSftpDirectoryColumns(directoryListView),
+    [directoryListView],
+  );
+  const directoryGridTemplate = React.useMemo(() => buildSftpDirectoryGridTemplate(visibleColumns), [visibleColumns]);
+  const directoryGridStyle = React.useMemo<React.CSSProperties>(
+    () => ({ gridTemplateColumns: directoryGridTemplate }),
+    [directoryGridTemplate],
+  );
+  const directoryListStyle = React.useMemo<React.CSSProperties>(
+    () => ({ minWidth: resolveSftpDirectoryListMinWidth(visibleColumns) }),
+    [visibleColumns],
+  );
+  const headerColumnIds = React.useMemo(() => visibleColumns.map((column) => column.id), [visibleColumns]);
+  const headerDragSensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  );
+
+  const handleHeaderDragEnd = React.useCallback(
+    (event: DragEndEvent): void => {
+      const activeId = event.active.id;
+      const overId = event.over?.id;
+      if (!isSftpDirectoryListColumnId(activeId) || !isSftpDirectoryListColumnId(overId) || activeId === overId) {
+        return;
+      }
+
+      const currentColumnIds = directoryListView.columns.map((column) => column.id);
+      const oldIndex = currentColumnIds.indexOf(activeId);
+      const newIndex = currentColumnIds.indexOf(overId);
+      if (oldIndex < 0 || newIndex < 0) {
+        return;
+      }
+
+      onDirectoryListColumnOrderChange(arrayMove(currentColumnIds, oldIndex, newIndex));
+    },
+    [directoryListView.columns, onDirectoryListColumnOrderChange],
+  );
+
+  const renderPlaceholderCell = React.useCallback((column: SftpDirectoryColumnDefinition): React.ReactNode => {
+    return (
+      <span
+        key={column.id}
+        className={classNames(
+          'min-w-0 truncate text-xs text-home-text-subtle',
+          column.align === 'right' && 'text-right',
+          column.monospace && 'font-mono',
+        )}
+      >
+        -
+      </span>
+    );
+  }, []);
 
   return (
     <main className={SFTP_CARD_CLASS_NAME}>
@@ -134,19 +289,49 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div className="h-full min-h-0 overflow-auto">
-              <div className={classNames('flex min-h-full flex-col', DIRECTORY_LIST_MIN_WIDTH_CLASS_NAME)}>
-                <div
-                  className={classNames(
-                    'sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle',
-                    DIRECTORY_ROW_GRID_CLASS_NAME,
-                  )}
+              <div
+                className="flex min-h-full flex-col"
+                style={directoryListStyle}
+              >
+                <DndContext
+                  collisionDetection={closestCenter}
+                  modifiers={[restrictToHorizontalAxis]}
+                  sensors={headerDragSensors}
+                  onDragEnd={handleHeaderDragEnd}
                 >
-                  <span className="min-w-0 truncate">{t('sftp.columns.name')}</span>
-                  <span className="min-w-0 truncate">{t('sftp.columns.size')}</span>
-                  <span className="min-w-0 truncate">{t('sftp.columns.modified')}</span>
-                  <span className="min-w-0 truncate">{t('sftp.columns.mode')}</span>
-                  <span></span>
-                </div>
+                  <SortableContext
+                    items={headerColumnIds}
+                    strategy={horizontalListSortingStrategy}
+                  >
+                    <ContextMenu>
+                      <ContextMenuTrigger asChild>
+                        <div
+                          className="sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle"
+                          style={directoryGridStyle}
+                        >
+                          {visibleColumns.map((column) => (
+                            <SortableHeaderCell
+                              key={column.id}
+                              column={column}
+                              sort={directoryListView.sort}
+                              onSortFieldClick={onDirectoryListSortFieldClick}
+                            />
+                          ))}
+                          <span />
+                        </div>
+                      </ContextMenuTrigger>
+                      <ContextMenuContent onCloseAutoFocus={onInlineEditMenuCloseAutoFocus}>
+                        <SftpDirectoryViewMenuItems
+                          columnsPlacement="inline"
+                          directoryListView={directoryListView}
+                          menuSurface="context"
+                          onColumnVisibilityChange={onDirectoryListColumnVisibilityChange}
+                          onSortChange={onDirectoryListSortChange}
+                        />
+                      </ContextMenuContent>
+                    </ContextMenu>
+                  </SortableContext>
+                </DndContext>
                 <div
                   className="min-h-0 flex-1"
                   onClick={(event) => {
@@ -188,11 +373,11 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                       }
                       className={classNames(
                         'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
-                        DIRECTORY_ROW_GRID_CLASS_NAME,
                         canActivateParentDirectoryListEntry
                           ? 'text-home-text hover:bg-home-card-hover'
                           : 'cursor-default text-home-text-subtle opacity-55',
                       )}
+                      style={directoryGridStyle}
                       onDoubleClick={canActivateParentDirectoryListEntry ? onParentDirectory : undefined}
                       onFocus={() => {
                         if (canActivateParentDirectoryListEntry) {
@@ -208,18 +393,24 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                         }
                       }}
                     >
-                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                        <Undo2
-                          className={classNames(
-                            'h-4 w-4 shrink-0',
-                            canActivateParentDirectoryListEntry ? 'text-home-text' : 'text-home-text-subtle',
-                          )}
-                        />
-                        <span className="truncate">..</span>
-                      </span>
-                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
-                      <span className="truncate text-xs text-home-text-subtle">-</span>
-                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                      {visibleColumns.map((column) =>
+                        column.id === 'name' ? (
+                          <span
+                            key={column.id}
+                            className="flex min-w-0 items-center gap-2 overflow-hidden"
+                          >
+                            <Undo2
+                              className={classNames(
+                                'h-4 w-4 shrink-0',
+                                canActivateParentDirectoryListEntry ? 'text-home-text' : 'text-home-text-subtle',
+                              )}
+                            />
+                            <span className="truncate">..</span>
+                          </span>
+                        ) : (
+                          renderPlaceholderCell(column)
+                        ),
+                      )}
                       <span />
                     </div>
                   ) : null}
@@ -227,40 +418,46 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                     <div
                       className={classNames(
                         'text-home-text grid h-[34px] w-full items-center rounded-lg bg-home-card-hover px-3 text-left text-sm',
-                        DIRECTORY_ROW_GRID_CLASS_NAME,
                       )}
+                      style={directoryGridStyle}
                     >
-                      <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                        {pendingCreate.type === 'directory' ? (
-                          <Folder className="text-home-text h-4 w-4 shrink-0" />
-                        ) : (
-                          <File className="text-home-text h-4 w-4 shrink-0" />
-                        )}
-                        <Input
-                          ref={renameInputRef}
-                          aria-label={t('sftp.renameInputLabel')}
-                          className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
-                          value={renameInput}
-                          onBlur={() => {
-                            onInlineEditInputBlur(onCommitPendingCreate);
-                          }}
-                          onChange={(event) => onRenameInputChange(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault();
-                              void onCommitPendingCreate();
-                            }
+                      {visibleColumns.map((column) =>
+                        column.id === 'name' ? (
+                          <span
+                            key={column.id}
+                            className="flex min-w-0 items-center gap-2 overflow-hidden"
+                          >
+                            {pendingCreate.type === 'directory' ? (
+                              <Folder className="text-home-text h-4 w-4 shrink-0" />
+                            ) : (
+                              <File className="text-home-text h-4 w-4 shrink-0" />
+                            )}
+                            <Input
+                              ref={renameInputRef}
+                              aria-label={t('sftp.renameInputLabel')}
+                              className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                              value={renameInput}
+                              onBlur={() => {
+                                onInlineEditInputBlur(onCommitPendingCreate);
+                              }}
+                              onChange={(event) => onRenameInputChange(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === 'Enter') {
+                                  event.preventDefault();
+                                  void onCommitPendingCreate();
+                                }
 
-                            if (event.key === 'Escape') {
-                              event.preventDefault();
-                              onCancelInlineEdit();
-                            }
-                          }}
-                        />
-                      </span>
-                      <span className="min-w-0 truncate text-xs text-home-text-subtle">-</span>
-                      <span className="truncate text-xs text-home-text-subtle">-</span>
-                      <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">-</span>
+                                if (event.key === 'Escape') {
+                                  event.preventDefault();
+                                  onCancelInlineEdit();
+                                }
+                              }}
+                            />
+                          </span>
+                        ) : (
+                          renderPlaceholderCell(column)
+                        ),
+                      )}
                       <span />
                     </div>
                   ) : null}
@@ -289,7 +486,6 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                 tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
                                 className={classNames(
                                   'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',
-                                  DIRECTORY_ROW_GRID_CLASS_NAME,
                                   hasSelectedPreviousEntry && hasSelectedNextEntry
                                     ? 'rounded-none'
                                     : hasSelectedPreviousEntry
@@ -300,6 +496,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                   isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
                                   isCut ? 'opacity-55' : '',
                                 )}
+                                style={directoryGridStyle}
                                 onClick={(event) => {
                                   onSetActiveFileRowKey(entry.path);
                                   onEntrySelect(entry, event);
@@ -315,46 +512,56 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                   });
                                 }}
                               >
-                                <span className="flex min-w-0 items-center gap-2 overflow-hidden">
-                                  {resolveEntryIcon(entry, hiddenEntryVisualClassName)}
-                                  {renamingEntryPath === entry.path ? (
-                                    <Input
-                                      ref={renameInputRef}
-                                      aria-label={t('sftp.renameInputLabel')}
-                                      className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
-                                      value={renameInput}
-                                      onClick={(event) => event.stopPropagation()}
-                                      onBlur={() => {
-                                        onInlineEditInputBlur(() => onCommitRenameEntry(entry));
-                                      }}
-                                      onChange={(event) => onRenameInputChange(event.target.value)}
-                                      onKeyDown={(event) => {
-                                        if (event.key === 'Enter') {
-                                          event.preventDefault();
-                                          void onCommitRenameEntry(entry);
-                                        }
+                                {visibleColumns.map((column) =>
+                                  column.id === 'name' ? (
+                                    <span
+                                      key={column.id}
+                                      className="flex min-w-0 items-center gap-2 overflow-hidden"
+                                    >
+                                      {resolveEntryIcon(entry, hiddenEntryVisualClassName)}
+                                      {renamingEntryPath === entry.path ? (
+                                        <Input
+                                          ref={renameInputRef}
+                                          aria-label={t('sftp.renameInputLabel')}
+                                          className="h-[26px] min-w-0 flex-1 rounded-sm-2 px-0 text-sm"
+                                          value={renameInput}
+                                          onClick={(event) => event.stopPropagation()}
+                                          onBlur={() => {
+                                            onInlineEditInputBlur(() => onCommitRenameEntry(entry));
+                                          }}
+                                          onChange={(event) => onRenameInputChange(event.target.value)}
+                                          onKeyDown={(event) => {
+                                            if (event.key === 'Enter') {
+                                              event.preventDefault();
+                                              void onCommitRenameEntry(entry);
+                                            }
 
-                                        if (event.key === 'Escape') {
-                                          event.preventDefault();
-                                          onCancelInlineEdit();
-                                        }
-                                      }}
-                                    />
-                                  ) : (
-                                    <span className={classNames('truncate', hiddenEntryVisualClassName)}>
-                                      {entry.name}
+                                            if (event.key === 'Escape') {
+                                              event.preventDefault();
+                                              onCancelInlineEdit();
+                                            }
+                                          }}
+                                        />
+                                      ) : (
+                                        <span className={classNames('truncate', hiddenEntryVisualClassName)}>
+                                          {entry.name}
+                                        </span>
+                                      )}
                                     </span>
-                                  )}
-                                </span>
-                                <span className="min-w-0 truncate text-xs text-home-text-subtle">
-                                  {entry.type === 'directory' ? '-' : formatFileSize(entry.size)}
-                                </span>
-                                <span className="truncate text-xs text-home-text-subtle">
-                                  {formatModifiedAt(entry.modifiedAt, formatDateTime)}
-                                </span>
-                                <span className="min-w-0 truncate font-mono text-xs text-home-text-subtle">
-                                  {entry.permissions}
-                                </span>
+                                  ) : (
+                                    <span
+                                      key={column.id}
+                                      className={classNames(
+                                        'min-w-0 truncate text-xs text-home-text-subtle',
+                                        column.align === 'right' && 'text-right',
+                                        column.monospace && 'font-mono',
+                                        hiddenEntryVisualClassName,
+                                      )}
+                                    >
+                                      {formatSftpDirectoryColumnValue(column.id, entry, formatDateTime)}
+                                    </span>
+                                  ),
+                                )}
                                 <span />
                               </div>
                             </ContextMenuTrigger>

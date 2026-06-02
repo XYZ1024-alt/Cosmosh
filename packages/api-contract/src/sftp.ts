@@ -7,9 +7,82 @@ export type SftpNamedItem = {
   name: string;
 };
 
+export const SFTP_DIRECTORY_LIST_COLUMN_IDS = [
+  'name',
+  'modifiedAt',
+  'type',
+  'size',
+  'accessedAt',
+  'permissions',
+  'permissionOctal',
+  'mode',
+  'uid',
+  'gid',
+  'extension',
+  'isHidden',
+  'path',
+  'parentPath',
+  'shellEscapedPath',
+  'longname',
+] as const;
+
+export type SftpDirectoryListColumnId = (typeof SFTP_DIRECTORY_LIST_COLUMN_IDS)[number];
+
+export type SftpDirectoryListSortDirection = 'asc' | 'desc';
+
+export type SftpDirectoryListColumnSetting = {
+  readonly id: SftpDirectoryListColumnId;
+  readonly visible: boolean;
+};
+
+export type SftpDirectoryListSortSetting = {
+  readonly field: SftpDirectoryListColumnId;
+  readonly direction: SftpDirectoryListSortDirection;
+};
+
+export type SftpDirectoryListViewSetting = {
+  readonly version: 1;
+  readonly columns: ReadonlyArray<SftpDirectoryListColumnSetting>;
+  readonly sort: SftpDirectoryListSortSetting;
+};
+
+const DEFAULT_SFTP_DIRECTORY_LIST_VISIBLE_COLUMN_IDS = new Set<SftpDirectoryListColumnId>([
+  'name',
+  'modifiedAt',
+  'type',
+  'size',
+  'permissions',
+]);
+
+export const DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING: SftpDirectoryListViewSetting = {
+  version: 1,
+  columns: SFTP_DIRECTORY_LIST_COLUMN_IDS.map((id) => ({
+    id,
+    visible: DEFAULT_SFTP_DIRECTORY_LIST_VISIBLE_COLUMN_IDS.has(id),
+  })),
+  sort: {
+    field: 'name',
+    direction: 'asc',
+  },
+};
+
+const SFTP_DIRECTORY_LIST_COLUMN_ID_SET = new Set<string>(
+  SFTP_DIRECTORY_LIST_COLUMN_IDS as ReadonlyArray<string>,
+);
+
 const SFTP_NAME_COMPARE_OPTIONS: Intl.CollatorOptions = {
   sensitivity: 'base',
   numeric: true,
+};
+
+/**
+ * Checks whether an unknown JSON value is a supported SFTP list column id.
+ *
+ * @param value Candidate value from settings JSON.
+ * @returns Whether the value maps to a known SFTP list column.
+ */
+export const isSftpDirectoryListColumnId = (value: unknown): value is SftpDirectoryListColumnId => {
+  return typeof value === 'string' && SFTP_DIRECTORY_LIST_COLUMN_ID_SET.has(value);
 };
 
 /**

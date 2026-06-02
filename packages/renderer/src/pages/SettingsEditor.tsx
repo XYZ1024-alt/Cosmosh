@@ -15,22 +15,9 @@ import { getAppSettings, updateAppSettings } from '../lib/backend';
 import { onLocaleChange, t } from '../lib/i18n';
 import { updateSettingsStoreValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
-import { type SettingDefinition, SETTINGS_REGISTRY } from './settings-registry';
+import { type SettingDefinition, SETTINGS_REGISTRY, type SettingsJsonSchemaNode } from './settings-registry';
 
-type JsonSchemaNode = {
-  type?: 'object' | 'string' | 'boolean' | 'integer';
-  title?: string;
-  description?: string;
-  markdownDescription?: string;
-  default?: string | number | boolean;
-  enum?: string[];
-  minimum?: number;
-  maximum?: number;
-  maxLength?: number;
-  properties?: Record<string, JsonSchemaNode>;
-  required?: string[];
-  additionalProperties?: boolean;
-};
+type JsonSchemaNode = SettingsJsonSchemaNode;
 
 type JsonSchemaDocument = {
   $schema: string;
@@ -98,6 +85,13 @@ const buildSettingPropertySchema = (item: SettingDefinition): JsonSchemaNode => 
     markdownDescription: `**${settingName}**\n\n${settingDescription}`,
     default: item.defaultValue,
   };
+
+  if (item.control === 'json') {
+    return {
+      ...item.jsonSchema,
+      ...base,
+    };
+  }
 
   if (item.valueType === 'boolean') {
     return {
