@@ -66,9 +66,7 @@ export const DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING: SftpDirectoryListViewSett
   },
 };
 
-const SFTP_DIRECTORY_LIST_COLUMN_ID_SET = new Set<string>(
-  SFTP_DIRECTORY_LIST_COLUMN_IDS as ReadonlyArray<string>,
-);
+const SFTP_DIRECTORY_LIST_COLUMN_ID_SET = new Set<string>(SFTP_DIRECTORY_LIST_COLUMN_IDS as ReadonlyArray<string>);
 
 const SFTP_NAME_COMPARE_OPTIONS: Intl.CollatorOptions = {
   sensitivity: 'base',

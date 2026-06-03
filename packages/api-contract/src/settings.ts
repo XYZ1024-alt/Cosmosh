@@ -10,8 +10,8 @@ import type { SettingKey, SettingsValues } from './settings-registry';
 import { DEFAULT_SETTINGS_VALUES, SETTINGS_DEFINITION_MAP, SETTINGS_REGISTRY } from './settings-registry';
 import {
   DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
-  SFTP_DIRECTORY_LIST_COLUMN_IDS,
   isSftpDirectoryListColumnId,
+  SFTP_DIRECTORY_LIST_COLUMN_IDS,
   type SftpDirectoryListColumnId,
   type SftpDirectoryListColumnSetting,
   type SftpDirectoryListSortDirection,
@@ -56,9 +56,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
  * @param value Valid SFTP directory-list view setting.
  * @returns A new object graph safe for caller-side mutation.
  */
-const cloneSftpDirectoryListViewSetting = (
-  value: SftpDirectoryListViewSetting,
-): SftpDirectoryListViewSetting => ({
+const cloneSftpDirectoryListViewSetting = (value: SftpDirectoryListViewSetting): SftpDirectoryListViewSetting => ({
   version: 1,
   columns: value.columns.map((column) => ({
     id: column.id,
