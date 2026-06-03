@@ -99,6 +99,7 @@ This helper centralizes:
 - server -> keychain credential resolution,
 - credential decryption,
 - strict host key policy,
+- server-scoped SSH transport compression negotiation,
 - SHA256 known-host verification,
 - normalized host-trust failure shape.
 

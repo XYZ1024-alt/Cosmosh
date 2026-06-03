@@ -11,6 +11,7 @@ import { Client, type ConnectConfig, type SFTPWrapper, type Stats } from 'ssh2';
 import type { AuditEventService } from '../audit/service.js';
 import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
+import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
 
 type GetDbClient = () => PrismaClient;
@@ -604,9 +605,11 @@ export class SftpSessionService {
     });
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
+    const enableSshCompression = server.enableSshCompression;
     const openResult = await this.openSftp(server, {
       connectTimeoutSec: input.connectTimeoutSec,
       strictHostKey,
+      enableSshCompression,
       trustedFingerprintSet,
       t: i18n.t,
     });
@@ -624,6 +627,7 @@ export class SftpSessionService {
           host: server.host,
           port: server.port,
           strictHostKey,
+          enableSshCompression,
           fingerprint: openResult.fingerprint,
           reason: openResult.message || 'Host fingerprint is not trusted.',
         },
@@ -652,6 +656,7 @@ export class SftpSessionService {
           host: server.host,
           port: server.port,
           strictHostKey,
+          enableSshCompression,
           reason: openResult.message,
         },
       });
@@ -698,6 +703,7 @@ export class SftpSessionService {
         host: server.host,
         port: server.port,
         strictHostKey,
+        enableSshCompression,
         initialPath: resolvedInitialPath,
       },
     });
@@ -1941,6 +1947,7 @@ export class SftpSessionService {
     options: {
       connectTimeoutSec: number;
       strictHostKey: boolean;
+      enableSshCompression: boolean;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
     },
@@ -1955,6 +1962,9 @@ export class SftpSessionService {
       readyTimeout: options.connectTimeoutSec * 1000,
       keepaliveInterval: 10_000,
       keepaliveCountMax: 3,
+      algorithms: {
+        compress: buildSshCompressionAlgorithms(options.enableSshCompression),
+      },
       hostHash: 'sha256',
       hostVerifier: (hashedKey: string) => {
         presentedFingerprint = hashedKey;

@@ -36,10 +36,11 @@ sequenceDiagram
   - `cols` / `rows`：终端视口尺寸。
   - `connectTimeoutSec`：来自设置项 `sshConnectionTimeoutSec` 的会话级 SSH 握手超时。
   - `strictHostKey`：从 SSH 服务器配置透传的会话级主机密钥策略。
+  - `enableSshCompression`：从 SSH 服务器配置透传的会话级 SSH 传输压缩策略。
 - 步骤：
   1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
-  3. 通过 `ssh2.Client.shell` 打开 SSH shell。
+  3. 使用服务器作用域的压缩协商配置，通过 `ssh2.Client.shell` 打开 SSH shell。
   4. 写入 `SshLoginAudit` 记录：
      - 会话创建成功时写入 `result = success`，并记录 `sessionId` 与 `sessionStartedAt`。
      - 主机信任/认证/连接失败时写入 `result = failed`，并记录 `failureReason`。
@@ -192,6 +193,15 @@ flowchart LR
   - renderer 打开信任确认弹窗。
   - 用户确认后调用 trust endpoint。
   - renderer 重试 create-session。
+
+## 4.1 SSH 传输压缩
+
+- SSH server 记录持久化 `enableSshCompression`，默认值为 `false`。
+- SSH 服务器编辑器会在“安全”分区中以服务器级开关暴露该能力。
+- 关闭时，backend 会向 `ssh2` 传入 `algorithms.compress = ['none']`，明确保持默认“不启用传输压缩”策略。
+- 启用时，backend 优先协商 `zlib@openssh.com`，其次是 `zlib`，最后以 `none` 作为兼容性回退。
+- SSH terminal 会话创建可以携带显式 `enableSshCompression` 值，使 retry/split 流程绑定到已解析服务器快照。
+- SFTP 会话与端口转发启动会在 backend 读取同一个持久化服务器标记，因此 shell、文件系统与转发传输保持一致。
 
 ## 5. 异常处理与重连
 

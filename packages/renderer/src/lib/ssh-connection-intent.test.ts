@@ -16,6 +16,7 @@ test('multi-tab retry remains bound to each tab snapshot', () => {
     serverId: 'server-a',
     serverName: 'Server A',
     strictHostKey: true,
+    enableSshCompression: false,
     capturedAt: 1,
   });
 
@@ -24,6 +25,7 @@ test('multi-tab retry remains bound to each tab snapshot', () => {
     serverId: 'server-b',
     serverName: 'Server B',
     strictHostKey: false,
+    enableSshCompression: true,
     capturedAt: 2,
   });
 
@@ -49,6 +51,7 @@ test('retry connect mode falls back to initial when no snapshot exists', () => {
     serverId: 'server-a',
     serverName: 'Server A',
     strictHostKey: true,
+    enableSshCompression: false,
     capturedAt: 1,
   });
   assert.equal(resolveConnectMode(intentWithSnapshot, 'retry'), 'retry');
@@ -60,6 +63,7 @@ test('mirror pane reuses primary snapshot semantics', () => {
     serverId: 'server-b',
     serverName: 'Server B',
     strictHostKey: true,
+    enableSshCompression: true,
     capturedAt: 33,
   };
 

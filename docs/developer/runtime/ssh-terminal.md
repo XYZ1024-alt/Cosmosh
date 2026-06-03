@@ -36,10 +36,11 @@ sequenceDiagram
   - `cols` / `rows`: terminal viewport dimensions.
   - `connectTimeoutSec`: per-session SSH handshake timeout from Settings (`sshConnectionTimeoutSec`).
   - `strictHostKey`: explicit per-attempt host key policy propagated from SSH server configuration.
+  - `enableSshCompression`: explicit per-attempt SSH transport compression policy propagated from SSH server configuration.
 - Steps:
   1. Load server record + linked keychain encrypted credentials.
   2. Resolve trusted host fingerprints.
-  3. Open SSH shell via `ssh2.Client.shell`.
+  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation.
   4. Write `SshLoginAudit` record:
      - `result = success` on successful session creation, with `sessionId` and `sessionStartedAt`.
      - `result = failed` on host-trust/auth/connect failures, with `failureReason`.
@@ -192,6 +193,15 @@ flowchart LR
   - renderer opens trust dialog.
   - user confirmation calls trust endpoint.
   - renderer retries create-session.
+
+## 4.1 SSH Transport Compression
+
+- SSH server records persist `enableSshCompression`, defaulting to `false`.
+- The SSH server editor exposes this as a server-level switch under Security.
+- When disabled, backend passes `algorithms.compress = ['none']` to `ssh2`, making the default "no transport compression" policy explicit.
+- When enabled, backend prefers `zlib@openssh.com`, then `zlib`, and finally `none` as a compatibility fallback.
+- SSH terminal session creation may carry an explicit `enableSshCompression` value so retry/split flows stay bound to the resolved server snapshot.
+- SFTP sessions and port-forwarding starts read the same persisted server flag on the backend, so shell, file-system, and forwarding transports remain aligned.
 
 ## 5. Exception Handling & Reconnect
 

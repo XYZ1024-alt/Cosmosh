@@ -47,6 +47,7 @@ export const toResolvedTargetSnapshot = (target: ResolvedTerminalTarget): SshRes
     serverId: target.server.id,
     serverName: target.server.name,
     strictHostKey: target.server.strictHostKey ?? true,
+    enableSshCompression: target.server.enableSshCompression ?? false,
     capturedAt,
   };
 };

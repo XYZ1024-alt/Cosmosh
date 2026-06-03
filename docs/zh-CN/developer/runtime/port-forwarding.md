@@ -99,6 +99,7 @@ flowchart TD
 - server -> keychain 凭据解析，
 - 凭据解密，
 - strict host key 策略，
+- 服务器作用域的 SSH 传输压缩协商，
 - SHA256 known-host 校验，
 - 标准化主机信任失败结构。
 

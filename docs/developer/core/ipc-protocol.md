@@ -104,9 +104,9 @@ The following SSH entity payloads now include visual metadata for persistent ico
 
 SSH security policy fields in current contract:
 
-- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey` boolean.
-- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey`.
-- `ApiSshCreateSessionRequest`: optional `strictHostKey` override used for one session attempt.
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey` and `enableSshCompression` booleans.
+- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey` and `enableSshCompression`.
+- `ApiSshCreateSessionRequest`: optional `strictHostKey` and `enableSshCompression` overrides used for one session attempt.
 
 ### 3.2 SSH Port Forwarding Contract
 

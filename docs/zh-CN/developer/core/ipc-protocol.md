@@ -104,9 +104,9 @@ flowchart TB
 
 当前 SSH 安全策略相关字段：
 
-- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：`strictHostKey` 布尔值。
-- `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey`。
-- `ApiSshCreateSessionRequest`：可选 `strictHostKey`，可用于单次会话尝试覆盖。
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：`strictHostKey` 与 `enableSshCompression` 布尔值。
+- `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey` 与 `enableSshCompression`。
+- `ApiSshCreateSessionRequest`：可选 `strictHostKey` 与 `enableSshCompression`，可用于单次会话尝试覆盖。
 
 ### 3.2 SSH 端口转发契约
 

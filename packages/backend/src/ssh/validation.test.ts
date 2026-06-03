@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { parseCreateServerRequest, parseCreateSessionRequest, parseUpdateServerRequest } from './validation.js';
 
-test('strictHostKey validates and flows through server/session payload parsing', () => {
+test('server transport booleans validate and flow through payload parsing', () => {
   const createServer = parseCreateServerRequest({
     name: 'Server',
     host: '10.0.0.1',
@@ -12,9 +12,11 @@ test('strictHostKey validates and flows through server/session payload parsing',
     authType: 'password',
     password: 'secret',
     strictHostKey: false,
+    enableSshCompression: true,
   });
 
   assert.equal(createServer.value?.strictHostKey, false);
+  assert.equal(createServer.value?.enableSshCompression, true);
 
   const updateServer = parseUpdateServerRequest({
     name: 'Server',
@@ -24,24 +26,43 @@ test('strictHostKey validates and flows through server/session payload parsing',
     authType: 'password',
     password: 'secret',
     strictHostKey: true,
+    enableSshCompression: false,
   });
 
   assert.equal(updateServer.value?.strictHostKey, true);
+  assert.equal(updateServer.value?.enableSshCompression, false);
 
   const createSession = parseCreateSessionRequest({
     serverId: 'srv-1',
     cols: 120,
     rows: 30,
     strictHostKey: false,
+    enableSshCompression: true,
   });
 
   assert.equal(createSession.value?.strictHostKey, false);
+  assert.equal(createSession.value?.enableSshCompression, true);
 });
 
 test('strictHostKey rejects non-boolean payload values', () => {
   const parsed = parseCreateSessionRequest({
     serverId: 'srv-1',
     strictHostKey: 'false',
+  });
+
+  assert.equal(parsed.value, undefined);
+  assert.ok(parsed.error);
+});
+
+test('enableSshCompression rejects non-boolean payload values', () => {
+  const parsed = parseCreateServerRequest({
+    name: 'Server',
+    host: '10.0.0.1',
+    port: 22,
+    username: 'root',
+    authType: 'password',
+    password: 'secret',
+    enableSshCompression: 'true',
   });
 
   assert.equal(parsed.value, undefined);

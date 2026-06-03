@@ -217,6 +217,7 @@ export const saveServerFromEditor = async ({
     tagIds: formState.tagIds,
     note: formState.note.trim() || undefined,
     strictHostKey: formState.strictHostKey,
+    enableSshCompression: formState.enableSshCompression,
   };
 
   const savedServer = serverId

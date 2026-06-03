@@ -33,6 +33,7 @@ import {
   type TerminalClientInboundMessage,
   updateInteractiveCompletionState,
 } from '../terminal/shared.js';
+import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
 
 type GetDbClient = () => PrismaClient;
@@ -52,6 +53,7 @@ type CreateSshSessionInput = {
   term: string;
   connectTimeoutSec: number;
   strictHostKey?: boolean;
+  enableSshCompression?: boolean;
 };
 
 type CreateSshSessionSuccess = {
@@ -259,6 +261,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
+    const enableSshCompression = input.enableSshCompression ?? server.enableSshCompression;
     const pendingOutput: string[] = [];
     let pendingOutputBytes = 0;
     let pendingOutputDropCount = 0;
@@ -287,6 +290,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       term: input.term,
       connectTimeoutSec: input.connectTimeoutSec,
       strictHostKey,
+      enableSshCompression,
       trustedFingerprintSet,
       t: i18n.t,
       onOutput: (data) => {
@@ -334,6 +338,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           host: server.host,
           port: server.port,
           strictHostKey,
+          enableSshCompression,
           fingerprint: shellResult.fingerprint,
           reason: shellResult.message || 'Host fingerprint is not trusted.',
         },
@@ -369,6 +374,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           host: server.host,
           port: server.port,
           strictHostKey,
+          enableSshCompression,
           reason: shellResult.message,
         },
       });
@@ -407,6 +413,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         host: server.host,
         port: server.port,
         strictHostKey,
+        enableSshCompression,
       },
     });
 
@@ -1095,6 +1102,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       term: string;
       connectTimeoutSec: number;
       strictHostKey: boolean;
+      enableSshCompression: boolean;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
       onOutput: (data: string) => void;
@@ -1110,6 +1118,9 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       readyTimeout: options.connectTimeoutSec * 1000,
       keepaliveInterval: 10_000,
       keepaliveCountMax: 3,
+      algorithms: {
+        compress: buildSshCompressionAlgorithms(options.enableSshCompression),
+      },
       hostHash: 'sha256',
       hostVerifier: (hashedKey: string) => {
         presentedFingerprint = hashedKey;

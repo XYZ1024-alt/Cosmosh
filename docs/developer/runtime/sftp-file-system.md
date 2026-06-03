@@ -177,6 +177,7 @@ SFTP uses the same server, keychain, credential decryption, and host fingerprint
 - Decrypted secrets never cross into renderer or preload.
 - Main injects the internal backend auth token and locale headers.
 - Unknown or untrusted host fingerprints are returned through the same confirmation flow used by SSH.
+- SSH transport compression follows the server's persisted `enableSshCompression` flag. It defaults off and is negotiated only when enabled on the server record.
 - Reconnect creates a normal new SFTP session and therefore reuses the same host fingerprint trust confirmation flow. If the user rejects the fingerprint prompt, the reconnect task fails and the original operation is not retried.
 
 Error mapping:

@@ -1010,6 +1010,8 @@
     "editorLoadFailed": "加载服务器编辑资源失败。",
     "emptyServers": "暂无 SSH 服务器。",
     "emptyTags": "暂无已添加的标签",
+    "enableSshCompression": "SSH 传输压缩",
+    "enableSshCompressionTooltip": "启用后，Cosmosh 会请求服务器压缩 SSH 传输数据。除非连接带宽受限，否则建议保持默认关闭。",
     "folderNamePlaceholder": "文件夹名称",
     "groupDay": "1 天内",
     "groupMonth": "1 个月内",

@@ -2,6 +2,7 @@ import type { Prisma } from '@prisma/client';
 import { Client, type ConnectConfig } from 'ssh2';
 
 import type { I18nInstance } from '../i18n-bridge.js';
+import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
 
 export type SshServerWithKeychain = Prisma.SshServerGetPayload<{
@@ -53,6 +54,9 @@ export const openSshClient = async (
     readyTimeout: options.connectTimeoutSec * 1000,
     keepaliveInterval: 10_000,
     keepaliveCountMax: 3,
+    algorithms: {
+      compress: buildSshCompressionAlgorithms(server.enableSshCompression),
+    },
     hostHash: 'sha256',
     hostVerifier: (hashedKey: string) => {
       presentedFingerprint = hashedKey;

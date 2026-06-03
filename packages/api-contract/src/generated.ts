@@ -803,6 +803,7 @@ export interface components {
       keychainId: string;
       authType: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
+      enableSshCompression?: boolean;
       hasPassword: boolean;
       hasPrivateKey: boolean;
       note?: string;
@@ -828,6 +829,7 @@ export interface components {
       keychainId?: string;
       authType?: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
+      enableSshCompression?: boolean;
       iconKey?: string;
       colorKey?: components['schemas']['SshVisualColorKey'];
       password?: string;
@@ -865,6 +867,7 @@ export interface components {
       /** @default 45 */
       connectTimeoutSec: number;
       strictHostKey?: boolean;
+      enableSshCompression?: boolean;
     };
     SshTrustFingerprintRequest: {
       serverId: string;

@@ -22,6 +22,7 @@ export type ServerEditorFormState = {
   folderId: string;
   tagIds: string[];
   strictHostKey: boolean;
+  enableSshCompression: boolean;
 };
 
 export type ServerCredentialCache = {
@@ -109,6 +110,7 @@ export const createInitialServerFormState = (defaultServerNoteTemplate = ''): Se
     folderId: '',
     tagIds: [],
     strictHostKey: true,
+    enableSshCompression: false,
   };
 };
 
@@ -138,6 +140,7 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
     folderId: server.folder?.id ?? '',
     tagIds: (server.tags ?? []).map((tag) => tag.id),
     strictHostKey: server.strictHostKey ?? true,
+    enableSshCompression: server.enableSshCompression ?? false,
   };
 };
 

@@ -1004,6 +1004,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           port: parsed.value.port,
           username: parsed.value.username,
           strictHostKey: parsed.value.strictHostKey,
+          enableSshCompression: parsed.value.enableSshCompression,
           keychainId,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
@@ -1045,6 +1046,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           username: server.username,
           keychainId: server.keychainId,
           strictHostKey: server.strictHostKey,
+          enableSshCompression: server.enableSshCompression,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
         },
@@ -1089,6 +1091,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
       select: {
         id: true,
         strictHostKey: true,
+        enableSshCompression: true,
         keychainId: true,
         keychain: {
           select: {
@@ -1187,6 +1190,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           iconKey: parsed.value.iconKey,
           colorKey: parsed.value.colorKey,
           strictHostKey: parsed.value.strictHostKey ?? existingServer.strictHostKey,
+          enableSshCompression: parsed.value.enableSshCompression ?? existingServer.enableSshCompression,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
           ...(tagIds
@@ -1230,6 +1234,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           username: server.username,
           keychainId: server.keychainId,
           strictHostKey: server.strictHostKey,
+          enableSshCompression: server.enableSshCompression,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
           keychainReplaced: existingServer.keychainId !== keychainId,

@@ -177,6 +177,7 @@ SFTP 使用与 SSH 相同的服务器、钥匙链、凭据解密与 host fingerp
 - 解密后的 secret 不会跨到 renderer 或 preload。
 - Main 注入内部 backend 鉴权 token 与 locale header。
 - 未知或不受信任的 host fingerprint 通过与 SSH 相同的确认流程返回。
+- SSH 传输压缩遵循服务器持久化的 `enableSshCompression` 标记。该标记默认关闭，仅在服务器记录启用时参与协商。
 - 重连会创建正常的新 SFTP 会话，因此复用相同的 host fingerprint 信任确认流程。如果用户拒绝 fingerprint 提示，本次重连任务失败，原操作不会重试。
 
 错误映射：

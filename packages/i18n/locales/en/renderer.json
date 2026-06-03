@@ -1010,6 +1010,8 @@
     "editorLoadFailed": "Failed to load server editor resources.",
     "emptyServers": "No SSH servers yet.",
     "emptyTags": "No added tags",
+    "enableSshCompression": "SSH Transport Compression",
+    "enableSshCompressionTooltip": "When enabled, Cosmosh asks the server to compress SSH transport data. Keep it off by default unless the connection is bandwidth-constrained.",
     "folderNamePlaceholder": "Folder name",
     "groupDay": "Within 1 Day",
     "groupMonth": "Within 1 Month",

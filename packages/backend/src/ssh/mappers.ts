@@ -47,6 +47,7 @@ export const mapServerToListItem = (
     port: server.port,
     username: server.username,
     strictHostKey: server.strictHostKey,
+    enableSshCompression: server.enableSshCompression,
     keychainId: server.keychain.id,
     authType: server.keychain.authType,
     hasPassword: Boolean(server.keychain.passwordEncrypted),

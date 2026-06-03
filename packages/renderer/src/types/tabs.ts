@@ -16,6 +16,7 @@ export type SshResolvedTargetSnapshot =
       serverId: string;
       serverName: string;
       strictHostKey: boolean;
+      enableSshCompression: boolean;
       capturedAt: number;
     }
   | {

@@ -219,7 +219,8 @@ flowchart LR
 ## 7. SSH Keychain Credential Model (2026-03)
 
 - SSH credentials are now persisted in `SshKeychain` and linked from `SshServer.keychainId`.
-- `SshServer` keeps connection identity and host policy (`host`, `port`, `username`, `strictHostKey`) but no longer stores encrypted password/private-key fields directly.
+- `SshServer` keeps connection identity and host/transport policy (`host`, `port`, `username`, `strictHostKey`, `enableSshCompression`) but no longer stores encrypted password/private-key fields directly.
+- SSH transport compression is disabled by default. When enabled on a server record, the backend applies the same compression negotiation policy to SSH shell sessions, SFTP sessions, and port-forwarding clients.
 - Keychain organization metadata reuses the same `SshFolder` and `SshTag` domains used by servers (no separate keychain-only folder/tag tables).
 - Existing per-server edit UX is preserved by allowing inline credential input in the SSH editor; backend transparently materializes/updates hidden keychains.
 - Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.

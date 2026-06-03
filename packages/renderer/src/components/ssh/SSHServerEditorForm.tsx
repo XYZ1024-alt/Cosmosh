@@ -41,6 +41,7 @@ type ServerEditorFormState = {
   folderId: string;
   tagIds: string[];
   strictHostKey: boolean;
+  enableSshCompression: boolean;
 };
 
 type SSHServerEditorFormProps = {
@@ -361,6 +362,20 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
             labelClassName={formStyles.inlineLabel}
           >
             {t('ssh.strictHostKeyChecking')}
+          </LabelWithTooltip>
+        </div>
+        <div className="flex items-center gap-2.5 px-2.5">
+          <Switch
+            id="ssh-editor-enable-compression"
+            checked={formState.enableSshCompression}
+            onCheckedChange={(checkedState) => onChangeForm('enableSshCompression', checkedState)}
+          />
+          <LabelWithTooltip
+            htmlFor="ssh-editor-enable-compression"
+            tooltip={t('ssh.enableSshCompressionTooltip')}
+            labelClassName={formStyles.inlineLabel}
+          >
+            {t('ssh.enableSshCompression')}
           </LabelWithTooltip>
         </div>
       </section>

@@ -91,6 +91,7 @@
       "colorKeyInvalid": "Color key must be one of the predefined SSH visual colors when provided.",
       "colsRange": "cols must be an integer between 20 and 400.",
       "connectTimeoutRange": "connectTimeoutSec must be an integer between 5 and 180.",
+      "enableSshCompressionType": "enableSshCompression must be a boolean value.",
       "fingerprintAlgorithmUnsupported": "Only sha256 host fingerprint algorithm is supported.",
       "fingerprintLength": "fingerprintSha256 is required and must be 1-255 characters.",
       "folderIdRequired": "folderId is required.",

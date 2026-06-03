@@ -2086,6 +2086,8 @@ components:
           $ref: '#/components/schemas/SshAuthType'
         strictHostKey:
           type: boolean
+        enableSshCompression:
+          type: boolean
         hasPassword:
           type: boolean
         hasPrivateKey:
@@ -2146,6 +2148,8 @@ components:
         authType:
           $ref: '#/components/schemas/SshAuthType'
         strictHostKey:
+          type: boolean
+        enableSshCompression:
           type: boolean
         iconKey:
           type: string
@@ -2247,6 +2251,8 @@ components:
           maximum: 180
           default: 45
         strictHostKey:
+          type: boolean
+        enableSshCompression:
           type: boolean
     SshTrustFingerprintRequest:
       type: object

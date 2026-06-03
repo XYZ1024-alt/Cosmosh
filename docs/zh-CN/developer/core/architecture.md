@@ -219,7 +219,8 @@ flowchart LR
 ## 7. SSH 钥匙链凭据模型（2026-03）
 
 - SSH 凭据改为存储在 `SshKeychain`，并通过 `SshServer.keychainId` 关联。
-- `SshServer` 继续负责连接身份与主机策略（`host`、`port`、`username`、`strictHostKey`），不再直接持有密码/私钥密文字段。
+- `SshServer` 继续负责连接身份与主机/传输策略（`host`、`port`、`username`、`strictHostKey`、`enableSshCompression`），不再直接持有密码/私钥密文字段。
+- SSH 传输压缩默认关闭。当服务器记录启用该标记时，backend 会将同一套压缩协商策略应用到 SSH shell 会话、SFTP 会话与端口转发 SSH client。
 - 钥匙链的组织信息（文件夹、标签）复用与服务器相同的 `SshFolder` 与 `SshTag` 领域模型，不再维护独立的钥匙链专属文件夹/标签表。
 - 服务器编辑页保持原有简单流程：仍可直接填写认证信息，后端会自动落地为隐藏钥匙链。
 - 公用钥匙链支持多服务器复用；隐藏钥匙链用于单服务器私有凭据。

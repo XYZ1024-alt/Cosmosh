@@ -271,10 +271,20 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKey = normalizeOptionalString(payload.privateKey);
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+  const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
       error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
+
+  if (payload.enableSshCompression !== undefined && enableSshCompression === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.enableSshCompressionType',
+        'enableSshCompression must be a boolean value.',
+      ),
     };
   }
 
@@ -321,6 +331,7 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       privateKey,
       privateKeyPassphrase,
       strictHostKey: strictHostKey ?? true,
+      enableSshCompression: enableSshCompression ?? false,
       folderId,
       iconKey,
       colorKey,
@@ -387,10 +398,20 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKey = normalizeOptionalString(payload.privateKey);
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+  const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
       error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
+
+  if (payload.enableSshCompression !== undefined && enableSshCompression === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.enableSshCompressionType',
+        'enableSshCompression must be a boolean value.',
+      ),
     };
   }
   const shouldUsePassword = !keychainId && (authType === 'password' || authType === 'both');
@@ -457,6 +478,7 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       privateKey,
       privateKeyPassphrase,
       strictHostKey,
+      enableSshCompression,
       folderId,
       iconKey,
       colorKey,
@@ -489,10 +511,20 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
   const connectTimeoutSec =
     typeof payload.connectTimeoutSec === 'number' ? payload.connectTimeoutSec : Number(payload.connectTimeoutSec ?? 45);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
+  const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
       error: buildValidationError('errors.validation.strictHostKeyType', 'strictHostKey must be a boolean value.'),
+    };
+  }
+
+  if (payload.enableSshCompression !== undefined && enableSshCompression === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.enableSshCompressionType',
+        'enableSshCompression must be a boolean value.',
+      ),
     };
   }
 
@@ -531,6 +563,7 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
       term,
       connectTimeoutSec,
       strictHostKey,
+      enableSshCompression,
     },
   };
 };

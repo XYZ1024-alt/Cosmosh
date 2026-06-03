@@ -60,6 +60,7 @@ model SshServer {
   port             Int             @default(22)
   username         String
   strictHostKey    Boolean         @default(true)
+  enableSshCompression Boolean      @default(false)
   keychainId       String
   note             String?
   folderId         String?
