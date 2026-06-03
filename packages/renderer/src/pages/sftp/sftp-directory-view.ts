@@ -20,6 +20,9 @@ export type SftpDirectoryColumnDefinition = {
   readonly monospace: boolean;
 };
 
+/** Horizontal gap between SFTP directory-list columns. */
+export const SFTP_DIRECTORY_LIST_COLUMN_GAP_PX = 16;
+
 export const SFTP_DIRECTORY_COLUMN_DEFINITIONS: ReadonlyArray<SftpDirectoryColumnDefinition> = [
   {
     id: 'name',
@@ -198,7 +201,7 @@ export const buildSftpDirectoryGridTemplate = (columns: ReadonlyArray<SftpDirect
 export const resolveSftpDirectoryListMinWidth = (columns: ReadonlyArray<SftpDirectoryColumnDefinition>): number => {
   return Math.max(
     600,
-    columns.reduce((total, column) => total + column.minWidth, 28),
+    columns.reduce((total, column) => total + column.minWidth, 28) + columns.length * SFTP_DIRECTORY_LIST_COLUMN_GAP_PX,
   );
 };
 

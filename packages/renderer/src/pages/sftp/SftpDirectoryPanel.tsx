@@ -39,6 +39,7 @@ import {
   formatSftpDirectoryColumnValue,
   resolveSftpDirectoryListMinWidth,
   resolveVisibleSftpDirectoryColumns,
+  SFTP_DIRECTORY_LIST_COLUMN_GAP_PX,
   type SftpDirectoryColumnDefinition,
 } from './sftp-directory-view';
 import type {
@@ -84,12 +85,16 @@ const SortableHeaderCell: React.FC<SortableHeaderCellProps> = ({ column, sort, o
         transform: transformStyle,
         transition: isDragging ? undefined : transition,
       }}
-      className={classNames('h-full min-w-0', isDragging ? 'relative z-20 opacity-70' : '')}
+      className={classNames(
+        '-mx-2 flex h-full min-w-0 items-center',
+        column.align === 'right' ? 'justify-end' : 'justify-start',
+        isDragging ? 'relative z-20 opacity-70' : '',
+      )}
     >
       <button
         type="button"
         className={classNames(
-          'flex h-full w-full min-w-0 items-center gap-1.5 rounded-sm-2 text-xs font-medium text-home-text-subtle outline-none transition-colors hover:bg-home-card-hover focus-visible:ring-1 focus-visible:ring-outline',
+          'flex h-6 w-full min-w-0 items-center gap-1.5 rounded-sm-2 px-2 text-xs font-medium text-home-text-subtle outline-none transition-colors hover:bg-home-card-hover focus-visible:ring-1 focus-visible:ring-outline',
           column.align === 'right' ? 'justify-end text-right' : 'justify-start text-left',
         )}
         {...attributes}
@@ -209,7 +214,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   );
   const directoryGridTemplate = React.useMemo(() => buildSftpDirectoryGridTemplate(visibleColumns), [visibleColumns]);
   const directoryGridStyle = React.useMemo<React.CSSProperties>(
-    () => ({ gridTemplateColumns: directoryGridTemplate }),
+    () => ({ columnGap: SFTP_DIRECTORY_LIST_COLUMN_GAP_PX, gridTemplateColumns: directoryGridTemplate }),
     [directoryGridTemplate],
   );
   const directoryListStyle = React.useMemo<React.CSSProperties>(
