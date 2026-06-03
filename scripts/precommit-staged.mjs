@@ -82,6 +82,7 @@ if (changedIn(stagedFiles, 'packages/i18n')) {
 
 if (changedIn(stagedFiles, 'packages/api-contract')) {
   commands.push('pnpm --filter @cosmosh/api-contract typecheck');
+  commands.push('pnpm --filter @cosmosh/api-contract lint:eslint');
 }
 
 if (commands.length === 0) {
