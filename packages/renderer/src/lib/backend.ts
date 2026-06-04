@@ -35,6 +35,8 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpUploadFileRequest,
+  ApiSftpUploadFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -236,6 +238,13 @@ export const downloadSftpFile = async (
   payload: ApiSftpDownloadFileRequest,
 ): Promise<ApiSftpDownloadFileResponse> => {
   return backendClient.downloadSftpFile(sessionId, payload);
+};
+
+export const uploadSftpFile = async (
+  sessionId: string,
+  payload: ApiSftpUploadFileRequest,
+): Promise<ApiSftpUploadFileResponse> => {
+  return backendClient.uploadSftpFile(sessionId, payload);
 };
 
 export const createSftpDirectory = async (

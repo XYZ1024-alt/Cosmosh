@@ -3,7 +3,7 @@ export { createApiError, createApiSuccess } from './envelope';
 export { appendApiQueryParams, replaceApiPathToken, resolveApiPath } from './http';
 export type { ApiPathParams, ApiQueryParams } from './http';
 export { APP_MENU_ACTIONS, isAppMenuAction } from './ipc';
-export type { AppMenuAction, SftpOpenWithApplication } from './ipc';
+export type { AppMenuAction, SftpOpenWithApplication, SftpTemporaryFileWatchChange } from './ipc';
 export { API_CAPABILITIES, API_CODES, API_HEADERS, API_PATHS } from './protocol';
 export {
   DEFAULT_SETTINGS_VALUES,
@@ -182,6 +182,10 @@ export type ApiSftpDownloadFileRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/download']['post']['requestBody']['content']['application/json'];
 export type ApiSftpDownloadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/download']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpUploadFileRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['requestBody']['content']['application/json'];
+export type ApiSftpUploadFileResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateDirectoryRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['requestBody']['content']['application/json'];
 export type ApiSftpCreateDirectoryResponse =

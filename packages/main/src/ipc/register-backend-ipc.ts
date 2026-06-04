@@ -39,6 +39,8 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpUploadFileRequest,
+  ApiSftpUploadFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -417,6 +419,21 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
     ): Promise<ApiSftpDownloadFileResponse | ApiErrorResponse> => {
       const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
       return options.requestBackend<ApiSftpDownloadFileResponse>(path, {
+        method: 'POST',
+        body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-upload-file',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpUploadFileRequest,
+    ): Promise<ApiSftpUploadFileResponse | ApiErrorResponse> => {
+      const path = replaceApiPathToken(API_PATHS.sftpUploadFile, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpUploadFileResponse>(path, {
         method: 'POST',
         body: payload,
       });

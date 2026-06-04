@@ -22,9 +22,12 @@ flowchart TB
 | `app:get-downloads-path` | `invoke` | none | `Promise<string>` | Returns the OS downloads directory for local save defaults |
 | `app:create-sftp-temporary-file` | `invoke` | `fileName: string` | `Promise<string>` | Creates a unique local destination under the Cosmosh SFTP temp root for backend download/open flows |
 | `app:open-sftp-temporary-file` | `invoke` | `localPath: string` | `Promise<boolean>` | Opens an existing file under the Cosmosh SFTP temp root with the OS default application |
+| `app:start-sftp-temporary-file-watch` | `invoke` | `localPath: string` | `Promise<string>` | Starts a debounced watcher for one existing file under the Cosmosh SFTP temp root and returns a watch id |
+| `app:stop-sftp-temporary-file-watch` | `invoke` | `watchId: string` | `Promise<boolean>` | Stops a previously created SFTP temp-file watcher |
 | `app:show-sftp-open-with-dialog` | `invoke` | `localPath: string` | `Promise<boolean>` | Windows only: validates a temp file path and opens the system Open With picker through the shell `openas` verb |
 | `app:list-sftp-open-with-applications` | `invoke` | `localPath: string` | `Promise<Array<{ id: string; name: string; path: string; bundleIdentifier?: string; iconDataUrl?: string }>>` | macOS only: validates a temp file path and returns NSWorkspace applications that can open it |
 | `app:open-sftp-file-with-application` | `invoke` | `localPath: string, applicationPath: string` | `Promise<boolean>` | macOS only: validates the temp file and selected app against the available application list, then opens the file with that app |
+| `app:sftp-temporary-file-changed` | `event (main -> renderer)` | `{ watchId: string; localPath: string; size: number; modifiedAt: string }` | none | Pushes one debounced change event for a watched SFTP temp file owned by the renderer webContents |
 | `app:get-database-security-info` | `invoke` | none | `Promise<{ runtimeMode: 'development' \| 'production'; resolverMode: 'development-fixed-key' \| 'safe-storage' \| 'master-password-fallback'; safeStorageAvailable: boolean; databasePath: string; securityConfigPath: string; hasEncryptedDbMasterKey: boolean; hasMasterPasswordHash: boolean; hasMasterPasswordSalt: boolean; hasMasterPasswordEnv: boolean; fallbackReady: boolean }>` | Returns non-sensitive database encryption bootstrap diagnostics for Settings → Advanced |
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | Pushes context-launch working directory when a second instance is invoked |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | Dispatches validated app-menu commands from the macOS system menu to renderer tab/state handlers |
@@ -74,6 +77,7 @@ flowchart TB
 | `backend:sftp-get-entry-details` | `invoke` | `sessionId: string, payload: ApiSftpEntryDetailsRequest` | `Promise<ApiSftpEntryDetailsResponse \| ApiErrorResponse>` | POST fetch non-recursive metadata for selected SFTP entries |
 | `backend:sftp-read-file` | `invoke` | `sessionId: string, query: ApiSftpReadFileQuery` | `Promise<ApiSftpReadFileResponse \| ApiErrorResponse>` | GET bounded UTF-8 file preview from one SFTP session |
 | `backend:sftp-download-file` | `invoke` | `sessionId: string, payload: ApiSftpDownloadFileRequest` | `Promise<ApiSftpDownloadFileResponse \| ApiErrorResponse>` | POST stream one regular remote SFTP file into a local path selected by app utility IPC |
+| `backend:sftp-upload-file` | `invoke` | `sessionId: string, payload: ApiSftpUploadFileRequest` | `Promise<ApiSftpUploadFileResponse \| ApiErrorResponse>` | POST stream one locally edited SFTP temp file back to the remote file after remote size/mtime conflict checks; `overwrite: true` is only sent after renderer conflict confirmation and remote conflicts return `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-create-directory` | `invoke` | `sessionId: string, payload: ApiSftpCreateDirectoryRequest` | `Promise<ApiSftpCreateDirectoryResponse \| ApiErrorResponse>` | POST create remote SFTP directory |
 | `backend:sftp-create-file` | `invoke` | `sessionId: string, payload: ApiSftpCreateFileRequest` | `Promise<ApiSftpCreateFileResponse \| ApiErrorResponse>` | POST create empty remote SFTP file |
 | `backend:sftp-rename-entry` | `invoke` | `sessionId: string, payload: ApiSftpRenameRequest` | `Promise<ApiSftpRenameResponse \| ApiErrorResponse>` | POST rename or move remote SFTP entry |
@@ -89,7 +93,7 @@ flowchart TB
 
 - API payload types come from `@cosmosh/api-contract`, generated from `packages/api-contract/openapi/cosmosh.openapi.yaml`.
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
-- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction` and `SftpOpenWithApplication`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, and `SftpTemporaryFileWatchChange`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
 
 ### 3.1 SSH Visual Metadata Fields
 

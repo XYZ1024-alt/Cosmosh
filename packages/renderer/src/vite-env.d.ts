@@ -37,6 +37,8 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpUploadFileRequest,
+  ApiSftpUploadFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -65,6 +67,7 @@ import type {
   ApiTestPingResponse,
   AppMenuAction,
   SftpOpenWithApplication,
+  SftpTemporaryFileWatchChange,
 } from '@cosmosh/api-contract';
 
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
@@ -103,6 +106,9 @@ declare global {
       getDownloadsPath: () => Promise<string>;
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
+      startSftpTemporaryFileWatch: (localPath: string) => Promise<string>;
+      stopSftpTemporaryFileWatch: (watchId: string) => Promise<boolean>;
+      onSftpTemporaryFileChanged: (listener: (change: SftpTemporaryFileWatchChange) => void) => () => void;
       showSftpOpenWithDialog: (localPath: string) => Promise<boolean>;
       listSftpOpenWithApplications: (localPath: string) => Promise<SftpOpenWithApplication[]>;
       openSftpFileWithApplication: (localPath: string, applicationPath: string) => Promise<boolean>;
@@ -220,6 +226,10 @@ declare global {
         sessionId: string,
         payload: ApiSftpDownloadFileRequest,
       ) => Promise<ApiSftpDownloadFileResponse | ApiErrorResponse>;
+      backendSftpUploadFile: (
+        sessionId: string,
+        payload: ApiSftpUploadFileRequest,
+      ) => Promise<ApiSftpUploadFileResponse | ApiErrorResponse>;
       backendSftpCreateDirectory: (
         sessionId: string,
         payload: ApiSftpCreateDirectoryRequest,

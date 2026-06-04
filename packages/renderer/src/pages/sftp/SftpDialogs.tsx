@@ -1,4 +1,4 @@
-import { Trash2 } from 'lucide-react';
+import { AlertTriangle, Trash2, Upload } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -12,7 +12,12 @@ import {
   DialogTitle,
 } from '../../components/ui/dialog';
 import { t } from '../../lib/i18n';
-import type { HostFingerprintPrompt, SftpDeleteConfirmationPrompt } from './sftp-types';
+import type {
+  HostFingerprintPrompt,
+  SftpDeleteConfirmationPrompt,
+  SftpUploadConfirmationPrompt,
+  SftpUploadConflictConfirmationPrompt,
+} from './sftp-types';
 
 /**
  * Props for the SFTP host fingerprint trust dialog.
@@ -27,6 +32,22 @@ type SftpHostFingerprintDialogProps = {
  */
 type SftpDeleteConfirmationDialogProps = {
   prompt: SftpDeleteConfirmationPrompt | null;
+  onResolve: (accepted: boolean) => void;
+};
+
+/**
+ * Props for the SFTP opened-file upload confirmation dialog.
+ */
+type SftpUploadConfirmationDialogProps = {
+  prompt: SftpUploadConfirmationPrompt | null;
+  onResolve: (accepted: boolean) => void;
+};
+
+/**
+ * Props for the SFTP upload conflict overwrite confirmation dialog.
+ */
+type SftpUploadConflictConfirmationDialogProps = {
+  prompt: SftpUploadConflictConfirmationPrompt | null;
   onResolve: (accepted: boolean) => void;
 };
 
@@ -116,6 +137,83 @@ export const SftpDeleteConfirmationDialog: React.FC<SftpDeleteConfirmationDialog
           <DialogPrimaryButton onClick={() => onResolve(true)}>
             <Trash2 className="h-4 w-4" />
             {t('sftp.deleteConfirmAccept')}
+          </DialogPrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+/**
+ * Shows the upload prompt when an externally opened SFTP temp file changes locally.
+ *
+ * @param props Prompt state and resolver.
+ * @returns Upload confirmation dialog.
+ */
+export const SftpUploadConfirmationDialog: React.FC<SftpUploadConfirmationDialogProps> = ({ prompt, onResolve }) => {
+  return (
+    <Dialog
+      open={Boolean(prompt)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onResolve(false);
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('sftp.uploadConfirmTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('sftp.uploadConfirmDescription', { name: prompt?.name ?? '', path: prompt?.remotePath ?? '' })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogSecondaryButton onClick={() => onResolve(false)}>
+            {t('sftp.uploadConfirmIgnore')}
+          </DialogSecondaryButton>
+          <DialogPrimaryButton onClick={() => onResolve(true)}>
+            <Upload className="h-4 w-4" />
+            {t('sftp.uploadConfirmAccept')}
+          </DialogPrimaryButton>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+};
+
+/**
+ * Shows the overwrite prompt when the remote file changed after the temp file was opened.
+ *
+ * @param props Prompt state and resolver.
+ * @returns Upload conflict confirmation dialog.
+ */
+export const SftpUploadConflictConfirmationDialog: React.FC<SftpUploadConflictConfirmationDialogProps> = ({
+  prompt,
+  onResolve,
+}) => {
+  return (
+    <Dialog
+      open={Boolean(prompt)}
+      onOpenChange={(open) => {
+        if (!open) {
+          onResolve(false);
+        }
+      }}
+    >
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('sftp.uploadConflictTitle')}</DialogTitle>
+          <DialogDescription>
+            {t('sftp.uploadConflictDescription', { name: prompt?.name ?? '', path: prompt?.remotePath ?? '' })}
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogSecondaryButton onClick={() => onResolve(false)}>
+            {t('sftp.uploadConflictCancel')}
+          </DialogSecondaryButton>
+          <DialogPrimaryButton onClick={() => onResolve(true)}>
+            <AlertTriangle className="h-4 w-4" />
+            {t('sftp.uploadConflictOverwrite')}
           </DialogPrimaryButton>
         </DialogFooter>
       </DialogContent>

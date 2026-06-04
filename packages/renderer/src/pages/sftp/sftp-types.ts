@@ -166,6 +166,47 @@ export type SftpDeleteConfirmationPrompt = {
 };
 
 /**
+ * Remote snapshot captured when a regular file is opened into a local temp file.
+ */
+export type SftpOpenedFileRemoteSnapshot = {
+  size: number;
+  modifiedAt: string;
+};
+
+/**
+ * Watched local temp file created by an SFTP Open/Open With action.
+ */
+export type SftpWatchedOpenFile = {
+  remotePath: string;
+  name: string;
+  localPath: string;
+  watchId: string;
+  openedSessionId: string;
+  remoteSnapshot: SftpOpenedFileRemoteSnapshot;
+  pendingChange?: {
+    size: number;
+    modifiedAt: string;
+  };
+  isPromptOpen: boolean;
+};
+
+/**
+ * Prompt state for uploading a modified local temp file back to SFTP.
+ */
+export type SftpUploadConfirmationPrompt = {
+  remotePath: string;
+  name: string;
+  localPath: string;
+  size: number;
+  modifiedAt: string;
+};
+
+/**
+ * Prompt state for explicitly overwriting a remote file that changed after opening.
+ */
+export type SftpUploadConflictConfirmationPrompt = SftpUploadConfirmationPrompt;
+
+/**
  * Deferred inline edit action run after Radix menu focus handoff settles.
  */
 export type InlineEditMenuAction = () => void | Promise<void>;

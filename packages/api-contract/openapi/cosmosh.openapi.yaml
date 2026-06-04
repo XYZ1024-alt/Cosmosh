@@ -1080,6 +1080,56 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/upload:
+    post:
+      tags:
+        - sftp
+      summary: Upload one locally edited SFTP temp file back to the remote path.
+      operationId: sftpUploadFile
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpUploadFileRequest'
+      responses:
+        '200':
+          description: File uploaded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed or upload failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Remote file changed after it was opened.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or file not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}/directories:
     post:
       tags:
@@ -1750,6 +1800,7 @@ components:
                   'SFTP_SESSION_NOT_FOUND',
                   'SFTP_VALIDATION_FAILED',
                   'SFTP_OPERATION_FAILED',
+                  'SFTP_UPLOAD_CONFLICT',
                   'AUDIT_VALIDATION_FAILED',
                   'AUDIT_EVENT_NOT_FOUND',
                   'LOCAL_TERMINAL_VALIDATION_FAILED',
@@ -2699,6 +2750,30 @@ components:
         localPath:
           type: string
           minLength: 1
+    SftpUploadFileRequest:
+      type: object
+      required:
+        - path
+        - localPath
+        - expectedSize
+        - expectedModifiedAt
+      properties:
+        path:
+          type: string
+          minLength: 1
+        localPath:
+          type: string
+          minLength: 1
+        expectedSize:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedModifiedAt:
+          type: string
+          format: date-time
+        overwrite:
+          type: boolean
+          description: Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot.
     SftpRenameRequest:
       type: object
       required:
@@ -2973,6 +3048,12 @@ components:
           type: string
         targetPath:
           type: string
+        size:
+          type: integer
+          format: int64
+        modifiedAt:
+          type: string
+          format: date-time
     SftpBatchOperationData:
       type: object
       required:

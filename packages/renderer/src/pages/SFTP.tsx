@@ -1,5 +1,7 @@
 import {
   type ApiSftpEntry,
+  type ApiSftpUploadFileRequest,
+  type ApiSftpUploadFileResponse,
   compareSftpEntryNames,
   compareSftpNames,
   type SftpDirectoryListColumnId,
@@ -24,6 +26,7 @@ import {
   runSftpBatchOperation,
   trustSshFingerprint,
   updateAppSettings,
+  uploadSftpFile,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
 import { updateSettingsStoreValues, useSettingsValue, useSettingsValues } from '../lib/settings-store';
@@ -60,6 +63,9 @@ import type {
   SftpTaskContext,
   SftpTaskOptions,
   SftpTaskState,
+  SftpUploadConfirmationPrompt,
+  SftpUploadConflictConfirmationPrompt,
+  SftpWatchedOpenFile,
   TreeDirectoryNode,
 } from './sftp/sftp-types';
 import {
@@ -92,7 +98,12 @@ import {
 } from './sftp/sftp-utils';
 import { SftpActionMenuItems } from './sftp/SftpActionMenuItems';
 import { SftpDetailPanel } from './sftp/SftpDetailPanel';
-import { SftpDeleteConfirmationDialog, SftpHostFingerprintDialog } from './sftp/SftpDialogs';
+import {
+  SftpDeleteConfirmationDialog,
+  SftpHostFingerprintDialog,
+  SftpUploadConfirmationDialog,
+  SftpUploadConflictConfirmationDialog,
+} from './sftp/SftpDialogs';
 import { SftpDirectoryPanel } from './sftp/SftpDirectoryPanel';
 import { SftpToolbar } from './sftp/SftpToolbar';
 import { SftpTreePanel } from './sftp/SftpTreePanel';
@@ -165,14 +176,21 @@ const SFTP: React.FC<SFTPProps> = ({
   const [deleteConfirmationPrompt, setDeleteConfirmationPrompt] = React.useState<SftpDeleteConfirmationPrompt | null>(
     null,
   );
+  const [uploadConfirmationPrompt, setUploadConfirmationPrompt] = React.useState<SftpUploadConfirmationPrompt | null>(
+    null,
+  );
+  const [uploadConflictConfirmationPrompt, setUploadConflictConfirmationPrompt] =
+    React.useState<SftpUploadConflictConfirmationPrompt | null>(null);
   const pendingPromptResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const pendingDeleteConfirmationResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
+  const pendingUploadConflictResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const directoryCacheRef = React.useRef<Record<string, DirectoryCacheEntry>>({});
   const sessionIdRef = React.useRef<string>('');
   const currentPathRef = React.useRef<string>('.');
   const sftpShowHiddenEntriesRef = React.useRef(sftpShowHiddenEntries);
   const syncedTabTitleRef = React.useRef<string>('');
   const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
+  const watchedOpenFilesRef = React.useRef<Record<string, SftpWatchedOpenFile>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
   const inlineEditMenuActionTimerRef = React.useRef<number | null>(null);
@@ -256,14 +274,62 @@ const SFTP: React.FC<SFTPProps> = ({
     [clearTaskRetentionTimer],
   );
 
+  /**
+   * Stops every main-process watcher attached to opened SFTP temp files.
+   *
+   * @returns void.
+   */
+  const stopAllWatchedOpenFiles = React.useCallback((): void => {
+    Object.values(watchedOpenFilesRef.current).forEach((watchedFile) => {
+      void window.electron?.stopSftpTemporaryFileWatch(watchedFile.watchId);
+    });
+    watchedOpenFilesRef.current = {};
+    pendingUploadConflictResolverRef.current?.(false);
+    pendingUploadConflictResolverRef.current = null;
+    setUploadConfirmationPrompt(null);
+    setUploadConflictConfirmationPrompt(null);
+  }, []);
+
   React.useEffect(() => {
     return () => {
+      stopAllWatchedOpenFiles();
       clearAllTaskRetentionTimers();
       taskQueueGenerationRef.current += 1;
       taskQueueRef.current = [];
       isTaskQueueRunningRef.current = false;
     };
-  }, [clearAllTaskRetentionTimers]);
+  }, [clearAllTaskRetentionTimers, stopAllWatchedOpenFiles]);
+
+  React.useEffect(() => {
+    return window.electron?.onSftpTemporaryFileChanged((change) => {
+      const watchedFile = Object.values(watchedOpenFilesRef.current).find(
+        (candidate) => candidate.watchId === change.watchId,
+      );
+      if (!watchedFile) {
+        return;
+      }
+
+      const nextWatchedFile: SftpWatchedOpenFile = {
+        ...watchedFile,
+        pendingChange: {
+          size: change.size,
+          modifiedAt: change.modifiedAt,
+        },
+        isPromptOpen: true,
+      };
+      watchedOpenFilesRef.current = {
+        ...watchedOpenFilesRef.current,
+        [watchedFile.remotePath]: nextWatchedFile,
+      };
+      setUploadConfirmationPrompt({
+        remotePath: watchedFile.remotePath,
+        name: watchedFile.name,
+        localPath: watchedFile.localPath,
+        size: change.size,
+        modifiedAt: change.modifiedAt,
+      });
+    });
+  }, []);
 
   React.useEffect(() => {
     const serverName = connectionIntent?.serverName;
@@ -666,6 +732,35 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   /**
+   * Requests explicit confirmation before overwriting a remote file that changed after opening.
+   *
+   * @param prompt Remote conflict prompt details.
+   * @returns Whether the user chose to overwrite the remote file.
+   */
+  const requestUploadConflictConfirmation = React.useCallback(
+    (prompt: SftpUploadConflictConfirmationPrompt): Promise<boolean> => {
+      pendingUploadConflictResolverRef.current?.(false);
+      return new Promise((resolve) => {
+        pendingUploadConflictResolverRef.current = resolve;
+        setUploadConflictConfirmationPrompt(prompt);
+      });
+    },
+    [],
+  );
+
+  /**
+   * Resolves the upload conflict confirmation dialog.
+   *
+   * @param accepted Whether the user wants to overwrite the changed remote file.
+   * @returns void.
+   */
+  const resolveUploadConflictConfirmationPrompt = React.useCallback((accepted: boolean): void => {
+    pendingUploadConflictResolverRef.current?.(accepted);
+    pendingUploadConflictResolverRef.current = null;
+    setUploadConflictConfirmationPrompt(null);
+  }, []);
+
+  /**
    * Detects the stale-session error that should trigger SFTP reconnect.
    *
    * @param error Error thrown by the renderer backend client.
@@ -673,6 +768,16 @@ const SFTP: React.FC<SFTPProps> = ({
    */
   const isSftpSessionNotFoundError = React.useCallback((error: unknown): boolean => {
     return isBackendApiError(error) && error.code === 'SFTP_SESSION_NOT_FOUND';
+  }, []);
+
+  /**
+   * Detects opened-file upload conflicts that should ask for explicit overwrite confirmation.
+   *
+   * @param error Error thrown by the renderer backend client.
+   * @returns Whether this failure represents a remote file conflict.
+   */
+  const isSftpUploadConflictError = React.useCallback((error: unknown): boolean => {
+    return isBackendApiError(error) && error.code === 'SFTP_UPLOAD_CONFLICT';
   }, []);
 
   /**
@@ -1349,6 +1454,7 @@ const SFTP: React.FC<SFTPProps> = ({
         setTreeNodes({});
         setClipboardState(null);
         setFilePreview(null);
+        stopAllWatchedOpenFiles();
         temporaryOpenFilePathsRef.current = {};
         setOpenWithApplicationsByPath({});
         setLoadingOpenWithPath('');
@@ -1395,6 +1501,7 @@ const SFTP: React.FC<SFTPProps> = ({
     notifyError,
     resetSelection,
     resolveHostFingerprintPrompt,
+    stopAllWatchedOpenFiles,
   ]);
 
   React.useEffect(() => {
@@ -1589,6 +1696,33 @@ const SFTP: React.FC<SFTPProps> = ({
     },
     [invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
   );
+
+  /**
+   * Updates an opened-file watcher with fresh remote metadata from the directory cache.
+   *
+   * @param remotePath Remote file path to refresh.
+   * @returns void.
+   */
+  const syncWatchedOpenFileSnapshotFromCache = React.useCallback((remotePath: string): void => {
+    const parentDirectoryPath = resolveEntryParentPath(remotePath);
+    const cacheEntry = parentDirectoryPath ? directoryCacheRef.current[parentDirectoryPath] : undefined;
+    const refreshedEntry = cacheEntry?.entries.find((entry) => entry.path === remotePath && entry.type === 'file');
+    const watchedFile = watchedOpenFilesRef.current[remotePath];
+    if (!watchedFile || !refreshedEntry) {
+      return;
+    }
+
+    watchedOpenFilesRef.current = {
+      ...watchedOpenFilesRef.current,
+      [remotePath]: {
+        ...watchedFile,
+        remoteSnapshot: {
+          size: refreshedEntry.size,
+          modifiedAt: refreshedEntry.modifiedAt,
+        },
+      },
+    };
+  }, []);
 
   /**
    * Starts the next queued SFTP operation while keeping the page interactive.
@@ -1996,6 +2130,42 @@ const SFTP: React.FC<SFTPProps> = ({
     [downloadEntryToLocalPath],
   );
 
+  /**
+   * Starts watching a temp file opened through SFTP so later local saves can be uploaded.
+   *
+   * @param entry Remote file entry that produced the temp file.
+   * @param localPath Local temp file path controlled by Cosmosh.
+   * @returns Promise resolved when the watcher is registered or skipped.
+   */
+  const registerWatchedOpenFile = React.useCallback(async (entry: ApiSftpEntry, localPath: string): Promise<void> => {
+    const electronBridge = window.electron;
+    if (!electronBridge?.startSftpTemporaryFileWatch || entry.type !== 'file') {
+      return;
+    }
+
+    const existing = watchedOpenFilesRef.current[entry.path];
+    if (existing) {
+      void electronBridge.stopSftpTemporaryFileWatch(existing.watchId);
+    }
+
+    const watchId = await electronBridge.startSftpTemporaryFileWatch(localPath);
+    watchedOpenFilesRef.current = {
+      ...watchedOpenFilesRef.current,
+      [entry.path]: {
+        remotePath: entry.path,
+        name: entry.name,
+        localPath,
+        watchId,
+        openedSessionId: sessionIdRef.current,
+        remoteSnapshot: {
+          size: entry.size,
+          modifiedAt: entry.modifiedAt,
+        },
+        isPromptOpen: false,
+      },
+    };
+  }, []);
+
   const handleOpenEntryWithDefaultApplication = React.useCallback(
     async (entry: ApiSftpEntry): Promise<void> => {
       if (entry.type !== 'file') {
@@ -2020,10 +2190,12 @@ const SFTP: React.FC<SFTPProps> = ({
           if (!didOpen) {
             throw new Error(t('sftp.openLocalFileFailed'));
           }
+
+          await registerWatchedOpenFile(entry, localPath);
         },
       );
     },
-    [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+    [downloadEntryToTemporaryPath, notifyError, registerWatchedOpenFile, runSftpOperation],
   );
 
   const handleOpenEntryWithPicker = React.useCallback(
@@ -2050,10 +2222,12 @@ const SFTP: React.FC<SFTPProps> = ({
           if (!didOpen) {
             throw new Error(t('sftp.openWithFailed'));
           }
+
+          await registerWatchedOpenFile(entry, localPath);
         },
       );
     },
-    [canUseSftpOpenWith, downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+    [canUseSftpOpenWith, downloadEntryToTemporaryPath, notifyError, registerWatchedOpenFile, runSftpOperation],
   );
 
   const handleOpenEntryWithApplication = React.useCallback(
@@ -2080,10 +2254,12 @@ const SFTP: React.FC<SFTPProps> = ({
           if (!didOpen) {
             throw new Error(t('sftp.openWithFailed'));
           }
+
+          await registerWatchedOpenFile(entry, localPath);
         },
       );
     },
-    [downloadEntryToTemporaryPath, notifyError, runSftpOperation],
+    [downloadEntryToTemporaryPath, notifyError, registerWatchedOpenFile, runSftpOperation],
   );
 
   const loadOpenWithApplications = React.useCallback(
@@ -2173,6 +2349,116 @@ const SFTP: React.FC<SFTPProps> = ({
       resolveDefaultLocalDownloadPath,
       runSftpOperation,
       hasSftpSession,
+    ],
+  );
+
+  /**
+   * Resolves the upload prompt raised by an edited temp file.
+   *
+   * @param accepted Whether the user wants to upload the changed temp file.
+   * @returns void.
+   */
+  const resolveUploadConfirmationPrompt = React.useCallback(
+    (accepted: boolean): void => {
+      const prompt = uploadConfirmationPrompt;
+      if (!prompt) {
+        return;
+      }
+
+      const watchedFile = watchedOpenFilesRef.current[prompt.remotePath];
+      if (!watchedFile) {
+        setUploadConfirmationPrompt(null);
+        return;
+      }
+
+      watchedOpenFilesRef.current = {
+        ...watchedOpenFilesRef.current,
+        [prompt.remotePath]: {
+          ...watchedFile,
+          isPromptOpen: false,
+          pendingChange: undefined,
+        },
+      };
+      setUploadConfirmationPrompt(null);
+
+      if (!accepted) {
+        return;
+      }
+
+      runSftpOperation(
+        {
+          label: t('sftp.tasks.upload'),
+          detail: watchedFile.name,
+          progress: { completed: 0, total: 1 },
+        },
+        async ({ isCurrent, update }) => {
+          const uploadPayload: ApiSftpUploadFileRequest = {
+            path: watchedFile.remotePath,
+            localPath: watchedFile.localPath,
+            expectedSize: watchedFile.remoteSnapshot.size,
+            expectedModifiedAt: watchedFile.remoteSnapshot.modifiedAt,
+          };
+          let response: ApiSftpUploadFileResponse;
+          try {
+            response = await runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload));
+          } catch (error: unknown) {
+            if (!isSftpUploadConflictError(error) || !isCurrent()) {
+              throw error;
+            }
+
+            const shouldOverwrite = await requestUploadConflictConfirmation({
+              remotePath: watchedFile.remotePath,
+              name: watchedFile.name,
+              localPath: watchedFile.localPath,
+              size: prompt.size,
+              modifiedAt: prompt.modifiedAt,
+            });
+            if (!shouldOverwrite || !isCurrent()) {
+              update({ detail: t('sftp.tasks.uploadSkipped') });
+              return;
+            }
+
+            response = await runWithSftpReconnect((activeSessionId) =>
+              uploadSftpFile(activeSessionId, {
+                ...uploadPayload,
+                overwrite: true,
+              }),
+            );
+          }
+
+          update({ progress: { completed: 1, total: 1 } });
+          if (!isCurrent()) {
+            return;
+          }
+
+          watchedOpenFilesRef.current = {
+            ...watchedOpenFilesRef.current,
+            [watchedFile.remotePath]: {
+              ...watchedFile,
+              remoteSnapshot: {
+                size: response.data.size ?? prompt.size,
+                modifiedAt: response.data.modifiedAt ?? prompt.modifiedAt,
+              },
+              pendingChange: undefined,
+              isPromptOpen: false,
+            },
+          };
+
+          notifySuccess(t('sftp.feedback.uploaded'));
+          await refreshCurrentDirectoryAfterOperation([resolveEntryParentPath(watchedFile.remotePath)]);
+          syncWatchedOpenFileSnapshotFromCache(watchedFile.remotePath);
+        },
+      );
+    },
+    [
+      isSftpUploadConflictError,
+      notifySuccess,
+      refreshCurrentDirectoryAfterOperation,
+      requestUploadConflictConfirmation,
+      runSftpOperation,
+      runWithSftpReconnect,
+      syncWatchedOpenFileSnapshotFromCache,
+      uploadConfirmationPrompt,
     ],
   );
 
@@ -3098,6 +3384,14 @@ const SFTP: React.FC<SFTPProps> = ({
       <SftpDeleteConfirmationDialog
         prompt={deleteConfirmationPrompt}
         onResolve={resolveDeleteConfirmationPrompt}
+      />
+      <SftpUploadConfirmationDialog
+        prompt={uploadConfirmationPrompt}
+        onResolve={resolveUploadConfirmationPrompt}
+      />
+      <SftpUploadConflictConfirmationDialog
+        prompt={uploadConflictConfirmationPrompt}
+        onResolve={resolveUploadConflictConfirmationPrompt}
       />
     </>
   );

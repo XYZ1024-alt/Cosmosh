@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream } from 'node:fs';
 import fs from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -15,6 +16,8 @@ import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
 
 type GetDbClient = () => PrismaClient;
+
+const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
 
 type SshServerWithKeychain = Prisma.SshServerGetPayload<{
   include: {
@@ -192,6 +195,8 @@ export type SftpOperationResult =
       sessionId: string;
       path: string;
       targetPath?: string;
+      size?: number;
+      modifiedAt?: string;
     }
   | {
       type: 'not-found';
@@ -199,6 +204,7 @@ export type SftpOperationResult =
   | {
       type: 'failed';
       message: string;
+      reason?: 'remote-conflict';
     };
 
 export type SftpBatchOperationResult =
@@ -254,6 +260,36 @@ export type DownloadSftpFileResult =
       message: string;
     };
 
+export type UploadSftpFileConflictSnapshot = {
+  size: number;
+  modifiedAt: string;
+};
+
+export type UploadSftpFileResult = SftpOperationResult;
+
+export type UploadSftpFileOptions = {
+  overwrite?: boolean;
+};
+
+type RemoteFileReplacementOptions = {
+  expectedRemoteSnapshot?: UploadSftpFileConflictSnapshot;
+};
+
+/**
+ * Error marker used when upload replacement discovers that the remote file changed.
+ */
+class SftpRemoteConflictError extends Error {
+  /**
+   * Creates a typed remote-conflict error for API mapping.
+   *
+   * @param message Localized conflict message.
+   */
+  public constructor(message: string) {
+    super(message);
+    this.name = 'SftpRemoteConflictError';
+  }
+}
+
 type OpenSftpResult =
   | {
       type: 'ready';
@@ -287,6 +323,14 @@ type SftpDirectoryEntry = {
 
 type SftpReadlinkWrapper = SFTPWrapper & {
   readlink(targetPath: string, callback: (error: Error | undefined | null, linkString: string) => void): void;
+};
+
+type SftpOpenSshExtensions = {
+  ext_openssh_rename?(
+    sourcePath: string,
+    targetPath: string,
+    callback: (error?: Error | null | undefined) => void,
+  ): void;
 };
 
 const POSIX_PATH = path.posix;
@@ -485,6 +529,29 @@ export const buildSftpCopyTargetCandidate = (targetPath: string, attempt: number
  */
 export const isMutableSftpEntryPath = (targetPath: string): boolean => {
   return targetPath !== '' && targetPath !== '.' && targetPath !== '/';
+};
+
+/**
+ * Resolves the local temp root shared with the Electron main-process SFTP open-file bridge.
+ *
+ * @returns Absolute local temp root path.
+ */
+const resolveSftpTemporaryRootPath = (): string => {
+  return path.join(os.tmpdir(), SFTP_TEMP_ROOT_DIRECTORY_NAME);
+};
+
+/**
+ * Checks whether a local path stays inside the controlled SFTP temp root.
+ *
+ * @param candidatePath Absolute candidate path.
+ * @param parentPath Absolute parent directory.
+ * @returns Whether candidatePath is parentPath or one of its descendants.
+ */
+const isLocalPathInsideDirectory = (candidatePath: string, parentPath: string): boolean => {
+  const relativePath = path.relative(parentPath, candidatePath);
+  return (
+    relativePath === '' || (relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
+  );
 };
 
 /**
@@ -924,6 +991,105 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Uploads one locally edited temp file back to the original remote file.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param localPath Absolute local temp path selected by the main process.
+   * @param expectedRemoteSnapshot Remote metadata captured when the file was opened.
+   * @returns Upload result.
+   */
+  public async uploadFile(
+    sessionId: string,
+    requestedPath: string | undefined,
+    localPath: string | undefined,
+    expectedRemoteSnapshot: UploadSftpFileConflictSnapshot,
+    options: UploadSftpFileOptions = {},
+  ): Promise<UploadSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    const normalizedLocalPath = localPath ? path.resolve(localPath.trim()) : '';
+    if (!normalizedLocalPath) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.localPathRequired'),
+      };
+    }
+    if (!isLocalPathInsideDirectory(normalizedLocalPath, path.resolve(resolveSftpTemporaryRootPath()))) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.localFileReadUnsupported'),
+      };
+    }
+
+    try {
+      const targetStats = await this.stat(session, normalizedPath);
+      if (!targetStats.isFile()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileUploadUnsupported'),
+        };
+      }
+
+      if (!options.overwrite && !this.doesRemoteSnapshotMatch(targetStats, expectedRemoteSnapshot)) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileUploadRemoteChanged'),
+          reason: 'remote-conflict',
+        };
+      }
+
+      const localStats = await fs.stat(normalizedLocalPath);
+      if (!localStats.isFile()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.localFileReadUnsupported'),
+        };
+      }
+
+      await this.uploadLocalFileToRemotePath(session, normalizedLocalPath, normalizedPath, targetStats.mode & 0o777, {
+        expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
+      });
+      this.logSftpMutation(session, 'upload', {
+        path: normalizedPath,
+      });
+      const uploadedStats = await this.stat(session, normalizedPath);
+
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+        size: uploadedStats.size,
+        modifiedAt: this.formatStatsTimestamp(uploadedStats.mtime),
+      };
+    } catch (error: unknown) {
+      if (error instanceof SftpRemoteConflictError) {
+        return {
+          type: 'failed',
+          message: error.message,
+          reason: 'remote-conflict',
+        };
+      }
+
+      return {
+        type: 'failed',
+        message: this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileUploadFailedNoReason')),
       };
     }
   }
@@ -1494,6 +1660,18 @@ export class SftpSessionService {
   }
 
   /**
+   * Compares the current remote metadata with the snapshot captured when the temp file was opened.
+   *
+   * @param stats Current remote file stats.
+   * @param expectedSnapshot Renderer-provided opening snapshot.
+   * @returns Whether the remote file still matches the opened version.
+   */
+  private doesRemoteSnapshotMatch(stats: Stats, expectedSnapshot: UploadSftpFileConflictSnapshot): boolean {
+    const expectedModifiedSeconds = Math.trunc(Date.parse(expectedSnapshot.modifiedAt) / 1000);
+    return stats.size === expectedSnapshot.size && stats.mtime === expectedModifiedSeconds;
+  }
+
+  /**
    * Resolves the display name for an entry path.
    *
    * @param targetPath Normalized remote path.
@@ -1689,6 +1867,111 @@ export class SftpSessionService {
     });
   }
 
+  /**
+   * Uses the OpenSSH atomic rename extension when the connected server exposes it.
+   *
+   * @param session Live SFTP session.
+   * @param sourcePath Remote temp source path.
+   * @param targetPath Remote target path.
+   * @returns Whether the extension was available and completed successfully.
+   */
+  private async tryOpenSshPosixRename(
+    session: SftpLiveSession,
+    sourcePath: string,
+    targetPath: string,
+  ): Promise<boolean> {
+    const posixRename = (session.sftp as SFTPWrapper & SftpOpenSshExtensions).ext_openssh_rename;
+    if (!posixRename) {
+      return false;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      posixRename.call(session.sftp, sourcePath, targetPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+
+    return true;
+  }
+
+  /**
+   * Rechecks the opened-file conflict guard immediately before non-atomic fallback replacement.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote file path.
+   * @param expectedRemoteSnapshot Remote metadata captured when the file was opened.
+   * @returns Nothing.
+   */
+  private async assertRemoteSnapshotStillMatches(
+    session: SftpLiveSession,
+    targetPath: string,
+    expectedRemoteSnapshot: UploadSftpFileConflictSnapshot,
+  ): Promise<void> {
+    const currentStats = await this.stat(session, targetPath);
+    if (!currentStats.isFile() || !this.doesRemoteSnapshotMatch(currentStats, expectedRemoteSnapshot)) {
+      throw new SftpRemoteConflictError(session.t('errors.sftp.fileUploadRemoteChanged'));
+    }
+  }
+
+  /**
+   * Replaces a remote regular file with an uploaded temp file across common SFTP server behaviors.
+   *
+   * @param session Live SFTP session.
+   * @param temporaryPath Uploaded remote temp file path.
+   * @param targetPath Remote target file path.
+   * @param expectedRemoteSnapshot Remote metadata captured when the file was opened.
+   * @returns Nothing.
+   */
+  private async replaceRemoteFileFromTemp(
+    session: SftpLiveSession,
+    temporaryPath: string,
+    targetPath: string,
+    options: RemoteFileReplacementOptions,
+  ): Promise<void> {
+    try {
+      if (await this.tryOpenSshPosixRename(session, temporaryPath, targetPath)) {
+        return;
+      }
+    } catch {
+      // Fall through to portable replacement; not every server accepts the OpenSSH extension for all paths.
+    }
+
+    try {
+      await this.rename(session, temporaryPath, targetPath);
+      return;
+    } catch (renameError: unknown) {
+      if (!this.isGenericSftpFailureError(renameError)) {
+        throw renameError;
+      }
+
+      if (options.expectedRemoteSnapshot) {
+        await this.assertRemoteSnapshotStillMatches(session, targetPath, options.expectedRemoteSnapshot);
+      }
+      await this.unlink(session, targetPath);
+      try {
+        await this.rename(session, temporaryPath, targetPath);
+      } catch (replaceError: unknown) {
+        throw replaceError instanceof Error && replaceError.message.trim().length > 0 ? replaceError : renameError;
+      }
+    }
+  }
+
+  /**
+   * Best-effort removes a remote temp file created during upload replacement.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote temp path.
+   * @returns Nothing.
+   */
+  private async unlinkRemoteTempFile(session: SftpLiveSession, targetPath: string): Promise<void> {
+    await this.unlink(session, targetPath).catch(() => undefined);
+  }
+
   private async pathExists(session: SftpLiveSession, targetPath: string): Promise<boolean> {
     try {
       await this.stat(session, targetPath);
@@ -1774,6 +2057,39 @@ export class SftpSessionService {
       await fs.rename(temporaryPath, localPath);
     } catch (error: unknown) {
       await fs.unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  /**
+   * Streams a local file into a remote temp file before replacing the target path atomically when possible.
+   *
+   * @param session Live SFTP session.
+   * @param localPath Existing local file path.
+   * @param targetPath Remote file path to replace.
+   * @param mode Remote file permission bits to preserve.
+   * @returns Nothing.
+   */
+  private async uploadLocalFileToRemotePath(
+    session: SftpLiveSession,
+    localPath: string,
+    targetPath: string,
+    mode: number,
+    options: RemoteFileReplacementOptions,
+  ): Promise<void> {
+    const remoteDirectory = this.resolveParentPath(targetPath) ?? '.';
+    const temporaryPath = joinSftpPath(
+      remoteDirectory,
+      `.${this.resolveEntryName(targetPath)}.cosmosh-${Date.now()}-${randomUUID()}.tmp`,
+    );
+
+    try {
+      const readStream = createReadStream(localPath, { flags: 'r' });
+      const writeStream = session.sftp.createWriteStream(temporaryPath, { flags: 'wx', mode });
+      await pipeline(readStream, writeStream);
+      await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
+    } catch (error: unknown) {
+      await this.unlinkRemoteTempFile(session, temporaryPath);
       throw error;
     }
   }
@@ -1932,6 +2248,40 @@ export class SftpSessionService {
 
     const message = (error as { message?: unknown }).message;
     return typeof message === 'string' ? message.toLowerCase() : '';
+  }
+
+  /**
+   * Detects ssh2's unhelpful SSH_FX_FAILURE surface used by some servers for overwrite rename.
+   *
+   * @param error Unknown SFTP error.
+   * @returns Whether the error is the generic SFTP failure signal.
+   */
+  private isGenericSftpFailureError(error: unknown): boolean {
+    const message = this.readSftpErrorMessage(error).trim();
+    if (message === 'failure') {
+      return true;
+    }
+
+    if (!isUnknownRecord(error)) {
+      return false;
+    }
+
+    return error.code === 4 || error.code === '4' || error.code === 'FAILURE';
+  }
+
+  /**
+   * Resolves upload errors while hiding unhelpful generic SFTP failure text.
+   *
+   * @param error Unknown upload error.
+   * @param fallback Localized fallback message.
+   * @returns User-facing upload error.
+   */
+  private resolveUploadErrorMessage(error: unknown, fallback: string): string {
+    if (this.isGenericSftpFailureError(error)) {
+      return fallback;
+    }
+
+    return this.resolveErrorMessage(error, fallback);
   }
 
   private resolveErrorMessage(error: unknown, fallback: string): string {

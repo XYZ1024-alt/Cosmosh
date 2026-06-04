@@ -844,7 +844,8 @@
       "movedMany": "Moved {count} entries.",
       "pathCopied": "File address copied.",
       "relativePathCopied": "Relative address copied.",
-      "renamed": "Renamed."
+      "renamed": "Renamed.",
+      "uploaded": "Uploaded changes."
     },
     "loadFailed": "Failed to load SFTP directory.",
     "loading": "Loading directory...",
@@ -955,11 +956,21 @@
       "toolbarQueued": "{count, plural, one {# queued task} other {# queued tasks}}",
       "toolbarRecent": "{count, plural, one {# recent task} other {# recent tasks}}",
       "toolbarRunning": "{count, plural, one {# running task} other {# running tasks}}",
-      "toolbarTitle": "Tasks"
+      "toolbarTitle": "Tasks",
+      "upload": "Upload",
+      "uploadSkipped": "Upload skipped"
     },
     "temporaryPathUnavailable": "The temporary local file path is unavailable.",
     "title": "SFTP",
     "untitledServer": "SFTP Server",
+    "uploadConfirmAccept": "Upload",
+    "uploadConfirmDescription": "\"{name}\" changed locally. Upload the changes to {path}?",
+    "uploadConfirmIgnore": "Ignore",
+    "uploadConfirmTitle": "Upload SFTP Changes",
+    "uploadConflictCancel": "Cancel",
+    "uploadConflictDescription": "\"{name}\" changed on the remote server after it was opened. Overwrite {path} with your local changes?",
+    "uploadConflictOverwrite": "Overwrite",
+    "uploadConflictTitle": "Overwrite Remote Changes?",
     "viewMenu": {
       "ascending": "Ascending",
       "columns": "Columns",

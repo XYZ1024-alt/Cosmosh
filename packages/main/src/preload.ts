@@ -39,6 +39,8 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpUploadFileRequest,
+  ApiSftpUploadFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -67,6 +69,7 @@ import type {
   ApiTestPingResponse,
   AppMenuAction,
   SftpOpenWithApplication,
+  SftpTemporaryFileWatchChange,
 } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -158,6 +161,48 @@ const onIpcAppMenuActionPayload = (listener: (action: AppMenuAction) => void): (
 };
 
 /**
+ * Checks whether an IPC payload is an SFTP temp-file change event.
+ *
+ * @param value Unknown IPC payload.
+ * @returns Whether the payload matches the watched temp-file change shape.
+ */
+const isSftpTemporaryFileWatchChange = (value: unknown): value is SftpTemporaryFileWatchChange => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+
+  const payload = value as Record<string, unknown>;
+  return (
+    typeof payload.watchId === 'string' &&
+    typeof payload.localPath === 'string' &&
+    typeof payload.size === 'number' &&
+    typeof payload.modifiedAt === 'string'
+  );
+};
+
+/**
+ * Subscribes to validated SFTP temp-file change events.
+ *
+ * @param listener Callback invoked for changed temp files.
+ * @returns Unsubscribe callback.
+ */
+const onSftpTemporaryFileChanged = (listener: (change: SftpTemporaryFileWatchChange) => void): (() => void) => {
+  const handler = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+    if (!isSftpTemporaryFileWatchChange(payload)) {
+      return;
+    }
+
+    listener(payload);
+  };
+
+  ipcRenderer.on('app:sftp-temporary-file-changed', handler);
+
+  return () => {
+    ipcRenderer.removeListener('app:sftp-temporary-file-changed', handler);
+  };
+};
+
+/**
  * Exposes a minimal, allow-listed bridge API to renderer.
  * Security boundary: renderer never gets direct access to raw `ipcRenderer`.
  */
@@ -202,6 +247,15 @@ contextBridge.exposeInMainWorld('electron', {
   },
   openSftpTemporaryFile: (localPath: string) => {
     return invokeIpc<boolean>('app:open-sftp-temporary-file', localPath);
+  },
+  startSftpTemporaryFileWatch: (localPath: string) => {
+    return invokeIpc<string>('app:start-sftp-temporary-file-watch', localPath);
+  },
+  stopSftpTemporaryFileWatch: (watchId: string) => {
+    return invokeIpc<boolean>('app:stop-sftp-temporary-file-watch', watchId);
+  },
+  onSftpTemporaryFileChanged: (listener: (change: SftpTemporaryFileWatchChange) => void) => {
+    return onSftpTemporaryFileChanged(listener);
   },
   showSftpOpenWithDialog: (localPath: string) => {
     return invokeIpc<boolean>('app:show-sftp-open-with-dialog', localPath);
@@ -387,6 +441,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpDownloadFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => {
     return invokeIpc<ApiSftpDownloadFileResponse | ApiErrorResponse>('backend:sftp-download-file', sessionId, payload);
+  },
+  backendSftpUploadFile: (sessionId: string, payload: ApiSftpUploadFileRequest) => {
+    return invokeIpc<ApiSftpUploadFileResponse | ApiErrorResponse>('backend:sftp-upload-file', sessionId, payload);
   },
   backendSftpCreateDirectory: (sessionId: string, payload: ApiSftpCreateDirectoryRequest) => {
     return invokeIpc<ApiSftpCreateDirectoryResponse | ApiErrorResponse>(

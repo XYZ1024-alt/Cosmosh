@@ -40,6 +40,8 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpUploadFileRequest,
+  ApiSftpUploadFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -95,6 +97,7 @@ type ApiResponse =
   | ApiSftpEntryDetailsResponse
   | ApiSftpReadFileResponse
   | ApiSftpDownloadFileResponse
+  | ApiSftpUploadFileResponse
   | ApiSftpCreateDirectoryResponse
   | ApiSftpCreateFileResponse
   | ApiSftpRenameResponse
@@ -184,6 +187,10 @@ export type ApiTransport = {
     sessionId: string,
     payload: ApiSftpDownloadFileRequest,
   ) => Promise<ApiSftpDownloadFileResponse | ApiErrorResponse>;
+  uploadSftpFile: (
+    sessionId: string,
+    payload: ApiSftpUploadFileRequest,
+  ) => Promise<ApiSftpUploadFileResponse | ApiErrorResponse>;
   createSftpDirectory: (
     sessionId: string,
     payload: ApiSftpCreateDirectoryRequest,
@@ -383,6 +390,11 @@ const createElectronTransport = (): ApiTransport => {
     downloadSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpDownloadFile(sessionId, payload)) as
         | ApiSftpDownloadFileResponse
+        | ApiErrorResponse;
+    },
+    uploadSftpFile: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpUploadFile(sessionId, payload)) as
+        | ApiSftpUploadFileResponse
         | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
@@ -617,6 +629,10 @@ const createBrowserTransport = (): ApiTransport => {
     downloadSftpFile: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpDownloadFileResponse | ApiErrorResponse;
+    },
+    uploadSftpFile: async (sessionId, payload) => {
+      const path = replaceApiPathToken(API_PATHS.sftpUploadFile, 'sessionId', sessionId);
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpUploadFileResponse | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);

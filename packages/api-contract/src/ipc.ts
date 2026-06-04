@@ -28,3 +28,10 @@ export type SftpOpenWithApplication = {
   bundleIdentifier?: string;
   iconDataUrl?: string;
 };
+
+export type SftpTemporaryFileWatchChange = {
+  watchId: string;
+  localPath: string;
+  size: number;
+  modifiedAt: string;
+};

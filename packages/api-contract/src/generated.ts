@@ -386,6 +386,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/upload': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Upload one locally edited SFTP temp file back to the remote path. */
+    post: operations['sftpUploadFile'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}/directories': {
     parameters: {
       query?: never;
@@ -661,6 +678,7 @@ export interface components {
         | 'SFTP_SESSION_NOT_FOUND'
         | 'SFTP_VALIDATION_FAILED'
         | 'SFTP_OPERATION_FAILED'
+        | 'SFTP_UPLOAD_CONFLICT'
         | 'AUDIT_VALIDATION_FAILED'
         | 'AUDIT_EVENT_NOT_FOUND'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
@@ -1041,6 +1059,16 @@ export interface components {
       path: string;
       localPath: string;
     };
+    SftpUploadFileRequest: {
+      path: string;
+      localPath: string;
+      /** Format: int64 */
+      expectedSize: number;
+      /** Format: date-time */
+      expectedModifiedAt: string;
+      /** @description Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot. */
+      overwrite?: boolean;
+    };
     SftpRenameRequest: {
       sourcePath: string;
       targetPath: string;
@@ -1153,6 +1181,10 @@ export interface components {
       sessionId: string;
       path: string;
       targetPath?: string;
+      /** Format: int64 */
+      size?: number;
+      /** Format: date-time */
+      modifiedAt?: string;
     };
     SftpBatchOperationData: {
       sessionId: string;
@@ -2824,6 +2856,70 @@ export interface operations {
       };
       /** @description Session or file not found. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpUploadFile: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpUploadFileRequest'];
+      };
+    };
+    responses: {
+      /** @description File uploaded. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed or upload failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or file not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Remote file changed after it was opened. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

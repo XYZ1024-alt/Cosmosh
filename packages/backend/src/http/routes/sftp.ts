@@ -15,6 +15,7 @@ import {
   type ApiSftpListDirectoryResponse,
   type ApiSftpReadFileResponse,
   type ApiSftpRenameResponse,
+  type ApiSftpUploadFileResponse,
   createApiSuccess,
 } from '@cosmosh/api-contract';
 
@@ -49,6 +50,14 @@ type NormalizedSftpDownloadFileRequest = {
   localPath: string;
 };
 
+type NormalizedSftpUploadFileRequest = {
+  path: string;
+  localPath: string;
+  expectedSize: number;
+  expectedModifiedAt: string;
+  overwrite: boolean;
+};
+
 type NormalizedSftpRenameRequest = {
   sourcePath: string;
   targetPath: string;
@@ -72,7 +81,8 @@ type ApiSftpOperationResponse =
   | ApiSftpCreateFileResponse
   | ApiSftpRenameResponse
   | ApiSftpCopyResponse
-  | ApiSftpDeleteResponse;
+  | ApiSftpDeleteResponse
+  | ApiSftpUploadFileResponse;
 
 const MAX_SFTP_ENTRY_DETAILS_PATHS = 200;
 
@@ -196,6 +206,64 @@ const parseSftpDownloadFileRequest = (payload: unknown): ValidationResult<Normal
     value: {
       path: requestedPath,
       localPath,
+    },
+  };
+};
+
+/**
+ * Parses and validates one SFTP file upload payload.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized upload request or validation error.
+ */
+const parseSftpUploadFileRequest = (payload: unknown): ValidationResult<NormalizedSftpUploadFileRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  const requestedPath = normalizeOptionalString(payload.path);
+  if (!requestedPath) {
+    return {
+      error: buildValidationError('errors.sftp.pathRequired', 'path is required.'),
+    };
+  }
+
+  const localPath = normalizeOptionalString(payload.localPath);
+  if (!localPath) {
+    return {
+      error: buildValidationError('errors.sftp.localPathRequired', 'localPath is required.'),
+    };
+  }
+
+  const expectedSize = Number(payload.expectedSize);
+  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+    return {
+      error: buildValidationError('errors.sftp.expectedSizeRequired', 'expectedSize must be a non-negative integer.'),
+    };
+  }
+
+  const expectedModifiedAt = normalizeOptionalString(payload.expectedModifiedAt);
+  if (!expectedModifiedAt || Number.isNaN(Date.parse(expectedModifiedAt))) {
+    return {
+      error: buildValidationError('errors.sftp.expectedModifiedAtRequired', 'expectedModifiedAt must be a date-time.'),
+    };
+  }
+
+  if (payload.overwrite !== undefined && normalizeOptionalBoolean(payload.overwrite) === undefined) {
+    return {
+      error: buildValidationError('errors.validation.invalidPayload', 'overwrite must be a boolean when provided.'),
+    };
+  }
+
+  return {
+    value: {
+      path: requestedPath,
+      localPath,
+      expectedSize,
+      expectedModifiedAt,
+      overwrite: payload.overwrite === true,
     },
   };
 };
@@ -711,6 +779,58 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
         path: result.path,
         localPath: result.localPath,
         size: result.size,
+      },
+    });
+
+    return c.json(payload);
+  });
+
+  app.post(API_PATHS.sftpUploadFile.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parseSftpUploadFileRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = await context.sftpSessionService.uploadFile(
+      sessionId,
+      parsed.value.path,
+      parsed.value.localPath,
+      {
+        size: parsed.value.expectedSize,
+        modifiedAt: parsed.value.expectedModifiedAt,
+      },
+      {
+        overwrite: parsed.value.overwrite,
+      },
+    );
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    if (result.type === 'failed') {
+      if (result.reason === 'remote-conflict') {
+        return c.json(buildErrorPayload(API_CODES.sftpUploadConflict, result.message), 409);
+      }
+
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    const payload: ApiSftpUploadFileResponse = createApiSuccess({
+      code: API_CODES.sftpOperationOk,
+      message: t('success.sftp.fileUploaded'),
+      data: {
+        sessionId: result.sessionId,
+        path: result.path,
+        ...(result.targetPath ? { targetPath: result.targetPath } : {}),
+        ...(result.size !== undefined ? { size: result.size } : {}),
+        ...(result.modifiedAt ? { modifiedAt: result.modifiedAt } : {}),
       },
     });
 

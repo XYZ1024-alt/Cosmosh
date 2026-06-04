@@ -844,7 +844,8 @@
       "movedMany": "已移动 {count} 个条目。",
       "pathCopied": "文件地址已复制。",
       "relativePathCopied": "相对地址已复制。",
-      "renamed": "已重命名。"
+      "renamed": "已重命名。",
+      "uploaded": "更改已上传。"
     },
     "loadFailed": "加载 SFTP 目录失败。",
     "loading": "正在加载目录...",
@@ -955,11 +956,21 @@
       "toolbarQueued": "{count} 个排队任务",
       "toolbarRecent": "{count} 个最近任务",
       "toolbarRunning": "{count} 个运行中任务",
-      "toolbarTitle": "任务"
+      "toolbarTitle": "任务",
+      "upload": "上传",
+      "uploadSkipped": "已跳过上传"
     },
     "temporaryPathUnavailable": "无法获取临时本地文件路径。",
     "title": "SFTP",
     "untitledServer": "SFTP 服务器",
+    "uploadConfirmAccept": "上传",
+    "uploadConfirmDescription": "“{name}”已在本地更改。要将更改上传到 {path} 吗？",
+    "uploadConfirmIgnore": "忽略",
+    "uploadConfirmTitle": "上传 SFTP 更改",
+    "uploadConflictCancel": "取消",
+    "uploadConflictDescription": "“{name}”在打开后已在远程发生变化。要用本地更改覆盖 {path} 吗？",
+    "uploadConflictOverwrite": "覆盖",
+    "uploadConflictTitle": "覆盖远程更改？",
     "viewMenu": {
       "ascending": "递增",
       "columns": "列",

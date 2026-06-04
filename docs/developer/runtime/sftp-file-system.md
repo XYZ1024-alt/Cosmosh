@@ -10,6 +10,7 @@ Implemented in v1:
 - Each SFTP tab creates a backend SFTP session and owns that session lifecycle.
 - Directory listing supports breadcrumb path navigation with editable text fallback, persistent text-address display mode, back/forward history, parent navigation, refresh, current-directory filtering, configurable metadata columns, header sorting, header drag-reorder, loading, empty, expired-session, and operation-failed states.
 - The renderer shows directory entries, metadata details, and a standalone Properties window. Double-clicking a regular file downloads it into the Cosmosh-controlled SFTP temp directory and opens it with the OS default application.
+- Opened regular files are watched from the Cosmosh-controlled SFTP temp directory. When a watched temp file changes, the renderer asks whether to upload the change back to the remote file. If the remote size or modified time no longer matches the version that was opened, the renderer asks for explicit overwrite confirmation before retrying.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, automatically scrolls the current directory row near the upper third of the tree viewport after directory navigation only when the mounted parent/current/expanded-child context is outside the visible viewport, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports mouse and keyboard multi-selection with `Ctrl`/`Cmd` toggle, `Ctrl`/`Cmd+A` select-all, and `Shift` range selection.
 - Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, failed, and progress states.
@@ -18,7 +19,7 @@ Implemented in v1:
 
 Intentionally not included in v1:
 
-- upload, directory download, chmod, drag/drop, global search, file editing, and backend-level transfer queues with cancellation/conflict handling.
+- directory download, chmod, drag/drop, global search, full in-app file editing, and backend-level transfer queues with cancellation/conflict handling.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -53,6 +54,7 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/entries/details` | Fetch non-recursive metadata for selected remote entries, including `lstat` fields and symbolic-link target metadata. |
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/download` | Stream one regular remote file to a local destination selected by main/preload. |
+| `POST` | `/api/v1/sftp/sessions/{sessionId}/upload` | Stream one locally edited SFTP temp file back to the original remote file after conflict checks; `overwrite: true` is accepted only after renderer conflict confirmation. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/files` | Create one empty remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/directories` | Create one remote directory. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/rename` | Rename or move one remote entry. |
@@ -74,6 +76,7 @@ SFTP-specific error codes:
 - `SFTP_SESSION_NOT_FOUND`
 - `SFTP_VALIDATION_FAILED`
 - `SFTP_OPERATION_FAILED`
+- `SFTP_UPLOAD_CONFLICT`
 
 Host fingerprint trust failures reuse the SSH host-trust envelope and code because SFTP uses the same SSH transport security model.
 
@@ -166,6 +169,10 @@ Mutation rules:
 - Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main for the OS downloads path, `Save to...` asks main to show a native save dialog, and the backend streams the remote file through the live SFTP session into a temporary local file before replacing the final destination.
 - Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
+- After a default open or Open With action succeeds, main starts a debounced watcher for that exact temp file and pushes change events only to the owning renderer webContents. The renderer keeps one pending upload prompt per remote path, so repeated editor save events collapse into one prompt until the user uploads or ignores the change.
+- Accepting an upload prompt queues an `Upload` task in the same tab-local FIFO task queue used by other SFTP operations. The upload request includes the opened remote file's `size` and `modifiedAt`; backend compares those values to the current remote `stat` before writing. If they differ, the backend returns `SFTP_UPLOAD_CONFLICT` and does not overwrite the remote file on that request.
+- When the renderer receives `SFTP_UPLOAD_CONFLICT`, it keeps the same upload task running and opens a second confirmation dialog for overwriting remote changes. Canceling that dialog skips the upload. Confirming it retries the same upload with `overwrite: true`, which explicitly bypasses the original opening snapshot check while still requiring a regular remote target and a validated Cosmosh temp local file.
+- Successful uploads write to a remote temp file in the target directory before replacing the original file. The backend prefers the OpenSSH POSIX rename extension, falls back to ordinary SFTP rename when supported, and only uses an `unlink` + `rename` compatibility path after rechecking the remote `size`/`modifiedAt` conflict guard for non-overwrite uploads. Explicit overwrite uploads skip that recheck because the user already confirmed the conflict. The renderer then refreshes the visible directory and updates the watched file's remote snapshot from the upload response and refreshed listing. Ignoring the prompt clears the pending change without stopping the watcher, so later local saves can prompt again.
 - On Windows, `Open With...` is a plain menu item with no submenu and first uses the shell `openas` verb through a hidden PowerShell process; the validated temp file path is passed through the child process environment to avoid PowerShell argument parsing edge cases. If that shell verb is rejected by the OS for a file type, main falls back to `rundll32.exe shell32.dll,OpenAs_RunDLL`. On macOS, `Open With...` is a submenu populated by the NSWorkspace helper in `packages/main/resources/helpers`; `prebuild` compiles the helper binary on macOS, while development can fall back to the Swift source. Linux does not render the Open With action.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 
@@ -193,6 +200,8 @@ Security constraints:
 - SFTP paths are passed as structured API payloads, not shell commands.
 - Local save destinations are selected or resolved by main/preload and passed to backend as explicit paths; renderer does not receive filesystem write primitives.
 - Local OS-open actions are restricted to paths under the Cosmosh SFTP temp root. Main normalizes the candidate path, verifies it stays inside that root, and checks that it is an existing file before calling `shell.openPath`, Windows `openas`, or the macOS helper.
+- SFTP temp-file watchers use the same temp-root validation and are owned by the renderer webContents that requested them. Watchers stop when the tab runtime resets, the renderer is destroyed, or the renderer explicitly stops the watch.
+- Upload write-back only accepts local paths selected through the validated temp-file flow and rejects remote writes when the target is not a regular file. Non-overwrite writes are also rejected when the remote conflict snapshot no longer matches; overwrite writes require the renderer's explicit second confirmation and `overwrite: true`.
 - Backend rejects empty mutable targets and root/current-directory markers for write operations.
 
 ## 7. Renderer UX Contract
@@ -222,6 +231,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Platform shortcut labels follow desktop convention: `Cmd` on macOS and `Ctrl`/`Delete` on Windows/Linux. Context menus and toolbar overflow menus must show the same shortcut labels for actions that have keyboard handlers.
 - `Open in New Tab` is only rendered for directory targets, and `Open With...` is placed directly after it in the open-action group. `Open With...` must not include a leading icon. Windows shows it as a single item that opens the system picker. macOS shows it as a submenu with application names and icons returned from main; Linux omits the action.
 - Delete confirmation uses the shared `Dialog` wrapper and must preserve the pending operation until the user confirms or cancels. Keyboard-triggered delete passes an explicit shortcut source so the confirmation setting can distinguish shortcut-only safety prompts from toolbar and context-menu deletes.
+- Opened-file upload prompts use the shared `Dialog` wrapper. The first dialog appears only after a debounced local temp-file change and offers `Ignore` and `Upload`. A second dialog appears only after the backend reports `SFTP_UPLOAD_CONFLICT`, offering `Cancel` and `Overwrite`; overwrite is never implicit.
 - The optional `..` parent-directory row belongs to the center file list only. It must render before real entries, stay out of selection and detail state, use double-click/Enter activation like regular file rows, and show a disabled state at the remote root when no parent path exists.
 - Show the current directory and all parent directories in the tree; expanding a tree row loads its child directory list and shows an inline spinner while loading.
 - After opening a directory from any SFTP navigation surface, leave the matching left-tree row in place only when its mounted parent/current/expanded-child context fits inside the visible tree viewport; otherwise, scroll the current row into the upper third of the tree viewport once it is mounted.

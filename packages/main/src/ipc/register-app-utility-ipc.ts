@@ -1,10 +1,11 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { type FSWatcher, watch } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { SftpOpenWithApplication } from '@cosmosh/api-contract';
+import type { SftpOpenWithApplication, SftpTemporaryFileWatchChange } from '@cosmosh/api-contract';
 import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from 'electron';
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
@@ -26,11 +27,21 @@ type MacOsHelperInvocation = {
   argsPrefix: string[];
 };
 
+type SftpTemporaryFileWatchRecord = {
+  watchId: string;
+  localPath: string;
+  ownerWebContentsId: number;
+  watcher: FSWatcher;
+  debounceTimer: NodeJS.Timeout | null;
+  lastSignature: string;
+};
+
 const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
 const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
 const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
 const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
 const WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME = 'COSMOSH_SFTP_OPEN_WITH_PATH';
+const SFTP_TEMP_FILE_WATCH_DEBOUNCE_MS = 800;
 const WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -201,6 +212,75 @@ const createSftpTemporaryFilePath = async (fileName: string | undefined): Promis
   const temporaryDirectoryPath = path.join(resolveSftpTemporaryRootPath(), randomUUID());
   await fs.mkdir(temporaryDirectoryPath, { recursive: true });
   return path.join(temporaryDirectoryPath, sanitizeSftpTemporaryFileName(fileName));
+};
+
+/**
+ * Builds the signature used to dedupe repeated file-system notifications.
+ *
+ * @param filePath Existing local temp file path.
+ * @returns Stable signature and payload fields for the file state.
+ */
+const resolveSftpTemporaryFileSignature = async (
+  filePath: string,
+): Promise<{ signature: string; change: Omit<SftpTemporaryFileWatchChange, 'watchId' | 'localPath'> }> => {
+  const stats = await fs.stat(filePath);
+  if (!stats.isFile()) {
+    throw new Error('Invalid file path.');
+  }
+
+  return {
+    signature: `${stats.size}:${stats.mtimeMs}`,
+    change: {
+      size: stats.size,
+      modifiedAt: stats.mtime.toISOString(),
+    },
+  };
+};
+
+/**
+ * Stops one active SFTP temp-file watcher and clears its pending debounce work.
+ *
+ * @param watchers Active watcher registry.
+ * @param watchId Watch id returned to the renderer.
+ * @returns Whether a watcher was stopped.
+ */
+const stopSftpTemporaryFileWatcher = (
+  watchers: Map<string, SftpTemporaryFileWatchRecord>,
+  watchId: string | undefined,
+): boolean => {
+  if (!watchId) {
+    return false;
+  }
+
+  const record = watchers.get(watchId);
+  if (!record) {
+    return false;
+  }
+
+  if (record.debounceTimer) {
+    clearTimeout(record.debounceTimer);
+  }
+  record.watcher.close();
+  watchers.delete(watchId);
+  return true;
+};
+
+/**
+ * Stops every watcher owned by one renderer webContents.
+ *
+ * @param watchers Active watcher registry.
+ * @param ownerWebContentsId Renderer webContents id.
+ * @returns void.
+ */
+const stopSftpTemporaryFileWatchersForOwner = (
+  watchers: Map<string, SftpTemporaryFileWatchRecord>,
+  ownerWebContentsId: number,
+): void => {
+  Array.from(watchers.values())
+    .filter((record) => record.ownerWebContentsId === ownerWebContentsId)
+    .forEach((record) => {
+      stopSftpTemporaryFileWatcher(watchers, record.watchId);
+    });
 };
 
 /**
@@ -428,6 +508,7 @@ const openWithApplicationMacOs = async (filePath: string, applicationPath: strin
  */
 export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHandlersOptions): void => {
   const sampleMainCpuUsagePercent = createMainCpuUsagePercentSampler();
+  const sftpTemporaryFileWatchers = new Map<string, SftpTemporaryFileWatchRecord>();
 
   const resolveCommit = (): string => {
     const fromEnv = process.env.COSMOSH_GIT_COMMIT ?? process.env.GIT_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA;
@@ -520,6 +601,72 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     }
 
     return true;
+  });
+
+  ipcMain.handle('app:start-sftp-temporary-file-watch', async (event, localPath?: string): Promise<string> => {
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    const ownerWebContents = event.sender;
+    const watchId = randomUUID();
+    const initialSignature = await resolveSftpTemporaryFileSignature(normalizedPath);
+
+    const scheduleChangeCheck = (record: SftpTemporaryFileWatchRecord): void => {
+      if (record.debounceTimer) {
+        clearTimeout(record.debounceTimer);
+      }
+
+      record.debounceTimer = setTimeout(() => {
+        record.debounceTimer = null;
+        void resolveSftpTemporaryFileSignature(record.localPath)
+          .then(({ signature, change }) => {
+            const currentRecord = sftpTemporaryFileWatchers.get(record.watchId);
+            if (!currentRecord || signature === currentRecord.lastSignature || ownerWebContents.isDestroyed()) {
+              return;
+            }
+
+            currentRecord.lastSignature = signature;
+            ownerWebContents.send('app:sftp-temporary-file-changed', {
+              watchId: currentRecord.watchId,
+              localPath: currentRecord.localPath,
+              ...change,
+            } satisfies SftpTemporaryFileWatchChange);
+          })
+          .catch(() => {
+            stopSftpTemporaryFileWatcher(sftpTemporaryFileWatchers, record.watchId);
+          });
+      }, SFTP_TEMP_FILE_WATCH_DEBOUNCE_MS);
+    };
+
+    const watcher = watch(normalizedPath, { persistent: false }, () => {
+      const record = sftpTemporaryFileWatchers.get(watchId);
+      if (!record) {
+        return;
+      }
+
+      scheduleChangeCheck(record);
+    });
+
+    const record: SftpTemporaryFileWatchRecord = {
+      watchId,
+      localPath: normalizedPath,
+      ownerWebContentsId: ownerWebContents.id,
+      watcher,
+      debounceTimer: null,
+      lastSignature: initialSignature.signature,
+    };
+
+    watcher.on('error', () => {
+      stopSftpTemporaryFileWatcher(sftpTemporaryFileWatchers, watchId);
+    });
+    ownerWebContents.once('destroyed', () => {
+      stopSftpTemporaryFileWatchersForOwner(sftpTemporaryFileWatchers, ownerWebContents.id);
+    });
+
+    sftpTemporaryFileWatchers.set(watchId, record);
+    return watchId;
+  });
+
+  ipcMain.handle('app:stop-sftp-temporary-file-watch', (_event, watchId?: string): boolean => {
+    return stopSftpTemporaryFileWatcher(sftpTemporaryFileWatchers, watchId);
   });
 
   ipcMain.handle('app:show-sftp-open-with-dialog', async (_event, localPath?: string): Promise<boolean> => {
