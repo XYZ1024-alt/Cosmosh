@@ -48,6 +48,7 @@ export interface SettingsValues {
   terminalLineHeight: string;
   sshMaxRows: number;
   sshConnectionTimeoutSec: number;
+  terminalHardwareAccelerationEnabled: boolean;
   terminalDrawBoldTextInBrightColors: boolean;
   terminalScrollSensitivity: string;
   terminalFastScrollSensitivity: string;
@@ -828,6 +829,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.terminal.runtime.textDropMode.set',
     searchTerms: ['terminal', 'drag', 'drop', 'text drop', 'external drag'],
     options: [{ value: 'off' }, { value: 'always' }, { value: 'external' }],
+  },
+  {
+    key: 'terminalHardwareAccelerationEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalHardwareAccelerationEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalHardwareAccelerationEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.hardwareAcceleration.enabled',
+    commandActionId: 'settings.terminal.runtime.hardwareAcceleration.enabled.toggle',
+    searchTerms: ['terminal', 'hardware acceleration', 'webgl', 'gpu', 'renderer'],
   },
   {
     key: 'terminalBracketedPasteEnabled',

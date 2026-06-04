@@ -130,6 +130,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompletePromptRegex = settingsValues.terminalAutoCompletePromptRegex;
   const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
   const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
+  const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
       getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-terminal').trim() || '#cccccc';
@@ -247,6 +248,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalClipboardProvider,
+    terminalHardwareAccelerationEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
     onTabTitleChange,

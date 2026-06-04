@@ -3,6 +3,7 @@ import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
 import type { TerminalAutocompleteMenuHandle } from '../../components/terminal/terminal-autocomplete-menu';
+import { t } from '../../lib/i18n';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
 import {
   DEFAULT_TELEMETRY_STATE,
@@ -16,6 +17,12 @@ import {
   type TerminalSelectionBarPosition,
 } from './ssh-types';
 import { sendClientMessage } from './ssh-utils';
+import {
+  disposeTerminalWebglAddon,
+  syncTerminalWebglAddon,
+  type TerminalHardwareAccelerationState,
+  type TerminalWebglAddonRuntime,
+} from './terminal-addons';
 import { useSshAutocomplete } from './use-ssh-autocomplete';
 import { useSshMirrorPanes } from './use-ssh-mirror-panes';
 import { useSshPrimarySession } from './use-ssh-primary-session';
@@ -58,6 +65,9 @@ class SshRuntimeCoordinator {
   public activeTerminal: Terminal | null = null;
   public primaryTerminal: Terminal | null = null;
   public primarySearchAddon: SearchAddon | null = null;
+  public primaryWebglAddonRuntime: TerminalWebglAddonRuntime = {
+    webglAddon: null,
+  };
   public activeSocket: WebSocket | null = null;
   public primarySocket: WebSocket | null = null;
   public activeContainer: HTMLDivElement | null = null;
@@ -166,6 +176,7 @@ export type UseSshCoreParams = {
   terminalAutoCompletePromptRegex: string;
   terminalBracketedPasteEnabled: boolean;
   terminalClipboardProvider: TerminalClipboardProvider;
+  terminalHardwareAccelerationEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
   sshReconnectOnFocus: boolean;
   onTabTitleChange?: (title: string) => void;
@@ -372,6 +383,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
     terminalClipboardProvider,
+    terminalHardwareAccelerationEnabled,
     terminalSelectionBarEnabled,
     sshReconnectOnFocus,
     onTabTitleChange,
@@ -421,6 +433,13 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     (runtime) => runtime.primarySearchAddon,
     (runtime, value) => {
       runtime.primarySearchAddon = value;
+    },
+  );
+  const primaryWebglAddonRuntimeRef = useRuntimeFieldRef(
+    runtimeRef,
+    (runtime) => runtime.primaryWebglAddonRuntime,
+    (runtime, value) => {
+      runtime.primaryWebglAddonRuntime = value;
     },
   );
   const primarySocketRef = useRuntimeFieldRef(
@@ -478,6 +497,11 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const terminalInitOptionsRef = React.useRef<ITerminalOptions>(terminalInitOptions);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
   const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
+  const hardwareAccelerationStateRef = React.useRef<TerminalHardwareAccelerationState>({
+    isEnabledBySettings: terminalHardwareAccelerationEnabled,
+    isRuntimeDisabled: false,
+    hasShownContextLossWarning: false,
+  });
 
   const [terminalPaneIds, setTerminalPaneIds] = React.useState<string[]>(['pane-1']);
   const [activePaneId, setActivePaneId] = React.useState<string>('pane-1');
@@ -509,6 +533,57 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     sshReconnectOnFocusRef.current = sshReconnectOnFocus;
   }, [sshReconnectOnFocus]);
+
+  const notifyHardwareAccelerationContextLoss = React.useCallback(() => {
+    const accelerationState = hardwareAccelerationStateRef.current;
+    if (accelerationState.hasShownContextLossWarning) {
+      return;
+    }
+
+    accelerationState.hasShownContextLossWarning = true;
+    disposeTerminalWebglAddon(runtimeRef.current.primaryWebglAddonRuntime);
+    runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+      disposeTerminalWebglAddon(runtime);
+    });
+    notifyWarning(t('ssh.terminalHardwareAccelerationDisabled'));
+  }, [notifyWarning]);
+
+  React.useEffect(() => {
+    const accelerationState = hardwareAccelerationStateRef.current;
+    const wasEnabled = accelerationState.isEnabledBySettings;
+
+    accelerationState.isEnabledBySettings = terminalHardwareAccelerationEnabled;
+    if (terminalHardwareAccelerationEnabled && !wasEnabled) {
+      accelerationState.isRuntimeDisabled = false;
+      accelerationState.hasShownContextLossWarning = false;
+    }
+
+    if (!terminalHardwareAccelerationEnabled) {
+      disposeTerminalWebglAddon(runtimeRef.current.primaryWebglAddonRuntime);
+      runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+        disposeTerminalWebglAddon(runtime);
+      });
+      return;
+    }
+
+    if (accelerationState.isRuntimeDisabled) {
+      return;
+    }
+
+    const primaryTerminal = runtimeRef.current.primaryTerminal;
+    if (primaryTerminal) {
+      syncTerminalWebglAddon(
+        primaryTerminal,
+        runtimeRef.current.primaryWebglAddonRuntime,
+        accelerationState,
+        notifyHardwareAccelerationContextLoss,
+      );
+    }
+
+    runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+      syncTerminalWebglAddon(runtime.terminal, runtime, accelerationState, notifyHardwareAccelerationContextLoss);
+    });
+  }, [notifyHardwareAccelerationContextLoss, terminalHardwareAccelerationEnabled]);
 
   const {
     autocompleteItems,
@@ -747,10 +822,12 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     connectionIntent,
     onConnectionIntentChange,
     terminalInitOptionsRef,
+    hardwareAccelerationStateRef,
     terminalContainerRef,
     terminalRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
     primarySocketRef,
@@ -777,6 +854,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
+    notifyHardwareAccelerationContextLoss,
   });
 
   useSshMirrorPanes({
@@ -784,6 +862,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     connectionState,
     terminalPaneIds,
     terminalInitOptionsRef,
+    hardwareAccelerationStateRef,
     paneContainerMapRef,
     mirrorPaneRuntimeMapRef,
     selectionPointerClientXRef,
@@ -804,6 +883,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     handleCompletionResponse,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     notifyWarning,
+    notifyHardwareAccelerationContextLoss,
   });
 
   React.useEffect(() => {

@@ -1,6 +1,4 @@
 import { ClipboardAddon } from '@xterm/addon-clipboard';
-import { FitAddon } from '@xterm/addon-fit';
-import { SearchAddon } from '@xterm/addon-search';
 import { type ITerminalOptions, Terminal } from '@xterm/xterm';
 import React from 'react';
 
@@ -9,6 +7,7 @@ import { t } from '../../lib/i18n';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import type { MirrorPaneRuntime, ResolvedTerminalTarget, ServerInboundMessage } from './ssh-types';
 import { applyTerminalRuntimeOptions, SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import { loadTerminalAddons, syncTerminalWebglAddon, type TerminalHardwareAccelerationState } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 type UseSshMirrorPanesParams = {
@@ -16,6 +15,7 @@ type UseSshMirrorPanesParams = {
   connectionState: 'connecting' | 'connected' | 'failed';
   terminalPaneIds: string[];
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
+  hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
   paneContainerMapRef: React.RefObject<Map<string, HTMLDivElement>>;
   mirrorPaneRuntimeMapRef: React.RefObject<Map<string, MirrorPaneRuntime>>;
   selectionPointerClientXRef: React.RefObject<number | null>;
@@ -45,6 +45,7 @@ type UseSshMirrorPanesParams = {
     fingerprint: string;
   }) => Promise<boolean>;
   notifyWarning: (message: string) => void;
+  notifyHardwareAccelerationContextLoss: () => void;
 };
 
 /**
@@ -59,6 +60,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     connectionState,
     terminalPaneIds,
     terminalInitOptionsRef,
+    hardwareAccelerationStateRef,
     paneContainerMapRef,
     mirrorPaneRuntimeMapRef,
     selectionPointerClientXRef,
@@ -79,6 +81,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     handleCompletionResponse,
     requestHostFingerprintTrust,
     notifyWarning,
+    notifyHardwareAccelerationContextLoss,
   } = params;
 
   React.useEffect(() => {
@@ -114,19 +117,24 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       }
 
       const terminal = new Terminal(terminalInitOptionsRef.current);
-      const fitAddon = new FitAddon();
-      const searchAddon = new SearchAddon();
       const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
-      terminal.loadAddon(fitAddon);
-      terminal.loadAddon(searchAddon);
+      const addonRuntime = loadTerminalAddons(terminal);
+      const { fitAddon, searchAddon } = addonRuntime;
       terminal.loadAddon(clipboardAddon);
       terminal.open(containerElement);
+      syncTerminalWebglAddon(
+        terminal,
+        addonRuntime,
+        hardwareAccelerationStateRef.current,
+        notifyHardwareAccelerationContextLoss,
+      );
 
       const runtime: MirrorPaneRuntime = {
         terminal,
         fitAddon,
         searchAddon,
         clipboardProvider: terminalClipboardProvider,
+        webglAddon: addonRuntime.webglAddon,
         containerElement,
         socket: null,
         sessionId: null,
@@ -339,6 +347,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     connectionState,
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
+    hardwareAccelerationStateRef,
     mirrorPaneRuntimeMapRef,
     isActive,
     paneContainerMapRef,
@@ -356,6 +365,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     terminalPaneIds,
     notifyAutocompleteOutputEchoRef,
     notifyWarning,
+    notifyHardwareAccelerationContextLoss,
   ]);
 
   React.useEffect(() => {

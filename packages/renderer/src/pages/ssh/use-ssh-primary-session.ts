@@ -1,5 +1,4 @@
 import { ClipboardAddon } from '@xterm/addon-clipboard';
-import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { type ITerminalOptions, Terminal } from '@xterm/xterm';
 import React from 'react';
@@ -17,6 +16,12 @@ import {
 import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } from './ssh-types';
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import {
+  loadTerminalAddons,
+  syncTerminalWebglAddon,
+  type TerminalHardwareAccelerationState,
+  type TerminalWebglAddonRuntime,
+} from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 type UseSshPrimarySessionParams = {
@@ -25,10 +30,12 @@ type UseSshPrimarySessionParams = {
   connectionIntent: SshConnectionIntent;
   onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
+  hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
   terminalContainerRef: React.RefObject<HTMLDivElement | null>;
   terminalRef: React.RefObject<Terminal | null>;
   primaryTerminalRef: React.RefObject<Terminal | null>;
   primarySearchAddonRef: React.RefObject<SearchAddon | null>;
+  primaryWebglAddonRuntimeRef: React.RefObject<TerminalWebglAddonRuntime>;
   primaryPaneIdRef: React.RefObject<string>;
   activePaneIdRef: React.RefObject<string>;
   primarySocketRef: React.RefObject<WebSocket | null>;
@@ -66,6 +73,7 @@ type UseSshPrimarySessionParams = {
     payload: Extract<ServerInboundMessage, { type: 'completion-response' }>,
     paneId: string,
   ) => void;
+  notifyHardwareAccelerationContextLoss: () => void;
 };
 
 /**
@@ -81,10 +89,12 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     connectionIntent,
     onConnectionIntentChange,
     terminalInitOptionsRef,
+    hardwareAccelerationStateRef,
     terminalContainerRef,
     terminalRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
     primarySocketRef,
@@ -111,6 +121,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
+    notifyHardwareAccelerationContextLoss,
   } = params;
 
   const isActiveRef = React.useRef<boolean>(isActive);
@@ -137,22 +148,28 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
   React.useEffect(() => {
     const terminal = new Terminal(terminalInitOptionsRef.current);
-    const fitAddon = new FitAddon();
-    const searchAddon = new SearchAddon();
     const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
-    terminal.loadAddon(fitAddon);
-    terminal.loadAddon(searchAddon);
+    const addonRuntime = loadTerminalAddons(terminal);
+    const { fitAddon, searchAddon } = addonRuntime;
+    primaryWebglAddonRuntimeRef.current = addonRuntime;
     terminal.loadAddon(clipboardAddon);
 
     const containerElement = terminalContainerRef.current;
     if (!containerElement) {
       terminalRef.current = null;
       primarySearchAddonRef.current = null;
+      primaryWebglAddonRuntimeRef.current = { webglAddon: null };
       terminal.dispose();
       return;
     }
 
     terminal.open(containerElement);
+    syncTerminalWebglAddon(
+      terminal,
+      addonRuntime,
+      hardwareAccelerationStateRef.current,
+      notifyHardwareAccelerationContextLoss,
+    );
     primaryTerminalRef.current = terminal;
     primarySearchAddonRef.current = searchAddon;
     terminalRef.current = terminal;
@@ -570,6 +587,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       scheduleFitAndResizeSyncRef.current = null;
       primaryTerminalRef.current = null;
       primarySearchAddonRef.current = null;
+      primaryWebglAddonRuntimeRef.current = { webglAddon: null };
       terminalRef.current = null;
       terminalClipboardProvider.setActiveTarget(null);
       selectionPointerClientXRef.current = null;
@@ -594,12 +612,15 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     connectSessionRef,
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
+    hardwareAccelerationStateRef,
+    notifyHardwareAccelerationContextLoss,
     onTabTitleChangeRef,
     onTabVisualChangeRef,
     primaryPaneIdRef,
     primarySocketRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primaryWebglAddonRuntimeRef,
     refreshSelectionAnchor,
     requestHostFingerprintTrust,
     resolvedTerminalTargetRef,

@@ -225,6 +225,7 @@ flowchart LR
 
 - Renderer binds Settings `sshMaxRows` to xterm `scrollback` when initializing SSH terminal.
 - Renderer uses `FitAddon` + resize observer to keep shell size synchronized.
+- Renderer uses `@xterm/addon-webgl` for hardware-accelerated terminal rendering when Settings `terminalHardwareAccelerationEnabled` is enabled (default on).
 - Backend normalizes terminal sizes to prevent extreme allocations (`20-400 cols`, `10-200 rows`).
 - Pending output queue avoids losing early SSH output before WS attach.
 - Pending output buffering is bounded by chunk count and total bytes; overflow drops oldest chunks and emits drop logs.
@@ -246,6 +247,7 @@ Renderer now maps terminal runtime behavior from Settings to `ITerminalOptions` 
   - `scrollSensitivity`, `fastScrollSensitivity`, `minimumContrastRatio`
   - `screenReaderMode`, `scrollOnUserInput`, `smoothScrollDuration`, `tabStopWidth`
 - **Terminal / Runtime**:
+  - `terminalHardwareAccelerationEnabled` controls optional `WebglAddon` loading for SSH and local terminal sessions, including split panes. The setting defaults to enabled.
   - `ignoreBracketedPasteMode` is derived from Settings `terminalBracketedPasteEnabled` (`false` when enabled, `true` when disabled).
   - Context-menu paste, drag-and-drop text insertion, and selection-toolbar insert route through xterm `terminal.paste(...)` when enabled, so shell-side bracketed paste mode can keep multiline payloads from executing immediately.
   - `@xterm/addon-clipboard` is loaded with a Cosmosh-owned provider for terminal clipboard reads/writes (OSC 52).
@@ -258,6 +260,7 @@ Notes:
 
 - Optional numeric values (for example `cursorWidth`) are parsed defensively; invalid or empty input falls back to xterm defaults.
 - Existing `sshMaxRows` remains bound to xterm `scrollback`.
+- WebGL loading is best-effort: initialization failures fall back to xterm's default renderer without failing the terminal session. If WebGL context is lost, renderer disposes the add-on, disables WebGL retries for that SSH page runtime, and shows a one-time warning.
 
 ## 6.2 Split-Pane Terminal Interaction Model
 

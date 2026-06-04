@@ -539,6 +539,10 @@
         "placeholder": "bold",
         "title": "Terminal Bold Font Weight"
       },
+      "terminalHardwareAccelerationEnabled": {
+        "description": "Use WebGL rendering for terminal sessions when available, with automatic fallback if the GPU context is unavailable.",
+        "title": "Terminal Hardware Acceleration"
+      },
       "terminalLetterSpacing": {
         "description": "Additional spacing between terminal characters (px).",
         "placeholder": "0",
@@ -1153,6 +1157,7 @@
       "writeAskRead": "Allow write; ask before read"
     },
     "terminalClipboardAccessPlaceholder": "Select clipboard access",
+    "terminalHardwareAccelerationDisabled": "Terminal hardware acceleration was disabled because WebGL became unavailable.",
     "terminalSearchCaseSensitive": "Case Sensitive",
     "terminalSearchFirst": "First",
     "terminalSearchLast": "Last",

@@ -225,6 +225,7 @@ flowchart LR
 
 - Renderer 在初始化 SSH 终端时，将设置项 `sshMaxRows` 绑定到 xterm `scrollback`。
 - Renderer 使用 `FitAddon` + resize observer 保持终端尺寸同步。
+- 当设置项 `terminalHardwareAccelerationEnabled` 开启时（默认开启），Renderer 使用 `@xterm/addon-webgl` 为终端渲染启用硬件加速。
 - Backend 对终端尺寸做归一化限制（`20-400 cols`、`10-200 rows`）。
 - 通过 pending output queue 避免 attach 前早期输出丢失。
 - pending output 采用“条目数 + 字节数”双上限；超过上限时丢弃最旧输出并记录日志。
@@ -246,6 +247,7 @@ flowchart LR
   - `scrollSensitivity`、`fastScrollSensitivity`、`minimumContrastRatio`
   - `screenReaderMode`、`scrollOnUserInput`、`smoothScrollDuration`、`tabStopWidth`
 - **终端 / 运行时**：
+  - `terminalHardwareAccelerationEnabled` 控制 SSH 与本地终端会话（包括分屏窗格）是否加载可选 `WebglAddon`，默认开启。
   - `ignoreBracketedPasteMode` 由设置项 `terminalBracketedPasteEnabled` 推导（开启时为 `false`，关闭时为 `true`）。
   - 开启后，右键粘贴、拖拽文本插入、选区工具栏插入会统一走 xterm `terminal.paste(...)`，从而让 shell 侧 bracketed paste 机制避免多行内容被立即执行。
   - `@xterm/addon-clipboard` 会以 Cosmosh 自有 provider 加载，用于处理终端剪贴板读取/写入（OSC 52）。
@@ -258,6 +260,7 @@ flowchart LR
 
 - 对可选数值（如 `cursorWidth`）采用防御式解析；为空或不合法时回退到 xterm 默认行为。
 - 原有 `sshMaxRows` 仍保持映射到 xterm `scrollback`。
+- WebGL 加载是尽力而为：初始化失败会回退到 xterm 默认渲染器，且不会中断终端会话。如果 WebGL 上下文丢失，renderer 会释放该 add-on，在当前 SSH 页面运行期停止重试 WebGL，并显示一次警告。
 
 ## 6.2 终端分屏交互模型
 

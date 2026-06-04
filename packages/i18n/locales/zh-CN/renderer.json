@@ -539,6 +539,10 @@
         "placeholder": "bold",
         "title": "终端粗体字重"
       },
+      "terminalHardwareAccelerationEnabled": {
+        "description": "可用时使用 WebGL 渲染终端会话；GPU 上下文不可用时会自动回退。",
+        "title": "启用终端硬件加速"
+      },
       "terminalLetterSpacing": {
         "description": "终端字符额外字间距（像素）。",
         "placeholder": "0",
@@ -1153,6 +1157,7 @@
       "writeAskRead": "允许写入，读取时询问"
     },
     "terminalClipboardAccessPlaceholder": "选择剪贴板权限",
+    "terminalHardwareAccelerationDisabled": "WebGL 不可用，已禁用终端硬件加速。",
     "terminalSearchCaseSensitive": "区分大小写",
     "terminalSearchFirst": "首个",
     "terminalSearchLast": "末个",

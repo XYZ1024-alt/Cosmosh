@@ -2,6 +2,7 @@ import type { components, SettingsValues } from '@cosmosh/api-contract';
 import type { IClipboardProvider } from '@xterm/addon-clipboard';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { SearchAddon } from '@xterm/addon-search';
+import type { WebglAddon } from '@xterm/addon-webgl';
 import type { Terminal } from '@xterm/xterm';
 
 import type { TerminalAutocompleteItem } from '../../components/terminal/terminal-autocomplete-menu';
@@ -185,6 +186,7 @@ export type MirrorPaneRuntime = {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
   clipboardProvider: IClipboardProvider;
+  webglAddon: WebglAddon | null;
   containerElement: HTMLDivElement;
   socket: WebSocket | null;
   sessionId: string | null;
