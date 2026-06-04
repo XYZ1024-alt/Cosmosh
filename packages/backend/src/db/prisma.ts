@@ -48,6 +48,24 @@ type RuntimeMigrationRecordRow = {
   migration_name: string;
 };
 
+type RuntimeMigrationExecuteClient = {
+  $executeRawUnsafe: (query: string, ...values: unknown[]) => Promise<unknown>;
+};
+
+type RuntimeMigrationSqlClient = RuntimeMigrationExecuteClient & {
+  $queryRawUnsafe: <T = unknown>(query: string, ...values: unknown[]) => Promise<T>;
+};
+
+type RuntimeAddColumnMigrationStatement = {
+  statement: string;
+  tableName: string;
+  columnName: string;
+};
+
+type SqliteTableColumnRow = {
+  name: string;
+};
+
 /**
  * Stable error codes emitted by database bootstrap/runtime operations.
  */
@@ -306,6 +324,16 @@ const toPrismaSqliteUrl = (filePath: string): string => {
  */
 const escapeSqliteLiteral = (input: string): string => {
   return input.replace(/'/g, "''");
+};
+
+/**
+ * Escapes double quotes for SQLite identifiers embedded in trusted metadata queries.
+ *
+ * @param input Raw identifier value.
+ * @returns Identifier text safe to wrap in double quotes.
+ */
+const escapeSqliteIdentifier = (input: string): string => {
+  return input.replace(/"/g, '""');
 };
 
 /**
@@ -687,6 +715,118 @@ const baselineExistingSchemaMigrations = async (
   }
 };
 
+const PRISMA_ADD_COLUMN_STATEMENT_PATTERN =
+  /^ALTER\s+TABLE\s+"((?:[^"]|"")*)"\s+ADD\s+COLUMN\s+"((?:[^"]|"")*)"(?:\s|$)/iu;
+
+/**
+ * Restores a SQLite double-quoted identifier to logical identifier text.
+ *
+ * @param quotedContent Content captured from inside double quotes.
+ * @returns Unescaped identifier text.
+ */
+const unescapeSqliteQuotedIdentifier = (quotedContent: string): string => {
+  return quotedContent.replace(/""/g, '"');
+};
+
+/**
+ * Parses a Prisma-generated SQLite ADD COLUMN statement.
+ *
+ * @param statement SQL statement without the trailing semicolon.
+ * @returns Parsed ADD COLUMN metadata, or `null` for unsupported SQL.
+ */
+const parsePrismaAddColumnStatement = (statement: string): RuntimeAddColumnMigrationStatement | null => {
+  const match = statement.match(PRISMA_ADD_COLUMN_STATEMENT_PATTERN);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    statement,
+    tableName: unescapeSqliteQuotedIdentifier(match[1]),
+    columnName: unescapeSqliteQuotedIdentifier(match[2]),
+  };
+};
+
+/**
+ * Parses a migration only when every statement is a Prisma-generated ADD COLUMN.
+ *
+ * @param statements SQL statements from one migration file.
+ * @returns Parsed ADD COLUMN statements, or `null` when any statement is unsupported.
+ */
+const parsePrismaAddColumnMigrationStatements = (statements: string[]): RuntimeAddColumnMigrationStatement[] | null => {
+  if (statements.length === 0) {
+    return null;
+  }
+
+  const parsedStatements: RuntimeAddColumnMigrationStatement[] = [];
+  for (const statement of statements) {
+    const parsedStatement = parsePrismaAddColumnStatement(statement);
+    if (!parsedStatement) {
+      return null;
+    }
+
+    parsedStatements.push(parsedStatement);
+  }
+
+  return parsedStatements;
+};
+
+/**
+ * Reads the current column names for a SQLite table.
+ *
+ * @param client Prisma client or transaction client.
+ * @param tableName Table name to inspect.
+ * @returns Set of existing column names.
+ */
+const listSqliteTableColumnNames = async (
+  client: RuntimeMigrationSqlClient,
+  tableName: string,
+): Promise<Set<string>> => {
+  const rows = (await client.$queryRawUnsafe(
+    `PRAGMA table_info("${escapeSqliteIdentifier(tableName)}");`,
+  )) as SqliteTableColumnRow[];
+
+  return new Set(rows.map((row) => row.name));
+};
+
+/**
+ * Applies a simple ADD COLUMN migration while tolerating already-present columns.
+ *
+ * This protects runtime startup from branch-transfer or interrupted-bootstrap
+ * states where SQLite already contains the column but `_prisma_migrations`
+ * does not yet contain the matching migration row.
+ *
+ * @param client Prisma client or transaction client.
+ * @param statements Parsed ADD COLUMN statements for one migration file.
+ * @param migrationName Migration name used in diagnostic logging.
+ * @returns Promise that resolves once missing columns are added.
+ */
+const applyPrismaAddColumnMigrationStatements = async (
+  client: RuntimeMigrationSqlClient,
+  statements: RuntimeAddColumnMigrationStatement[],
+  migrationName: string,
+): Promise<void> => {
+  const columnNameCache = new Map<string, Set<string>>();
+
+  for (const statement of statements) {
+    let columnNames = columnNameCache.get(statement.tableName);
+    if (!columnNames) {
+      columnNames = await listSqliteTableColumnNames(client, statement.tableName);
+      columnNameCache.set(statement.tableName, columnNames);
+    }
+
+    if (columnNames.has(statement.columnName)) {
+      console.log(
+        `[db:init] Skipped already-applied ADD COLUMN statement for ${migrationName}: ${statement.tableName}.${statement.columnName}.`,
+      );
+      continue;
+    }
+
+    await client.$executeRawUnsafe(statement.statement);
+    columnNames.add(statement.columnName);
+  }
+};
+
 /**
  * Splits a Prisma migration SQL file into executable statements.
  *
@@ -721,6 +861,28 @@ const requiresNonTransactionalSqliteExecution = (migrationSql: string): boolean 
 };
 
 /**
+ * Records a runtime migration as successfully applied.
+ *
+ * @param client Prisma client or transaction client.
+ * @param migrationName Migration directory name.
+ * @param checksum SHA-256 checksum for the migration SQL.
+ * @param appliedStepsCount Number of executable SQL statements represented by the migration.
+ * @returns Promise that resolves after the ledger row is inserted.
+ */
+const recordRuntimeMigrationApplied = async (
+  client: RuntimeMigrationExecuteClient,
+  migrationName: string,
+  checksum: string,
+  appliedStepsCount: number,
+): Promise<void> => {
+  const migrationRecordId = buildMigrationRecordId(migrationName, checksum);
+
+  await client.$executeRawUnsafe(
+    `INSERT INTO "${RUNTIME_MIGRATION_TABLE_NAME}" ("id", "checksum", "migration_name", "started_at", "finished_at", "applied_steps_count") VALUES ('${escapeSqliteLiteral(migrationRecordId)}', '${escapeSqliteLiteral(checksum)}', '${escapeSqliteLiteral(migrationName)}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${appliedStepsCount});`,
+  );
+};
+
+/**
  * Applies pending Prisma migration files in-order on backend startup.
  *
  * @param client Active Prisma client.
@@ -749,26 +911,41 @@ const applyPendingPrismaMigrations = async (client: PrismaClientType): Promise<n
     const migrationSql = await readFile(migrationFile.migrationSqlPath, 'utf8');
     const statements = splitMigrationStatements(migrationSql);
     const checksum = createHash('sha256').update(migrationSql).digest('hex');
-    const migrationRecordId = buildMigrationRecordId(migrationFile.migrationName, checksum);
     const migrationStartedAt = Date.now();
     const runWithoutTransaction = requiresNonTransactionalSqliteExecution(migrationSql);
+    const addColumnStatements = parsePrismaAddColumnMigrationStatements(statements);
 
-    if (runWithoutTransaction) {
+    if (addColumnStatements) {
+      await client.$transaction(async (transactionClient) => {
+        await applyPrismaAddColumnMigrationStatements(
+          transactionClient,
+          addColumnStatements,
+          migrationFile.migrationName,
+        );
+        await recordRuntimeMigrationApplied(
+          transactionClient,
+          migrationFile.migrationName,
+          checksum,
+          statements.length,
+        );
+      });
+    } else if (runWithoutTransaction) {
       for (const statement of statements) {
         await client.$executeRawUnsafe(statement);
       }
 
-      await client.$executeRawUnsafe(
-        `INSERT INTO "${RUNTIME_MIGRATION_TABLE_NAME}" ("id", "checksum", "migration_name", "started_at", "finished_at", "applied_steps_count") VALUES ('${escapeSqliteLiteral(migrationRecordId)}', '${escapeSqliteLiteral(checksum)}', '${escapeSqliteLiteral(migrationFile.migrationName)}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${statements.length});`,
-      );
+      await recordRuntimeMigrationApplied(client, migrationFile.migrationName, checksum, statements.length);
     } else {
       await client.$transaction(async (transactionClient) => {
         for (const statement of statements) {
           await transactionClient.$executeRawUnsafe(statement);
         }
 
-        await transactionClient.$executeRawUnsafe(
-          `INSERT INTO "${RUNTIME_MIGRATION_TABLE_NAME}" ("id", "checksum", "migration_name", "started_at", "finished_at", "applied_steps_count") VALUES ('${escapeSqliteLiteral(migrationRecordId)}', '${escapeSqliteLiteral(checksum)}', '${escapeSqliteLiteral(migrationFile.migrationName)}', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ${statements.length});`,
+        await recordRuntimeMigrationApplied(
+          transactionClient,
+          migrationFile.migrationName,
+          checksum,
+          statements.length,
         );
       });
     }
@@ -959,3 +1136,11 @@ export const shutdownDatabase = async (): Promise<void> => {
     initializingClientPromise = null;
   }
 };
+
+/**
+ * Test-only hooks for pure migration bootstrap helpers.
+ */
+export const __dbPrismaTesting = {
+  applyPrismaAddColumnMigrationStatements,
+  parsePrismaAddColumnMigrationStatements,
+} as const;
