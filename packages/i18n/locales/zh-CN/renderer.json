@@ -381,6 +381,10 @@
         "description": "设置使用的界面语言。",
         "title": "语言"
       },
+      "localTerminalClipboardAccess": {
+        "description": "仅控制本地终端程序访问本地剪贴板的权限。",
+        "title": "允许本地终端访问本地剪贴板"
+      },
       "sftpDeleteConfirmationMode": {
         "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
         "title": "删除前确认"
@@ -655,6 +659,12 @@
         "enter": "回车",
         "tab": "Tab",
         "tabEnter": "Tab/回车"
+      },
+      "terminalClipboardAccess": {
+        "askAlways": "始终询问",
+        "off": "关闭",
+        "readWrite": "允许读取和写入",
+        "writeAskRead": "允许写入，读取时询问"
       },
       "terminalContextLaunchBehavior": {
         "off": "关闭",
@@ -1117,6 +1127,32 @@
     "strictHostKeyCheckingTooltip": "启用后，Cosmosh 只会连接到其 SSH 主机密钥指纹已经被信任的主机。遇到未知指纹时，会先提示你确认。",
     "tagNamePlaceholder": "按 Enter 键添加标签",
     "tagsLegend": "标签",
+    "terminalClipboard": {
+      "allow": "允许",
+      "deny": "拒绝",
+      "previewLabel": "预览",
+      "readAllowed": "{source} 已读取本地剪贴板。",
+      "readBlocked": "{source} 尝试读取本地剪贴板，但终端剪贴板访问已关闭。",
+      "readDenied": "已拒绝 {source} 的剪贴板读取请求。",
+      "readFailed": "无法为 {source} 读取本地剪贴板。",
+      "readPromptDescription": "{source} 正在请求读取你的本地剪贴板。",
+      "readPromptTitle": "允许读取剪贴板？",
+      "writeAllowed": "{source} 已写入本地剪贴板。",
+      "writeBlocked": "{source} 尝试写入本地剪贴板，但终端剪贴板访问已关闭。",
+      "writeDenied": "已拒绝 {source} 的剪贴板写入请求。",
+      "writeFailed": "无法为 {source} 写入本地剪贴板。",
+      "writePromptDescription": "{source} 正在请求写入你的本地剪贴板。",
+      "writePromptTitle": "允许写入剪贴板？"
+    },
+    "terminalClipboardAccessHint": "控制该服务器终端会话中远程程序发出的剪贴板请求。",
+    "terminalClipboardAccessLabel": "允许远程程序访问本地剪贴板",
+    "terminalClipboardAccessOptions": {
+      "askAlways": "始终询问",
+      "off": "关闭",
+      "readWrite": "允许读取和写入",
+      "writeAskRead": "允许写入，读取时询问"
+    },
+    "terminalClipboardAccessPlaceholder": "选择剪贴板权限",
     "terminalSearchCaseSensitive": "区分大小写",
     "terminalSearchFirst": "首个",
     "terminalSearchLast": "末个",

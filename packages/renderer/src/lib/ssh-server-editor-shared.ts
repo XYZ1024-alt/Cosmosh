@@ -1,4 +1,5 @@
 import type { components } from '@cosmosh/api-contract';
+import { DEFAULT_TERMINAL_CLIPBOARD_ACCESS, type TerminalClipboardAccess } from '@cosmosh/api-contract';
 
 import { pickRandomEntityVisual } from './entity-visuals';
 
@@ -23,6 +24,7 @@ export type ServerEditorFormState = {
   tagIds: string[];
   strictHostKey: boolean;
   enableSshCompression: boolean;
+  terminalClipboardAccess: TerminalClipboardAccess;
 };
 
 export type ServerCredentialCache = {
@@ -111,6 +113,7 @@ export const createInitialServerFormState = (defaultServerNoteTemplate = ''): Se
     tagIds: [],
     strictHostKey: true,
     enableSshCompression: false,
+    terminalClipboardAccess: DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
   };
 };
 
@@ -141,6 +144,7 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
     tagIds: (server.tags ?? []).map((tag) => tag.id),
     strictHostKey: server.strictHostKey ?? true,
     enableSshCompression: server.enableSshCompression ?? false,
+    terminalClipboardAccess: server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
   };
 };
 

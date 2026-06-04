@@ -1,3 +1,4 @@
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { type ITerminalOptions, Terminal } from '@xterm/xterm';
@@ -8,6 +9,7 @@ import { t } from '../../lib/i18n';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import type { MirrorPaneRuntime, ResolvedTerminalTarget, ServerInboundMessage } from './ssh-types';
 import { applyTerminalRuntimeOptions, SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 type UseSshMirrorPanesParams = {
   isActive: boolean;
@@ -21,6 +23,7 @@ type UseSshMirrorPanesParams = {
   socketRef: React.RefObject<WebSocket | null>;
   resolvedTerminalTargetRef: React.RefObject<ResolvedTerminalTarget | null>;
   sshConnectionTimeoutSecRef: React.RefObject<number>;
+  terminalClipboardProvider: TerminalClipboardProvider;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   setActivePane: (paneId: string) => void;
@@ -63,6 +66,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
+    terminalClipboardProvider,
     scheduleFitAndResizeSyncRef,
     wrapperRef,
     setActivePane,
@@ -112,14 +116,17 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       const terminal = new Terminal(terminalInitOptionsRef.current);
       const fitAddon = new FitAddon();
       const searchAddon = new SearchAddon();
+      const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(searchAddon);
+      terminal.loadAddon(clipboardAddon);
       terminal.open(containerElement);
 
       const runtime: MirrorPaneRuntime = {
         terminal,
         fitAddon,
         searchAddon,
+        clipboardProvider: terminalClipboardProvider,
         containerElement,
         socket: null,
         sessionId: null,
@@ -344,6 +351,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     setActivePane,
     socketRef,
     sshConnectionTimeoutSecRef,
+    terminalClipboardProvider,
     terminalInitOptionsRef,
     terminalPaneIds,
     notifyAutocompleteOutputEchoRef,

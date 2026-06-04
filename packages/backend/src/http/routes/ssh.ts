@@ -1005,6 +1005,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           username: parsed.value.username,
           strictHostKey: parsed.value.strictHostKey,
           enableSshCompression: parsed.value.enableSshCompression,
+          terminalClipboardAccess: parsed.value.terminalClipboardAccess,
           keychainId,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
@@ -1047,6 +1048,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           keychainId: server.keychainId,
           strictHostKey: server.strictHostKey,
           enableSshCompression: server.enableSshCompression,
+          terminalClipboardAccess: server.terminalClipboardAccess,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
         },
@@ -1092,6 +1094,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         id: true,
         strictHostKey: true,
         enableSshCompression: true,
+        terminalClipboardAccess: true,
         keychainId: true,
         keychain: {
           select: {
@@ -1191,6 +1194,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           colorKey: parsed.value.colorKey,
           strictHostKey: parsed.value.strictHostKey ?? existingServer.strictHostKey,
           enableSshCompression: parsed.value.enableSshCompression ?? existingServer.enableSshCompression,
+          terminalClipboardAccess: parsed.value.terminalClipboardAccess ?? existingServer.terminalClipboardAccess,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
           ...(tagIds
@@ -1235,6 +1239,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           keychainId: server.keychainId,
           strictHostKey: server.strictHostKey,
           enableSshCompression: server.enableSshCompression,
+          terminalClipboardAccess: server.terminalClipboardAccess,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
           keychainReplaced: existingServer.keychainId !== keychainId,

@@ -381,6 +381,10 @@
         "description": "Sets the UI language.",
         "title": "Language"
       },
+      "localTerminalClipboardAccess": {
+        "description": "Controls clipboard requests from local terminal programs only.",
+        "title": "Allow Local Terminal Clipboard Access"
+      },
       "sftpDeleteConfirmationMode": {
         "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
         "title": "Confirm Before Delete"
@@ -655,6 +659,12 @@
         "enter": "Enter",
         "tab": "Tab",
         "tabEnter": "Tab/Enter"
+      },
+      "terminalClipboardAccess": {
+        "askAlways": "Always ask",
+        "off": "Off",
+        "readWrite": "Allow read and write",
+        "writeAskRead": "Allow write; ask before read"
       },
       "terminalContextLaunchBehavior": {
         "off": "Disabled",
@@ -1117,6 +1127,32 @@
     "strictHostKeyCheckingTooltip": "When enabled, Cosmosh only connects to hosts whose SSH host key fingerprint is already trusted. Unknown fingerprints trigger a confirmation prompt.",
     "tagNamePlaceholder": "Press Enter to add tag",
     "tagsLegend": "Tags",
+    "terminalClipboard": {
+      "allow": "Allow",
+      "deny": "Deny",
+      "previewLabel": "Preview",
+      "readAllowed": "{source} read the local clipboard.",
+      "readBlocked": "{source} tried to read the local clipboard, but terminal clipboard access is disabled.",
+      "readDenied": "{source}'s clipboard read request was denied.",
+      "readFailed": "Failed to read local clipboard for {source}.",
+      "readPromptDescription": "{source} is requesting to read your local clipboard.",
+      "readPromptTitle": "Allow Clipboard Read?",
+      "writeAllowed": "{source} wrote to the local clipboard.",
+      "writeBlocked": "{source} tried to write to the local clipboard, but terminal clipboard access is disabled.",
+      "writeDenied": "{source}'s clipboard write request was denied.",
+      "writeFailed": "Failed to write local clipboard for {source}.",
+      "writePromptDescription": "{source} is requesting to write to your local clipboard.",
+      "writePromptTitle": "Allow Clipboard Write?"
+    },
+    "terminalClipboardAccessHint": "Controls clipboard requests from remote programs in this server's terminal sessions.",
+    "terminalClipboardAccessLabel": "Allow Remote Programs to Access Local Clipboard",
+    "terminalClipboardAccessOptions": {
+      "askAlways": "Always ask",
+      "off": "Off",
+      "readWrite": "Allow read and write",
+      "writeAskRead": "Allow write; ask before read"
+    },
+    "terminalClipboardAccessPlaceholder": "Select clipboard access",
     "terminalSearchCaseSensitive": "Case Sensitive",
     "terminalSearchFirst": "First",
     "terminalSearchLast": "Last",

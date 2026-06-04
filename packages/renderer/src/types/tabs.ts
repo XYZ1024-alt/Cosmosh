@@ -17,6 +17,7 @@ export type SshResolvedTargetSnapshot =
       serverName: string;
       strictHostKey: boolean;
       enableSshCompression: boolean;
+      terminalClipboardAccess: components['schemas']['TerminalClipboardAccess'];
       capturedAt: number;
     }
   | {

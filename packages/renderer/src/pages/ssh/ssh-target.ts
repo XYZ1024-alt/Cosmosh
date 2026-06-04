@@ -1,3 +1,5 @@
+import { DEFAULT_TERMINAL_CLIPBOARD_ACCESS } from '@cosmosh/api-contract';
+
 import { listLocalTerminalProfiles, listSshServers } from '../../lib/backend';
 import type { SshConnectionIntent, SshResolvedTargetSnapshot } from '../../types/tabs';
 import type { ResolvedTerminalTarget } from './ssh-types';
@@ -48,6 +50,7 @@ export const toResolvedTargetSnapshot = (target: ResolvedTerminalTarget): SshRes
     serverName: target.server.name,
     strictHostKey: target.server.strictHostKey ?? true,
     enableSshCompression: target.server.enableSshCompression ?? false,
+    terminalClipboardAccess: target.server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
     capturedAt,
   };
 };

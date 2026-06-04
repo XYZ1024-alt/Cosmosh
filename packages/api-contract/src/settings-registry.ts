@@ -18,6 +18,11 @@ import {
   SFTP_DIRECTORY_LIST_COLUMN_IDS,
   type SftpDirectoryListViewSetting,
 } from './sftp';
+import {
+  DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
+  type TerminalClipboardAccess,
+} from './terminal-clipboard';
 
 // ── SettingsValues — strict canonical TypeScript interface ────
 
@@ -59,6 +64,7 @@ export interface SettingsValues {
   terminalSelectionBarEnabled: boolean;
   terminalBracketedPasteEnabled: boolean;
   terminalTextDropMode: 'off' | 'always' | 'external';
+  localTerminalClipboardAccess: TerminalClipboardAccess;
   terminalContextLaunchBehavior: 'openDefaultLocalTerminal' | 'openLocalTerminalList' | 'off';
   defaultLocalTerminalProfile: string;
   terminalSelectionSearchEngine: 'google' | 'bing' | 'duckduckgo' | 'baidu' | 'custom';
@@ -835,6 +841,21 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.bracketedPaste.enabled',
     commandActionId: 'settings.terminal.runtime.bracketedPaste.enabled.toggle',
     searchTerms: ['terminal', 'paste', 'multiline paste', 'safe paste', 'bracketed paste'],
+  },
+  {
+    key: 'localTerminalClipboardAccess',
+    valueType: 'string',
+    defaultValue: DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+    nameI18nKey: 'settings.items.localTerminalClipboardAccess.title',
+    descriptionI18nKey: 'settings.items.localTerminalClipboardAccess.description',
+    optionI18nNamespace: 'terminalClipboardAccess',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'select',
+    path: 'terminal.runtime.localClipboardAccess',
+    commandActionId: 'settings.terminal.runtime.localClipboardAccess.set',
+    searchTerms: ['terminal', 'local terminal', 'clipboard', 'osc 52'],
+    options: TERMINAL_CLIPBOARD_ACCESS_OPTIONS.map((value) => ({ value })),
   },
   {
     key: 'terminalContextLaunchBehavior',

@@ -1,4 +1,5 @@
 import type { components, SettingsValues } from '@cosmosh/api-contract';
+import type { IClipboardProvider } from '@xterm/addon-clipboard';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { SearchAddon } from '@xterm/addon-search';
 import type { Terminal } from '@xterm/xterm';
@@ -183,6 +184,7 @@ export type MirrorPaneRuntime = {
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  clipboardProvider: IClipboardProvider;
   containerElement: HTMLDivElement;
   socket: WebSocket | null;
   sessionId: string | null;

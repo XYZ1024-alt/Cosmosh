@@ -7,6 +7,11 @@ import type {
   ApiSshUpdateFolderRequest,
   ApiSshUpdateServerRequest,
 } from '@cosmosh/api-contract';
+import {
+  DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  isTerminalClipboardAccess,
+  type TerminalClipboardAccess,
+} from '@cosmosh/api-contract';
 import type { SshAuthType } from '@prisma/client';
 
 import {
@@ -69,6 +74,21 @@ const normalizeOptionalColorKey = (value: unknown): SshVisualColorKey | undefine
 
 const isSshAuthType = (value: unknown): value is SshAuthType => {
   return value === 'password' || value === 'key' || value === 'both';
+};
+
+/**
+ * Normalizes optional terminal OSC 52 clipboard access values.
+ *
+ * @param value Raw request value.
+ * @returns Supported access mode or undefined when omitted/invalid.
+ */
+const normalizeOptionalTerminalClipboardAccess = (value: unknown): TerminalClipboardAccess | undefined => {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized) {
+    return undefined;
+  }
+
+  return isTerminalClipboardAccess(normalized) ? normalized : undefined;
 };
 
 /**
@@ -272,6 +292,7 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
   const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
+  const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
@@ -284,6 +305,15 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       error: buildValidationError(
         'errors.validation.enableSshCompressionType',
         'enableSshCompression must be a boolean value.',
+      ),
+    };
+  }
+
+  if (payload.terminalClipboardAccess !== undefined && terminalClipboardAccess === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.terminalClipboardAccessEnum',
+        'terminalClipboardAccess must be one of: off, writeAskRead, readWrite, askAlways.',
       ),
     };
   }
@@ -332,6 +362,7 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       privateKeyPassphrase,
       strictHostKey: strictHostKey ?? true,
       enableSshCompression: enableSshCompression ?? false,
+      terminalClipboardAccess: terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
       folderId,
       iconKey,
       colorKey,
@@ -399,6 +430,7 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
   const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
+  const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
@@ -411,6 +443,15 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       error: buildValidationError(
         'errors.validation.enableSshCompressionType',
         'enableSshCompression must be a boolean value.',
+      ),
+    };
+  }
+
+  if (payload.terminalClipboardAccess !== undefined && terminalClipboardAccess === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.terminalClipboardAccessEnum',
+        'terminalClipboardAccess must be one of: off, writeAskRead, readWrite, askAlways.',
       ),
     };
   }
@@ -479,6 +520,7 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       privateKeyPassphrase,
       strictHostKey,
       enableSshCompression,
+      terminalClipboardAccess,
       folderId,
       iconKey,
       colorKey,

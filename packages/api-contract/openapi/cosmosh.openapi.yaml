@@ -2139,6 +2139,8 @@ components:
           type: boolean
         enableSshCompression:
           type: boolean
+        terminalClipboardAccess:
+          $ref: '#/components/schemas/TerminalClipboardAccess'
         hasPassword:
           type: boolean
         hasPrivateKey:
@@ -2202,6 +2204,8 @@ components:
           type: boolean
         enableSshCompression:
           type: boolean
+        terminalClipboardAccess:
+          $ref: '#/components/schemas/TerminalClipboardAccess'
         iconKey:
           type: string
           minLength: 1
@@ -2305,6 +2309,9 @@ components:
           type: boolean
         enableSshCompression:
           type: boolean
+    TerminalClipboardAccess:
+      type: string
+      enum: ['off', 'writeAskRead', 'readWrite', 'askAlways']
     SshTrustFingerprintRequest:
       type: object
       required:

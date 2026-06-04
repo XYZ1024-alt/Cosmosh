@@ -47,6 +47,12 @@ export type {
   SettingsSection,
   SettingsValues,
 } from './settings-registry';
+export {
+  DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  isTerminalClipboardAccess,
+  TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
+} from './terminal-clipboard';
+export type { TerminalClipboardAccess } from './terminal-clipboard';
 
 import type { components, paths } from './generated';
 import type { SettingsValues } from './settings-registry';

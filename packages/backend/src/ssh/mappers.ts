@@ -1,7 +1,20 @@
 import type { ApiSshListServersResponse } from '@cosmosh/api-contract';
+import { DEFAULT_TERMINAL_CLIPBOARD_ACCESS, isTerminalClipboardAccess } from '@cosmosh/api-contract';
 import type { Prisma } from '@prisma/client';
 
 import { normalizeSshVisualColorKey } from './visuals.js';
+
+/**
+ * Normalizes persisted OSC 52 clipboard access values from SQLite text columns.
+ *
+ * @param value Raw database value.
+ * @returns Supported clipboard access mode, defaulting to off for unknown legacy data.
+ */
+const normalizeTerminalClipboardAccess = (
+  value: string,
+): ApiSshListServersResponse['data']['items'][number]['terminalClipboardAccess'] => {
+  return isTerminalClipboardAccess(value) ? value : DEFAULT_TERMINAL_CLIPBOARD_ACCESS;
+};
 
 /**
  * Shared Prisma include shape used by SSH server list/read queries.
@@ -48,6 +61,7 @@ export const mapServerToListItem = (
     username: server.username,
     strictHostKey: server.strictHostKey,
     enableSshCompression: server.enableSshCompression,
+    terminalClipboardAccess: normalizeTerminalClipboardAccess(server.terminalClipboardAccess),
     keychainId: server.keychain.id,
     authType: server.keychain.authType,
     hasPassword: Boolean(server.keychain.passwordEncrypted),

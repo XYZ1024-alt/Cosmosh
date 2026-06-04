@@ -37,6 +37,7 @@ import {
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
+import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
 /**
  * SSH page props.
@@ -110,7 +111,7 @@ const SSH: React.FC<SSHProps> = ({
   onTabTitleChange,
   onTabVisualChange,
 }) => {
-  const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
+  const { error: notifyError, info: notifyInfo, success: notifySuccess, warning: notifyWarning } = useToast();
   const settingsValues = useSettingsValues();
 
   // Derive terminal-relevant settings from the centralized store.
@@ -128,6 +129,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
   const terminalAutoCompletePromptRegex = settingsValues.terminalAutoCompletePromptRegex;
   const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
+  const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
       getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-terminal').trim() || '#cccccc';
@@ -214,6 +216,17 @@ const SSH: React.FC<SSHProps> = ({
     ],
   );
   const sshReconnectOnFocus = settingsValues.sshReconnectOnFocus;
+  const {
+    provider: terminalClipboardProvider,
+    promptState: { prompt: terminalClipboardPrompt, resolvePrompt: resolveTerminalClipboardPrompt },
+  } = useTerminalClipboardProvider({
+    localTerminalClipboardAccess,
+    toast: {
+      info: notifyInfo,
+      warning: notifyWarning,
+      error: notifyError,
+    },
+  });
 
   const sshCore = useSshCore({
     tabId,
@@ -233,6 +246,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompleteFuzzyMatch,
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
+    terminalClipboardProvider,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
     onTabTitleChange,
@@ -1355,6 +1369,60 @@ const SSH: React.FC<SSHProps> = ({
             </DialogSecondaryButton>
             <DialogPrimaryButton onClick={() => resolveHostFingerprintPrompt(true)}>
               {t('ssh.hostFingerprintDialogTrustContinue')}
+            </DialogPrimaryButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={terminalClipboardPrompt !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolveTerminalClipboardPrompt(false);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            resolveTerminalClipboardPrompt(false);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>
+              {t(
+                terminalClipboardPrompt?.operation === 'read'
+                  ? 'ssh.terminalClipboard.readPromptTitle'
+                  : 'ssh.terminalClipboard.writePromptTitle',
+              )}
+            </DialogTitle>
+            <DialogDescription>
+              {t(
+                terminalClipboardPrompt?.operation === 'read'
+                  ? 'ssh.terminalClipboard.readPromptDescription'
+                  : 'ssh.terminalClipboard.writePromptDescription',
+                {
+                  source: terminalClipboardPrompt?.sourceLabel ?? t('tabs.page.ssh'),
+                },
+              )}
+            </DialogDescription>
+          </DialogHeader>
+
+          {terminalClipboardPrompt?.operation === 'write' && terminalClipboardPrompt.preview ? (
+            <div className="rounded-md border border-home-divider p-3 text-sm text-home-text-subtle">
+              <div className="text-home-text mb-1">{t('ssh.terminalClipboard.previewLabel')}</div>
+              <div className="break-words">{terminalClipboardPrompt.preview}</div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <DialogSecondaryButton onClick={() => resolveTerminalClipboardPrompt(false)}>
+              {t('ssh.terminalClipboard.deny')}
+            </DialogSecondaryButton>
+            <DialogPrimaryButton onClick={() => resolveTerminalClipboardPrompt(true)}>
+              {t('ssh.terminalClipboard.allow')}
             </DialogPrimaryButton>
           </DialogFooter>
         </DialogContent>

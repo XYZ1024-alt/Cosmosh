@@ -20,6 +20,7 @@ import { useSshAutocomplete } from './use-ssh-autocomplete';
 import { useSshMirrorPanes } from './use-ssh-mirror-panes';
 import { useSshPrimarySession } from './use-ssh-primary-session';
 import { useSshSelectionBar } from './use-ssh-selection-bar';
+import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 /**
  * Connection lifecycle states for SSH page sessions.
@@ -164,6 +165,7 @@ export type UseSshCoreParams = {
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalAutoCompletePromptRegex: string;
   terminalBracketedPasteEnabled: boolean;
+  terminalClipboardProvider: TerminalClipboardProvider;
   terminalSelectionBarEnabled: boolean;
   sshReconnectOnFocus: boolean;
   onTabTitleChange?: (title: string) => void;
@@ -369,6 +371,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteFuzzyMatch,
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
+    terminalClipboardProvider,
     terminalSelectionBarEnabled,
     sshReconnectOnFocus,
     onTabTitleChange,
@@ -755,6 +758,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
+    terminalClipboardProvider,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,
@@ -787,6 +791,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
+    terminalClipboardProvider,
     scheduleFitAndResizeSyncRef,
     wrapperRef,
     setActivePane: activatePane,

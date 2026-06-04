@@ -822,6 +822,7 @@ export interface components {
       authType: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       hasPassword: boolean;
       hasPrivateKey: boolean;
       note?: string;
@@ -848,6 +849,7 @@ export interface components {
       authType?: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       iconKey?: string;
       colorKey?: components['schemas']['SshVisualColorKey'];
       password?: string;
@@ -887,6 +889,8 @@ export interface components {
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
     };
+    /** @enum {string} */
+    TerminalClipboardAccess: 'off' | 'writeAskRead' | 'readWrite' | 'askAlways';
     SshTrustFingerprintRequest: {
       serverId: string;
       fingerprintSha256: string;

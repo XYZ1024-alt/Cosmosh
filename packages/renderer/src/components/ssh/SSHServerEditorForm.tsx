@@ -1,4 +1,10 @@
 import type { components } from '@cosmosh/api-contract';
+import {
+  DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  isTerminalClipboardAccess,
+  TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
+  type TerminalClipboardAccess,
+} from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import { Edit, Folder, FolderPlus, Save } from 'lucide-react';
 import React from 'react';
@@ -9,6 +15,7 @@ import EntityIcon from '../home/EntityIcon';
 import EntityVisualPicker from '../home/EntityVisualPicker';
 import { Button } from '../ui/button';
 import { Form, FormControl, FormField, FormLabel, FormMessage } from '../ui/form';
+import { FormLabelWithTooltip } from '../ui/form-label-with-tooltip';
 import { formStyles } from '../ui/form-styles';
 import { Input } from '../ui/input';
 import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
@@ -42,6 +49,7 @@ type ServerEditorFormState = {
   tagIds: string[];
   strictHostKey: boolean;
   enableSshCompression: boolean;
+  terminalClipboardAccess: TerminalClipboardAccess;
 };
 
 type SSHServerEditorFormProps = {
@@ -378,6 +386,39 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
             {t('ssh.enableSshCompression')}
           </LabelWithTooltip>
         </div>
+        <FormField>
+          <FormLabelWithTooltip
+            htmlFor="ssh-editor-terminal-clipboard-access"
+            tooltip={t('ssh.terminalClipboardAccessHint')}
+          >
+            {t('ssh.terminalClipboardAccessLabel')}
+          </FormLabelWithTooltip>
+          <FormControl>
+            <Select
+              value={formState.terminalClipboardAccess}
+              onValueChange={(value) => {
+                onChangeForm(
+                  'terminalClipboardAccess',
+                  isTerminalClipboardAccess(value) ? value : DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+                );
+              }}
+            >
+              <SelectTrigger id="ssh-editor-terminal-clipboard-access">
+                <SelectValue placeholder={t('ssh.terminalClipboardAccessPlaceholder')} />
+              </SelectTrigger>
+              <SelectContent>
+                {TERMINAL_CLIPBOARD_ACCESS_OPTIONS.map((option) => (
+                  <SelectItem
+                    key={option}
+                    value={option}
+                  >
+                    {t(`ssh.terminalClipboardAccessOptions.${option}`)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FormControl>
+        </FormField>
       </section>
 
       <section className="grid gap-3">

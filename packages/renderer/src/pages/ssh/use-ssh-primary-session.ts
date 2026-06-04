@@ -1,3 +1,4 @@
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import { type ITerminalOptions, Terminal } from '@xterm/xterm';
@@ -16,6 +17,7 @@ import {
 import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } from './ssh-types';
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 type UseSshPrimarySessionParams = {
   tabId: string;
@@ -34,6 +36,7 @@ type UseSshPrimarySessionParams = {
   resolvedTerminalTargetRef: React.RefObject<ResolvedTerminalTarget | null>;
   sshConnectionTimeoutSecRef: React.RefObject<number>;
   sshReconnectOnFocusRef: React.RefObject<boolean>;
+  terminalClipboardProvider: TerminalClipboardProvider;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
   connectSessionRef: React.RefObject<(() => void) | null>;
   selectionPointerClientXRef: React.RefObject<number | null>;
@@ -89,6 +92,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
+    terminalClipboardProvider,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,
@@ -135,8 +139,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     const terminal = new Terminal(terminalInitOptionsRef.current);
     const fitAddon = new FitAddon();
     const searchAddon = new SearchAddon();
+    const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
     terminal.loadAddon(fitAddon);
     terminal.loadAddon(searchAddon);
+    terminal.loadAddon(clipboardAddon);
 
     const containerElement = terminalContainerRef.current;
     if (!containerElement) {
@@ -352,6 +358,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         }
 
         resolvedTerminalTargetRef.current = target;
+        terminalClipboardProvider.setActiveTarget(target);
         onConnectionIntentChangeRef.current(withResolvedSnapshot(activeIntent, toResolvedTargetSnapshot(target)));
 
         if (target.type === 'ssh-server') {
@@ -564,6 +571,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       primaryTerminalRef.current = null;
       primarySearchAddonRef.current = null;
       terminalRef.current = null;
+      terminalClipboardProvider.setActiveTarget(null);
       selectionPointerClientXRef.current = null;
       clearSelectionOverlay();
       disposeTerminalInput.dispose();
@@ -606,6 +614,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     sshConnectionTimeoutSecRef,
     terminalContainerRef,
     terminalInitOptionsRef,
+    terminalClipboardProvider,
     terminalRef,
   ]);
 

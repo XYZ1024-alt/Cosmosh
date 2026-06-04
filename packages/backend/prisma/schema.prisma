@@ -61,6 +61,7 @@ model SshServer {
   username         String
   strictHostKey    Boolean         @default(true)
   enableSshCompression Boolean      @default(false)
+  terminalClipboardAccess String    @default("off")
   keychainId       String
   note             String?
   folderId         String?
