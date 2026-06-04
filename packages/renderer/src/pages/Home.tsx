@@ -140,6 +140,10 @@ type QuickFilter = 'none' | 'recent' | 'favorite';
 type GroupMode = 'none' | 'lastUsed' | 'tag';
 type SortMode = 'nameAsc' | 'nameDesc' | 'lastUsed' | 'createdAt';
 type HomeEntityKind = 'server' | 'keychain' | 'portForwarding';
+type HomeViewPreference = {
+  groupMode: GroupMode;
+  sortMode: SortMode;
+};
 
 type ServerGroup = {
   key: string;
@@ -151,6 +155,12 @@ type KeychainGroup = {
   key: string;
   title: string;
   items: SshKeychainListItem[];
+};
+
+type PortForwardRuleGroup = {
+  key: string;
+  title: string;
+  items: PortForwardRuleListItem[];
 };
 
 type HomeGridNavigation = ReturnType<typeof useDirectionalNavigation>;
@@ -192,6 +202,20 @@ const LOCAL_TERMINAL_FOLDER_ID = '__local_terminals__';
 const KEYCHAIN_RECENT_LIMIT = 12;
 const LOCAL_TRUSTED_BIND_HOSTS = new Set(['127.0.0.1', 'localhost', '::1']);
 const HOME_SECTION_LABEL_CLASS_NAME = 'px-2 pb-2.5 text-xs font-medium leading-4 text-home-text-subtle';
+const DEFAULT_HOME_VIEW_PREFERENCES: Record<HomeMode, HomeViewPreference> = {
+  ssh: {
+    groupMode: 'lastUsed',
+    sortMode: 'lastUsed',
+  },
+  keychains: {
+    groupMode: 'lastUsed',
+    sortMode: 'lastUsed',
+  },
+  portForwarding: {
+    groupMode: 'none',
+    sortMode: 'lastUsed',
+  },
+};
 
 const homeModeEntityKindMap: Record<HomeMode, HomeEntityKind> = {
   ssh: 'server',
@@ -265,6 +289,17 @@ const getKeychainTimestamp = (keychain: SshKeychainListItem, field: 'createdAt' 
 };
 
 /**
+ * Reads a sortable timestamp from port forwarding rule metadata.
+ *
+ * @param rule Port forwarding rule list item.
+ * @param field Timestamp field to read.
+ * @returns Numeric timestamp or zero when unavailable.
+ */
+const getPortForwardRuleTimestamp = (rule: PortForwardRuleListItem, field: 'createdAt' | 'updatedAt'): number => {
+  return new Date(rule[field]).getTime();
+};
+
+/**
  * Checks whether a local bind host is constrained to the local machine.
  *
  * @param host Bind host typed by the user.
@@ -290,6 +325,25 @@ const resolvePortForwardTypeLabel = (type: PortForwardRuleType): string => {
   }
 
   return t('home.portForwardingTypeDynamic');
+};
+
+/**
+ * Resolves the menu label for a Home grouping mode in the active feature.
+ *
+ * @param homeMode Active Home feature mode.
+ * @param mode Grouping mode value stored in feature-local view preferences.
+ * @returns Localized menu item label.
+ */
+const resolveGroupModeLabel = (homeMode: HomeMode, mode: GroupMode): string => {
+  if (mode === 'none') {
+    return t('home.groupModeNone');
+  }
+
+  if (homeMode === 'portForwarding') {
+    return mode === 'lastUsed' ? t('home.groupModeStatus') : t('home.groupModeForwardingType');
+  }
+
+  return mode === 'lastUsed' ? t('home.groupModeLastUsed') : t('home.groupModeTag');
 };
 
 /**
@@ -787,7 +841,7 @@ const HomeSshContent: React.FC<HomeSshContentProps> = ({
 };
 
 type HomePortForwardingContentProps = {
-  rules: PortForwardRuleListItem[];
+  groups: PortForwardRuleGroup[];
   servers: SshServerListItem[];
   onStartRule: (ruleId: string) => void;
   onStopRule: (ruleId: string) => void;
@@ -803,7 +857,7 @@ type HomePortForwardingContentProps = {
  * @returns Port forwarding content body.
  */
 const HomePortForwardingContent: React.FC<HomePortForwardingContentProps> = ({
-  rules,
+  groups,
   servers,
   onStartRule,
   onStopRule,
@@ -816,8 +870,9 @@ const HomePortForwardingContent: React.FC<HomePortForwardingContentProps> = ({
     servers.forEach((server) => map.set(server.id, server.name));
     return map;
   }, [servers]);
+  const hasRules = groups.some((group) => group.items.length > 0);
 
-  if (rules.length === 0) {
+  if (!hasRules) {
     return (
       <HomeEmptyState
         text={t('home.portForwardingEmpty')}
@@ -828,162 +883,167 @@ const HomePortForwardingContent: React.FC<HomePortForwardingContentProps> = ({
 
   return (
     <TooltipProvider delayDuration={180}>
-      <div className="pb-2">
-        <div className="overflow-x-auto rounded-sm-2 border border-home-divider">
-          <div className="bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] border-b border-home-divider px-3 py-2 text-xs font-medium text-home-text-subtle">
-            <div>{t('home.portForwardingColumnRule')}</div>
-            <div>{t('home.portForwardingColumnStatus')}</div>
-            <div>{t('home.portForwardingColumnType')}</div>
-            <div>{t('home.portForwardingColumnBind')}</div>
-            <div>{t('home.portForwardingColumnTarget')}</div>
-            <div>{t('home.portForwardingColumnServer')}</div>
-            <div className="text-end">{t('home.portForwardingColumnActions')}</div>
-          </div>
+      <div className="space-y-4 pb-2">
+        {groups.map((group) => (
+          <section key={group.key}>
+            {group.title ? <div className={HOME_SECTION_LABEL_CLASS_NAME}>{group.title}</div> : null}
+            <div className="overflow-x-auto rounded-sm-2 border border-home-divider">
+              <div className="bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] border-b border-home-divider px-3 py-2 text-xs font-medium text-home-text-subtle">
+                <div>{t('home.portForwardingColumnRule')}</div>
+                <div>{t('home.portForwardingColumnStatus')}</div>
+                <div>{t('home.portForwardingColumnType')}</div>
+                <div>{t('home.portForwardingColumnBind')}</div>
+                <div>{t('home.portForwardingColumnTarget')}</div>
+                <div>{t('home.portForwardingColumnServer')}</div>
+                <div className="text-end">{t('home.portForwardingColumnActions')}</div>
+              </div>
 
-          <div className="divide-y divide-home-divider">
-            {rules.map((rule) => {
-              const isRunning = rule.runtime.status === 'running';
-              const isLocalBindRisk =
-                rule.type !== 'remote' && !isTrustedLocalBindHost(rule.localBindHost ?? rule.runtime.boundHost);
-              const statusLabel = isRunning
-                ? t('home.portForwardingStatusRunningWithConnections', {
-                    count: rule.runtime.activeConnectionCount,
-                  })
-                : t('home.portForwardingStatusStopped');
+              <div className="divide-y divide-home-divider">
+                {group.items.map((rule) => {
+                  const isRunning = rule.runtime.status === 'running';
+                  const isLocalBindRisk =
+                    rule.type !== 'remote' && !isTrustedLocalBindHost(rule.localBindHost ?? rule.runtime.boundHost);
+                  const statusLabel = isRunning
+                    ? t('home.portForwardingStatusRunningWithConnections', {
+                        count: rule.runtime.activeConnectionCount,
+                      })
+                    : t('home.portForwardingStatusStopped');
 
-              return (
-                <div
-                  key={rule.id}
-                  className="bg-home-card/35 text-home-text hover:bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] items-center gap-2 px-3 py-2 text-sm"
-                >
-                  <div className="min-w-0">
-                    <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="truncate font-medium">{rule.name}</span>
-                      {isLocalBindRisk ? (
+                  return (
+                    <div
+                      key={rule.id}
+                      className="bg-home-card/35 text-home-text hover:bg-home-card/70 grid min-w-[880px] grid-cols-[1.1fr_0.72fr_0.72fr_1fr_1fr_0.9fr_142px] items-center gap-2 px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex min-w-0 items-center gap-1.5">
+                          <span className="truncate font-medium">{rule.name}</span>
+                          {isLocalBindRisk ? (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0 text-form-message-error" />
+                              </TooltipTrigger>
+                              <TooltipContent>{t('home.portForwardingBindRiskTooltip')}</TooltipContent>
+                            </Tooltip>
+                          ) : null}
+                        </div>
+                        {rule.note ? (
+                          <div className="mt-0.5 truncate text-xs text-home-text-subtle">{rule.note}</div>
+                        ) : null}
+                      </div>
+
+                      <div className="min-w-0">
+                        <div
+                          className={classNames(
+                            'flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs',
+                            isRunning ? 'text-home-text' : 'text-home-text-subtle',
+                          )}
+                        >
+                          <span
+                            className={classNames(
+                              'h-1.5 w-1.5 flex-shrink-0 rounded-full',
+                              isRunning ? 'bg-form-active' : 'bg-home-text-subtle',
+                            )}
+                          />
+                          <span className="truncate">{statusLabel}</span>
+                        </div>
+                        {!isRunning && rule.lastFailureMessage ? (
+                          <div
+                            className="mt-1 truncate text-xs text-form-message-error"
+                            title={rule.lastFailureMessage}
+                          >
+                            {t('home.portForwardingActivityFailed')}
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div className="truncate text-home-text-subtle">{resolvePortForwardTypeLabel(rule.type)}</div>
+                      <div className="truncate font-mono text-xs">{formatPortForwardBindEndpoint(rule)}</div>
+                      <div className="truncate font-mono text-xs">{formatPortForwardTargetEndpoint(rule)}</div>
+                      <div className="truncate text-home-text-subtle">
+                        {rule.serverName ?? serverNameById.get(rule.serverId) ?? t('home.portForwardingUnknownServer')}
+                      </div>
+
+                      <div className="flex justify-end gap-1">
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <ShieldAlert className="h-3.5 w-3.5 flex-shrink-0 text-form-message-error" />
+                            <Button
+                              variant="ghostIcon"
+                              className="h-8 w-8 rounded-sm-2"
+                              aria-label={
+                                isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')
+                              }
+                              onClick={() => {
+                                if (isRunning) {
+                                  onStopRule(rule.id);
+                                  return;
+                                }
+
+                                onStartRule(rule.id);
+                              }}
+                            >
+                              {isRunning ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+                            </Button>
                           </TooltipTrigger>
-                          <TooltipContent>{t('home.portForwardingBindRiskTooltip')}</TooltipContent>
+                          <TooltipContent>
+                            {isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')}
+                          </TooltipContent>
                         </Tooltip>
-                      ) : null}
-                    </div>
-                    {rule.note ? (
-                      <div className="mt-0.5 truncate text-xs text-home-text-subtle">{rule.note}</div>
-                    ) : null}
-                  </div>
 
-                  <div className="min-w-0">
-                    <div
-                      className={classNames(
-                        'flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs',
-                        isRunning ? 'text-home-text' : 'text-home-text-subtle',
-                      )}
-                    >
-                      <span
-                        className={classNames(
-                          'h-1.5 w-1.5 flex-shrink-0 rounded-full',
-                          isRunning ? 'bg-form-active' : 'bg-home-text-subtle',
-                        )}
-                      />
-                      <span className="truncate">{statusLabel}</span>
-                    </div>
-                    {!isRunning && rule.lastFailureMessage ? (
-                      <div
-                        className="mt-1 truncate text-xs text-form-message-error"
-                        title={rule.lastFailureMessage}
-                      >
-                        {t('home.portForwardingActivityFailed')}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghostIcon"
+                              className="h-8 w-8 rounded-sm-2"
+                              aria-label={t('home.portForwardingCopyEndpointAction')}
+                              onClick={() => onCopyToClipboard(formatPortForwardCopyEndpoint(rule))}
+                            >
+                              <Copy className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('home.portForwardingCopyEndpointAction')}</TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghostIcon"
+                              className="h-8 w-8 rounded-sm-2"
+                              disabled={isRunning}
+                              aria-label={t('home.contextEdit')}
+                              onClick={() => onEditRule(rule)}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {isRunning ? t('home.portForwardingActiveEditDisabled') : t('home.contextEdit')}
+                          </TooltipContent>
+                        </Tooltip>
+
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghostIcon"
+                              className="h-8 w-8 rounded-sm-2"
+                              disabled={isRunning}
+                              aria-label={t('home.contextDelete')}
+                              onClick={() => onDeleteRule(rule)}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {isRunning ? t('home.portForwardingActiveDeleteDisabled') : t('home.contextDelete')}
+                          </TooltipContent>
+                        </Tooltip>
                       </div>
-                    ) : null}
-                  </div>
-
-                  <div className="truncate text-home-text-subtle">{resolvePortForwardTypeLabel(rule.type)}</div>
-                  <div className="truncate font-mono text-xs">{formatPortForwardBindEndpoint(rule)}</div>
-                  <div className="truncate font-mono text-xs">{formatPortForwardTargetEndpoint(rule)}</div>
-                  <div className="truncate text-home-text-subtle">
-                    {rule.serverName ?? serverNameById.get(rule.serverId) ?? t('home.portForwardingUnknownServer')}
-                  </div>
-
-                  <div className="flex justify-end gap-1">
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghostIcon"
-                          className="h-8 w-8 rounded-sm-2"
-                          aria-label={
-                            isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')
-                          }
-                          onClick={() => {
-                            if (isRunning) {
-                              onStopRule(rule.id);
-                              return;
-                            }
-
-                            onStartRule(rule.id);
-                          }}
-                        >
-                          {isRunning ? <Square className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {isRunning ? t('home.portForwardingStopAction') : t('home.portForwardingStartAction')}
-                      </TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghostIcon"
-                          className="h-8 w-8 rounded-sm-2"
-                          aria-label={t('home.portForwardingCopyEndpointAction')}
-                          onClick={() => onCopyToClipboard(formatPortForwardCopyEndpoint(rule))}
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('home.portForwardingCopyEndpointAction')}</TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghostIcon"
-                          className="h-8 w-8 rounded-sm-2"
-                          disabled={isRunning}
-                          aria-label={t('home.contextEdit')}
-                          onClick={() => onEditRule(rule)}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {isRunning ? t('home.portForwardingActiveEditDisabled') : t('home.contextEdit')}
-                      </TooltipContent>
-                    </Tooltip>
-
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button
-                          variant="ghostIcon"
-                          className="h-8 w-8 rounded-sm-2"
-                          disabled={isRunning}
-                          aria-label={t('home.contextDelete')}
-                          onClick={() => onDeleteRule(rule)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        {isRunning ? t('home.portForwardingActiveDeleteDisabled') : t('home.contextDelete')}
-                      </TooltipContent>
-                    </Tooltip>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </section>
+        ))}
       </div>
     </TooltipProvider>
   );
@@ -1208,8 +1268,8 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const [activeTag, setActiveTag] = React.useState<string>('all');
   const [search, setSearch] = React.useState<string>('');
   const [quickFilter, setQuickFilter] = React.useState<QuickFilter>('none');
-  const [groupMode, setGroupMode] = React.useState<GroupMode>('lastUsed');
-  const [sortMode, setSortMode] = React.useState<SortMode>('lastUsed');
+  const [viewPreferences, setViewPreferences] =
+    React.useState<Record<HomeMode, HomeViewPreference>>(DEFAULT_HOME_VIEW_PREFERENCES);
   const [runtimeUserName, setRuntimeUserName] = React.useState<string>('user');
   const [isEditFolderDialogOpen, setIsEditFolderDialogOpen] = React.useState<boolean>(false);
   const [isDeleteFolderDialogOpen, setIsDeleteFolderDialogOpen] = React.useState<boolean>(false);
@@ -1240,6 +1300,24 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
+  const sshViewPreference = viewPreferences.ssh;
+  const keychainViewPreference = viewPreferences.keychains;
+  const portForwardingViewPreference = viewPreferences.portForwarding;
+  const activeViewPreference = viewPreferences[activeHomeMode];
+  const { groupMode, sortMode } = activeViewPreference;
+
+  const updateActiveViewPreference = React.useCallback(
+    (nextPreference: Partial<HomeViewPreference>) => {
+      setViewPreferences((previousPreferences) => ({
+        ...previousPreferences,
+        [activeHomeMode]: {
+          ...previousPreferences[activeHomeMode],
+          ...nextPreference,
+        },
+      }));
+    },
+    [activeHomeMode],
+  );
 
   const reloadHomeData = React.useCallback(async () => {
     setIsLoading(true);
@@ -1571,15 +1649,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const sortServers = React.useCallback(
     (items: SshServerListItem[]): SshServerListItem[] => {
       return [...items].sort((left, right) => {
-        if (sortMode === 'nameAsc') {
+        if (sshViewPreference.sortMode === 'nameAsc') {
           return left.name.localeCompare(right.name);
         }
 
-        if (sortMode === 'nameDesc') {
+        if (sshViewPreference.sortMode === 'nameDesc') {
           return right.name.localeCompare(left.name);
         }
 
-        if (sortMode === 'createdAt') {
+        if (sshViewPreference.sortMode === 'createdAt') {
           const leftTime = new Date(left.createdAt).getTime();
           const rightTime = new Date(right.createdAt).getTime();
           return rightTime - leftTime;
@@ -1590,11 +1668,11 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         return rightTime - leftTime;
       });
     },
-    [sortMode],
+    [sshViewPreference.sortMode],
   );
 
   const groupedServers = React.useMemo<ServerGroup[]>(() => {
-    if (groupMode === 'none') {
+    if (sshViewPreference.groupMode === 'none') {
       return [
         {
           key: 'ungrouped:all',
@@ -1604,7 +1682,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
       ];
     }
 
-    if (groupMode === 'tag') {
+    if (sshViewPreference.groupMode === 'tag') {
       const tagNameSet = new Set<string>();
       filteredServers.forEach((server) => {
         (server.tags ?? []).forEach((tag) => {
@@ -1705,31 +1783,31 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         items: otherItems,
       },
     ].filter((group) => group.items.length > 0);
-  }, [filteredServers, groupMode, sortServers]);
+  }, [filteredServers, sortServers, sshViewPreference.groupMode]);
 
   const sortKeychains = React.useCallback(
     (items: SshKeychainListItem[]): SshKeychainListItem[] => {
       return [...items].sort((left, right) => {
-        if (sortMode === 'nameAsc') {
+        if (keychainViewPreference.sortMode === 'nameAsc') {
           return left.name.localeCompare(right.name);
         }
 
-        if (sortMode === 'nameDesc') {
+        if (keychainViewPreference.sortMode === 'nameDesc') {
           return right.name.localeCompare(left.name);
         }
 
-        if (sortMode === 'createdAt') {
+        if (keychainViewPreference.sortMode === 'createdAt') {
           return getKeychainTimestamp(right, 'createdAt') - getKeychainTimestamp(left, 'createdAt');
         }
 
         return getKeychainTimestamp(right, 'updatedAt') - getKeychainTimestamp(left, 'updatedAt');
       });
     },
-    [sortMode],
+    [keychainViewPreference.sortMode],
   );
 
   const groupedKeychains = React.useMemo<KeychainGroup[]>(() => {
-    if (groupMode === 'none') {
+    if (keychainViewPreference.groupMode === 'none') {
       return [
         {
           key: 'keychain:ungrouped:all',
@@ -1739,7 +1817,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
       ];
     }
 
-    if (groupMode === 'tag') {
+    if (keychainViewPreference.groupMode === 'tag') {
       const tagNameSet = new Set<string>();
       filteredKeychains.forEach((keychain) => {
         (keychain.tags ?? []).forEach((tag) => {
@@ -1789,7 +1867,65 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         items: sortKeychains(filteredKeychains),
       },
     ].filter((group) => group.items.length > 0);
-  }, [filteredKeychains, groupMode, sortKeychains]);
+  }, [filteredKeychains, keychainViewPreference.groupMode, sortKeychains]);
+
+  const sortPortForwardRules = React.useCallback(
+    (items: PortForwardRuleListItem[]): PortForwardRuleListItem[] => {
+      return [...items].sort((left, right) => {
+        if (portForwardingViewPreference.sortMode === 'nameAsc') {
+          return left.name.localeCompare(right.name);
+        }
+
+        if (portForwardingViewPreference.sortMode === 'nameDesc') {
+          return right.name.localeCompare(left.name);
+        }
+
+        if (portForwardingViewPreference.sortMode === 'createdAt') {
+          return getPortForwardRuleTimestamp(right, 'createdAt') - getPortForwardRuleTimestamp(left, 'createdAt');
+        }
+
+        return getPortForwardRuleTimestamp(right, 'updatedAt') - getPortForwardRuleTimestamp(left, 'updatedAt');
+      });
+    },
+    [portForwardingViewPreference.sortMode],
+  );
+
+  const groupedPortForwardRules = React.useMemo<PortForwardRuleGroup[]>(() => {
+    if (portForwardingViewPreference.groupMode === 'none') {
+      return [
+        {
+          key: 'port-forwarding:ungrouped:all',
+          title: '',
+          items: sortPortForwardRules(filteredPortForwardRules),
+        },
+      ].filter((group) => group.items.length > 0);
+    }
+
+    if (portForwardingViewPreference.groupMode === 'tag') {
+      const groups: PortForwardRuleGroup[] = (['local', 'remote', 'dynamic'] as const)
+        .map((type) => ({
+          key: `port-forwarding:type:${type}`,
+          title: resolvePortForwardTypeLabel(type),
+          items: sortPortForwardRules(filteredPortForwardRules.filter((rule) => rule.type === type)),
+        }))
+        .filter((group) => group.items.length > 0);
+
+      return groups;
+    }
+
+    return [
+      {
+        key: 'port-forwarding:status:running',
+        title: t('home.portForwardingRunningGroup'),
+        items: sortPortForwardRules(filteredPortForwardRules.filter((rule) => rule.runtime.status === 'running')),
+      },
+      {
+        key: 'port-forwarding:status:stopped',
+        title: t('home.portForwardingStoppedGroup'),
+        items: sortPortForwardRules(filteredPortForwardRules.filter((rule) => rule.runtime.status !== 'running')),
+      },
+    ].filter((group) => group.items.length > 0);
+  }, [filteredPortForwardRules, portForwardingViewPreference.groupMode, sortPortForwardRules]);
 
   const selectedGroupName = React.useMemo(() => {
     if (quickFilter === 'recent') {
@@ -2088,6 +2224,27 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
     return Clock3;
   }, [groupMode]);
+
+  const groupModeOptions = React.useMemo<Array<{ value: GroupMode; label: string }>>(() => {
+    return (['none', 'lastUsed', 'tag'] as const).map((value) => ({
+      value,
+      label: resolveGroupModeLabel(activeHomeMode, value),
+    }));
+  }, [activeHomeMode]);
+
+  const setActiveGroupMode = React.useCallback(
+    (nextGroupMode: GroupMode) => {
+      updateActiveViewPreference({ groupMode: nextGroupMode });
+    },
+    [updateActiveViewPreference],
+  );
+
+  const setActiveSortMode = React.useCallback(
+    (nextSortMode: SortMode) => {
+      updateActiveViewPreference({ sortMode: nextSortMode });
+    },
+    [updateActiveViewPreference],
+  );
 
   const sortModeIcon = React.useMemo(() => {
     if (sortMode === 'nameAsc') {
@@ -2779,24 +2936,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                       </Tooltip>
                       <DropdownMenuContent>
                         <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'none'}
-                          onSelect={() => setGroupMode('none')}
-                        >
-                          {t('home.groupModeNone')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'lastUsed'}
-                          onSelect={() => setGroupMode('lastUsed')}
-                        >
-                          {t('home.groupModeLastUsed')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={groupMode === 'tag'}
-                          onSelect={() => setGroupMode('tag')}
-                        >
-                          {t('home.groupModeTag')}
-                        </DropdownMenuCheckboxItem>
+                        {groupModeOptions.map((option) => (
+                          <DropdownMenuCheckboxItem
+                            key={option.value}
+                            checked={groupMode === option.value}
+                            onSelect={() => setActiveGroupMode(option.value)}
+                          >
+                            {option.label}
+                          </DropdownMenuCheckboxItem>
+                        ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -2819,25 +2967,25 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                         <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
                         <DropdownMenuCheckboxItem
                           checked={sortMode === 'nameAsc'}
-                          onSelect={() => setSortMode('nameAsc')}
+                          onSelect={() => setActiveSortMode('nameAsc')}
                         >
                           {t('home.sortByNameAsc')}
                         </DropdownMenuCheckboxItem>
                         <DropdownMenuCheckboxItem
                           checked={sortMode === 'nameDesc'}
-                          onSelect={() => setSortMode('nameDesc')}
+                          onSelect={() => setActiveSortMode('nameDesc')}
                         >
                           {t('home.sortByNameDesc')}
                         </DropdownMenuCheckboxItem>
                         <DropdownMenuCheckboxItem
                           checked={sortMode === 'lastUsed'}
-                          onSelect={() => setSortMode('lastUsed')}
+                          onSelect={() => setActiveSortMode('lastUsed')}
                         >
                           {t('home.sortByLastUsed')}
                         </DropdownMenuCheckboxItem>
                         <DropdownMenuCheckboxItem
                           checked={sortMode === 'createdAt'}
-                          onSelect={() => setSortMode('createdAt')}
+                          onSelect={() => setActiveSortMode('createdAt')}
                         >
                           {t('home.sortByCreatedAt')}
                         </DropdownMenuCheckboxItem>
@@ -2905,7 +3053,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
               {!isLoading && !errorMessage ? (
                 activeHomeMode === 'portForwarding' ? (
                   <HomePortForwardingContent
-                    rules={filteredPortForwardRules}
+                    groups={groupedPortForwardRules}
                     servers={servers}
                     onStartRule={(ruleId) => {
                       void handleStartPortForwardRule(ruleId);

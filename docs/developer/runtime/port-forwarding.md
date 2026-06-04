@@ -117,9 +117,10 @@ Renderer owner is `packages/renderer/src/pages/Home.tsx`.
 
 Home -> Port Forwarding:
 
-- Hides SSH tag/group controls.
-- Keeps search and a single New Rule action.
+- Keeps search, mode-local sort/group controls, and a single New Rule action.
+- Stores Home sort/group preference independently from the SSH and Keychains Home modes.
 - Displays a dense table with status, type, server, bind endpoint, target endpoint, activity, and actions.
+- Supports ungrouped, status-grouped, and forwarding-type-grouped table views; the status grouping uses running/stopped runtime state.
 - Provides New/Edit dialog, Start/Stop, Copy Endpoint, Delete, and host trust retry flow.
 
 Running state should update from start/stop responses and refresh from list on Home reload. A backend restart intentionally resets all rows to stopped.

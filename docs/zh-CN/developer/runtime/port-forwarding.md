@@ -117,9 +117,10 @@ renderer 归属文件是 `packages/renderer/src/pages/Home.tsx`。
 
 Home -> Port Forwarding：
 
-- 隐藏 SSH 标签/分组控件。
-- 保留搜索与单一 New Rule 操作。
+- 保留搜索、当前模式独立的排序/分组控件，以及单一 New Rule 操作。
+- Home 的排序/分组偏好与 SSH、钥匙链两个 Home 模式相互独立保存。
 - 使用高密度表格展示 status、type、server、bind endpoint、target endpoint、activity 与 actions。
+- 支持不分组、按状态分组、按转发类型分组的表格视图；状态分组使用 running/stopped 运行时状态。
 - 提供 New/Edit dialog、Start/Stop、Copy Endpoint、Delete，以及 host trust retry 流程。
 
 运行状态应根据 start/stop 响应更新，并在 Home 重新加载时从列表接口刷新。backend 重启后所有行有意回到 stopped。

@@ -167,7 +167,7 @@ flowchart TD
 - Renderer owner:
   - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
   - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
-  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit.
+  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit. Each Home mode owns an independent sort/group view preference so mode switches do not rewrite another surface's organization state.
 
 ## 9. SSH Port Forwarding Ownership Map (2026-05)
 
@@ -185,7 +185,7 @@ flowchart TD
 - Bridge owner:
   - `packages/main/src/ipc/register-backend-ipc.ts`, `packages/main/src/preload.ts`, and `packages/renderer/src/vite-env.d.ts`.
 - Renderer owner:
-  - `packages/renderer/src/pages/Home.tsx` for Home -> Port Forwarding table, dialog, actions, and host trust retry.
+  - `packages/renderer/src/pages/Home.tsx` for Home -> Port Forwarding table, mode-local sort/group controls, dialog, actions, and host trust retry.
   - `packages/renderer/src/lib/api/*` and `packages/renderer/src/lib/backend.ts` for typed transport wrappers.
 - Documentation owner:
   - `docs/developer/runtime/port-forwarding.md` and `docs/zh-CN/developer/runtime/port-forwarding.md`.

@@ -167,7 +167,7 @@ flowchart TD
 - Renderer 归属：
   - `packages/renderer/src/pages/SSHEditor.tsx` 负责单服务器内的钥匙链选择与内联认证回退流程。
   - `packages/renderer/src/pages/SSHKeychains.tsx` 负责独立钥匙链管理页面的增删改流程。
-  - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH / 钥匙链 / 端口转发模式正文；主页钥匙链模式复用共享 SSH 文件夹/标签与 `SSHKeychainEditorDialog` 完成创建和编辑。
+  - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH / 钥匙链 / 端口转发模式正文；主页钥匙链模式复用共享 SSH 文件夹/标签与 `SSHKeychainEditorDialog` 完成创建和编辑。每个 Home 模式都拥有独立的排序/分组视图偏好，切换模式不会改写另一个界面的组织状态。
 
 ## 9. SSH 端口转发模块归属（2026-05）
 
@@ -185,7 +185,7 @@ flowchart TD
 - Bridge 归属：
   - `packages/main/src/ipc/register-backend-ipc.ts`、`packages/main/src/preload.ts` 与 `packages/renderer/src/vite-env.d.ts`。
 - Renderer 归属：
-  - `packages/renderer/src/pages/Home.tsx` 负责 Home -> Port Forwarding 表格、弹窗、动作与 host trust retry。
+  - `packages/renderer/src/pages/Home.tsx` 负责 Home -> Port Forwarding 表格、当前模式独立的排序/分组控件、弹窗、动作与 host trust retry。
   - `packages/renderer/src/lib/api/*` 与 `packages/renderer/src/lib/backend.ts` 负责类型化 transport wrapper。
 - 文档归属：
   - `docs/developer/runtime/port-forwarding.md` 与 `docs/zh-CN/developer/runtime/port-forwarding.md`。
