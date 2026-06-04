@@ -108,9 +108,10 @@ The following SSH entity payloads now include visual metadata for persistent ico
 
 SSH security policy fields in current contract:
 
-- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey` and `enableSshCompression` booleans.
-- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey` and `enableSshCompression`.
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey`, `enableSshCompression`, and renderer-only `disableCharacterWidthCompatibilityMode` booleans.
+- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey`, `enableSshCompression`, and `disableCharacterWidthCompatibilityMode`.
 - `ApiSshCreateSessionRequest`: optional `strictHostKey` and `enableSshCompression` overrides used for one session attempt.
+- Character width compatibility is not sent to SSH session creation or terminal WS messages; renderer applies it when creating xterm instances.
 
 ### 3.2 SSH Port Forwarding Contract
 

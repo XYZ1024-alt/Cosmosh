@@ -50,6 +50,7 @@ export const toResolvedTargetSnapshot = (target: ResolvedTerminalTarget): SshRes
     serverName: target.server.name,
     strictHostKey: target.server.strictHostKey ?? true,
     enableSshCompression: target.server.enableSshCompression ?? false,
+    disableCharacterWidthCompatibilityMode: target.server.disableCharacterWidthCompatibilityMode ?? false,
     terminalClipboardAccess: target.server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
     capturedAt,
   };
@@ -91,7 +92,13 @@ export const resolveTerminalTargetFromSnapshot = async (
 
   return {
     type: 'ssh-server',
-    server,
+    server: {
+      ...server,
+      strictHostKey: snapshot.strictHostKey,
+      enableSshCompression: snapshot.enableSshCompression,
+      disableCharacterWidthCompatibilityMode: snapshot.disableCharacterWidthCompatibilityMode,
+      terminalClipboardAccess: snapshot.terminalClipboardAccess,
+    },
   };
 };
 

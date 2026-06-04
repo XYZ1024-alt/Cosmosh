@@ -292,6 +292,9 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
   const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
+  const disableCharacterWidthCompatibilityMode = normalizeOptionalBoolean(
+    payload.disableCharacterWidthCompatibilityMode,
+  );
   const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
@@ -305,6 +308,18 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       error: buildValidationError(
         'errors.validation.enableSshCompressionType',
         'enableSshCompression must be a boolean value.',
+      ),
+    };
+  }
+
+  if (
+    payload.disableCharacterWidthCompatibilityMode !== undefined &&
+    disableCharacterWidthCompatibilityMode === undefined
+  ) {
+    return {
+      error: buildValidationError(
+        'errors.validation.disableCharacterWidthCompatibilityModeType',
+        'disableCharacterWidthCompatibilityMode must be a boolean value.',
       ),
     };
   }
@@ -362,6 +377,7 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       privateKeyPassphrase,
       strictHostKey: strictHostKey ?? true,
       enableSshCompression: enableSshCompression ?? false,
+      disableCharacterWidthCompatibilityMode: disableCharacterWidthCompatibilityMode ?? false,
       terminalClipboardAccess: terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
       folderId,
       iconKey,
@@ -430,6 +446,9 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
   const privateKeyPassphrase = normalizeOptionalString(payload.privateKeyPassphrase);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
   const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
+  const disableCharacterWidthCompatibilityMode = normalizeOptionalBoolean(
+    payload.disableCharacterWidthCompatibilityMode,
+  );
   const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
@@ -443,6 +462,18 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       error: buildValidationError(
         'errors.validation.enableSshCompressionType',
         'enableSshCompression must be a boolean value.',
+      ),
+    };
+  }
+
+  if (
+    payload.disableCharacterWidthCompatibilityMode !== undefined &&
+    disableCharacterWidthCompatibilityMode === undefined
+  ) {
+    return {
+      error: buildValidationError(
+        'errors.validation.disableCharacterWidthCompatibilityModeType',
+        'disableCharacterWidthCompatibilityMode must be a boolean value.',
       ),
     };
   }
@@ -520,6 +551,7 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       privateKeyPassphrase,
       strictHostKey,
       enableSshCompression,
+      disableCharacterWidthCompatibilityMode,
       terminalClipboardAccess,
       folderId,
       iconKey,

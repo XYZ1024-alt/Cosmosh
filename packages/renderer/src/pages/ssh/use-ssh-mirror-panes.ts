@@ -1,5 +1,5 @@
 import { ClipboardAddon } from '@xterm/addon-clipboard';
-import { type ITerminalOptions, Terminal } from '@xterm/xterm';
+import type { ITerminalOptions } from '@xterm/xterm';
 import React from 'react';
 
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
@@ -7,7 +7,13 @@ import { t } from '../../lib/i18n';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import type { MirrorPaneRuntime, ResolvedTerminalTarget, ServerInboundMessage } from './ssh-types';
 import { applyTerminalRuntimeOptions, SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
-import { loadTerminalAddons, syncTerminalWebglAddon, type TerminalHardwareAccelerationState } from './terminal-addons';
+import {
+  createTerminalInstance,
+  loadTerminalAddons,
+  resolveTerminalCharacterWidthCompatibilityMode,
+  syncTerminalWebglAddon,
+  type TerminalHardwareAccelerationState,
+} from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
 type UseSshMirrorPanesParams = {
@@ -16,6 +22,7 @@ type UseSshMirrorPanesParams = {
   terminalPaneIds: string[];
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
   hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
+  characterWidthCompatibilityModeEnabledRef: React.RefObject<boolean>;
   paneContainerMapRef: React.RefObject<Map<string, HTMLDivElement>>;
   mirrorPaneRuntimeMapRef: React.RefObject<Map<string, MirrorPaneRuntime>>;
   selectionPointerClientXRef: React.RefObject<number | null>;
@@ -61,6 +68,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     terminalPaneIds,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
+    characterWidthCompatibilityModeEnabledRef,
     paneContainerMapRef,
     mirrorPaneRuntimeMapRef,
     selectionPointerClientXRef,
@@ -116,7 +124,17 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         mirrorPaneRuntimeMapRef.current.delete(paneId);
       }
 
-      const terminal = new Terminal(terminalInitOptionsRef.current);
+      const resolvedTarget = resolvedTerminalTargetRef.current;
+      const effectiveCharacterWidthCompatibilityModeEnabled = resolvedTarget
+        ? resolveTerminalCharacterWidthCompatibilityMode(
+            resolvedTarget,
+            characterWidthCompatibilityModeEnabledRef.current,
+          )
+        : characterWidthCompatibilityModeEnabledRef.current;
+      const terminal = createTerminalInstance(
+        terminalInitOptionsRef.current,
+        effectiveCharacterWidthCompatibilityModeEnabled,
+      );
       const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
       const addonRuntime = loadTerminalAddons(terminal);
       const { fitAddon, searchAddon } = addonRuntime;
@@ -343,6 +361,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   }, [
     activePaneIdRef,
     applyAutocompleteInputData,
+    characterWidthCompatibilityModeEnabledRef,
     closeAutocompleteRef,
     connectionState,
     handleAutocompleteTerminalKeyDownRef,

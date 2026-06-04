@@ -1368,6 +1368,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         keychainId: server.keychainId,
         strictHostKey: server.strictHostKey,
         enableSshCompression: server.enableSshCompression,
+        disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode,
         note: server.note ?? undefined,
         folderId: server.folder?.id,
       };

@@ -1,7 +1,14 @@
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
+import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebglAddon } from '@xterm/addon-webgl';
-import { type Terminal } from '@xterm/xterm';
+import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
+import { Terminal as XtermTerminal } from '@xterm/xterm';
+
+import type { ResolvedTerminalTarget } from './ssh-types';
+
+const UNICODE_VERSION_LEGACY = '6';
+const UNICODE_VERSION_11 = '11';
 
 /**
  * Per-SSH-page hardware acceleration state shared by primary and split panes.
@@ -31,6 +38,63 @@ type AttachTerminalAddonsParams = {
   runtime: TerminalWebglAddonRuntime;
   hardwareAccelerationState: TerminalHardwareAccelerationState;
   notifyHardwareAccelerationContextLoss: () => void;
+};
+
+/**
+ * Applies Cosmosh's character-width compatibility mode to an existing xterm instance.
+ *
+ * @param terminal xterm instance with the Unicode 11 provider registered.
+ * @param characterWidthCompatibilityModeEnabled Whether Unicode 11 width tables should be active.
+ * @returns Nothing.
+ */
+export const applyTerminalCharacterWidthCompatibilityMode = (
+  terminal: Terminal,
+  characterWidthCompatibilityModeEnabled: boolean,
+): void => {
+  const targetVersion = characterWidthCompatibilityModeEnabled ? UNICODE_VERSION_11 : UNICODE_VERSION_LEGACY;
+  if (terminal.unicode.versions.includes(targetVersion)) {
+    terminal.unicode.activeVersion = targetVersion;
+  }
+};
+
+/**
+ * Resolves the terminal character-width rule for a concrete runtime target.
+ *
+ * @param target Resolved terminal target for the session being opened.
+ * @param globalCharacterWidthCompatibilityModeEnabled Global settings-registry toggle.
+ * @returns Effective compatibility-mode state for the target.
+ */
+export const resolveTerminalCharacterWidthCompatibilityMode = (
+  target: ResolvedTerminalTarget,
+  globalCharacterWidthCompatibilityModeEnabled: boolean,
+): boolean => {
+  if (target.type === 'local-terminal') {
+    return globalCharacterWidthCompatibilityModeEnabled;
+  }
+
+  return globalCharacterWidthCompatibilityModeEnabled && !target.server.disableCharacterWidthCompatibilityMode;
+};
+
+/**
+ * Creates one xterm instance with Unicode 11 support registered.
+ *
+ * @param options xterm initialization options derived from settings.
+ * @param characterWidthCompatibilityModeEnabled Whether Unicode 11 width tables should be active initially.
+ * @returns Terminal instance ready for standard add-on loading.
+ */
+export const createTerminalInstance = (
+  options: ITerminalOptions,
+  characterWidthCompatibilityModeEnabled: boolean,
+): Terminal => {
+  const terminal = new XtermTerminal({
+    ...options,
+    allowProposedApi: true,
+  });
+
+  terminal.loadAddon(new Unicode11Addon());
+  applyTerminalCharacterWidthCompatibilityMode(terminal, characterWidthCompatibilityModeEnabled);
+
+  return terminal;
 };
 
 /**

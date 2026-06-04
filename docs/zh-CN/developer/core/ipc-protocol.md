@@ -108,9 +108,10 @@ flowchart TB
 
 当前 SSH 安全策略相关字段：
 
-- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：`strictHostKey` 与 `enableSshCompression` 布尔值。
-- `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey` 与 `enableSshCompression`。
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`：`strictHostKey`、`enableSshCompression` 以及仅供 renderer 使用的 `disableCharacterWidthCompatibilityMode` 布尔值。
+- `ApiSshListServersResponse`：每个 server 条目返回持久化 `strictHostKey`、`enableSshCompression` 与 `disableCharacterWidthCompatibilityMode`。
 - `ApiSshCreateSessionRequest`：可选 `strictHostKey` 与 `enableSshCompression`，可用于单次会话尝试覆盖。
+- 字符宽度兼容模式不会传入 SSH session create 或终端 WS 消息；renderer 会在创建 xterm 实例时应用该规则。
 
 ### 3.2 SSH 端口转发契约
 

@@ -822,6 +822,7 @@ export interface components {
       authType: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       hasPassword: boolean;
       hasPrivateKey: boolean;
@@ -849,6 +850,7 @@ export interface components {
       authType?: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       iconKey?: string;
       colorKey?: components['schemas']['SshVisualColorKey'];

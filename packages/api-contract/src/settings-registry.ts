@@ -64,6 +64,7 @@ export interface SettingsValues {
   defaultServerNoteTemplate: string;
   terminalSelectionBarEnabled: boolean;
   terminalBracketedPasteEnabled: boolean;
+  terminalCharacterWidthCompatibilityModeEnabled: boolean;
   terminalTextDropMode: 'off' | 'always' | 'external';
   localTerminalClipboardAccess: TerminalClipboardAccess;
   terminalContextLaunchBehavior: 'openDefaultLocalTerminal' | 'openLocalTerminalList' | 'off';
@@ -855,6 +856,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.bracketedPaste.enabled',
     commandActionId: 'settings.terminal.runtime.bracketedPaste.enabled.toggle',
     searchTerms: ['terminal', 'paste', 'multiline paste', 'safe paste', 'bracketed paste'],
+  },
+  {
+    key: 'terminalCharacterWidthCompatibilityModeEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalCharacterWidthCompatibilityModeEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalCharacterWidthCompatibilityModeEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.characterWidthCompatibilityMode.enabled',
+    commandActionId: 'settings.terminal.runtime.characterWidthCompatibilityMode.enabled.toggle',
+    searchTerms: ['terminal', 'unicode 11', 'character width', 'width compatibility', 'alignment'],
   },
   {
     key: 'localTerminalClipboardAccess',

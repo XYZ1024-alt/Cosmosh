@@ -1,6 +1,6 @@
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { SearchAddon } from '@xterm/addon-search';
-import { type ITerminalOptions, Terminal } from '@xterm/xterm';
+import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
@@ -17,7 +17,10 @@ import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } 
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
 import {
+  applyTerminalCharacterWidthCompatibilityMode,
+  createTerminalInstance,
   loadTerminalAddons,
+  resolveTerminalCharacterWidthCompatibilityMode,
   syncTerminalWebglAddon,
   type TerminalHardwareAccelerationState,
   type TerminalWebglAddonRuntime,
@@ -31,6 +34,7 @@ type UseSshPrimarySessionParams = {
   onConnectionIntentChange: (nextIntent: SshConnectionIntent) => void;
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
   hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
+  characterWidthCompatibilityModeEnabledRef: React.RefObject<boolean>;
   terminalContainerRef: React.RefObject<HTMLDivElement | null>;
   terminalRef: React.RefObject<Terminal | null>;
   primaryTerminalRef: React.RefObject<Terminal | null>;
@@ -90,6 +94,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     onConnectionIntentChange,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
+    characterWidthCompatibilityModeEnabledRef,
     terminalContainerRef,
     terminalRef,
     primaryTerminalRef,
@@ -147,7 +152,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   }, [onConnectionIntentChange]);
 
   React.useEffect(() => {
-    const terminal = new Terminal(terminalInitOptionsRef.current);
+    const terminal = createTerminalInstance(
+      terminalInitOptionsRef.current,
+      characterWidthCompatibilityModeEnabledRef.current,
+    );
     const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
     const addonRuntime = loadTerminalAddons(terminal);
     const { fitAddon, searchAddon } = addonRuntime;
@@ -377,6 +385,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         resolvedTerminalTargetRef.current = target;
         terminalClipboardProvider.setActiveTarget(target);
         onConnectionIntentChangeRef.current(withResolvedSnapshot(activeIntent, toResolvedTargetSnapshot(target)));
+        applyTerminalCharacterWidthCompatibilityMode(
+          terminal,
+          resolveTerminalCharacterWidthCompatibilityMode(target, characterWidthCompatibilityModeEnabledRef.current),
+        );
 
         if (target.type === 'ssh-server') {
           onTabTitleChangeRef.current?.(target.server.name.trim() || t('tabs.page.ssh'));
@@ -606,13 +618,14 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   }, [
     activePaneIdRef,
     applyAutocompleteInputData,
-    notifyAutocompleteOutputEchoRef,
+    characterWidthCompatibilityModeEnabledRef,
     clearSelectionOverlay,
     closeAutocompleteRef,
     connectSessionRef,
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
     hardwareAccelerationStateRef,
+    notifyAutocompleteOutputEchoRef,
     notifyHardwareAccelerationContextLoss,
     onTabTitleChangeRef,
     onTabVisualChangeRef,

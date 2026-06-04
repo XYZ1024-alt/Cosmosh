@@ -129,6 +129,15 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
   const terminalAutoCompletePromptRegex = settingsValues.terminalAutoCompletePromptRegex;
   const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
+  const terminalCharacterWidthCompatibilityModeEnabled = settingsValues.terminalCharacterWidthCompatibilityModeEnabled;
+  const characterWidthCompatibilityModeEnabled = React.useMemo(() => {
+    const snapshot = connectionIntent.lastResolvedSnapshot;
+    if (snapshot?.type !== 'ssh-server') {
+      return terminalCharacterWidthCompatibilityModeEnabled;
+    }
+
+    return terminalCharacterWidthCompatibilityModeEnabled && !snapshot.disableCharacterWidthCompatibilityMode;
+  }, [connectionIntent.lastResolvedSnapshot, terminalCharacterWidthCompatibilityModeEnabled]);
   const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
@@ -247,6 +256,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalAutoCompleteFuzzyMatch,
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
+    characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,

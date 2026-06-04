@@ -175,6 +175,7 @@ export type UseSshCoreParams = {
   terminalAutoCompleteFuzzyMatch: boolean;
   terminalAutoCompletePromptRegex: string;
   terminalBracketedPasteEnabled: boolean;
+  characterWidthCompatibilityModeEnabled: boolean;
   terminalClipboardProvider: TerminalClipboardProvider;
   terminalHardwareAccelerationEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
@@ -382,6 +383,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalAutoCompleteFuzzyMatch,
     terminalAutoCompletePromptRegex,
     terminalBracketedPasteEnabled,
+    characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
     terminalSelectionBarEnabled,
@@ -495,6 +497,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     },
   );
   const terminalInitOptionsRef = React.useRef<ITerminalOptions>(terminalInitOptions);
+  const characterWidthCompatibilityModeEnabledRef = React.useRef<boolean>(characterWidthCompatibilityModeEnabled);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
   const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
   const hardwareAccelerationStateRef = React.useRef<TerminalHardwareAccelerationState>({
@@ -525,6 +528,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     terminalInitOptionsRef.current = terminalInitOptions;
   }, [terminalInitOptions]);
+
+  React.useEffect(() => {
+    characterWidthCompatibilityModeEnabledRef.current = characterWidthCompatibilityModeEnabled;
+  }, [characterWidthCompatibilityModeEnabled]);
 
   React.useEffect(() => {
     sshConnectionTimeoutSecRef.current = sshConnectionTimeoutSec;
@@ -823,6 +830,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     onConnectionIntentChange,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
+    characterWidthCompatibilityModeEnabledRef,
     terminalContainerRef,
     terminalRef,
     primaryTerminalRef,
@@ -863,6 +871,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalPaneIds,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
+    characterWidthCompatibilityModeEnabledRef,
     paneContainerMapRef,
     mirrorPaneRuntimeMapRef,
     selectionPointerClientXRef,

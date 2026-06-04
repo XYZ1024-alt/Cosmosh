@@ -486,6 +486,10 @@
         "description": "将粘贴内容包装为安全粘贴格式，避免内容粘贴后被立即执行。",
         "title": "安全粘贴"
       },
+      "terminalCharacterWidthCompatibilityModeEnabled": {
+        "description": "使用 xterm Unicode 11 字符宽度表，改善 CJK 与 emoji 对齐。遇到终端界面错位时，可尝试关闭此项并重新连接，以使用传统字符宽度模式。",
+        "title": "字符宽度兼容模式"
+      },
       "terminalContextLaunchBehavior": {
         "description": "控制通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
         "title": "从上下文启动"
@@ -1031,6 +1035,8 @@
     "deleteServerConfirmTitle": "删除服务器",
     "deleteServerFailed": "删除服务器失败。",
     "deleteServerSuccess": "服务器删除成功。",
+    "disableCharacterWidthCompatibilityMode": "禁用字符宽度兼容模式",
+    "disableCharacterWidthCompatibilityModeTooltip": "为此服务器禁用 Unicode 11 字符宽度支持。新的 SSH 会话将使用 xterm 传统宽度规则，远端终端输出出现错位时可尝试开启此项。",
     "draftSectionTitle": "草稿",
     "draftServerSubtitle": "未保存",
     "draftServerTitle": "新服务器",

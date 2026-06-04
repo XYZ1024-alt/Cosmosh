@@ -97,6 +97,7 @@
       "colorKeyInvalid": "提供 colorKey 时，必须使用预定义的 SSH 配色键。",
       "colsRange": "cols 必须是 20 到 400 之间的整数。",
       "connectTimeoutRange": "connectTimeoutSec 必须是 5 到 180 之间的整数。",
+      "disableCharacterWidthCompatibilityModeType": "disableCharacterWidthCompatibilityMode 必须是 boolean 值。",
       "enableSshCompressionType": "enableSshCompression 必须是 boolean 值。",
       "fingerprintAlgorithmUnsupported": "仅支持 sha256 主机指纹算法。",
       "fingerprintLength": "fingerprintSha256 为必填，长度需在 1-255 个字符之间。",

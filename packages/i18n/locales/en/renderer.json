@@ -486,6 +486,10 @@
         "description": "Wrap pasted text in safe paste markers so commands are not executed immediately.",
         "title": "Safe Paste"
       },
+      "terminalCharacterWidthCompatibilityModeEnabled": {
+        "description": "Use xterm Unicode 11 width tables for better CJK and emoji alignment. If terminal output looks misaligned, try disabling this and reconnecting with the legacy width mode.",
+        "title": "Character Width Compatibility Mode"
+      },
       "terminalContextLaunchBehavior": {
         "description": "Controls how terminals are opened from context launch or 'Open terminal in Cosmosh'.",
         "title": "Launch from Context"
@@ -1031,6 +1035,8 @@
     "deleteServerConfirmTitle": "Delete Server",
     "deleteServerFailed": "Failed to delete server.",
     "deleteServerSuccess": "Server deleted successfully.",
+    "disableCharacterWidthCompatibilityMode": "Disable Character Width Compatibility Mode",
+    "disableCharacterWidthCompatibilityModeTooltip": "Disable Unicode 11 character-width support for this server. New SSH sessions will use xterm's legacy width rules, which may help when remote terminal output looks misaligned.",
     "draftSectionTitle": "Draft",
     "draftServerSubtitle": "Unsaved",
     "draftServerTitle": "New Server",

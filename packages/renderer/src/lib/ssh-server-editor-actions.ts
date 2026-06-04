@@ -218,6 +218,7 @@ export const saveServerFromEditor = async ({
     note: formState.note.trim() || undefined,
     strictHostKey: formState.strictHostKey,
     enableSshCompression: formState.enableSshCompression,
+    disableCharacterWidthCompatibilityMode: formState.disableCharacterWidthCompatibilityMode,
     terminalClipboardAccess: formState.terminalClipboardAccess,
   };
 

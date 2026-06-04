@@ -18,6 +18,7 @@ test('multi-tab retry remains bound to each tab snapshot', () => {
     serverName: 'Server A',
     strictHostKey: true,
     enableSshCompression: false,
+    disableCharacterWidthCompatibilityMode: false,
     terminalClipboardAccess: 'off',
     capturedAt: 1,
   });
@@ -28,6 +29,7 @@ test('multi-tab retry remains bound to each tab snapshot', () => {
     serverName: 'Server B',
     strictHostKey: false,
     enableSshCompression: true,
+    disableCharacterWidthCompatibilityMode: true,
     terminalClipboardAccess: 'readWrite',
     capturedAt: 2,
   });
@@ -55,6 +57,7 @@ test('retry connect mode falls back to initial when no snapshot exists', () => {
     serverName: 'Server A',
     strictHostKey: true,
     enableSshCompression: false,
+    disableCharacterWidthCompatibilityMode: false,
     terminalClipboardAccess: 'off',
     capturedAt: 1,
   });
@@ -68,6 +71,7 @@ test('mirror pane reuses primary snapshot semantics', () => {
     serverName: 'Server B',
     strictHostKey: true,
     enableSshCompression: true,
+    disableCharacterWidthCompatibilityMode: true,
     terminalClipboardAccess: 'askAlways',
     capturedAt: 33,
   };

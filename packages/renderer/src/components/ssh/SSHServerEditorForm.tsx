@@ -49,6 +49,7 @@ type ServerEditorFormState = {
   tagIds: string[];
   strictHostKey: boolean;
   enableSshCompression: boolean;
+  disableCharacterWidthCompatibilityMode: boolean;
   terminalClipboardAccess: TerminalClipboardAccess;
 };
 
@@ -384,6 +385,20 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
             labelClassName={formStyles.inlineLabel}
           >
             {t('ssh.enableSshCompression')}
+          </LabelWithTooltip>
+        </div>
+        <div className="flex items-center gap-2.5 px-2.5">
+          <Switch
+            id="ssh-editor-disable-character-width-compatibility-mode"
+            checked={formState.disableCharacterWidthCompatibilityMode}
+            onCheckedChange={(checkedState) => onChangeForm('disableCharacterWidthCompatibilityMode', checkedState)}
+          />
+          <LabelWithTooltip
+            htmlFor="ssh-editor-disable-character-width-compatibility-mode"
+            tooltip={t('ssh.disableCharacterWidthCompatibilityModeTooltip')}
+            labelClassName={formStyles.inlineLabel}
+          >
+            {t('ssh.disableCharacterWidthCompatibilityMode')}
           </LabelWithTooltip>
         </div>
         <FormField>

@@ -135,6 +135,7 @@ sequenceDiagram
 - Scope defaults to local device (`deviceId=local-device`) while keeping account scope field for future sync.
 - Renderer bootstrap (`packages/renderer/src/main.tsx`) applies persisted language/theme using cached settings at startup, then synchronizes with backend.
 - Renderer date-time display uses persisted time-zone/date/time format settings through `packages/renderer/src/lib/date-time-format.ts`; `system` preserves the OS time zone, and the Settings UI lists runtime-supported IANA time zones with their current UTC offsets.
+- Renderer terminal character width compatibility is stored as `terminalCharacterWidthCompatibilityModeEnabled`; SSH server records can opt out per server with `disableCharacterWidthCompatibilityMode`, while local terminal sessions only follow the global setting.
 - Non-visual settings (for example SSH runtime limits) are persisted and discoverable, but some are intentionally not bound to runtime behavior yet.
 - All setting definitions (types, defaults, constraints, enum sets, JSON schemas, UI metadata, categories) live in a single registry: `packages/api-contract/src/settings-registry.ts`. Adding or removing a setting only requires editing this file (plus i18n locale files).
 - Validation logic in `packages/api-contract/src/settings.ts` is now generic and registry-driven for common scalar rules (type check, enum, range, maxLength), with narrow custom validators for settings that need runtime checks or structured JSON normalization such as IANA time-zone support and the SFTP directory-list view.
@@ -219,7 +220,7 @@ flowchart LR
 ## 7. SSH Keychain Credential Model (2026-03)
 
 - SSH credentials are now persisted in `SshKeychain` and linked from `SshServer.keychainId`.
-- `SshServer` keeps connection identity and host/transport policy (`host`, `port`, `username`, `strictHostKey`, `enableSshCompression`) but no longer stores encrypted password/private-key fields directly.
+- `SshServer` keeps connection identity, host/transport policy (`host`, `port`, `username`, `strictHostKey`, `enableSshCompression`), and renderer terminal compatibility flags (`disableCharacterWidthCompatibilityMode`) but no longer stores encrypted password/private-key fields directly.
 - SSH transport compression is disabled by default. When enabled on a server record, the backend applies the same compression negotiation policy to SSH shell sessions, SFTP sessions, and port-forwarding clients.
 - Keychain organization metadata reuses the same `SshFolder` and `SshTag` domains used by servers (no separate keychain-only folder/tag tables).
 - Existing per-server edit UX is preserved by allowing inline credential input in the SSH editor; backend transparently materializes/updates hidden keychains.

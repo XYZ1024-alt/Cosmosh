@@ -2139,6 +2139,8 @@ components:
           type: boolean
         enableSshCompression:
           type: boolean
+        disableCharacterWidthCompatibilityMode:
+          type: boolean
         terminalClipboardAccess:
           $ref: '#/components/schemas/TerminalClipboardAccess'
         hasPassword:
@@ -2203,6 +2205,8 @@ components:
         strictHostKey:
           type: boolean
         enableSshCompression:
+          type: boolean
+        disableCharacterWidthCompatibilityMode:
           type: boolean
         terminalClipboardAccess:
           $ref: '#/components/schemas/TerminalClipboardAccess'
