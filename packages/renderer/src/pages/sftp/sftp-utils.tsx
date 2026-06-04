@@ -554,7 +554,7 @@ export const dedupeSftpEntries = (entries: ApiSftpEntry[]): ApiSftpEntry[] => {
 };
 
 /**
- * Resolves a visible row range for Shift-click selection.
+ * Resolves a visible row range for modified selection.
  *
  * @param entries Entries in the current rendered order.
  * @param anchorPath Existing selection anchor path.

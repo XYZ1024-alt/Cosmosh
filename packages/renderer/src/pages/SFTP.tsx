@@ -56,6 +56,7 @@ import type {
   SftpOpenWithApplication,
   SftpQueuedTask,
   SftpSelectionClickEvent,
+  SftpSelectionModifierEvent,
   SftpTaskContext,
   SftpTaskOptions,
   SftpTaskState,
@@ -587,6 +588,46 @@ const SFTP: React.FC<SFTPProps> = ({
       setFilePreview(null);
     },
     [visibleEntries],
+  );
+
+  /**
+   * Applies desktop file-manager selection modifiers to one target entry.
+   *
+   * @param entry Entry that receives the selection action.
+   * @param event Platform modifier key snapshot for the action.
+   * @param options Selection anchor override for keyboard range expansion.
+   * @returns void.
+   */
+  const selectEntryWithModifiers = React.useCallback(
+    (entry: ApiSftpEntry, event: SftpSelectionModifierEvent, options: { rangeAnchorPath?: string } = {}): void => {
+      const shouldToggle = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+      const shouldExtendRange = event.shiftKey;
+
+      if (shouldExtendRange) {
+        const anchorPath = options.rangeAnchorPath ?? selectionAnchorPath;
+        selectEntryRange(anchorPath, entry.path, shouldToggle);
+        if (!selectionAnchorPath) {
+          setSelectionAnchorPath(anchorPath || entry.path);
+        }
+        return;
+      }
+
+      if (shouldToggle) {
+        setSelectedPaths((previous) => {
+          if (previous.includes(entry.path)) {
+            return previous.filter((path) => path !== entry.path);
+          }
+
+          return [...previous, entry.path];
+        });
+        setSelectionAnchorPath(entry.path);
+        setFilePreview(null);
+        return;
+      }
+
+      selectSingleEntry(entry);
+    },
+    [selectEntryRange, selectSingleEntry, selectionAnchorPath],
   );
 
   const pruneSelectionToEntries = React.useCallback((nextEntries: ApiSftpEntry[]): void => {
@@ -2588,33 +2629,9 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const handleEntrySelect = React.useCallback(
     (entry: ApiSftpEntry, event: SftpSelectionClickEvent): void => {
-      const shouldToggle = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
-      const shouldExtendRange = event.shiftKey;
-
-      if (shouldExtendRange) {
-        selectEntryRange(selectionAnchorPath, entry.path, shouldToggle);
-        if (!selectionAnchorPath) {
-          setSelectionAnchorPath(entry.path);
-        }
-        return;
-      }
-
-      if (shouldToggle) {
-        setSelectedPaths((previous) => {
-          if (previous.includes(entry.path)) {
-            return previous.filter((path) => path !== entry.path);
-          }
-
-          return [...previous, entry.path];
-        });
-        setSelectionAnchorPath(entry.path);
-        setFilePreview(null);
-        return;
-      }
-
-      selectSingleEntry(entry);
+      selectEntryWithModifiers(entry, event);
     },
-    [selectEntryRange, selectSingleEntry, selectionAnchorPath],
+    [selectEntryWithModifiers],
   );
 
   const handleEntryContextMenu = React.useCallback(
@@ -2644,8 +2661,22 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
+      const hasSelectionModifier = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+
+      if ((event.key === ' ' || event.key === 'Spacebar') && row.kind === 'entry') {
+        event.preventDefault();
+        event.stopPropagation();
+        selectEntryWithModifiers(row.entry, {
+          ctrlKey: event.ctrlKey,
+          metaKey: event.metaKey,
+          shiftKey: event.shiftKey,
+        });
+        return;
+      }
+
       if (event.key === 'Enter') {
         event.preventDefault();
+        event.stopPropagation();
         if (row.kind === 'parent') {
           handleParentDirectory();
           return;
@@ -2682,10 +2713,29 @@ const SFTP: React.FC<SFTPProps> = ({
 
       focusFileRow(nextRow.key);
       if (nextRow.kind === 'entry') {
-        selectSingleEntry(nextRow.entry);
+        const rangeAnchorPath =
+          event.shiftKey && row.kind === 'entry' && !selectionAnchorPath ? row.entry.path : undefined;
+        if (!hasSelectionModifier || event.shiftKey) {
+          selectEntryWithModifiers(
+            nextRow.entry,
+            {
+              ctrlKey: event.ctrlKey,
+              metaKey: event.metaKey,
+              shiftKey: event.shiftKey,
+            },
+            { rangeAnchorPath },
+          );
+        }
       }
     },
-    [fileNavigationRows, focusFileRow, handleEntryOpen, handleParentDirectory, selectSingleEntry],
+    [
+      fileNavigationRows,
+      focusFileRow,
+      handleEntryOpen,
+      handleParentDirectory,
+      selectEntryWithModifiers,
+      selectionAnchorPath,
+    ],
   );
 
   React.useEffect(() => {
@@ -2714,6 +2764,14 @@ const SFTP: React.FC<SFTPProps> = ({
       }
 
       const hasShortcutModifier = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+      if (hasShortcutModifier && event.key.toLowerCase() === 'a' && visibleEntries.length > 0) {
+        event.preventDefault();
+        setSelectedPaths(visibleEntries.map((entry) => entry.path));
+        setSelectionAnchorPath(visibleEntries[0]?.path ?? '');
+        setFilePreview(null);
+        return;
+      }
+
       if (hasShortcutModifier && event.key.toLowerCase() === 'x' && hasSelection) {
         event.preventDefault();
         handleCutEntries(selectedEntries);
@@ -2789,6 +2847,7 @@ const SFTP: React.FC<SFTPProps> = ({
     hasSelection,
     selectedEntry,
     selectedEntries,
+    visibleEntries,
   ]);
 
   const handleTreeNodeToggle = React.useCallback(

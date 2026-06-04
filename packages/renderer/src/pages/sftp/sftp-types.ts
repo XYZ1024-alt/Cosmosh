@@ -139,9 +139,18 @@ export type SftpActionMenuOptions = {
 };
 
 /**
- * Mouse modifier snapshot used by SFTP row selection logic.
+ * Platform selection modifier snapshot used by SFTP row selection logic.
  */
-export type SftpSelectionClickEvent = Pick<React.MouseEvent<HTMLElement>, 'ctrlKey' | 'metaKey' | 'shiftKey'>;
+export type SftpSelectionModifierEvent = {
+  ctrlKey: boolean;
+  metaKey: boolean;
+  shiftKey: boolean;
+};
+
+/**
+ * Mouse modifier snapshot used by SFTP row click selection.
+ */
+export type SftpSelectionClickEvent = SftpSelectionModifierEvent;
 
 /**
  * Source surface used to decide whether delete confirmation is required.
