@@ -65,6 +65,8 @@ export interface SettingsValues {
   terminalSelectionBarEnabled: boolean;
   terminalBracketedPasteEnabled: boolean;
   terminalCharacterWidthCompatibilityModeEnabled: boolean;
+  terminalWebLinksEnabled: boolean;
+  terminalWebLinksRequireModifierKey: boolean;
   terminalTextDropMode: 'off' | 'always' | 'external';
   localTerminalClipboardAccess: TerminalClipboardAccess;
   terminalContextLaunchBehavior: 'openDefaultLocalTerminal' | 'openLocalTerminalList' | 'off';
@@ -869,6 +871,32 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.characterWidthCompatibilityMode.enabled',
     commandActionId: 'settings.terminal.runtime.characterWidthCompatibilityMode.enabled.toggle',
     searchTerms: ['terminal', 'unicode 11', 'character width', 'width compatibility', 'alignment'],
+  },
+  {
+    key: 'terminalWebLinksEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalWebLinksEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalWebLinksEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.webLinks.enabled',
+    commandActionId: 'settings.terminal.runtime.webLinks.enabled.toggle',
+    searchTerms: ['terminal', 'links', 'web links', 'url', 'open url', 'click link'],
+  },
+  {
+    key: 'terminalWebLinksRequireModifierKey',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalWebLinksRequireModifierKey.title',
+    descriptionI18nKey: 'settings.items.terminalWebLinksRequireModifierKey.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.webLinks.requireModifierKey',
+    commandActionId: 'settings.terminal.runtime.webLinks.requireModifierKey.toggle',
+    searchTerms: ['terminal', 'links', 'web links', 'url', 'ctrl click', 'cmd click', 'modifier click'],
   },
   {
     key: 'localTerminalClipboardAccess',

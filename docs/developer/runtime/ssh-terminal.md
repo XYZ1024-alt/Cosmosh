@@ -226,6 +226,7 @@ flowchart LR
 - Renderer binds Settings `sshMaxRows` to xterm `scrollback` when initializing SSH terminal.
 - Renderer uses `FitAddon` + resize observer to keep shell size synchronized.
 - Renderer uses `@xterm/addon-webgl` for hardware-accelerated terminal rendering when Settings `terminalHardwareAccelerationEnabled` is enabled (default on).
+- Renderer uses `@xterm/addon-web-links` to detect HTTP/HTTPS URLs in terminal output when Settings `terminalWebLinksEnabled` is enabled (default on).
 - Backend normalizes terminal sizes to prevent extreme allocations (`20-400 cols`, `10-200 rows`).
 - Pending output queue avoids losing early SSH output before WS attach.
 - Pending output buffering is bounded by chunk count and total bytes; overflow drops oldest chunks and emits drop logs.
@@ -257,6 +258,8 @@ Renderer now maps terminal runtime behavior from Settings to `ITerminalOptions` 
   - Both policies default to `off`. Supported modes are `off`, `writeAskRead`, `readWrite`, and `askAlways`.
   - Write/read operations always surface a toast unless the operation was just approved through the explicit permission dialog; that approval is scoped to the single clipboard request.
   - `@xterm/addon-clipboard` handles protocol base64 encoding/decoding; the provider only receives and returns decoded text before calling `navigator.clipboard`.
+  - `terminalWebLinksEnabled` controls `@xterm/addon-web-links` loading for SSH and local terminal sessions, including split panes. The setting defaults to enabled, applies only to newly created xterm instances, and opens recognized HTTP/HTTPS links through Cosmosh's Electron external URL bridge.
+  - `terminalWebLinksRequireModifierKey` defaults to enabled. When enabled, Windows/Linux links require `Ctrl+Click`, macOS links require `Cmd+Click`, plain clicks only select/focus terminal text, and link hovers show the pointer cursor only while the required modifier key is held. When disabled, a primary-button click opens links directly. Secondary-button clicks never open terminal links so right-click remains reserved for terminal context menus; on macOS, `Ctrl+Click` is also reserved for that context-menu gesture and never opens terminal links.
 
 Notes:
 

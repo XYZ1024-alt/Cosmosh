@@ -602,6 +602,14 @@
         "description": "控制何时允许通过拖拽将文本插入终端。",
         "title": "拖拽到终端"
       },
+      "terminalWebLinksEnabled": {
+        "description": "识别终端输出中的 HTTP 与 HTTPS URL，并通过 Cosmosh 的外部浏览器桥接打开。",
+        "title": "终端网页链接"
+      },
+      "terminalWebLinksRequireModifierKey": {
+        "description": "需要 Ctrl+单击才能打开终端链接。macOS 使用 Cmd+单击。",
+        "title": "使用 Ctrl/Cmd+单击打开链接"
+      },
       "theme": {
         "description": "控制在界面中使用的颜色主题。",
         "title": "主题"

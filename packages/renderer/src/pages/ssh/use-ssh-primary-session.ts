@@ -22,8 +22,10 @@ import {
   loadTerminalAddons,
   resolveTerminalCharacterWidthCompatibilityMode,
   syncTerminalWebglAddon,
+  type TerminalExternalLinkHandler,
   type TerminalHardwareAccelerationState,
   type TerminalWebglAddonRuntime,
+  type TerminalWebLinksSettings,
 } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
@@ -48,6 +50,8 @@ type UseSshPrimarySessionParams = {
   sshConnectionTimeoutSecRef: React.RefObject<number>;
   sshReconnectOnFocusRef: React.RefObject<boolean>;
   terminalClipboardProvider: TerminalClipboardProvider;
+  terminalWebLinksSettingsRef: React.RefObject<TerminalWebLinksSettings>;
+  openExternalLinkRef: React.RefObject<TerminalExternalLinkHandler>;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
   connectSessionRef: React.RefObject<(() => void) | null>;
   selectionPointerClientXRef: React.RefObject<number | null>;
@@ -108,6 +112,8 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
     terminalClipboardProvider,
+    terminalWebLinksSettingsRef,
+    openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,
@@ -157,7 +163,9 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       characterWidthCompatibilityModeEnabledRef.current,
     );
     const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
-    const addonRuntime = loadTerminalAddons(terminal);
+    const addonRuntime = loadTerminalAddons(terminal, terminalWebLinksSettingsRef.current, (targetUrl) => {
+      openExternalLinkRef.current(targetUrl);
+    });
     const { fitAddon, searchAddon } = addonRuntime;
     primaryWebglAddonRuntimeRef.current = addonRuntime;
     terminal.loadAddon(clipboardAddon);
@@ -625,6 +633,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     handleAutocompleteTerminalKeyDownRef,
     handleCompletionResponse,
     hardwareAccelerationStateRef,
+    openExternalLinkRef,
     notifyAutocompleteOutputEchoRef,
     notifyHardwareAccelerationContextLoss,
     onTabTitleChangeRef,
@@ -650,6 +659,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     terminalInitOptionsRef,
     terminalClipboardProvider,
     terminalRef,
+    terminalWebLinksSettingsRef,
   ]);
 
   React.useEffect(() => {

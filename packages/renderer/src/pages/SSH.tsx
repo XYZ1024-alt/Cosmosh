@@ -36,6 +36,7 @@ import {
 } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
+import type { TerminalWebLinksPlatform } from './ssh/terminal-addons';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
@@ -74,6 +75,20 @@ const TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT = 'Ctrl+L';
 const TERMINAL_SELECTION_LINK_PATTERN = /^[a-z][a-z0-9+.-]*:\S+$/i;
 /** Matches Windows absolute paths that should not be treated as URLs. */
 const TERMINAL_WINDOWS_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;
+
+/**
+ * Narrows Electron platform values to those needed by terminal web-link policy.
+ *
+ * @param platform Platform value exposed by preload.
+ * @returns Platform value used by terminal link modifier policy.
+ */
+const resolveTerminalWebLinksPlatform = (platform: NodeJS.Platform | undefined): TerminalWebLinksPlatform => {
+  if (platform === 'darwin' || platform === 'linux' || platform === 'win32') {
+    return platform;
+  }
+
+  return undefined;
+};
 
 /**
  * Resolves selection text into an external link when it is already a URL.
@@ -140,6 +155,16 @@ const SSH: React.FC<SSHProps> = ({
   }, [connectionIntent.lastResolvedSnapshot, terminalCharacterWidthCompatibilityModeEnabled]);
   const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
+  const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
+  const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
+  const terminalWebLinksSettings = React.useMemo(
+    () => ({
+      enabled: terminalWebLinksEnabled,
+      requireModifierKey: terminalWebLinksRequireModifierKey,
+      platform: resolveTerminalWebLinksPlatform(window.electron?.platform),
+    }),
+    [terminalWebLinksEnabled, terminalWebLinksRequireModifierKey],
+  );
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
       getComputedStyle(document.documentElement).getPropertyValue('--color-ssh-terminal').trim() || '#cccccc';
@@ -238,6 +263,46 @@ const SSH: React.FC<SSHProps> = ({
     },
   });
 
+  /**
+   * Opens an external URL via Electron shell or browser fallback.
+   *
+   * @param targetUrl External URL to open.
+   * @param failureMessage Localized error message shown when open fails.
+   * @returns Nothing.
+   */
+  const openExternalTarget = React.useCallback(
+    (targetUrl: string, failureMessage: string): void => {
+      try {
+        if (window.electron?.openExternalUrl) {
+          void window.electron.openExternalUrl(targetUrl).then((opened) => {
+            if (!opened) {
+              notifyError(failureMessage);
+            }
+          });
+          return;
+        }
+
+        const openedWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
+        if (!openedWindow) {
+          notifyError(failureMessage);
+          return;
+        }
+
+        openedWindow.opener = null;
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : failureMessage);
+      }
+    },
+    [notifyError],
+  );
+
+  const openTerminalWebLink = React.useCallback(
+    (targetUrl: string): void => {
+      openExternalTarget(targetUrl, t('ssh.selectionBarOpenLinkFailed'));
+    },
+    [openExternalTarget],
+  );
+
   const sshCore = useSshCore({
     tabId,
     isActive,
@@ -259,10 +324,12 @@ const SSH: React.FC<SSHProps> = ({
     characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
+    terminalWebLinksSettings,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
     onTabTitleChange,
     onTabVisualChange,
+    openExternalLink: openTerminalWebLink,
     notifyWarning,
   });
 
@@ -426,39 +493,6 @@ const SSH: React.FC<SSHProps> = ({
       }
     },
     [notifyError, notifySuccess],
-  );
-
-  /**
-   * Opens an external URL via Electron shell or browser fallback.
-   *
-   * @param targetUrl External URL to open.
-   * @param failureMessage Localized error message shown when open fails.
-   * @returns Nothing.
-   */
-  const openExternalTarget = React.useCallback(
-    (targetUrl: string, failureMessage: string): void => {
-      try {
-        if (window.electron?.openExternalUrl) {
-          void window.electron.openExternalUrl(targetUrl).then((opened) => {
-            if (!opened) {
-              notifyError(failureMessage);
-            }
-          });
-          return;
-        }
-
-        const openedWindow = window.open(targetUrl, '_blank', 'noopener,noreferrer');
-        if (!openedWindow) {
-          notifyError(failureMessage);
-          return;
-        }
-
-        openedWindow.opener = null;
-      } catch (error: unknown) {
-        notifyError(error instanceof Error ? error.message : failureMessage);
-      }
-    },
-    [notifyError],
   );
 
   const openSearchForText = React.useCallback(

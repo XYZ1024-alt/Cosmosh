@@ -602,6 +602,14 @@
         "description": "Controls when drag-and-drop text insertion into terminal is enabled.",
         "title": "Drag To Terminal"
       },
+      "terminalWebLinksEnabled": {
+        "description": "Detect HTTP and HTTPS URLs in terminal output and open them through Cosmosh's external browser bridge.",
+        "title": "Terminal Web Links"
+      },
+      "terminalWebLinksRequireModifierKey": {
+        "description": "Require Ctrl+Click to open terminal links. On macOS, use Cmd+Click.",
+        "title": "Use Ctrl/Cmd+Click to Open Links"
+      },
       "theme": {
         "description": "Controls the color theme used in the interface.",
         "title": "Theme"

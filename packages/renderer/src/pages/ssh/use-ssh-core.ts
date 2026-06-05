@@ -20,8 +20,10 @@ import { sendClientMessage } from './ssh-utils';
 import {
   disposeTerminalWebglAddon,
   syncTerminalWebglAddon,
+  type TerminalExternalLinkHandler,
   type TerminalHardwareAccelerationState,
   type TerminalWebglAddonRuntime,
+  type TerminalWebLinksSettings,
 } from './terminal-addons';
 import { useSshAutocomplete } from './use-ssh-autocomplete';
 import { useSshMirrorPanes } from './use-ssh-mirror-panes';
@@ -178,11 +180,13 @@ export type UseSshCoreParams = {
   characterWidthCompatibilityModeEnabled: boolean;
   terminalClipboardProvider: TerminalClipboardProvider;
   terminalHardwareAccelerationEnabled: boolean;
+  terminalWebLinksSettings: TerminalWebLinksSettings;
   terminalSelectionBarEnabled: boolean;
   sshReconnectOnFocus: boolean;
   onTabTitleChange?: (title: string) => void;
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
   requestHostFingerprintTrust?: (prompt: HostFingerprintPrompt) => Promise<boolean>;
+  openExternalLink: TerminalExternalLinkHandler;
   notifyWarning: (message: string) => void;
 };
 
@@ -386,11 +390,13 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
+    terminalWebLinksSettings,
     terminalSelectionBarEnabled,
     sshReconnectOnFocus,
     onTabTitleChange,
     onTabVisualChange,
     requestHostFingerprintTrust,
+    openExternalLink,
     notifyWarning,
   } = params;
 
@@ -500,6 +506,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const characterWidthCompatibilityModeEnabledRef = React.useRef<boolean>(characterWidthCompatibilityModeEnabled);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
   const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
+  const terminalWebLinksSettingsRef = React.useRef<TerminalWebLinksSettings>(terminalWebLinksSettings);
+  const openExternalLinkRef = React.useRef<TerminalExternalLinkHandler>(openExternalLink);
   const hardwareAccelerationStateRef = React.useRef<TerminalHardwareAccelerationState>({
     isEnabledBySettings: terminalHardwareAccelerationEnabled,
     isRuntimeDisabled: false,
@@ -540,6 +548,14 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     sshReconnectOnFocusRef.current = sshReconnectOnFocus;
   }, [sshReconnectOnFocus]);
+
+  React.useEffect(() => {
+    terminalWebLinksSettingsRef.current = terminalWebLinksSettings;
+  }, [terminalWebLinksSettings]);
+
+  React.useEffect(() => {
+    openExternalLinkRef.current = openExternalLink;
+  }, [openExternalLink]);
 
   const notifyHardwareAccelerationContextLoss = React.useCallback(() => {
     const accelerationState = hardwareAccelerationStateRef.current;
@@ -844,6 +860,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
     terminalClipboardProvider,
+    terminalWebLinksSettingsRef,
+    openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
     connectSessionRef,
     selectionPointerClientXRef,
@@ -880,6 +898,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
     terminalClipboardProvider,
+    terminalWebLinksSettingsRef,
+    openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
     wrapperRef,
     setActivePane: activatePane,
