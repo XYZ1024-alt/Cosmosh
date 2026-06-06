@@ -23,6 +23,14 @@ import {
   TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
   type TerminalClipboardAccess,
 } from './terminal-clipboard';
+import {
+  DEFAULT_TERMINAL_FORCE_SELECTION_MODIFIER,
+  DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
+  TERMINAL_FORCE_SELECTION_MODIFIER_OPTIONS,
+  TERMINAL_RIGHT_CLICK_ACTION_OPTIONS,
+  type TerminalForceSelectionModifier,
+  type TerminalRightClickAction,
+} from './terminal-interaction';
 
 // ── SettingsValues — strict canonical TypeScript interface ────
 
@@ -63,10 +71,18 @@ export interface SettingsValues {
   accountSyncEnabled: boolean;
   defaultServerNoteTemplate: string;
   terminalSelectionBarEnabled: boolean;
+  terminalCopyOnSelectionEnabled: boolean;
   terminalBracketedPasteEnabled: boolean;
+  terminalWarnOnMultiLinePaste: boolean;
+  terminalWarnOnLargePaste: boolean;
+  terminalLargePasteWarningThreshold: number;
+  terminalWarnOnControlCharactersPaste: boolean;
   terminalCharacterWidthCompatibilityModeEnabled: boolean;
   terminalWebLinksEnabled: boolean;
   terminalWebLinksRequireModifierKey: boolean;
+  terminalRightClickAction: TerminalRightClickAction;
+  terminalRightClickSelectsWord: boolean;
+  terminalForceSelectionModifier: TerminalForceSelectionModifier;
   terminalTextDropMode: 'off' | 'always' | 'external';
   localTerminalClipboardAccess: TerminalClipboardAccess;
   terminalContextLaunchBehavior: 'openDefaultLocalTerminal' | 'openLocalTerminalList' | 'off';
@@ -819,6 +835,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     searchTerms: ['terminal', 'orbit bar', 'floating bar', 'enable orbit bar'],
   },
   {
+    key: 'terminalCopyOnSelectionEnabled',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.terminalCopyOnSelectionEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalCopyOnSelectionEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.terminalSelection,
+    control: 'switch',
+    path: 'terminal.selection.copyOnSelection.enabled',
+    commandActionId: 'settings.terminal.selection.copyOnSelection.enabled.toggle',
+    searchTerms: ['terminal', 'selection', 'copy on selection', 'clipboard', 'mouse selection'],
+  },
+  {
     key: 'terminalTextDropMode',
     valueType: 'string',
     defaultValue: 'external',
@@ -860,6 +889,62 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     searchTerms: ['terminal', 'paste', 'multiline paste', 'safe paste', 'bracketed paste'],
   },
   {
+    key: 'terminalWarnOnMultiLinePaste',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalWarnOnMultiLinePaste.title',
+    descriptionI18nKey: 'settings.items.terminalWarnOnMultiLinePaste.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.pasteWarning.multiLine.enabled',
+    commandActionId: 'settings.terminal.runtime.pasteWarning.multiLine.enabled.toggle',
+    searchTerms: ['terminal', 'paste warning', 'multiline paste', 'multi line', 'safety'],
+  },
+  {
+    key: 'terminalWarnOnLargePaste',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalWarnOnLargePaste.title',
+    descriptionI18nKey: 'settings.items.terminalWarnOnLargePaste.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.pasteWarning.large.enabled',
+    commandActionId: 'settings.terminal.runtime.pasteWarning.large.enabled.toggle',
+    searchTerms: ['terminal', 'paste warning', 'large paste', 'big paste', 'safety'],
+  },
+  {
+    key: 'terminalLargePasteWarningThreshold',
+    valueType: 'number',
+    defaultValue: 5120,
+    nameI18nKey: 'settings.items.terminalLargePasteWarningThreshold.title',
+    descriptionI18nKey: 'settings.items.terminalLargePasteWarningThreshold.description',
+    placeholderI18nKey: 'settings.items.terminalLargePasteWarningThreshold.placeholder',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'input',
+    path: 'terminal.runtime.pasteWarning.large.threshold',
+    commandActionId: 'settings.terminal.runtime.pasteWarning.large.threshold.set',
+    searchTerms: ['terminal', 'paste warning', 'large paste', 'threshold', 'bytes', 'characters'],
+    inputMode: 'numeric',
+    min: 1,
+    max: 1000000,
+  },
+  {
+    key: 'terminalWarnOnControlCharactersPaste',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalWarnOnControlCharactersPaste.title',
+    descriptionI18nKey: 'settings.items.terminalWarnOnControlCharactersPaste.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.pasteWarning.controlCharacters.enabled',
+    commandActionId: 'settings.terminal.runtime.pasteWarning.controlCharacters.enabled.toggle',
+    searchTerms: ['terminal', 'paste warning', 'control characters', 'escape', 'bel', 'ansi sequence', 'safety'],
+  },
+  {
     key: 'terminalCharacterWidthCompatibilityModeEnabled',
     valueType: 'boolean',
     defaultValue: true,
@@ -897,6 +982,49 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.webLinks.requireModifierKey',
     commandActionId: 'settings.terminal.runtime.webLinks.requireModifierKey.toggle',
     searchTerms: ['terminal', 'links', 'web links', 'url', 'ctrl click', 'cmd click', 'modifier click'],
+  },
+  {
+    key: 'terminalRightClickAction',
+    valueType: 'string',
+    defaultValue: DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
+    nameI18nKey: 'settings.items.terminalRightClickAction.title',
+    descriptionI18nKey: 'settings.items.terminalRightClickAction.description',
+    optionI18nNamespace: 'terminalRightClickAction',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'select',
+    path: 'terminal.runtime.rightClick.action',
+    commandActionId: 'settings.terminal.runtime.rightClick.action.set',
+    searchTerms: ['terminal', 'right click', 'context menu', 'paste', 'copy selection'],
+    options: TERMINAL_RIGHT_CLICK_ACTION_OPTIONS.map((value) => ({ value })),
+  },
+  {
+    key: 'terminalRightClickSelectsWord',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.terminalRightClickSelectsWord.title',
+    descriptionI18nKey: 'settings.items.terminalRightClickSelectsWord.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.rightClick.selectsWord',
+    commandActionId: 'settings.terminal.runtime.rightClick.selectsWord.toggle',
+    searchTerms: ['terminal', 'right click', 'select word', 'rightClickSelectsWord'],
+  },
+  {
+    key: 'terminalForceSelectionModifier',
+    valueType: 'string',
+    defaultValue: DEFAULT_TERMINAL_FORCE_SELECTION_MODIFIER,
+    nameI18nKey: 'settings.items.terminalForceSelectionModifier.title',
+    descriptionI18nKey: 'settings.items.terminalForceSelectionModifier.description',
+    optionI18nNamespace: 'terminalForceSelectionModifier',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'select',
+    path: 'terminal.runtime.mouseMode.forceSelectionModifier',
+    commandActionId: 'settings.terminal.runtime.mouseMode.forceSelectionModifier.set',
+    searchTerms: ['terminal', 'mouse mode', 'force selection', 'alt', 'shift', 'ctrl', 'mac option'],
+    options: TERMINAL_FORCE_SELECTION_MODIFIER_OPTIONS.map((value) => ({ value })),
   },
   {
     key: 'localTerminalClipboardAccess',

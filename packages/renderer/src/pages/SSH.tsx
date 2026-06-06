@@ -29,10 +29,13 @@ import { useTerminalTextDropZone } from '../lib/use-terminal-text-drop-zone';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../types/tabs';
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import {
+  createTerminalPasteWarningRequest,
   parseOptionalNumberSetting,
   resolveSearchUrl,
   resolveSftpDirectoryPathFromSelection,
   resolveTerminalFontWeightSetting,
+  type TerminalPasteSafetySettings,
+  type TerminalPasteWarningRequest,
 } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
@@ -75,7 +78,9 @@ const TERMINAL_CLEAR_SHORTCUT_LABEL_DEFAULT = 'Ctrl+L';
 const TERMINAL_SELECTION_LINK_PATTERN = /^[a-z][a-z0-9+.-]*:\S+$/i;
 /** Matches Windows absolute paths that should not be treated as URLs. */
 const TERMINAL_WINDOWS_PATH_PATTERN = /^[a-zA-Z]:[\\/]/;
-
+/** Keeps paste-warning previews bounded while preserving real terminal text layout. */
+const TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME =
+  'bg-home-card/60 max-h-44 min-w-0 max-w-full overflow-x-auto overflow-y-auto whitespace-pre-wrap break-normal rounded-md border border-home-divider p-2 font-mono text-xs leading-5 text-home-text-subtle';
 /**
  * Narrows Electron platform values to those needed by terminal web-link policy.
  *
@@ -144,6 +149,24 @@ const SSH: React.FC<SSHProps> = ({
   const terminalAutoCompleteFuzzyMatch = settingsValues.terminalAutoCompleteFuzzyMatch;
   const terminalAutoCompletePromptRegex = settingsValues.terminalAutoCompletePromptRegex;
   const terminalBracketedPasteEnabled = settingsValues.terminalBracketedPasteEnabled;
+  const terminalCopyOnSelectionEnabled = settingsValues.terminalCopyOnSelectionEnabled;
+  const terminalRightClickAction = settingsValues.terminalRightClickAction;
+  const terminalRightClickSelectsWord = settingsValues.terminalRightClickSelectsWord;
+  const terminalForceSelectionModifier = settingsValues.terminalForceSelectionModifier;
+  const terminalPasteSafetySettings = React.useMemo<TerminalPasteSafetySettings>(
+    () => ({
+      warnOnMultiLinePaste: settingsValues.terminalWarnOnMultiLinePaste,
+      warnOnLargePaste: settingsValues.terminalWarnOnLargePaste,
+      largePasteWarningThreshold: settingsValues.terminalLargePasteWarningThreshold,
+      warnOnControlCharactersPaste: settingsValues.terminalWarnOnControlCharactersPaste,
+    }),
+    [
+      settingsValues.terminalLargePasteWarningThreshold,
+      settingsValues.terminalWarnOnControlCharactersPaste,
+      settingsValues.terminalWarnOnLargePaste,
+      settingsValues.terminalWarnOnMultiLinePaste,
+    ],
+  );
   const terminalCharacterWidthCompatibilityModeEnabled = settingsValues.terminalCharacterWidthCompatibilityModeEnabled;
   const characterWidthCompatibilityModeEnabled = React.useMemo(() => {
     const snapshot = connectionIntent.lastResolvedSnapshot;
@@ -202,7 +225,10 @@ const SSH: React.FC<SSHProps> = ({
       ignoreBracketedPasteMode: !terminalBracketedPasteEnabled,
       letterSpacing: settingsValues.terminalLetterSpacing,
       lineHeight: lineHeight ?? 1,
+      macOptionClickForcesSelection: terminalForceSelectionModifier === 'alt',
+      macOptionIsMeta: terminalForceSelectionModifier === 'alt' ? false : undefined,
       minimumContrastRatio,
+      rightClickSelectsWord: terminalRightClickSelectsWord,
       screenReaderMode: settingsValues.terminalScreenReaderMode,
       scrollback: sshMaxRows,
       scrollOnUserInput: settingsValues.terminalScrollOnUserInput,
@@ -228,9 +254,11 @@ const SSH: React.FC<SSHProps> = ({
     settingsValues.terminalFontWeight,
     settingsValues.terminalFontWeightBold,
     terminalBracketedPasteEnabled,
+    terminalForceSelectionModifier,
     settingsValues.terminalLetterSpacing,
     settingsValues.terminalLineHeight,
     settingsValues.terminalMinimumContrastRatio,
+    terminalRightClickSelectsWord,
     settingsValues.terminalScreenReaderMode,
     settingsValues.terminalScrollOnUserInput,
     settingsValues.terminalScrollSensitivity,
@@ -303,6 +331,25 @@ const SSH: React.FC<SSHProps> = ({
     [openExternalTarget],
   );
 
+  /**
+   * Copies terminal mouse selections when the global copy-on-selection setting is enabled.
+   *
+   * @param selectionText Current terminal selection text.
+   * @returns Nothing.
+   */
+  const handleTerminalSelectionChange = React.useCallback(
+    (selectionText: string): void => {
+      if (!terminalCopyOnSelectionEnabled || selectionText.trim().length === 0) {
+        return;
+      }
+
+      void navigator.clipboard.writeText(selectionText).catch(() => {
+        notifyError(t('ssh.selectionBarCopyFailed'));
+      });
+    },
+    [notifyError, terminalCopyOnSelectionEnabled],
+  );
+
   const sshCore = useSshCore({
     tabId,
     isActive,
@@ -330,6 +377,7 @@ const SSH: React.FC<SSHProps> = ({
     onTabTitleChange,
     onTabVisualChange,
     openExternalLink: openTerminalWebLink,
+    onTerminalSelectionChange: handleTerminalSelectionChange,
     notifyWarning,
   });
 
@@ -376,6 +424,8 @@ const SSH: React.FC<SSHProps> = ({
   const [terminalSearchQuery, setTerminalSearchQuery] = React.useState<string>('');
   const [terminalSearchCaseSensitive, setTerminalSearchCaseSensitive] = React.useState<boolean>(false);
   const [terminalSearchRegex, setTerminalSearchRegex] = React.useState<boolean>(false);
+  const [terminalPasteWarningRequest, setTerminalPasteWarningRequest] =
+    React.useState<TerminalPasteWarningRequest | null>(null);
   /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
   const isMacOS = window.electron?.platform === 'darwin';
   /** Platform-resolved copy shortcut label shown in terminal context menus. */
@@ -394,6 +444,8 @@ const SSH: React.FC<SSHProps> = ({
   const lastAutoSearchKeyRef = React.useRef<string>('');
   /** Holds deferred find-open timer id so pending callbacks can be canceled on unmount. */
   const deferredFindOpenTimeoutRef = React.useRef<number | null>(null);
+  /** Resolves the currently displayed paste-warning dialog. */
+  const terminalPasteWarningResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const terminalSearchOptions = React.useMemo(
     () => ({
       caseSensitive: terminalSearchCaseSensitive,
@@ -495,6 +547,67 @@ const SSH: React.FC<SSHProps> = ({
     [notifyError, notifySuccess],
   );
 
+  /**
+   * Opens the paste safety dialog and waits for the user's decision.
+   *
+   * @param request Warning request built from pasted text.
+   * @returns Whether the user accepted the paste.
+   */
+  const requestPasteWarningConfirmation = React.useCallback(
+    (request: TerminalPasteWarningRequest): Promise<boolean> => {
+      return new Promise((resolve) => {
+        terminalPasteWarningResolverRef.current?.(false);
+        terminalPasteWarningResolverRef.current = resolve;
+        setTerminalPasteWarningRequest(request);
+      });
+    },
+    [],
+  );
+
+  /**
+   * Resolves the current paste warning dialog.
+   *
+   * @param accepted Whether the user accepted the paste.
+   * @returns Nothing.
+   */
+  const resolveTerminalPasteWarning = React.useCallback((accepted: boolean): void => {
+    const resolver = terminalPasteWarningResolverRef.current;
+    terminalPasteWarningResolverRef.current = null;
+    setTerminalPasteWarningRequest(null);
+    resolver?.(accepted);
+  }, []);
+
+  /**
+   * Confirms dangerous paste payloads, then routes accepted text to the terminal.
+   *
+   * @param text Text from clipboard, selection insertion, or drag/drop.
+   * @returns Whether the payload was pasted.
+   */
+  const confirmAndPasteText = React.useCallback(
+    async (text: string): Promise<boolean> => {
+      if (!text) {
+        return false;
+      }
+
+      const warningRequest = createTerminalPasteWarningRequest(text, terminalPasteSafetySettings);
+      if (warningRequest) {
+        const accepted = await requestPasteWarningConfirmation(warningRequest);
+        if (!accepted) {
+          focusActiveTerminal();
+          return false;
+        }
+      }
+
+      const didPaste = pasteInput(text);
+      if (didPaste) {
+        focusActiveTerminal();
+      }
+
+      return didPaste;
+    },
+    [focusActiveTerminal, pasteInput, requestPasteWarningConfirmation, terminalPasteSafetySettings],
+  );
+
   const openSearchForText = React.useCallback(
     (text: string): void => {
       try {
@@ -555,9 +668,8 @@ const SSH: React.FC<SSHProps> = ({
       return;
     }
 
-    pasteInput(selectionAnchor.selectionText);
-    focusActiveTerminal();
-  }, [focusActiveTerminal, pasteInput, selectionAnchor]);
+    void confirmAndPasteText(selectionAnchor.selectionText);
+  }, [confirmAndPasteText, selectionAnchor]);
 
   const handleSelectionBarSearch = React.useCallback(() => {
     const selectionText = selectionAnchor?.selectionText ?? '';
@@ -612,14 +724,13 @@ const SSH: React.FC<SSHProps> = ({
       .readText()
       .then((text) => {
         if (text) {
-          pasteInput(text);
-          focusActiveTerminal();
+          void confirmAndPasteText(text);
         }
       })
       .catch(() => {
         // Clipboard read permission denied or unavailable; silently ignore.
       });
-  }, [focusActiveTerminal, pasteInput]);
+  }, [confirmAndPasteText]);
 
   const handleContextMenuSearchOnline = React.useCallback(() => {
     const selectionText = getSelectionText();
@@ -908,6 +1019,9 @@ const SSH: React.FC<SSHProps> = ({
         window.clearTimeout(deferredFindOpenTimeoutRef.current);
         deferredFindOpenTimeoutRef.current = null;
       }
+
+      terminalPasteWarningResolverRef.current?.(false);
+      terminalPasteWarningResolverRef.current = null;
     };
   }, []);
 
@@ -1136,10 +1250,9 @@ const SSH: React.FC<SSHProps> = ({
 
   const handleTerminalTextDrop = React.useCallback(
     (droppedText: string) => {
-      pasteInput(droppedText);
-      focusActiveTerminal();
+      void confirmAndPasteText(droppedText);
     },
-    [focusActiveTerminal, pasteInput],
+    [confirmAndPasteText],
   );
 
   const selectionText = selectionAnchor?.selectionText ?? '';
@@ -1198,6 +1311,7 @@ const SSH: React.FC<SSHProps> = ({
           pasteShortcutLabel={terminalPasteShortcutLabel}
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
+          rightClickAction={terminalRightClickAction}
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
@@ -1415,6 +1529,62 @@ const SSH: React.FC<SSHProps> = ({
             </DialogSecondaryButton>
             <DialogPrimaryButton onClick={() => resolveHostFingerprintPrompt(true)}>
               {t('ssh.hostFingerprintDialogTrustContinue')}
+            </DialogPrimaryButton>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={terminalPasteWarningRequest !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            resolveTerminalPasteWarning(false);
+          }
+        }}
+      >
+        <DialogContent
+          showCloseButton={false}
+          onInteractOutside={(event) => event.preventDefault()}
+          onEscapeKeyDown={(event) => {
+            event.preventDefault();
+            resolveTerminalPasteWarning(false);
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('ssh.pasteWarning.title')}</DialogTitle>
+            {terminalPasteWarningRequest ? (
+              <DialogDescription className="grid gap-1">
+                {terminalPasteWarningRequest.reasons.map((reason) => (
+                  <span
+                    key={reason}
+                    className="text-dialog-text"
+                  >
+                    {t(`ssh.pasteWarning.reasons.${reason}`, {
+                      count: terminalPasteWarningRequest.characterCount,
+                      threshold: terminalPasteWarningRequest.threshold,
+                    })}
+                  </span>
+                ))}
+                <span>{t('ssh.pasteWarning.description')}</span>
+              </DialogDescription>
+            ) : (
+              <DialogDescription>{t('ssh.pasteWarning.description')}</DialogDescription>
+            )}
+          </DialogHeader>
+
+          {terminalPasteWarningRequest?.preview ? (
+            <div className="min-w-0 max-w-full text-sm">
+              <div className="text-home-text mb-1">{t('ssh.pasteWarning.previewLabel')}</div>
+              <pre className={TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME}>{terminalPasteWarningRequest.preview}</pre>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <DialogSecondaryButton onClick={() => resolveTerminalPasteWarning(false)}>
+              {t('ssh.pasteWarning.cancel')}
+            </DialogSecondaryButton>
+            <DialogPrimaryButton onClick={() => resolveTerminalPasteWarning(true)}>
+              {t('ssh.pasteWarning.pasteAnyway')}
             </DialogPrimaryButton>
           </DialogFooter>
         </DialogContent>

@@ -53,6 +53,13 @@ export {
   TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
 } from './terminal-clipboard';
 export type { TerminalClipboardAccess } from './terminal-clipboard';
+export {
+  DEFAULT_TERMINAL_FORCE_SELECTION_MODIFIER,
+  DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
+  TERMINAL_FORCE_SELECTION_MODIFIER_OPTIONS,
+  TERMINAL_RIGHT_CLICK_ACTION_OPTIONS,
+} from './terminal-interaction';
+export type { TerminalForceSelectionModifier, TerminalRightClickAction } from './terminal-interaction';
 
 import type { components, paths } from './generated';
 import type { SettingsValues } from './settings-registry';

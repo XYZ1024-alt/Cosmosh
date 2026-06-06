@@ -1,3 +1,4 @@
+import { DEFAULT_TERMINAL_RIGHT_CLICK_ACTION, type TerminalRightClickAction } from '@cosmosh/api-contract';
 import {
   ClipboardPaste,
   Copy,
@@ -57,6 +58,8 @@ type TerminalContextMenuProps = {
   canCloseTerminal?: boolean;
   /** Whether the selected text can be opened as a remote SFTP directory. */
   canOpenDirectoryInSftp?: boolean;
+  /** Action executed by terminal right-click gestures. */
+  rightClickAction?: TerminalRightClickAction;
   onCopy: () => void;
   onPaste: () => void;
   onSearchOnline: () => void;
@@ -93,6 +96,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   canSplitTerminal = false,
   canCloseTerminal = false,
   canOpenDirectoryInSftp = false,
+  rightClickAction = DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
   onCopy,
   onPaste,
   onSearchOnline,
@@ -119,24 +123,60 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   // cycle in practice (before the user can reach the item).
   const [clipboardHasContent, setClipboardHasContent] = React.useState(true);
 
-  const handleOpenChange = React.useCallback((open: boolean): void => {
-    if (!open) {
-      return;
-    }
+  const shouldOpenContextMenu = rightClickAction === 'contextMenu';
 
-    preventCloseAutoFocusRef.current = false;
+  const handleOpenChange = React.useCallback(
+    (open: boolean): void => {
+      if (!shouldOpenContextMenu) {
+        return;
+      }
 
-    void navigator.clipboard
-      .readText()
-      .then((text) => {
-        setClipboardHasContent(text.length > 0);
-      })
-      .catch(() => {
-        // Clipboard permission denied or unavailable — assume content exists
-        // rather than falsely disabling the item.
-        setClipboardHasContent(true);
-      });
-  }, []);
+      if (!open) {
+        return;
+      }
+
+      preventCloseAutoFocusRef.current = false;
+
+      void navigator.clipboard
+        .readText()
+        .then((text) => {
+          setClipboardHasContent(text.length > 0);
+        })
+        .catch(() => {
+          // Clipboard permission denied or unavailable — assume content exists
+          // rather than falsely disabling the item.
+          setClipboardHasContent(true);
+        });
+    },
+    [shouldOpenContextMenu],
+  );
+
+  /**
+   * Executes configured non-menu right-click behavior before Radix opens.
+   *
+   * @param event Pointer event from terminal context-menu trigger.
+   * @returns Nothing.
+   */
+  const handleTriggerContextMenu = React.useCallback(
+    (event: React.MouseEvent<HTMLDivElement>): void => {
+      if (shouldOpenContextMenu) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (rightClickAction === 'copyOnSelectionElsePaste' && hasSelection) {
+        onCopy();
+        return;
+      }
+
+      if (isConnected) {
+        onPaste();
+      }
+    },
+    [hasSelection, isConnected, onCopy, onPaste, rightClickAction, shouldOpenContextMenu],
+  );
 
   /**
    * Handles Find selection and marks this menu close cycle to skip trigger
@@ -206,6 +246,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           ref={triggerHostRef}
           className="h-full w-full"
           data-input-context-menu-ignore="true"
+          onContextMenu={handleTriggerContextMenu}
         >
           {children}
         </div>

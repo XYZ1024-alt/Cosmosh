@@ -70,7 +70,8 @@ type UseSshPrimarySessionParams = {
     fingerprint: string;
   }) => Promise<boolean>;
   setActivePane: (paneId: string) => void;
-  refreshSelectionAnchor: () => void;
+  refreshSelectionAnchor: () => string | null;
+  onTerminalSelectionChange: (selectionText: string) => void;
   clearSelectionOverlay: () => void;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
   notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
@@ -125,6 +126,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
+    onTerminalSelectionChange,
     clearSelectionOverlay,
     applyAutocompleteInputData,
     notifyAutocompleteOutputEchoRef,
@@ -139,6 +141,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   const connectionIntentRef = React.useRef<SshConnectionIntent>(connectionIntent);
   const tabIdRef = React.useRef<string>(tabId);
   const onConnectionIntentChangeRef = React.useRef<(nextIntent: SshConnectionIntent) => void>(onConnectionIntentChange);
+  const onTerminalSelectionChangeRef = React.useRef<(selectionText: string) => void>(onTerminalSelectionChange);
   const resumeConnectRef = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
@@ -156,6 +159,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   React.useEffect(() => {
     onConnectionIntentChangeRef.current = onConnectionIntentChange;
   }, [onConnectionIntentChange]);
+
+  React.useEffect(() => {
+    onTerminalSelectionChangeRef.current = onTerminalSelectionChange;
+  }, [onTerminalSelectionChange]);
 
   React.useEffect(() => {
     const terminal = createTerminalInstance(
@@ -537,7 +544,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     };
     containerElement.addEventListener('keydown', handleAutocompleteKeyDown, true);
     const disposeSelectionChange = terminal.onSelectionChange(() => {
-      refreshSelectionAnchor();
+      const selectionText = refreshSelectionAnchor();
+      if (selectionText) {
+        onTerminalSelectionChangeRef.current(selectionText);
+      }
     });
     const disposeSelectionScroll = terminal.onScroll(() => {
       refreshSelectionAnchor();

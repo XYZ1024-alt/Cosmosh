@@ -14,6 +14,32 @@ const MAX_PROMPT_TOKENS_TO_SCAN = 12;
 const SHELL_QUOTED_PATH_PATTERN = /^(['"])([\s\S]+)\1$/;
 const SHELL_FILE_URL_PATTERN = /^file:\/\/([^?#]*)/i;
 const REMOTE_DIRECTORY_PATH_PATTERN = /^(?:\/|~(?=\/|$)|\.{1,2}(?=\/|$)).*/;
+/** Maximum paste preview length shown in the safety dialog. */
+const TERMINAL_PASTE_WARNING_PREVIEW_MAX_LENGTH = 240;
+/** Matches newline forms that make a paste span multiple terminal input lines. */
+const TERMINAL_MULTILINE_PATTERN = /\r\n|\n|\r/;
+/** ASCII escape byte used by terminal control sequences. */
+const TERMINAL_ESCAPE_CODE_POINT = 0x1b;
+/** ASCII bell byte used by OSC terminators and audible/visual alerts. */
+const TERMINAL_BELL_CODE_POINT = 0x07;
+
+export type TerminalPasteWarningReason = 'multiLine' | 'largeText' | 'controlCharacters';
+
+export type TerminalPasteWarningRequest = {
+  id: string;
+  text: string;
+  reasons: TerminalPasteWarningReason[];
+  characterCount: number;
+  threshold: number;
+  preview: string;
+};
+
+export type TerminalPasteSafetySettings = {
+  warnOnMultiLinePaste: boolean;
+  warnOnLargePaste: boolean;
+  largePasteWarningThreshold: number;
+  warnOnControlCharactersPaste: boolean;
+};
 
 type PromptBoundaryToken = {
   value: string;
@@ -28,6 +54,124 @@ type CommandStartResolveOptions = {
  * Detects common password/passphrase prompt endings in terminal output.
  */
 export const SECRET_PROMPT_PATTERN = /(password(?: for [^:]+)?:|passphrase(?: for [^:]+)?:)\s*$/i;
+
+/**
+ * Formats pasted text for a compact safety-dialog preview.
+ *
+ * @param text Text that is about to be pasted.
+ * @returns Preview text with tabs made readable while real line breaks stay visible.
+ */
+export const formatTerminalPastePreview = (text: string): string => {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const compact =
+    normalized.length <= TERMINAL_PASTE_WARNING_PREVIEW_MAX_LENGTH
+      ? normalized
+      : `${normalized.slice(0, TERMINAL_PASTE_WARNING_PREVIEW_MAX_LENGTH - 3)}...`;
+
+  return compact.replace(/\t/g, '\\t');
+};
+
+/**
+ * Checks whether one code point is a terminal control byte worth warning about.
+ *
+ * @param codePoint Character code point.
+ * @returns True when the code point is a non-whitespace control byte.
+ */
+const isTerminalControlCodePoint = (codePoint: number): boolean => {
+  if (codePoint === 0x09 || codePoint === 0x0a || codePoint === 0x0d) {
+    return false;
+  }
+
+  return (codePoint >= 0x00 && codePoint <= 0x1f) || (codePoint >= 0x7f && codePoint <= 0x9f);
+};
+
+/**
+ * Checks whether ESC is followed by a plausible ANSI control-sequence introducer.
+ *
+ * @param text Candidate paste payload.
+ * @param escapeIndex Index of ESC in the payload.
+ * @returns True when the following byte starts a common terminal sequence.
+ */
+const startsTerminalEscapeSequence = (text: string, escapeIndex: number): boolean => {
+  const nextCodePoint = text.codePointAt(escapeIndex + 1);
+  if (nextCodePoint === undefined) {
+    return true;
+  }
+
+  return nextCodePoint >= 0x40 && nextCodePoint <= 0x5f;
+};
+
+/**
+ * Checks whether pasted text includes terminal control bytes or escape sequences.
+ *
+ * @param text Candidate paste payload.
+ * @returns True when control content is present.
+ */
+export const containsTerminalControlContent = (text: string): boolean => {
+  for (let index = 0; index < text.length; index += 1) {
+    const codePoint = text.codePointAt(index);
+    if (codePoint === undefined) {
+      continue;
+    }
+
+    if (codePoint === TERMINAL_ESCAPE_CODE_POINT && startsTerminalEscapeSequence(text, index)) {
+      return true;
+    }
+
+    if (codePoint === TERMINAL_BELL_CODE_POINT || isTerminalControlCodePoint(codePoint)) {
+      return true;
+    }
+
+    if (codePoint > 0xffff) {
+      index += 1;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Builds a paste-warning request when the current safety settings require confirmation.
+ *
+ * @param text Text that is about to be pasted.
+ * @param settings Paste safety settings from the registry.
+ * @returns Warning request or `null` when paste can proceed immediately.
+ */
+export const createTerminalPasteWarningRequest = (
+  text: string,
+  settings: TerminalPasteSafetySettings,
+): TerminalPasteWarningRequest | null => {
+  const reasons: TerminalPasteWarningReason[] = [];
+  const threshold = Math.max(1, settings.largePasteWarningThreshold);
+
+  if (settings.warnOnMultiLinePaste && TERMINAL_MULTILINE_PATTERN.test(text)) {
+    reasons.push('multiLine');
+  }
+
+  if (settings.warnOnLargePaste && text.length >= threshold) {
+    reasons.push('largeText');
+  }
+
+  if (settings.warnOnControlCharactersPaste && containsTerminalControlContent(text)) {
+    reasons.push('controlCharacters');
+  }
+
+  if (reasons.length === 0) {
+    return null;
+  }
+
+  return {
+    id:
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    text,
+    reasons,
+    characterCount: text.length,
+    threshold,
+    preview: formatTerminalPastePreview(text),
+  };
+};
 
 /**
  * Formats bytes in a compact terminal-style representation.
@@ -743,9 +887,13 @@ export const applyTerminalRuntimeOptions = (terminal: Terminal, options: ITermin
   terminal.options.fontSize = options.fontSize;
   terminal.options.fontWeight = options.fontWeight;
   terminal.options.fontWeightBold = options.fontWeightBold;
+  terminal.options.ignoreBracketedPasteMode = options.ignoreBracketedPasteMode;
   terminal.options.letterSpacing = options.letterSpacing;
   terminal.options.lineHeight = options.lineHeight;
+  terminal.options.macOptionClickForcesSelection = options.macOptionClickForcesSelection;
+  terminal.options.macOptionIsMeta = options.macOptionIsMeta;
   terminal.options.minimumContrastRatio = options.minimumContrastRatio;
+  terminal.options.rightClickSelectsWord = options.rightClickSelectsWord;
   terminal.options.screenReaderMode = options.screenReaderMode;
   terminal.options.scrollback = options.scrollback;
   terminal.options.scrollOnUserInput = options.scrollOnUserInput;

@@ -38,7 +38,8 @@ type UseSshMirrorPanesParams = {
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
   wrapperRef: React.RefObject<HTMLDivElement | null>;
   setActivePane: (paneId: string) => void;
-  refreshSelectionAnchor: () => void;
+  refreshSelectionAnchor: () => string | null;
+  onTerminalSelectionChange: (selectionText: string) => void;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
   notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
@@ -87,6 +88,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     wrapperRef,
     setActivePane,
     refreshSelectionAnchor,
+    onTerminalSelectionChange,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
     notifyAutocompleteOutputEchoRef,
@@ -97,6 +99,11 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
   } = params;
+  const onTerminalSelectionChangeRef = React.useRef<(selectionText: string) => void>(onTerminalSelectionChange);
+
+  React.useEffect(() => {
+    onTerminalSelectionChangeRef.current = onTerminalSelectionChange;
+  }, [onTerminalSelectionChange]);
 
   React.useEffect(() => {
     if (!isActive || connectionState !== 'connected') {
@@ -208,7 +215,10 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
 
       const disposeSelectionChange = terminal.onSelectionChange(() => {
         if (activePaneIdRef.current === paneId) {
-          refreshSelectionAnchor();
+          const selectionText = refreshSelectionAnchor();
+          if (selectionText) {
+            onTerminalSelectionChangeRef.current(selectionText);
+          }
         }
       });
       const disposeSelectionScroll = terminal.onScroll(() => {

@@ -1,3 +1,4 @@
+import type { TerminalRightClickAction } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import React from 'react';
 
@@ -18,6 +19,7 @@ type SSHTerminalPaneLayoutProps = {
   openDirectoryInSftpLabel: string;
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
+  rightClickAction: TerminalRightClickAction;
   canOpenDirectoryInSftp: boolean;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
@@ -51,6 +53,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.openDirectoryInSftpLabel Label for selection-based SFTP directory handoff action.
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
+ * @param props.rightClickAction Configured action for terminal right-click gestures.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
@@ -78,6 +81,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   openDirectoryInSftpLabel,
   findShortcutLabel,
   clearTerminalShortcutLabel,
+  rightClickAction,
   canOpenDirectoryInSftp,
   setPaneContainerElement,
   setPrimaryPaneContainer,
@@ -114,6 +118,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           canSplitTerminal={canSplitTerminal}
           canCloseTerminal={terminalPaneIds.length > 1}
           canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
+          rightClickAction={rightClickAction}
           onCopy={() => onCopy(paneId)}
           onPaste={() => onPaste(paneId)}
           onSearchOnline={() => onSearchOnline(paneId)}

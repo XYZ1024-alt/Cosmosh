@@ -494,6 +494,10 @@
         "description": "控制通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
         "title": "从上下文启动"
       },
+      "terminalCopyOnSelectionEnabled": {
+        "description": "使用鼠标在终端选中文本时，自动将非空选中文本复制到剪贴板。",
+        "title": "选中文本时复制"
+      },
       "terminalCursorBlink": {
         "description": "控制光标是否闪烁。",
         "title": "光标闪烁"
@@ -543,9 +547,18 @@
         "placeholder": "bold",
         "title": "终端粗体字重"
       },
+      "terminalForceSelectionModifier": {
+        "description": "选择在终端鼠标模式下强制文本选择的修饰键。macOS 上 Alt 对应 Option-click。",
+        "title": "鼠标模式下强制选择"
+      },
       "terminalHardwareAccelerationEnabled": {
         "description": "可用时使用 WebGL 渲染终端会话；GPU 上下文不可用时会自动回退。",
         "title": "启用终端硬件加速"
+      },
+      "terminalLargePasteWarningThreshold": {
+        "description": "当粘贴文本达到该字符数时，触发大文本粘贴警告。",
+        "placeholder": "5120",
+        "title": "大文本警告阈值"
       },
       "terminalLetterSpacing": {
         "description": "终端字符额外字间距（像素）。",
@@ -561,6 +574,14 @@
         "description": "最小文字对比度。设为 1 可禁用动态对比调整。",
         "placeholder": "1",
         "title": "最小对比度"
+      },
+      "terminalRightClickAction": {
+        "description": "控制终端窗格中的右键操作。",
+        "title": "终端右键操作"
+      },
+      "terminalRightClickSelectsWord": {
+        "description": "在终端中右键时选中指针下方的单词。",
+        "title": "右键时选择文本"
       },
       "terminalScreenReaderMode": {
         "description": "启用终端屏幕阅读器支持。",
@@ -601,6 +622,18 @@
       "terminalTextDropMode": {
         "description": "控制何时允许通过拖拽将文本插入终端。",
         "title": "拖拽到终端"
+      },
+      "terminalWarnOnControlCharactersPaste": {
+        "description": "粘贴内容混入 ESC、BEL、ANSI 控制序列或其它控制字符时先发出警告。",
+        "title": "控制字符警告"
+      },
+      "terminalWarnOnLargePaste": {
+        "description": "粘贴文本达到配置的大文本阈值时先发出警告。",
+        "title": "大文本粘贴警告"
+      },
+      "terminalWarnOnMultiLinePaste": {
+        "description": "粘贴多行文本前先发出警告。",
+        "title": "多行粘贴警告"
       },
       "terminalWebLinksEnabled": {
         "description": "识别终端输出中的 HTTP 与 HTTPS URL，并通过 Cosmosh 的外部浏览器桥接打开。",
@@ -698,6 +731,17 @@
         "bar": "竖条",
         "block": "方块",
         "underline": "下划线"
+      },
+      "terminalForceSelectionModifier": {
+        "alt": "Alt / Option",
+        "ctrl": "Ctrl",
+        "off": "关闭",
+        "shift": "Shift"
+      },
+      "terminalRightClickAction": {
+        "contextMenu": "打开上下文菜单",
+        "copyOnSelectionElsePaste": "选中文本时复制，否则粘贴",
+        "paste": "粘贴"
       },
       "terminalTextDropMode": {
         "always": "始终启用",
@@ -1097,6 +1141,18 @@
     "passwordPlaceholder": "密码",
     "passwordSavedHint": "密码已保存，留空可保持不变。",
     "passwordSavedPlaceholder": "已保存密码（留空来保持不变）",
+    "pasteWarning": {
+      "cancel": "取消粘贴",
+      "description": "请先确认粘贴内容，再将它发送到终端输入流。",
+      "pasteAnyway": "仍然粘贴",
+      "previewLabel": "预览",
+      "reasons": {
+        "controlCharacters": "粘贴内容包含 ESC、BEL、ANSI 控制序列或其它控制字符。",
+        "largeText": "粘贴内容包含 {count} 个字符，已达到或超过 {threshold} 个字符阈值。",
+        "multiLine": "粘贴内容包含多行。"
+      },
+      "title": "粘贴到终端？"
+    },
     "portPlaceholder": "端口",
     "privateKeyImportAction": "导入密钥...",
     "privateKeyImportFailed": "导入私钥失败。",

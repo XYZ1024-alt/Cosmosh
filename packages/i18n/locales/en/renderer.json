@@ -494,6 +494,10 @@
         "description": "Controls how terminals are opened from context launch or 'Open terminal in Cosmosh'.",
         "title": "Launch from Context"
       },
+      "terminalCopyOnSelectionEnabled": {
+        "description": "Automatically copy non-blank text to the clipboard when selecting text with the mouse in terminal sessions.",
+        "title": "Copy On Text Selection"
+      },
       "terminalCursorBlink": {
         "description": "Controls whether the cursor blinks.",
         "title": "Cursor Blink"
@@ -543,9 +547,18 @@
         "placeholder": "bold",
         "title": "Terminal Bold Font Weight"
       },
+      "terminalForceSelectionModifier": {
+        "description": "Chooses the modifier that forces text selection while terminal mouse mode is active. On macOS, Alt maps to Option-click.",
+        "title": "Force Selection In Mouse Mode"
+      },
       "terminalHardwareAccelerationEnabled": {
         "description": "Use WebGL rendering for terminal sessions when available, with automatic fallback if the GPU context is unavailable.",
         "title": "Terminal Hardware Acceleration"
+      },
+      "terminalLargePasteWarningThreshold": {
+        "description": "Shows the large-text paste warning when pasted text reaches this many characters.",
+        "placeholder": "5120",
+        "title": "Large Paste Warning Threshold"
       },
       "terminalLetterSpacing": {
         "description": "Additional spacing between terminal characters (px).",
@@ -561,6 +574,14 @@
         "description": "Minimum text contrast ratio. Use 1 to disable dynamic adjustment.",
         "placeholder": "1",
         "title": "Minimum Contrast Ratio"
+      },
+      "terminalRightClickAction": {
+        "description": "Controls what right-click does inside terminal panes.",
+        "title": "Terminal Right-Click Action"
+      },
+      "terminalRightClickSelectsWord": {
+        "description": "Select the word under the pointer when right-clicking in the terminal.",
+        "title": "Select Text On Right Click"
       },
       "terminalScreenReaderMode": {
         "description": "Enable screen-reader support in the terminal.",
@@ -601,6 +622,18 @@
       "terminalTextDropMode": {
         "description": "Controls when drag-and-drop text insertion into terminal is enabled.",
         "title": "Drag To Terminal"
+      },
+      "terminalWarnOnControlCharactersPaste": {
+        "description": "Warn before pasting text that contains ESC, BEL, ANSI control sequences, or other embedded control characters.",
+        "title": "Control Character Paste Warning"
+      },
+      "terminalWarnOnLargePaste": {
+        "description": "Warn before pasting text that is at or above the configured large-text threshold.",
+        "title": "Large Text Paste Warning"
+      },
+      "terminalWarnOnMultiLinePaste": {
+        "description": "Warn before pasting text that spans multiple lines.",
+        "title": "Multi-Line Paste Warning"
       },
       "terminalWebLinksEnabled": {
         "description": "Detect HTTP and HTTPS URLs in terminal output and open them through Cosmosh's external browser bridge.",
@@ -698,6 +731,17 @@
         "bar": "Bar",
         "block": "Block",
         "underline": "Underline"
+      },
+      "terminalForceSelectionModifier": {
+        "alt": "Alt / Option",
+        "ctrl": "Ctrl",
+        "off": "Off",
+        "shift": "Shift"
+      },
+      "terminalRightClickAction": {
+        "contextMenu": "Open Context Menu",
+        "copyOnSelectionElsePaste": "Copy Selection, Otherwise Paste",
+        "paste": "Paste"
       },
       "terminalTextDropMode": {
         "always": "Always Enabled",
@@ -1097,6 +1141,18 @@
     "passwordPlaceholder": "Password",
     "passwordSavedHint": "Password is already saved. Leave this empty to keep it unchanged.",
     "passwordSavedPlaceholder": "Saved password (leave blank to keep unchanged)",
+    "pasteWarning": {
+      "cancel": "Cancel Paste",
+      "description": "Review the paste before sending it to the terminal input stream.",
+      "pasteAnyway": "Paste Anyway",
+      "previewLabel": "Preview",
+      "reasons": {
+        "controlCharacters": "The paste contains ESC, BEL, ANSI control sequences, or other control characters.",
+        "largeText": "The paste contains {count} characters, which meets or exceeds the {threshold} character threshold.",
+        "multiLine": "The paste spans multiple lines."
+      },
+      "title": "Paste Into Terminal?"
+    },
     "portPlaceholder": "Port",
     "privateKeyImportAction": "Import Key...",
     "privateKeyImportFailed": "Failed to import private key.",

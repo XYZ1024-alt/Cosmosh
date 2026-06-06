@@ -187,6 +187,7 @@ export type UseSshCoreParams = {
   onTabVisualChange?: (visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void;
   requestHostFingerprintTrust?: (prompt: HostFingerprintPrompt) => Promise<boolean>;
   openExternalLink: TerminalExternalLinkHandler;
+  onTerminalSelectionChange: (selectionText: string) => void;
   notifyWarning: (message: string) => void;
 };
 
@@ -397,6 +398,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     onTabVisualChange,
     requestHostFingerprintTrust,
     openExternalLink,
+    onTerminalSelectionChange,
     notifyWarning,
   } = params;
 
@@ -873,6 +875,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     setActivePane: activatePane,
     refreshSelectionAnchor,
+    onTerminalSelectionChange,
     clearSelectionOverlay,
     applyAutocompleteInputData,
     notifyAutocompleteOutputEchoRef,
@@ -904,6 +907,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     wrapperRef,
     setActivePane: activatePane,
     refreshSelectionAnchor,
+    onTerminalSelectionChange,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
     notifyAutocompleteOutputEchoRef,

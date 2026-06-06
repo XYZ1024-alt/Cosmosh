@@ -184,7 +184,7 @@ type UseSshSelectionBarResult = {
   selectionAnchor: TerminalSelectionAnchor | null;
   selectionBarPosition: TerminalSelectionBarPosition | null;
   dismissedSelectionText: string | null;
-  refreshSelectionAnchor: () => void;
+  refreshSelectionAnchor: () => string | null;
   dismissSelectionBar: () => void;
   clearSelectionOverlay: () => void;
 };
@@ -310,24 +310,24 @@ export const useSshSelectionBar = (params: UseSshSelectionBarParams): UseSshSele
    *
    * @returns Nothing.
    */
-  const refreshSelectionAnchor = React.useCallback(() => {
+  const refreshSelectionAnchor = React.useCallback((): string | null => {
     const terminal = terminalRef.current;
     if (!terminal) {
       setSelectionAnchor(null);
-      return;
+      return null;
     }
 
     const selectionText = terminal.getSelection();
     const normalizedText = selectionText.trim();
     if (normalizedText.length === 0) {
       setSelectionAnchor(null);
-      return;
+      return null;
     }
 
     const bounds = resolveSelectionBounds(terminal);
     if (!bounds) {
       setSelectionAnchor(null);
-      return;
+      return null;
     }
 
     setSelectionAnchor({
@@ -335,6 +335,7 @@ export const useSshSelectionBar = (params: UseSshSelectionBarParams): UseSshSele
       ...bounds,
       pointerClientX: selectionPointerClientXRef.current,
     });
+    return selectionText;
   }, [resolveSelectionBounds, selectionPointerClientXRef, terminalRef]);
 
   React.useLayoutEffect(() => {
