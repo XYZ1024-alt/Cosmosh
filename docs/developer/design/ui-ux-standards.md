@@ -54,6 +54,7 @@ Implementation principles:
 
 - Keep layout dense but breathable, prioritizing efficient scanning and frequent actions.
 - Maintain consistent control rhythm and spacing within each feature surface.
+- Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
 
 ## 7. Orbit Bar Standard

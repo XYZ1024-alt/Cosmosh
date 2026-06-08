@@ -395,6 +395,7 @@ type SettingsProps = {
 
 const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQuery, onOpenSettingInEditor }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
+  const contentStartRef = React.useRef<HTMLDivElement | null>(null);
   const [, setLocaleTick] = React.useState<number>(0);
   const [activeCategoryId, setActiveCategoryId] = React.useState<SettingsCategoryId>(() => {
     return initialCategoryId === 'about' ? 'about' : 'general';
@@ -420,6 +421,11 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
       setLocaleTick((value) => value + 1);
     });
   }, []);
+
+  React.useLayoutEffect(() => {
+    // Category switches should start at the top of the new settings surface.
+    contentStartRef.current?.scrollIntoView({ behavior: 'auto', block: 'start', inline: 'nearest' });
+  }, [activeCategoryId]);
 
   const normalizedSearch = search.trim().toLowerCase();
   const isSearchMode = normalizedSearch.length > 0;
@@ -1012,6 +1018,11 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           }
           body={
             <div className="mx-auto max-w-4xl flex-1">
+              <div
+                ref={contentStartRef}
+                aria-hidden="true"
+              />
+
               {isLoading ? <div className="px-2 text-sm text-home-text-subtle">{t('settings.loading')}</div> : null}
 
               {!isLoading && activeCategoryId === 'about' && !isSearchMode ? (
