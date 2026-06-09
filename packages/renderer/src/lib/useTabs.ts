@@ -9,6 +9,43 @@ type UseTabsOptions = {
 };
 
 /**
+ * Controls where a newly-created tab is inserted in the tab strip.
+ */
+export type AddTabOptions = {
+  /**
+   * When provided, the new tab is inserted immediately after this tab id.
+   * Missing anchors gracefully fall back to appending at the end.
+   */
+  insertAfterTabId?: string;
+};
+
+/**
+ * Inserts a new tab according to the requested tab-strip placement.
+ *
+ * @param current Existing tab order.
+ * @param nextTab New tab object to insert.
+ * @param addOptions Optional placement controls.
+ * @returns New tab order with the inserted tab.
+ */
+export const insertTabAtRequestedPosition = <Tab extends { id: string }>(
+  current: ReadonlyArray<Tab>,
+  nextTab: Tab,
+  addOptions?: AddTabOptions,
+): Tab[] => {
+  const anchorTabId = addOptions?.insertAfterTabId;
+  if (!anchorTabId) {
+    return [...current, nextTab];
+  }
+
+  const anchorIndex = current.findIndex((tab) => tab.id === anchorTabId);
+  if (anchorIndex === -1 || anchorIndex >= current.length - 1) {
+    return [...current, nextTab];
+  }
+
+  return [...current.slice(0, anchorIndex + 1), nextTab, ...current.slice(anchorIndex + 1)];
+};
+
+/**
  * Returns the localized title and icon for a logical tab page identifier.
  *
  * @param page The logical page identifier used to resolve translation keys.
@@ -90,20 +127,15 @@ export const useTabs = (options?: UseTabsOptions) => {
   }, [activeTabId, tabs]);
 
   const addTab = React.useCallback(
-    (page: TabPage, overrides?: Partial<TabItem>) => {
+    (page: TabPage, overrides?: Partial<TabItem>, addOptions?: AddTabOptions) => {
       const nextTab = buildTab(page, overrides);
       setTabs((current) => {
-        const activeIndex = current.findIndex((tab) => tab.id === activeTabId);
-        if (activeIndex === -1 || activeIndex >= current.length - 1) {
-          return [...current, nextTab];
-        }
-
-        return [...current.slice(0, activeIndex + 1), nextTab, ...current.slice(activeIndex + 1)];
+        return insertTabAtRequestedPosition(current, nextTab, addOptions);
       });
       setActiveTabId(nextTab.id);
       return nextTab.id;
     },
-    [activeTabId, buildTab],
+    [buildTab],
   );
 
   const updateTab = React.useCallback((id: string, updates: Partial<TabItem>) => {

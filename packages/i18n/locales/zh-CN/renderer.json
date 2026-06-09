@@ -1280,6 +1280,7 @@
     "closeCurrent": "关闭当前标签页",
     "closeOthers": "关闭其他标签页",
     "closeRight": "关闭右侧标签页",
+    "newToRight": "在右侧新建标签页",
     "page": {
       "auditLogs": "审计日志",
       "componentsField": "组件实验场",

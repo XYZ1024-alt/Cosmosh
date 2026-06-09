@@ -1280,6 +1280,7 @@
     "closeCurrent": "Close Current Tab",
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Right Tabs",
+    "newToRight": "New Tab to the Right",
     "page": {
       "auditLogs": "Audit Logs",
       "componentsField": "Components Playground",

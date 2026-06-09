@@ -456,7 +456,9 @@ const App: React.FC = () => {
                   isActive={tab.id === activeTabId}
                   onOpenSSH={(serverId, tabTitle, options) => {
                     if (options?.openInNewTab) {
-                      const newTabId = addTab('ssh');
+                      const newTabId = addTab('ssh', undefined, {
+                        insertAfterTabId: tab.id,
+                      });
                       updateTab(newTabId, {
                         ...(tabTitle ? { title: tabTitle } : {}),
                         state: {
@@ -495,14 +497,20 @@ const App: React.FC = () => {
                     }
 
                     if (options?.openInNewTab) {
-                      addTab('sftp', {
-                        title: resolvedTitle,
-                        iconKey: 'sftp',
-                        iconColorKey: options.iconColorKey,
-                        state: {
-                          sftpConnectionIntent: nextIntent,
+                      addTab(
+                        'sftp',
+                        {
+                          title: resolvedTitle,
+                          iconKey: 'sftp',
+                          iconColorKey: options.iconColorKey,
+                          state: {
+                            sftpConnectionIntent: nextIntent,
+                          },
                         },
-                      });
+                        {
+                          insertAfterTabId: tab.id,
+                        },
+                      );
                       return;
                     }
 
@@ -557,14 +565,20 @@ const App: React.FC = () => {
                         createdAt: Date.now(),
                       };
 
-                      addTab('sftp', {
-                        title: serverName,
-                        iconKey: 'sftp',
-                        iconColorKey: tab.iconColorKey,
-                        state: {
-                          sftpConnectionIntent: nextIntent,
+                      addTab(
+                        'sftp',
+                        {
+                          title: serverName,
+                          iconKey: 'sftp',
+                          iconColorKey: tab.iconColorKey,
+                          state: {
+                            sftpConnectionIntent: nextIntent,
+                          },
                         },
-                      });
+                        {
+                          insertAfterTabId: tab.id,
+                        },
+                      );
                     }}
                   />
                 </React.Suspense>
@@ -579,18 +593,24 @@ const App: React.FC = () => {
                         return;
                       }
 
-                      addTab('sftp', {
-                        title: intent.serverName,
-                        iconKey: 'sftp',
-                        iconColorKey: tab.iconColorKey,
-                        state: {
-                          sftpConnectionIntent: {
-                            ...intent,
-                            initialPath,
-                            createdAt: Date.now(),
+                      addTab(
+                        'sftp',
+                        {
+                          title: intent.serverName,
+                          iconKey: 'sftp',
+                          iconColorKey: tab.iconColorKey,
+                          state: {
+                            sftpConnectionIntent: {
+                              ...intent,
+                              initialPath,
+                              createdAt: Date.now(),
+                            },
                           },
                         },
-                      });
+                        {
+                          insertAfterTabId: tab.id,
+                        },
+                      );
                     }}
                     onOpenSshAtPath={(initialPath) => {
                       const intent = tab.state?.sftpConnectionIntent;
@@ -599,17 +619,23 @@ const App: React.FC = () => {
                       }
 
                       const sshIntent = createSshConnectionIntent(intent.serverId);
-                      addTab('ssh', {
-                        title: intent.serverName,
-                        iconKey: 'ssh',
-                        iconColorKey: tab.iconColorKey,
-                        state: {
-                          sshConnectionIntent: {
-                            ...sshIntent,
-                            startupCommand: `cd ${quotePosixShellArg(initialPath)}`,
+                      addTab(
+                        'ssh',
+                        {
+                          title: intent.serverName,
+                          iconKey: 'ssh',
+                          iconColorKey: tab.iconColorKey,
+                          state: {
+                            sshConnectionIntent: {
+                              ...sshIntent,
+                              startupCommand: `cd ${quotePosixShellArg(initialPath)}`,
+                            },
                           },
                         },
-                      });
+                        {
+                          insertAfterTabId: tab.id,
+                        },
+                      );
                     }}
                     onTabTitleChange={(title) => {
                       updateTab(tab.id, { title });
@@ -636,11 +662,17 @@ const App: React.FC = () => {
                     initialCategoryId={tab.state?.settingsCategory}
                     initialSearchQuery={tab.state?.settingsInitialSearch}
                     onOpenSettingInEditor={(settingKey) =>
-                      addTab('settings-editor', {
-                        state: {
-                          settingsEditorSettingKey: settingKey,
+                      addTab(
+                        'settings-editor',
+                        {
+                          state: {
+                            settingsEditorSettingKey: settingKey,
+                          },
                         },
-                      })
+                        {
+                          insertAfterTabId: tab.id,
+                        },
+                      )
                     }
                   />
                 </React.Suspense>
@@ -667,21 +699,35 @@ const App: React.FC = () => {
                     activeTabIcon={tab.iconKey}
                     showSystemMonitorOverlay={showSystemMonitorOverlay}
                     onShowSystemMonitorOverlayChange={handleShowSystemMonitorOverlayChange}
-                    onOpenSSH={(openInNewTab) => (openInNewTab ? addTab('ssh') : openPageInTab(tab.id, 'ssh'))}
+                    onOpenSSH={(openInNewTab) =>
+                      openInNewTab
+                        ? addTab('ssh', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'ssh')
+                    }
                     onOpenSettings={(openInNewTab) =>
-                      openInNewTab ? addTab('settings') : openPageInTab(tab.id, 'settings')
+                      openInNewTab
+                        ? addTab('settings', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'settings')
                     }
                     onOpenSettingsEditor={(openInNewTab) =>
-                      openInNewTab ? addTab('settings-editor') : openPageInTab(tab.id, 'settings-editor')
+                      openInNewTab
+                        ? addTab('settings-editor', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'settings-editor')
                     }
                     onOpenComponentsField={(openInNewTab) =>
-                      openInNewTab ? addTab('components-field') : openPageInTab(tab.id, 'components-field')
+                      openInNewTab
+                        ? addTab('components-field', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'components-field')
                     }
                     onOpenSshEditor={(openInNewTab) =>
-                      openInNewTab ? addTab('ssh-editor') : openPageInTab(tab.id, 'ssh-editor')
+                      openInNewTab
+                        ? addTab('ssh-editor', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'ssh-editor')
                     }
                     onOpenSshKeychains={(openInNewTab) =>
-                      openInNewTab ? addTab('ssh-keychains') : openPageInTab(tab.id, 'ssh-keychains')
+                      openInNewTab
+                        ? addTab('ssh-keychains', undefined, { insertAfterTabId: tab.id })
+                        : openPageInTab(tab.id, 'ssh-keychains')
                     }
                     onRenameTab={(title) => updateTab(tab.id, { title })}
                     onChangeIcon={(iconKey) => updateTab(tab.id, { iconKey })}
@@ -721,6 +767,7 @@ const App: React.FC = () => {
             activeTab={activeTabId}
             onActiveTabChange={setActiveTabId}
             onAddTab={() => addTab('home')}
+            onAddTabToRight={(tabId) => addTab('home', undefined, { insertAfterTabId: tabId })}
             onCloseTab={closeTab}
             onCloseRightTabs={closeRightTabs}
             onCloseOtherTabs={closeOtherTabs}

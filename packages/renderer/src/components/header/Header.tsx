@@ -22,6 +22,7 @@ const Header: React.FC<{
   activeTab: string;
   onActiveTabChange?: (id: string) => void;
   onAddTab?: () => void;
+  onAddTabToRight?: (id: string) => string | void;
   onCloseTab?: (id: string) => void;
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
@@ -38,6 +39,7 @@ const Header: React.FC<{
   activeTab,
   onActiveTabChange,
   onAddTab,
+  onAddTabToRight,
   onCloseTab,
   onCloseRightTabs,
   onCloseOtherTabs,
@@ -168,6 +170,7 @@ const Header: React.FC<{
           applySshServerVisuals={applySshServerVisuals}
           onActiveTabChange={onActiveTabChange}
           onAddTab={onAddTab}
+          onAddTabToRight={onAddTabToRight}
           onCloseTab={onCloseTab}
           onCloseRightTabs={onCloseRightTabs}
           onCloseOtherTabs={onCloseOtherTabs}

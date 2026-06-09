@@ -61,6 +61,7 @@ const DragOverlayTab: React.FC<{ tab: TabItem; width: number; applySshServerVisu
 };
 
 type CloseTabHandler = (id: string) => void;
+type AddTabToRightHandler = (id: string) => string | void;
 
 const SortableTab = React.forwardRef<
   HTMLDivElement,
@@ -203,6 +204,7 @@ type TabsProps = {
   applySshServerVisuals?: boolean;
   onActiveTabChange?: (id: string) => void;
   onAddTab?: () => void;
+  onAddTabToRight?: AddTabToRightHandler;
   onCloseTab?: (id: string) => void;
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
@@ -223,6 +225,7 @@ export const Tabs: React.FC<TabsProps> = ({
   applySshServerVisuals = false,
   onActiveTabChange,
   onAddTab,
+  onAddTabToRight,
   onCloseTab,
   onCloseRightTabs,
   onCloseOtherTabs,
@@ -238,6 +241,8 @@ export const Tabs: React.FC<TabsProps> = ({
   const [activeDragTabId, setActiveDragTabId] = React.useState<string | null>(null);
   const [dragPreviewTabs, setDragPreviewTabs] = React.useState<TabItem[] | null>(null);
   const dragPreviewTabsRef = React.useRef<TabItem[] | null>(null);
+  const shouldPreventContextMenuCloseAutoFocusRef = React.useRef<boolean>(false);
+  const pendingContextMenuFocusTabIdRef = React.useRef<string | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
   const closeCurrentTabShortcutLabel = React.useMemo(() => (isMacPlatform ? '⌘W' : 'Ctrl+W'), [isMacPlatform]);
@@ -393,6 +398,55 @@ export const Tabs: React.FC<TabsProps> = ({
   );
 
   const orderedTabs = dragPreviewTabs ?? tabs;
+
+  /**
+   * Moves keyboard focus to a tab trigger after menu-driven tab creation.
+   *
+   * @param tabId Tab id whose trigger should receive focus.
+   * @returns Nothing.
+   */
+  const focusTabTriggerById = React.useCallback((tabId: string): void => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    const tabElement = Array.from(scrollContainer.querySelectorAll<HTMLElement>('[data-role="sortable-tab"]')).find(
+      (element) => element.dataset.tabId === tabId,
+    );
+    const triggerElement = tabElement?.querySelector<HTMLElement>('[data-role="tab-trigger"]');
+    triggerElement?.focus({ preventScroll: true });
+  }, []);
+
+  const handleAddTabToRightSelect = React.useCallback(
+    (tabId: string): void => {
+      shouldPreventContextMenuCloseAutoFocusRef.current = true;
+      pendingContextMenuFocusTabIdRef.current = onAddTabToRight?.(tabId) ?? null;
+    },
+    [onAddTabToRight],
+  );
+
+  const handleTabContextMenuCloseAutoFocus = React.useCallback(
+    (event: Event): void => {
+      if (!shouldPreventContextMenuCloseAutoFocusRef.current) {
+        return;
+      }
+
+      event.preventDefault();
+      shouldPreventContextMenuCloseAutoFocusRef.current = false;
+
+      const focusTabId = pendingContextMenuFocusTabIdRef.current;
+      pendingContextMenuFocusTabIdRef.current = null;
+      if (!focusTabId) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        focusTabTriggerById(focusTabId);
+      });
+    },
+    [focusTabTriggerById],
+  );
 
   const handleTopHitAreaMouseDown = React.useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -609,7 +663,15 @@ export const Tabs: React.FC<TabsProps> = ({
                               onContextMenu={() => setContextTabId(tab.id)}
                             />
                           </ContextMenuTrigger>
-                          <ContextMenuContent>
+                          <ContextMenuContent onCloseAutoFocus={handleTabContextMenuCloseAutoFocus}>
+                            <ContextMenuItem
+                              icon={PlusIcon}
+                              disabled={!contextTab || !onAddTabToRight}
+                              onSelect={() => contextTab && handleAddTabToRightSelect(contextTab.id)}
+                            >
+                              {t('tabs.newToRight')}
+                            </ContextMenuItem>
+                            <ContextMenuSeparator />
                             <ContextMenuItem
                               icon={XIcon}
                               disabled={!contextTab?.closable}

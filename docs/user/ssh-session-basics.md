@@ -29,6 +29,9 @@
 - While the switcher is open, use ArrowUp/ArrowDown to preview targets.
 - Release Ctrl/Control to confirm and jump to the selected tab.
 - Mouse click on a tab in the switcher jumps immediately, even if Ctrl/Control is still held.
+- The tab-strip plus button and Header user menu entries always open new tabs at the end of the tab strip.
+- Right-click a tab and choose New Tab to the Right to create a tab immediately beside that tab.
+- New tabs opened from inside the active tab, such as SFTP or Settings editor follow-ups, open immediately to the right of their source tab.
 
 ## Command Palette
 

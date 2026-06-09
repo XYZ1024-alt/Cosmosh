@@ -82,6 +82,9 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Dragging/reordering tabs should affect strip order only; it must not remount/recreate page runtimes.
 - Runtime-heavy pages (for example SSH/xterm sessions) must preserve in-memory session state when tab order changes.
 - Reorder state updates should be id-based and must preserve the latest tab objects from state instead of writing stale drag snapshots back.
+- Global tab creation entry points, including the tab-strip plus button, Header user menu, app menu, and command palette, append new tabs to the end of the strip.
+- Contextual tab creation from inside an existing tab must pass an explicit anchor id and insert the new tab immediately to the right of that source tab.
+- The tab context menu exposes `New Tab to the Right` as the explicit user-facing affordance for anchored tab creation.
 
 ## 7.3 Server-Backed Tab Visuals
 
