@@ -972,6 +972,7 @@
     "previewTitle": "预览",
     "previewTooLargeToOpen": "该文件超过文本预览支持的最大大小。",
     "previewTruncated": "预览已截断",
+    "previewUnsavedChanges": "切换选择前请先保存或撤销预览更改。",
     "properties": {
       "browserUnsupported": "网页运行时暂未实现 SFTP 属性功能。",
       "close": "关闭",

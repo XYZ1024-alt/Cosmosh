@@ -972,6 +972,7 @@
     "previewTitle": "Preview",
     "previewTooLargeToOpen": "This file exceeds the supported text preview size.",
     "previewTruncated": "preview truncated",
+    "previewUnsavedChanges": "Save or undo the preview changes before switching selection.",
     "properties": {
       "browserUnsupported": "SFTP properties are not implemented for the browser runtime yet.",
       "close": "Close",

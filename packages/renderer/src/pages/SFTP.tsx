@@ -153,6 +153,16 @@ const resolvePreviewStatePath = (state: SftpPreviewState | null): string => {
  */
 const measureUtf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
+/**
+ * Checks whether preview replacement would discard local Monaco edits.
+ *
+ * @param state Current preview lifecycle state.
+ * @returns Whether the preview has unsaved editable content.
+ */
+const isDirtySftpTextPreviewState = (state: SftpPreviewState | null): boolean => {
+  return state?.status === 'text' && state.content !== state.savedContent && !state.isSaving;
+};
+
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
   onOpenDirectoryInNewTab: (initialPath: string) => void;
@@ -242,6 +252,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const reconnectPromiseRef = React.useRef<Promise<string> | null>(null);
   const previewLoadGenerationRef = React.useRef(0);
   const previewEditorRef = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const previewStateRef = React.useRef<SftpPreviewState | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -391,6 +402,10 @@ const SFTP: React.FC<SFTPProps> = ({
   React.useEffect(() => {
     setPathInput(currentPath);
   }, [currentPath]);
+
+  React.useEffect(() => {
+    previewStateRef.current = previewState;
+  }, [previewState]);
 
   React.useEffect(() => {
     if (!isAddressInputEditing) {
@@ -654,11 +669,67 @@ const SFTP: React.FC<SFTPProps> = ({
     });
   }, [sftpShowHiddenEntries]);
 
-  const clearPreviewState = React.useCallback((): void => {
-    previewLoadGenerationRef.current += 1;
-    previewEditorRef.current = null;
-    setPreviewState(null);
-  }, []);
+  /**
+   * Blocks selection changes that would silently drop unsaved preview edits.
+   *
+   * @returns Whether the caller should keep the current selection and preview state.
+   */
+  const shouldPreserveDirtyPreviewState = React.useCallback((): boolean => {
+    if (!isDirtySftpTextPreviewState(previewStateRef.current)) {
+      return false;
+    }
+
+    notifyError(t('sftp.previewUnsavedChanges'));
+    return true;
+  }, [notifyError]);
+
+  /**
+   * Clears preview state unless doing so would discard local Monaco edits.
+   *
+   * @param options Clear behavior options.
+   * @returns Whether the preview state was cleared.
+   */
+  const clearPreviewState = React.useCallback(
+    (options: { force?: boolean } = {}): boolean => {
+      if (!options.force && shouldPreserveDirtyPreviewState()) {
+        return false;
+      }
+
+      previewLoadGenerationRef.current += 1;
+      previewEditorRef.current = null;
+      previewStateRef.current = null;
+      setPreviewState(null);
+      return true;
+    },
+    [shouldPreserveDirtyPreviewState],
+  );
+
+  /**
+   * Clears preview state for a new single-entry selection when needed.
+   *
+   * @param nextEntry Entry that will become the single selection.
+   * @returns Whether selection may proceed.
+   */
+  const clearPreviewStateForSelection = React.useCallback(
+    (nextEntry: ApiSftpEntry | null): boolean => {
+      const currentPreviewPath = resolvePreviewStatePath(previewStateRef.current);
+      if (nextEntry && currentPreviewPath === nextEntry.path) {
+        return true;
+      }
+
+      return clearPreviewState();
+    },
+    [clearPreviewState],
+  );
+
+  /**
+   * Clears preview state for hard runtime resets where preserving local state is unsafe.
+   *
+   * @returns void.
+   */
+  const forceClearPreviewState = React.useCallback((): void => {
+    void clearPreviewState({ force: true });
+  }, [clearPreviewState]);
 
   const fileNavigationRows = React.useMemo<SftpFileNavigationRow[]>(() => {
     const rows: SftpFileNavigationRow[] = [];
@@ -680,25 +751,30 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [clipboardState]);
 
   const resetSelection = React.useCallback((): void => {
+    if (!clearPreviewState()) {
+      return;
+    }
+
     setSelectedPaths([]);
     setSelectionAnchorPath('');
-    clearPreviewState();
   }, [clearPreviewState]);
 
   const selectSingleEntry = React.useCallback(
     (entry: ApiSftpEntry | null): void => {
+      if (!clearPreviewStateForSelection(entry)) {
+        return;
+      }
+
       if (!entry) {
         setSelectedPaths([]);
         setSelectionAnchorPath('');
-        clearPreviewState();
         return;
       }
 
       setSelectedPaths([entry.path]);
       setSelectionAnchorPath(entry.path);
-      clearPreviewState();
     },
-    [clearPreviewState],
+    [clearPreviewStateForSelection],
   );
 
   const selectEntryRange = React.useCallback(
@@ -708,11 +784,14 @@ const SFTP: React.FC<SFTPProps> = ({
         return;
       }
 
+      if (!clearPreviewState()) {
+        return;
+      }
+
       setSelectedPaths((previous) => {
         const nextPaths = shouldExtendSelection ? [...previous, ...rangePaths] : rangePaths;
         return Array.from(new Set(nextPaths));
       });
-      clearPreviewState();
     },
     [clearPreviewState, visibleEntries],
   );
@@ -740,6 +819,10 @@ const SFTP: React.FC<SFTPProps> = ({
       }
 
       if (shouldToggle) {
+        if (!clearPreviewState()) {
+          return;
+        }
+
         setSelectedPaths((previous) => {
           if (previous.includes(entry.path)) {
             return previous.filter((path) => path !== entry.path);
@@ -748,7 +831,6 @@ const SFTP: React.FC<SFTPProps> = ({
           return [...previous, entry.path];
         });
         setSelectionAnchorPath(entry.path);
-        clearPreviewState();
         return;
       }
 
@@ -1343,6 +1425,11 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const setSftpAuxiliarySidebarMode = React.useCallback(
     async (mode: SftpAuxiliarySidebarMode): Promise<void> => {
+      if (mode !== 'preview' && isDirtySftpTextPreviewState(previewStateRef.current)) {
+        notifyError(t('sftp.previewUnsavedChanges'));
+        return;
+      }
+
       if (settingsValues.sftpAuxiliarySidebarMode === mode) {
         return;
       }
@@ -1533,10 +1620,11 @@ const SFTP: React.FC<SFTPProps> = ({
 
       if (!isCancelled) {
         setEntries([]);
-        resetSelection();
+        setSelectedPaths([]);
+        setSelectionAnchorPath('');
+        forceClearPreviewState();
         setTreeNodes({});
         setClipboardState(null);
-        clearPreviewState();
         stopAllWatchedOpenFiles();
         temporaryOpenFilePathsRef.current = {};
         setOpenWithApplicationsByPath({});
@@ -1580,10 +1668,9 @@ const SFTP: React.FC<SFTPProps> = ({
     connectionIntent?.initialPath,
     connectionIntent?.serverId,
     clearAllTaskRetentionTimers,
-    clearPreviewState,
     createSessionForIntent,
+    forceClearPreviewState,
     notifyError,
-    resetSelection,
     resolveHostFingerprintPrompt,
     stopAllWatchedOpenFiles,
   ]);
@@ -2498,17 +2585,35 @@ const SFTP: React.FC<SFTPProps> = ({
 
   React.useEffect(() => {
     if (sftpAuxiliarySidebarMode !== 'preview') {
-      clearPreviewState();
+      if (!isDirtySftpTextPreviewState(previewStateRef.current)) {
+        forceClearPreviewState();
+      }
       return;
     }
 
     if (!hasSftpSession || selectedCount !== 1 || !selectedEntry) {
-      clearPreviewState();
+      if (!isDirtySftpTextPreviewState(previewStateRef.current)) {
+        forceClearPreviewState();
+      }
+      return;
+    }
+
+    if (
+      resolvePreviewStatePath(previewStateRef.current) === selectedEntry.path &&
+      isDirtySftpTextPreviewState(previewStateRef.current)
+    ) {
       return;
     }
 
     void loadPreviewForEntry(selectedEntry);
-  }, [clearPreviewState, hasSftpSession, loadPreviewForEntry, selectedCount, selectedEntry, sftpAuxiliarySidebarMode]);
+  }, [
+    forceClearPreviewState,
+    hasSftpSession,
+    loadPreviewForEntry,
+    selectedCount,
+    selectedEntry,
+    sftpAuxiliarySidebarMode,
+  ]);
 
   /**
    * Starts watching a temp file opened through SFTP so later local saves can be uploaded.
@@ -3432,9 +3537,12 @@ const SFTP: React.FC<SFTPProps> = ({
       const hasShortcutModifier = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
       if (hasShortcutModifier && event.key.toLowerCase() === 'a' && visibleEntries.length > 0) {
         event.preventDefault();
+        if (!clearPreviewState()) {
+          return;
+        }
+
         setSelectedPaths(visibleEntries.map((entry) => entry.path));
         setSelectionAnchorPath(visibleEntries[0]?.path ?? '');
-        clearPreviewState();
         return;
       }
 
