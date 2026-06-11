@@ -6,9 +6,9 @@ import { Button } from '../../components/ui/button';
 import { useDateTimeFormatter } from '../../lib/date-time-format';
 import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
-import type { SftpMonacoPreviewEditorProps } from './SftpMonacoPreviewEditor';
 import type { SftpLargePreviewPrompt, SftpPreviewState } from './sftp-types';
 import { formatFileSize, formatModifiedAt, resolveEntryIcon } from './sftp-utils';
+import type { SftpMonacoPreviewEditorProps } from './SftpMonacoPreviewEditor';
 
 const SftpMonacoPreviewEditor = React.lazy(() => import('./SftpMonacoPreviewEditor'));
 
@@ -203,7 +203,7 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
           {renderPreviewHeader(previewState.entry, <Image className="text-home-text h-4 w-4 shrink-0" />)}
           <div
             data-input-context-menu-ignore="true"
-            className="bg-home-card/70 -mx-2 -mb-2 flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-[14px]"
+            className="bg-home-card/70 -mx-2 -mb-2 flex min-h-0 flex-1 items-center justify-center overflow-auto rounded-lg"
           >
             <img
               alt={previewState.entry.name}
@@ -225,7 +225,7 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
         )}
         <div
           data-input-context-menu-ignore="true"
-          className="bg-home-card/70 -mx-2 -mb-2 min-h-0 flex-1 overflow-hidden rounded-[14px]"
+          className="bg-home-card/70 -mx-2 -mb-2 min-h-0 flex-1 overflow-hidden rounded-lg"
         >
           <SftpPreviewEditorErrorBoundary
             key={previewState.entry.path}

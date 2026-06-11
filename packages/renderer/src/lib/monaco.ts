@@ -1,10 +1,11 @@
-import { loader } from '@monaco-editor/react';
-import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api.js';
 import 'monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js';
 import 'monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu.js';
 import 'monaco-editor/esm/vs/editor/contrib/find/browser/findController.js';
 import 'monaco-editor/esm/vs/editor/contrib/format/browser/formatActions.js';
 import 'monaco-editor/esm/vs/editor/contrib/linesOperations/browser/linesOperations.js';
+
+import { loader } from '@monaco-editor/react';
+import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api.js';
 import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
 import CssWorker from 'monaco-editor/esm/vs/language/css/css.worker?worker';
 import HtmlWorker from 'monaco-editor/esm/vs/language/html/html.worker?worker';
