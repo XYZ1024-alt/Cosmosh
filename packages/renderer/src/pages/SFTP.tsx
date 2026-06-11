@@ -2,12 +2,17 @@ import {
   type ApiSftpEntry,
   type ApiSftpUploadFileRequest,
   type ApiSftpUploadFileResponse,
+  type ApiSftpWriteFileRequest,
+  type ApiSftpWriteFileResponse,
   compareSftpEntryNames,
   compareSftpNames,
+  MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  type SftpAuxiliarySidebarMode,
   type SftpDirectoryListColumnId,
   type SftpDirectoryListSortDirection,
   type SftpDirectoryListViewSetting,
 } from '@cosmosh/api-contract';
+import type { editor as MonacoEditor } from 'monaco-editor';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -22,11 +27,13 @@ import {
   downloadSftpFile,
   isBackendApiError,
   listSftpDirectory,
+  readSftpFile,
   renameSftpEntry,
   runSftpBatchOperation,
   trustSshFingerprint,
   updateAppSettings,
   uploadSftpFile,
+  writeSftpFile,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
 import { updateSettingsStoreValues, useSettingsValue, useSettingsValues } from '../lib/settings-store';
@@ -45,7 +52,6 @@ import type {
   ClipboardState,
   DirectoryCacheEntry,
   DirectoryLoadOptions,
-  FilePreviewState,
   HostFingerprintPrompt,
   InlineEditMenuAction,
   NavigationHistoryControlOptions,
@@ -56,7 +62,9 @@ import type {
   SftpDeleteConfirmationPrompt,
   SftpDeleteInvocationSource,
   SftpFileNavigationRow,
+  SftpLargePreviewPrompt,
   SftpOpenWithApplication,
+  SftpPreviewState,
   SftpQueuedTask,
   SftpSelectionClickEvent,
   SftpSelectionModifierEvent,
@@ -81,6 +89,8 @@ import {
   formatSftpTabTitle,
   formatSftpTaskToolbarLabel,
   isSameClipboardSnapshot,
+  isSftpImagePreviewEntry,
+  isSftpTextPreviewEntry,
   joinLocalPath,
   joinRemotePath,
   mergeResolvedDirectoryIntoTree,
@@ -90,6 +100,7 @@ import {
   resolveRangeSelectionPaths,
   resolveRemoteParentPath,
   resolveRenameTargetPath,
+  resolveSftpPreviewLanguage,
   resolveShortcutModifier,
   sanitizeLocalFileName,
   SFTP_TASK_STATUS_ORDER,
@@ -115,6 +126,32 @@ import { SftpTreePanel } from './sftp/SftpTreePanel';
  * @returns Stable JSON representation for registry-backed settings.
  */
 const stringifySftpDirectoryListView = (value: SftpDirectoryListViewSetting): string => JSON.stringify(value);
+
+/**
+ * Resolves the remote entry path represented by a preview state.
+ *
+ * @param state Current preview lifecycle state.
+ * @returns Remote path when the state is tied to one entry.
+ */
+const resolvePreviewStatePath = (state: SftpPreviewState | null): string => {
+  if (!state) {
+    return '';
+  }
+
+  if (state.status === 'large-file') {
+    return state.prompt.entry.path;
+  }
+
+  return state.entry?.path ?? '';
+};
+
+/**
+ * Measures UTF-8 content size before saving text preview changes.
+ *
+ * @param value Text content to measure.
+ * @returns Encoded byte length.
+ */
+const measureUtf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
@@ -142,6 +179,9 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpDimHiddenEntries = useSettingsValue('sftpDimHiddenEntries');
   const sftpShowParentDirectoryEntry = useSettingsValue('sftpShowParentDirectoryEntry');
   const sftpShowAddressAsText = useSettingsValue('sftpShowAddressAsText');
+  const sftpAuxiliarySidebarMode = useSettingsValue('sftpAuxiliarySidebarMode');
+  const sftpTextPreviewWarningThresholdBytes = useSettingsValue('sftpTextPreviewWarningThresholdBytes');
+  const sftpImagePreviewWarningThresholdBytes = useSettingsValue('sftpImagePreviewWarningThresholdBytes');
   const registrySftpDirectoryListView = useSettingsValue('sftpDirectoryListView');
   const sftpReconnectMode = useSettingsValue('sftpReconnectMode');
   const [directoryListViewDraft, setDirectoryListViewDraft] = React.useState<SftpDirectoryListViewSetting | null>(null);
@@ -166,7 +206,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const [renamingEntryPath, setRenamingEntryPath] = React.useState<string>('');
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
-  const [filePreview, setFilePreview] = React.useState<FilePreviewState | null>(null);
+  const [previewState, setPreviewState] = React.useState<SftpPreviewState | null>(null);
   const [openWithApplicationsByPath, setOpenWithApplicationsByPath] = React.useState<
     Record<string, SftpOpenWithApplication[]>
   >({});
@@ -200,6 +240,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const taskQueueGenerationRef = React.useRef(0);
   const taskRetentionTimersRef = React.useRef<Record<string, number>>({});
   const reconnectPromiseRef = React.useRef<Promise<string> | null>(null);
+  const previewLoadGenerationRef = React.useRef(0);
+  const previewEditorRef = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
@@ -578,6 +620,16 @@ const SFTP: React.FC<SFTPProps> = ({
   const canUseFileActions = hasSftpSession && status === 'ready' && !isBusy;
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
+  const activeTextPreview = previewState?.status === 'text' ? previewState : null;
+  const hasTextPreview = Boolean(activeTextPreview);
+  const isPreviewDirty = Boolean(activeTextPreview && activeTextPreview.content !== activeTextPreview.savedContent);
+  const isPreviewSaving = Boolean(activeTextPreview?.isSaving);
+  const sftpWorkbenchGridClassName =
+    sftpAuxiliarySidebarMode === 'off'
+      ? 'grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)] gap-2.5 overflow-hidden'
+      : sftpAuxiliarySidebarMode === 'preview'
+        ? 'grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)_minmax(320px,420px)] gap-2.5 overflow-hidden'
+        : 'grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)_minmax(240px,320px)] gap-2.5 overflow-hidden';
 
   React.useEffect(() => {
     const visiblePathSet = new Set(visibleEntries.map((entry) => entry.path));
@@ -602,6 +654,12 @@ const SFTP: React.FC<SFTPProps> = ({
     });
   }, [sftpShowHiddenEntries]);
 
+  const clearPreviewState = React.useCallback((): void => {
+    previewLoadGenerationRef.current += 1;
+    previewEditorRef.current = null;
+    setPreviewState(null);
+  }, []);
+
   const fileNavigationRows = React.useMemo<SftpFileNavigationRow[]>(() => {
     const rows: SftpFileNavigationRow[] = [];
 
@@ -624,21 +682,24 @@ const SFTP: React.FC<SFTPProps> = ({
   const resetSelection = React.useCallback((): void => {
     setSelectedPaths([]);
     setSelectionAnchorPath('');
-    setFilePreview(null);
-  }, []);
+    clearPreviewState();
+  }, [clearPreviewState]);
 
-  const selectSingleEntry = React.useCallback((entry: ApiSftpEntry | null): void => {
-    if (!entry) {
-      setSelectedPaths([]);
-      setSelectionAnchorPath('');
-      setFilePreview(null);
-      return;
-    }
+  const selectSingleEntry = React.useCallback(
+    (entry: ApiSftpEntry | null): void => {
+      if (!entry) {
+        setSelectedPaths([]);
+        setSelectionAnchorPath('');
+        clearPreviewState();
+        return;
+      }
 
-    setSelectedPaths([entry.path]);
-    setSelectionAnchorPath(entry.path);
-    setFilePreview(null);
-  }, []);
+      setSelectedPaths([entry.path]);
+      setSelectionAnchorPath(entry.path);
+      clearPreviewState();
+    },
+    [clearPreviewState],
+  );
 
   const selectEntryRange = React.useCallback(
     (anchorPath: string, targetPath: string, shouldExtendSelection: boolean): void => {
@@ -651,9 +712,9 @@ const SFTP: React.FC<SFTPProps> = ({
         const nextPaths = shouldExtendSelection ? [...previous, ...rangePaths] : rangePaths;
         return Array.from(new Set(nextPaths));
       });
-      setFilePreview(null);
+      clearPreviewState();
     },
-    [visibleEntries],
+    [clearPreviewState, visibleEntries],
   );
 
   /**
@@ -687,13 +748,13 @@ const SFTP: React.FC<SFTPProps> = ({
           return [...previous, entry.path];
         });
         setSelectionAnchorPath(entry.path);
-        setFilePreview(null);
+        clearPreviewState();
         return;
       }
 
       selectSingleEntry(entry);
     },
-    [selectEntryRange, selectSingleEntry, selectionAnchorPath],
+    [clearPreviewState, selectEntryRange, selectSingleEntry, selectionAnchorPath],
   );
 
   const pruneSelectionToEntries = React.useCallback((nextEntries: ApiSftpEntry[]): void => {
@@ -1280,6 +1341,28 @@ const SFTP: React.FC<SFTPProps> = ({
     [notifyError, settingsValues],
   );
 
+  const setSftpAuxiliarySidebarMode = React.useCallback(
+    async (mode: SftpAuxiliarySidebarMode): Promise<void> => {
+      if (settingsValues.sftpAuxiliarySidebarMode === mode) {
+        return;
+      }
+
+      try {
+        const response = await updateAppSettings({
+          values: {
+            ...settingsValues,
+            sftpAuxiliarySidebarMode: mode,
+          },
+        });
+
+        await updateSettingsStoreValues(response.data.item.values);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('settings.saveFailed'));
+      }
+    },
+    [notifyError, settingsValues],
+  );
+
   const persistSftpDirectoryListView = React.useCallback(
     async (nextDirectoryListView: SftpDirectoryListViewSetting): Promise<void> => {
       const currentDirectoryListView = directoryListViewDraft ?? settingsValues.sftpDirectoryListView;
@@ -1453,7 +1536,7 @@ const SFTP: React.FC<SFTPProps> = ({
         resetSelection();
         setTreeNodes({});
         setClipboardState(null);
-        setFilePreview(null);
+        clearPreviewState();
         stopAllWatchedOpenFiles();
         temporaryOpenFilePathsRef.current = {};
         setOpenWithApplicationsByPath({});
@@ -1497,6 +1580,7 @@ const SFTP: React.FC<SFTPProps> = ({
     connectionIntent?.initialPath,
     connectionIntent?.serverId,
     clearAllTaskRetentionTimers,
+    clearPreviewState,
     createSessionForIntent,
     notifyError,
     resetSelection,
@@ -2131,6 +2215,302 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   /**
+   * Loads the preview payload for one selected SFTP entry.
+   *
+   * @param entry Selected remote entry to preview.
+   * @param options Preview loading options.
+   * @returns Promise resolved when the preview state settles.
+   */
+  const loadPreviewForEntry = React.useCallback(
+    async (entry: ApiSftpEntry, options: { force?: boolean } = {}): Promise<void> => {
+      const generation = previewLoadGenerationRef.current + 1;
+      previewLoadGenerationRef.current = generation;
+      previewEditorRef.current = null;
+
+      if (!hasSftpSession || entry.type !== 'file') {
+        setPreviewState({ status: 'unsupported', entry });
+        return;
+      }
+
+      if (isSftpTextPreviewEntry(entry)) {
+        const thresholdBytes = Math.min(
+          sftpTextPreviewWarningThresholdBytes,
+          MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+        );
+        if (entry.size > MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES && options.force) {
+          setPreviewState({ status: 'error', entry, message: t('sftp.previewTooLargeToOpen') });
+          return;
+        }
+
+        if (!options.force && entry.size > thresholdBytes) {
+          setPreviewState({
+            status: 'large-file',
+            prompt: { entry, previewType: 'text', thresholdBytes },
+          });
+          return;
+        }
+
+        setPreviewState({ status: 'loading', entry, previewType: 'text' });
+        try {
+          const maxBytes = Math.max(1024, Math.min(MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES, entry.size || 1024));
+          const response = await runWithSftpReconnect((activeSessionId) =>
+            readSftpFile(activeSessionId, {
+              path: entry.path,
+              maxBytes,
+            }),
+          );
+          if (previewLoadGenerationRef.current !== generation) {
+            return;
+          }
+
+          if (response.data.truncated) {
+            setPreviewState({ status: 'error', entry, message: t('sftp.previewTooLargeToOpen') });
+            return;
+          }
+
+          const nextEntry = { ...entry, size: response.data.size };
+          setPreviewState({
+            status: 'text',
+            entry: nextEntry,
+            content: response.data.content,
+            savedContent: response.data.content,
+            language: resolveSftpPreviewLanguage(entry),
+            remoteSnapshot: {
+              size: response.data.size,
+              modifiedAt: entry.modifiedAt,
+            },
+            isSaving: false,
+          });
+        } catch (error: unknown) {
+          if (previewLoadGenerationRef.current === generation) {
+            setPreviewState({
+              status: 'error',
+              entry,
+              message: error instanceof Error ? error.message : t('sftp.previewFailed'),
+            });
+          }
+        }
+        return;
+      }
+
+      if (isSftpImagePreviewEntry(entry)) {
+        if (!options.force && entry.size > sftpImagePreviewWarningThresholdBytes) {
+          setPreviewState({
+            status: 'large-file',
+            prompt: { entry, previewType: 'image', thresholdBytes: sftpImagePreviewWarningThresholdBytes },
+          });
+          return;
+        }
+
+        setPreviewState({ status: 'loading', entry, previewType: 'image' });
+        try {
+          const localPath = await downloadEntryToTemporaryPath(entry, {
+            reuseCached: true,
+            shouldCache: () => previewLoadGenerationRef.current === generation,
+          });
+          if (previewLoadGenerationRef.current !== generation) {
+            return;
+          }
+
+          const sourceDataUrl = await window.electron?.readSftpTemporaryImagePreview(localPath);
+          if (!sourceDataUrl) {
+            throw new Error(t('sftp.previewFailed'));
+          }
+          if (previewLoadGenerationRef.current !== generation) {
+            return;
+          }
+
+          setPreviewState({
+            status: 'image',
+            entry,
+            localPath,
+            sourceDataUrl,
+          });
+        } catch (error: unknown) {
+          if (previewLoadGenerationRef.current === generation) {
+            setPreviewState({
+              status: 'error',
+              entry,
+              message: error instanceof Error ? error.message : t('sftp.previewFailed'),
+            });
+          }
+        }
+        return;
+      }
+
+      setPreviewState({ status: 'unsupported', entry });
+    },
+    [
+      downloadEntryToTemporaryPath,
+      hasSftpSession,
+      runWithSftpReconnect,
+      sftpImagePreviewWarningThresholdBytes,
+      sftpTextPreviewWarningThresholdBytes,
+    ],
+  );
+
+  /**
+   * Continues a large preview after the user explicitly accepts the download/read cost.
+   *
+   * @param prompt Large preview prompt selected by the user.
+   * @returns void.
+   */
+  const handleConfirmLargePreview = React.useCallback(
+    (prompt: SftpLargePreviewPrompt): void => {
+      void loadPreviewForEntry(prompt.entry, { force: true });
+    },
+    [loadPreviewForEntry],
+  );
+
+  const handlePreviewContentChange = React.useCallback((content: string): void => {
+    setPreviewState((previous) => (previous?.status === 'text' ? { ...previous, content } : previous));
+  }, []);
+
+  const handlePreviewEditorMount = React.useCallback((editorInstance: MonacoEditor.IStandaloneCodeEditor): void => {
+    previewEditorRef.current = editorInstance;
+  }, []);
+
+  const handlePreviewUndo = React.useCallback((): void => {
+    previewEditorRef.current?.trigger('sftp-preview', 'undo', null);
+  }, []);
+
+  const handlePreviewRedo = React.useCallback((): void => {
+    previewEditorRef.current?.trigger('sftp-preview', 'redo', null);
+  }, []);
+
+  /**
+   * Saves Monaco text preview changes through the shared SFTP operation queue.
+   *
+   * @returns Promise resolved after the save is queued.
+   */
+  const handlePreviewSave = React.useCallback(async (): Promise<void> => {
+    const preview = activeTextPreview;
+    if (!preview || preview.content === preview.savedContent) {
+      return;
+    }
+
+    if (!canUseFileActions) {
+      notifyError(t('sftp.operationFailed'));
+      return;
+    }
+
+    const content = preview.content;
+    const contentSize = measureUtf8ByteLength(content);
+    const setPreviewSaving = (isSaving: boolean): void => {
+      setPreviewState((previous) =>
+        previous?.status === 'text' && previous.entry.path === preview.entry.path
+          ? { ...previous, isSaving }
+          : previous,
+      );
+    };
+
+    setPreviewSaving(true);
+    runSftpOperation(
+      {
+        label: t('sftp.tasks.save'),
+        detail: preview.entry.name,
+        progress: { completed: 0, total: 1 },
+      },
+      async ({ isCurrent, update }) => {
+        try {
+          const payload: ApiSftpWriteFileRequest = {
+            path: preview.entry.path,
+            content,
+            expectedSize: preview.remoteSnapshot.size,
+            expectedModifiedAt: preview.remoteSnapshot.modifiedAt,
+          };
+          let response: ApiSftpWriteFileResponse;
+          try {
+            response = await runWithSftpReconnect((activeSessionId) => writeSftpFile(activeSessionId, payload));
+          } catch (error: unknown) {
+            if (!isSftpUploadConflictError(error) || !isCurrent()) {
+              throw error;
+            }
+
+            const shouldOverwrite = await requestUploadConflictConfirmation({
+              remotePath: preview.entry.path,
+              name: preview.entry.name,
+              localPath: preview.entry.path,
+              size: contentSize,
+              modifiedAt: new Date().toISOString(),
+            });
+            if (!shouldOverwrite || !isCurrent()) {
+              update({ detail: t('sftp.tasks.saveSkipped') });
+              setPreviewSaving(false);
+              return;
+            }
+
+            response = await runWithSftpReconnect((activeSessionId) =>
+              writeSftpFile(activeSessionId, {
+                ...payload,
+                overwrite: true,
+              }),
+            );
+          }
+
+          update({ progress: { completed: 1, total: 1 } });
+          if (!isCurrent()) {
+            setPreviewSaving(false);
+            return;
+          }
+
+          const nextSize = response.data.size ?? contentSize;
+          const nextModifiedAt = response.data.modifiedAt ?? new Date().toISOString();
+          const nextEntry = {
+            ...preview.entry,
+            size: nextSize,
+            modifiedAt: nextModifiedAt,
+          };
+          setPreviewState((previous) =>
+            previous?.status === 'text' && previous.entry.path === preview.entry.path
+              ? {
+                  ...previous,
+                  entry: nextEntry,
+                  content,
+                  savedContent: content,
+                  remoteSnapshot: {
+                    size: nextSize,
+                    modifiedAt: nextModifiedAt,
+                  },
+                  isSaving: false,
+                }
+              : previous,
+          );
+          notifySuccess(t('sftp.feedback.saved'));
+          await refreshCurrentDirectoryAfterOperation([resolveEntryParentPath(preview.entry.path)]);
+        } catch (error: unknown) {
+          setPreviewSaving(false);
+          throw error;
+        }
+      },
+    );
+  }, [
+    activeTextPreview,
+    canUseFileActions,
+    isSftpUploadConflictError,
+    notifyError,
+    notifySuccess,
+    refreshCurrentDirectoryAfterOperation,
+    requestUploadConflictConfirmation,
+    runSftpOperation,
+    runWithSftpReconnect,
+  ]);
+
+  React.useEffect(() => {
+    if (sftpAuxiliarySidebarMode !== 'preview') {
+      clearPreviewState();
+      return;
+    }
+
+    if (!hasSftpSession || selectedCount !== 1 || !selectedEntry) {
+      clearPreviewState();
+      return;
+    }
+
+    void loadPreviewForEntry(selectedEntry);
+  }, [clearPreviewState, hasSftpSession, loadPreviewForEntry, selectedCount, selectedEntry, sftpAuxiliarySidebarMode]);
+
+  /**
    * Starts watching a temp file opened through SFTP so later local saves can be uploaded.
    *
    * @param entry Remote file entry that produced the temp file.
@@ -2604,7 +2984,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
           setSelectedPaths((previous) => previous.filter((path) => !deletedPaths.has(path)));
           setSelectionAnchorPath((previous) => (deletedPaths.has(previous) ? '' : previous));
-          setFilePreview((previous) => (previous && deletedPaths.has(previous.path) ? null : previous));
+          setPreviewState((previous) => (deletedPaths.has(resolvePreviewStatePath(previous)) ? null : previous));
           deletedPaths.forEach((path) => {
             delete temporaryOpenFilePathsRef.current[path];
           });
@@ -3054,7 +3434,7 @@ const SFTP: React.FC<SFTPProps> = ({
         event.preventDefault();
         setSelectedPaths(visibleEntries.map((entry) => entry.path));
         setSelectionAnchorPath(visibleEntries[0]?.path ?? '');
-        setFilePreview(null);
+        clearPreviewState();
         return;
       }
 
@@ -3123,6 +3503,7 @@ const SFTP: React.FC<SFTPProps> = ({
     beginCreateEntry,
     beginRenameEntry,
     canUseFileActions,
+    clearPreviewState,
     clipboardState,
     handleCopyEntries,
     handleCutEntries,
@@ -3284,11 +3665,16 @@ const SFTP: React.FC<SFTPProps> = ({
           selectedEntries={selectedEntries}
           selectedEntry={selectedEntry}
           sessionId={sessionId}
+          sftpAuxiliarySidebarMode={sftpAuxiliarySidebarMode}
           sftpShowAddressAsText={sftpShowAddressAsText}
           sftpShowHiddenEntries={sftpShowHiddenEntries}
           sortedSftpTasks={sortedSftpTasks}
+          hasTextPreview={hasTextPreview}
+          isPreviewDirty={isPreviewDirty}
+          isPreviewSaving={isPreviewSaving}
           taskToolbarLabel={taskToolbarLabel}
           onAddressInputPointerDown={handleAddressInputPointerDown}
+          onAuxiliarySidebarModeChange={setSftpAuxiliarySidebarMode}
           onBeginCreateEntry={beginCreateEntry}
           onBeginRenameEntry={beginRenameEntry}
           onCopyCurrentPath={handleCopyCurrentPath}
@@ -3308,12 +3694,15 @@ const SFTP: React.FC<SFTPProps> = ({
           onPathInputChange={setPathInput}
           onPathInputKeyDown={handlePathInputKeyDown}
           onPathSubmit={handlePathSubmit}
+          onPreviewRedo={handlePreviewRedo}
+          onPreviewSave={handlePreviewSave}
+          onPreviewUndo={handlePreviewUndo}
           onRefresh={handleRefresh}
           onRequestBreadcrumbDirectories={loadBreadcrumbMenuDirectories}
           onShowAddressAsText={handleShowAddressAsText}
           onShowHiddenEntriesChange={setSftpHiddenEntriesVisibility}
         />
-        <div className="grid min-h-0 flex-1 grid-cols-[250px_minmax(0,1fr)_minmax(240px,320px)] gap-2.5 overflow-hidden">
+        <div className={sftpWorkbenchGridClassName}>
           <SftpTreePanel
             currentPath={currentPath}
             renderActionMenuItems={renderSftpActionMenuItems}
@@ -3370,11 +3759,17 @@ const SFTP: React.FC<SFTPProps> = ({
             onRenameInputChange={setRenameInput}
             onSetActiveFileRowKey={setActiveFileRowKey}
           />
-          <SftpDetailPanel
-            filePreview={filePreview}
-            selectedCount={selectedCount}
-            selectedEntry={selectedEntry}
-          />
+          {sftpAuxiliarySidebarMode !== 'off' ? (
+            <SftpDetailPanel
+              auxiliarySidebarMode={sftpAuxiliarySidebarMode}
+              previewState={previewState}
+              selectedCount={selectedCount}
+              selectedEntry={selectedEntry}
+              onConfirmLargePreview={handleConfirmLargePreview}
+              onPreviewContentChange={handlePreviewContentChange}
+              onPreviewEditorMount={handlePreviewEditorMount}
+            />
+          ) : null}
         </div>
       </div>
       <SftpHostFingerprintDialog

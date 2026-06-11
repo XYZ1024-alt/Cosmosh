@@ -38,6 +38,8 @@ import type {
   ApiSftpRenameResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
+  ApiSftpWriteFileRequest,
+  ApiSftpWriteFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -114,6 +116,7 @@ export type BackendClient = {
   listSftpDirectory: (sessionId: string, query?: ApiSftpListDirectoryQuery) => Promise<ApiSftpListDirectoryResponse>;
   getSftpEntryDetails: (sessionId: string, payload: ApiSftpEntryDetailsRequest) => Promise<ApiSftpEntryDetailsResponse>;
   readSftpFile: (sessionId: string, query: ApiSftpReadFileQuery) => Promise<ApiSftpReadFileResponse>;
+  writeSftpFile: (sessionId: string, payload: ApiSftpWriteFileRequest) => Promise<ApiSftpWriteFileResponse>;
   downloadSftpFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => Promise<ApiSftpDownloadFileResponse>;
   uploadSftpFile: (sessionId: string, payload: ApiSftpUploadFileRequest) => Promise<ApiSftpUploadFileResponse>;
   createSftpDirectory: (
@@ -473,6 +476,9 @@ export const createBackendClient = (): BackendClient => {
     },
     readSftpFile: async (sessionId, query) => {
       return unwrapApiResponse(await transport.readSftpFile(sessionId, query));
+    },
+    writeSftpFile: async (sessionId, requestPayload) => {
+      return unwrapApiResponse(await transport.writeSftpFile(sessionId, requestPayload));
     },
     downloadSftpFile: async (sessionId, requestPayload) => {
       return unwrapApiResponse(await transport.downloadSftpFile(sessionId, requestPayload));

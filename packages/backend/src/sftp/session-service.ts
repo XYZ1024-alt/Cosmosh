@@ -267,6 +267,8 @@ export type UploadSftpFileConflictSnapshot = {
 
 export type UploadSftpFileResult = SftpOperationResult;
 
+export type WriteSftpFileResult = SftpOperationResult;
+
 export type UploadSftpFileOptions = {
   overwrite?: boolean;
 };
@@ -342,7 +344,8 @@ const S_IFLNK = 0o120000;
 const DEFAULT_FILE_MODE = 0o644;
 const DEFAULT_DIRECTORY_MODE = 0o755;
 const DEFAULT_READ_FILE_MAX_BYTES = 256 * 1024;
-const MAX_READ_FILE_MAX_BYTES = 1024 * 1024;
+const MAX_READ_FILE_MAX_BYTES = 16 * 1024 * 1024;
+const MAX_WRITE_FILE_CONTENT_BYTES = MAX_READ_FILE_MAX_BYTES;
 
 type SftpStatsWithExtendedAttributes = Stats & {
   readonly extended?: unknown;
@@ -931,6 +934,94 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.fileReadFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Writes UTF-8 text content back to one regular remote file.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param content UTF-8 text content to write.
+   * @param expectedRemoteSnapshot Remote metadata captured when the preview was opened.
+   * @param options Conflict override options.
+   * @returns Write result with updated remote metadata.
+   */
+  public async writeTextFile(
+    sessionId: string,
+    requestedPath: string | undefined,
+    content: string,
+    expectedRemoteSnapshot: UploadSftpFileConflictSnapshot,
+    options: UploadSftpFileOptions = {},
+  ): Promise<WriteSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const normalizedPath = normalizeSftpPathInput(requestedPath);
+    if (!isMutableSftpEntryPath(normalizedPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    const contentBuffer = Buffer.from(content, 'utf8');
+    if (contentBuffer.byteLength > MAX_WRITE_FILE_CONTENT_BYTES) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.fileWriteTooLarge', {
+          limit: MAX_WRITE_FILE_CONTENT_BYTES,
+        }),
+      };
+    }
+
+    try {
+      const targetStats = await this.stat(session, normalizedPath);
+      if (!targetStats.isFile()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileUploadUnsupported'),
+        };
+      }
+
+      if (!options.overwrite && !this.doesRemoteSnapshotMatch(targetStats, expectedRemoteSnapshot)) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.fileUploadRemoteChanged'),
+          reason: 'remote-conflict',
+        };
+      }
+
+      await this.writeBufferToRemotePath(session, contentBuffer, normalizedPath, targetStats.mode & 0o777, {
+        expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
+      });
+      this.logSftpMutation(session, 'write-file', {
+        path: normalizedPath,
+      });
+
+      const writtenStats = await this.stat(session, normalizedPath);
+      return {
+        type: 'success',
+        sessionId,
+        path: normalizedPath,
+        size: writtenStats.size,
+        modifiedAt: this.formatStatsTimestamp(writtenStats.mtime),
+      };
+    } catch (error: unknown) {
+      if (error instanceof SftpRemoteConflictError) {
+        return {
+          type: 'failed',
+          message: error.message,
+          reason: 'remote-conflict',
+        };
+      }
+
+      return {
+        type: 'failed',
+        message: this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileWriteFailedNoReason')),
       };
     }
   }
@@ -2087,6 +2178,47 @@ export class SftpSessionService {
       const readStream = createReadStream(localPath, { flags: 'r' });
       const writeStream = session.sftp.createWriteStream(temporaryPath, { flags: 'wx', mode });
       await pipeline(readStream, writeStream);
+      await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
+    } catch (error: unknown) {
+      await this.unlinkRemoteTempFile(session, temporaryPath);
+      throw error;
+    }
+  }
+
+  /**
+   * Writes an in-memory buffer through a remote temp file before replacing the target.
+   *
+   * @param session Live SFTP session.
+   * @param data File content.
+   * @param targetPath Remote file path to replace.
+   * @param mode Remote file permission bits to preserve.
+   * @param options Remote replacement conflict options.
+   * @returns Nothing.
+   */
+  private async writeBufferToRemotePath(
+    session: SftpLiveSession,
+    data: Buffer,
+    targetPath: string,
+    mode: number,
+    options: RemoteFileReplacementOptions,
+  ): Promise<void> {
+    const remoteDirectory = this.resolveParentPath(targetPath) ?? '.';
+    const temporaryPath = joinSftpPath(
+      remoteDirectory,
+      `.${this.resolveEntryName(targetPath)}.cosmosh-${Date.now()}-${randomUUID()}.tmp`,
+    );
+
+    try {
+      await new Promise<void>((resolve, reject) => {
+        session.sftp.writeFile(temporaryPath, data, { mode, flag: 'wx' }, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+
+          resolve();
+        });
+      });
       await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
     } catch (error: unknown) {
       await this.unlinkRemoteTempFile(session, temporaryPath);

@@ -109,15 +109,66 @@ export type ClipboardState = {
 };
 
 /**
- * Text preview state for a downloaded remote file.
+ * Preview renderer category supported by the SFTP auxiliary sidebar.
  */
-export type FilePreviewState = {
-  path: string;
-  name: string;
-  content: string;
-  size: number;
-  truncated: boolean;
+export type SftpPreviewType = 'text' | 'image';
+
+/**
+ * Confirmation prompt state for previews that exceed automatic open thresholds.
+ */
+export type SftpLargePreviewPrompt = {
+  entry: ApiSftpEntry;
+  previewType: SftpPreviewType;
+  thresholdBytes: number;
 };
+
+/**
+ * Monaco-backed text preview state for one remote file.
+ */
+export type SftpPreviewTextState = {
+  status: 'text';
+  entry: ApiSftpEntry;
+  content: string;
+  savedContent: string;
+  language: string;
+  remoteSnapshot: SftpOpenedFileRemoteSnapshot;
+  isSaving: boolean;
+};
+
+/**
+ * Image preview state backed by a renderer-managed temporary local file.
+ */
+export type SftpPreviewImageState = {
+  status: 'image';
+  entry: ApiSftpEntry;
+  localPath: string;
+  sourceDataUrl: string;
+};
+
+/**
+ * Complete SFTP preview lifecycle state shown in the auxiliary sidebar.
+ */
+export type SftpPreviewState =
+  | {
+      status: 'loading';
+      entry: ApiSftpEntry;
+      previewType: SftpPreviewType;
+    }
+  | {
+      status: 'large-file';
+      prompt: SftpLargePreviewPrompt;
+    }
+  | SftpPreviewTextState
+  | SftpPreviewImageState
+  | {
+      status: 'unsupported';
+      entry: ApiSftpEntry | null;
+    }
+  | {
+      status: 'error';
+      entry: ApiSftpEntry | null;
+      message: string;
+    };
 
 /**
  * Pending inline create row state.

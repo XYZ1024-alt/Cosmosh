@@ -29,6 +29,142 @@ export const SFTP_TASK_STATUS_ORDER: Record<SftpTaskStatus, number> = {
   success: 3,
 };
 
+const TEXT_PREVIEW_EXTENSIONS = new Set([
+  'bat',
+  'c',
+  'cfg',
+  'conf',
+  'cpp',
+  'cs',
+  'css',
+  'csv',
+  'dockerignore',
+  'env',
+  'go',
+  'h',
+  'hpp',
+  'htm',
+  'html',
+  'ini',
+  'java',
+  'js',
+  'json',
+  'jsx',
+  'log',
+  'lua',
+  'md',
+  'mjs',
+  'php',
+  'properties',
+  'ps1',
+  'py',
+  'rb',
+  'rs',
+  'scss',
+  'sh',
+  'sql',
+  'toml',
+  'ts',
+  'tsx',
+  'txt',
+  'vue',
+  'xml',
+  'yaml',
+  'yml',
+]);
+
+const TEXT_PREVIEW_FILE_NAMES = new Set(['.env', '.gitignore', '.npmrc', 'dockerfile', 'makefile', 'readme']);
+
+const IMAGE_PREVIEW_EXTENSIONS = new Set(['apng', 'avif', 'bmp', 'gif', 'ico', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
+
+const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
+  c: 'c',
+  cpp: 'cpp',
+  cs: 'csharp',
+  css: 'css',
+  go: 'go',
+  h: 'c',
+  hpp: 'cpp',
+  htm: 'html',
+  html: 'html',
+  java: 'java',
+  js: 'javascript',
+  json: 'json',
+  jsx: 'javascript',
+  md: 'markdown',
+  mjs: 'javascript',
+  php: 'php',
+  ps1: 'powershell',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  scss: 'scss',
+  sh: 'shell',
+  sql: 'sql',
+  ts: 'typescript',
+  tsx: 'typescript',
+  vue: 'html',
+  xml: 'xml',
+  yaml: 'yaml',
+  yml: 'yaml',
+};
+
+/**
+ * Resolves the lowercase extension used by SFTP preview classification.
+ *
+ * @param entry Remote SFTP entry.
+ * @returns Lowercase extension without a leading dot.
+ */
+const resolvePreviewExtension = (entry: ApiSftpEntry): string => {
+  const extension = entry.extension.trim().toLowerCase();
+  if (extension) {
+    return extension;
+  }
+
+  const dotIndex = entry.name.lastIndexOf('.');
+  return dotIndex >= 0 ? entry.name.slice(dotIndex + 1).toLowerCase() : '';
+};
+
+/**
+ * Checks whether an SFTP file is a supported text/code preview target.
+ *
+ * @param entry Remote SFTP entry.
+ * @returns Whether the file should use Monaco preview.
+ */
+export const isSftpTextPreviewEntry = (entry: ApiSftpEntry): boolean => {
+  if (entry.type !== 'file') {
+    return false;
+  }
+
+  const extension = resolvePreviewExtension(entry);
+  return TEXT_PREVIEW_EXTENSIONS.has(extension) || TEXT_PREVIEW_FILE_NAMES.has(entry.name.toLowerCase());
+};
+
+/**
+ * Checks whether an SFTP file is a supported image preview target.
+ *
+ * @param entry Remote SFTP entry.
+ * @returns Whether the file should use image preview.
+ */
+export const isSftpImagePreviewEntry = (entry: ApiSftpEntry): boolean => {
+  return entry.type === 'file' && IMAGE_PREVIEW_EXTENSIONS.has(resolvePreviewExtension(entry));
+};
+
+/**
+ * Resolves the Monaco language id for one SFTP text/code preview.
+ *
+ * @param entry Remote SFTP entry.
+ * @returns Monaco language id.
+ */
+export const resolveSftpPreviewLanguage = (entry: ApiSftpEntry): string => {
+  const extension = resolvePreviewExtension(entry);
+  if (extension === 'env' || entry.name.toLowerCase() === '.env') {
+    return 'shell';
+  }
+
+  return MONACO_LANGUAGE_BY_EXTENSION[extension] ?? 'plaintext';
+};
+
 /**
  * Creates a stable renderer-local SFTP task id.
  *

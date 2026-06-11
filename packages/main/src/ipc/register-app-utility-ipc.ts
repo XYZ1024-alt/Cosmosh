@@ -40,8 +40,21 @@ const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
 const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
 const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
 const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
+const MAX_SFTP_TEMPORARY_IMAGE_PREVIEW_BYTES = 128 * 1024 * 1024;
 const WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME = 'COSMOSH_SFTP_OPEN_WITH_PATH';
 const SFTP_TEMP_FILE_WATCH_DEBOUNCE_MS = 800;
+const SFTP_TEMPORARY_IMAGE_PREVIEW_MIME_TYPES: Readonly<Record<string, string>> = {
+  '.apng': 'image/apng',
+  '.avif': 'image/avif',
+  '.bmp': 'image/bmp',
+  '.gif': 'image/gif',
+  '.ico': 'image/x-icon',
+  '.jpeg': 'image/jpeg',
+  '.jpg': 'image/jpeg',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+};
 const WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT = `
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
@@ -235,6 +248,29 @@ const resolveSftpTemporaryFileSignature = async (
       modifiedAt: stats.mtime.toISOString(),
     },
   };
+};
+
+/**
+ * Reads a validated SFTP temp image as a data URL for renderer preview.
+ *
+ * @param candidatePath Renderer-provided local path.
+ * @returns Data URL suitable for an image src attribute.
+ */
+const readSftpTemporaryImagePreviewDataUrl = async (candidatePath: string | undefined): Promise<string> => {
+  const normalizedPath = await resolveExistingSftpTemporaryFilePath(candidatePath);
+  const stats = await fs.stat(normalizedPath);
+  if (stats.size > MAX_SFTP_TEMPORARY_IMAGE_PREVIEW_BYTES) {
+    throw new Error('SFTP image preview file is too large.');
+  }
+
+  const extension = path.extname(normalizedPath).toLowerCase();
+  const mimeType = SFTP_TEMPORARY_IMAGE_PREVIEW_MIME_TYPES[extension];
+  if (!mimeType) {
+    throw new Error('Unsupported SFTP image preview type.');
+  }
+
+  const content = await fs.readFile(normalizedPath);
+  return `data:${mimeType};base64,${content.toString('base64')}`;
 };
 
 /**
@@ -601,6 +637,10 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     }
 
     return true;
+  });
+
+  ipcMain.handle('app:read-sftp-temporary-image-preview', async (_event, localPath?: string): Promise<string> => {
+    return readSftpTemporaryImagePreviewDataUrl(localPath);
   });
 
   ipcMain.handle('app:start-sftp-temporary-file-watch', async (event, localPath?: string): Promise<string> => {

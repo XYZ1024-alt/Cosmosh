@@ -385,6 +385,10 @@
         "description": "Controls clipboard requests from local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "sftpAuxiliarySidebarMode": {
+        "description": "Controls whether the SFTP auxiliary sidebar shows details, editable previews, or stays closed.",
+        "title": "SFTP Auxiliary Sidebar"
+      },
       "sftpDeleteConfirmationMode": {
         "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
         "title": "Confirm Before Delete"
@@ -396,6 +400,11 @@
       "sftpDirectoryListView": {
         "description": "Controls the SFTP file list columns, column order, and sort preference.",
         "title": "SFTP File List View"
+      },
+      "sftpImagePreviewWarningThresholdBytes": {
+        "description": "Shows a confirmation before downloading image previews at or above this many bytes.",
+        "placeholder": "4194304",
+        "title": "Image Preview Warning Threshold"
       },
       "sftpReconnectMode": {
         "description": "Controls how SFTP recovers when the remote connection drops while the tab remains open.",
@@ -412,6 +421,11 @@
       "sftpShowParentDirectoryEntry": {
         "description": "Shows a \"..\" row at the top of the SFTP file list for navigating to the parent directory.",
         "title": "Show Parent Directory Row"
+      },
+      "sftpTextPreviewWarningThresholdBytes": {
+        "description": "Shows a confirmation before opening editable text/code previews at or above this many bytes.",
+        "placeholder": "524288",
+        "title": "Text Preview Warning Threshold"
       },
       "showFullServerAddress": {
         "description": "When disabled, server host/IP values in the server list are masked with asterisks.",
@@ -693,6 +707,11 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "sftpAuxiliarySidebarMode": {
+        "details": "Details",
+        "off": "Off",
+        "preview": "Preview"
+      },
       "sftpDeleteConfirmationMode": {
         "always": "Enabled",
         "batch": "Enabled for batch operations",
@@ -815,6 +834,7 @@
   },
   "sftp": {
     "actions": {
+      "auxiliarySidebar": "Auxiliary Sidebar",
       "back": "Back",
       "collapse": "Collapse Folder",
       "copy": "Copy",
@@ -837,14 +857,17 @@
       "openWith": "Open With...",
       "paste": "Paste",
       "properties": "Properties",
+      "redo": "Redo",
       "refresh": "Refresh",
       "rename": "Rename",
       "retry": "Retry",
+      "save": "Save",
       "saveAs": "Save to...",
       "saveToDownloads": "Save to Downloads",
       "search": "Search Current Directory",
       "showAddressAsText": "Show Address as Text",
       "showHiddenFiles": "Show Hidden Files",
+      "undo": "Undo",
       "up": "Parent Directory"
     },
     "addressCollapsedMenuLabel": "Show hidden path levels",
@@ -852,6 +875,11 @@
     "addressMenuLoading": "Loading folders...",
     "addressRootLabel": "Remote Server Root",
     "addressSegmentMenuLabel": "Show folders under {path}",
+    "auxiliarySidebar": {
+      "details": "Details",
+      "off": "Off",
+      "preview": "Preview"
+    },
     "columns": {
       "accessedAt": "Accessed",
       "extension": "Extension",
@@ -915,6 +943,7 @@
       "pathCopied": "File address copied.",
       "relativePathCopied": "Relative address copied.",
       "renamed": "Renamed.",
+      "saved": "Saved.",
       "uploaded": "Uploaded changes."
     },
     "loadFailed": "Failed to load SFTP directory.",
@@ -931,7 +960,17 @@
     "parentDirectoryEntryLabel": "Go to parent directory",
     "pathInputLabel": "Remote path",
     "previewEmpty": "This file is empty.",
+    "previewEmptySelection": "Select a file to preview.",
+    "previewFailed": "Failed to load preview.",
+    "previewLargeImage": "{size} exceeds the automatic image preview threshold ({threshold}).",
+    "previewLargeText": "{size} exceeds the automatic text preview threshold ({threshold}).",
+    "previewLoading": "Loading preview...",
+    "previewModified": "Modified",
+    "previewNoPreview": "No preview.",
+    "previewOpenAnyway": "Open Anyway",
+    "previewSelectOne": "Select one item to preview.",
     "previewTitle": "Preview",
+    "previewTooLargeToOpen": "This file exceeds the supported text preview size.",
     "previewTruncated": "preview truncated",
     "properties": {
       "browserUnsupported": "SFTP properties are not implemented for the browser runtime yet.",
@@ -1015,6 +1054,8 @@
       "reconnectComplete": "Reconnected",
       "reconnecting": "Reconnecting SFTP session...",
       "rename": "Rename",
+      "save": "Save",
+      "saveSkipped": "Save skipped",
       "status": {
         "failed": "Failed",
         "queued": "Queued",

@@ -7,6 +7,26 @@ export type SftpNamedItem = {
   name: string;
 };
 
+/** Supported right-side SFTP auxiliary sidebar modes. */
+export const SFTP_AUXILIARY_SIDEBAR_MODES = ['details', 'preview', 'off'] as const;
+
+export type SftpAuxiliarySidebarMode = (typeof SFTP_AUXILIARY_SIDEBAR_MODES)[number];
+
+/** Default SFTP sidebar mode keeps the existing metadata panel visible. */
+export const DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE: SftpAuxiliarySidebarMode = 'details';
+
+/** Default byte threshold before text/code preview asks for confirmation. */
+export const DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES = 512 * 1024;
+
+/** Default byte threshold before image preview asks for confirmation. */
+export const DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES = 4 * 1024 * 1024;
+
+/** Maximum configurable byte threshold for Monaco-backed text/code preview. */
+export const MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES = 16 * 1024 * 1024;
+
+/** Maximum configurable byte threshold for image preview downloads. */
+export const MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES = 128 * 1024 * 1024;
+
 export const SFTP_DIRECTORY_LIST_COLUMN_IDS = [
   'name',
   'modifiedAt',

@@ -22,6 +22,7 @@ flowchart TB
 | `app:get-downloads-path` | `invoke` | none | `Promise<string>` | Returns the OS downloads directory for local save defaults |
 | `app:create-sftp-temporary-file` | `invoke` | `fileName: string` | `Promise<string>` | Creates a unique local destination under the Cosmosh SFTP temp root for backend download/open flows |
 | `app:open-sftp-temporary-file` | `invoke` | `localPath: string` | `Promise<boolean>` | Opens an existing file under the Cosmosh SFTP temp root with the OS default application |
+| `app:read-sftp-temporary-image-preview` | `invoke` | `localPath: string` | `Promise<string>` | Validates an existing image file under the Cosmosh SFTP temp root and returns a bounded data URL for renderer image preview |
 | `app:start-sftp-temporary-file-watch` | `invoke` | `localPath: string` | `Promise<string>` | Starts a debounced watcher for one existing file under the Cosmosh SFTP temp root and returns a watch id |
 | `app:stop-sftp-temporary-file-watch` | `invoke` | `watchId: string` | `Promise<boolean>` | Stops a previously created SFTP temp-file watcher |
 | `app:show-sftp-open-with-dialog` | `invoke` | `localPath: string` | `Promise<boolean>` | Windows only: validates a temp file path and opens the system Open With picker through the shell `openas` verb |
@@ -76,6 +77,7 @@ flowchart TB
 | `backend:sftp-list-directory` | `invoke` | `sessionId: string, query?: ApiSftpListDirectoryQuery` | `Promise<ApiSftpListDirectoryResponse \| ApiErrorResponse>` | GET one SFTP directory listing |
 | `backend:sftp-get-entry-details` | `invoke` | `sessionId: string, payload: ApiSftpEntryDetailsRequest` | `Promise<ApiSftpEntryDetailsResponse \| ApiErrorResponse>` | POST fetch non-recursive metadata for selected SFTP entries |
 | `backend:sftp-read-file` | `invoke` | `sessionId: string, query: ApiSftpReadFileQuery` | `Promise<ApiSftpReadFileResponse \| ApiErrorResponse>` | GET bounded UTF-8 file preview from one SFTP session |
+| `backend:sftp-write-file` | `invoke` | `sessionId: string, payload: ApiSftpWriteFileRequest` | `Promise<ApiSftpWriteFileResponse \| ApiErrorResponse>` | POST save editable UTF-8 SFTP preview content back to one regular remote file after remote size/mtime conflict checks; remote conflicts return `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-download-file` | `invoke` | `sessionId: string, payload: ApiSftpDownloadFileRequest` | `Promise<ApiSftpDownloadFileResponse \| ApiErrorResponse>` | POST stream one regular remote SFTP file into a local path selected by app utility IPC |
 | `backend:sftp-upload-file` | `invoke` | `sessionId: string, payload: ApiSftpUploadFileRequest` | `Promise<ApiSftpUploadFileResponse \| ApiErrorResponse>` | POST stream one locally edited SFTP temp file back to the remote file after remote size/mtime conflict checks; `overwrite: true` is only sent after renderer conflict confirmation and remote conflicts return `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-create-directory` | `invoke` | `sessionId: string, payload: ApiSftpCreateDirectoryRequest` | `Promise<ApiSftpCreateDirectoryResponse \| ApiErrorResponse>` | POST create remote SFTP directory |
