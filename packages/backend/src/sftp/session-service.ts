@@ -913,10 +913,11 @@ export class SftpSessionService {
       const readLength = Math.min(stats.size, maxBytes);
       const buffer = Buffer.alloc(readLength);
       const handle = await this.open(session, normalizedPath, 'r');
+      let bytesReadTotal = 0;
 
       try {
         if (readLength > 0) {
-          await this.read(session, handle, buffer, readLength);
+          bytesReadTotal = await this.readFullyIntoBuffer(session, handle, buffer, readLength);
         }
       } finally {
         await this.closeHandle(session, handle).catch(() => undefined);
@@ -926,7 +927,7 @@ export class SftpSessionService {
         type: 'success',
         sessionId,
         path: normalizedPath,
-        content: buffer.toString('utf8'),
+        content: buffer.subarray(0, bytesReadTotal).toString('utf8'),
         size: stats.size,
         truncated: stats.size > maxBytes,
       };
@@ -1880,9 +1881,56 @@ export class SftpSessionService {
     });
   }
 
-  private async read(session: SftpLiveSession, handle: Buffer, buffer: Buffer, length: number): Promise<number> {
+  /**
+   * Reads until the requested preview buffer is filled or the server reports EOF.
+   *
+   * @param session Live SFTP session.
+   * @param handle Open remote file handle.
+   * @param buffer Destination buffer.
+   * @param length Maximum bytes to read.
+   * @returns Number of bytes actually read.
+   */
+  private async readFullyIntoBuffer(
+    session: SftpLiveSession,
+    handle: Buffer,
+    buffer: Buffer,
+    length: number,
+  ): Promise<number> {
+    let bytesReadTotal = 0;
+    while (bytesReadTotal < length) {
+      const nextReadLength = length - bytesReadTotal;
+      const bytesRead = await this.read(session, handle, buffer, bytesReadTotal, nextReadLength, bytesReadTotal);
+      if (bytesRead <= 0) {
+        break;
+      }
+
+      bytesReadTotal += bytesRead;
+    }
+
+    return bytesReadTotal;
+  }
+
+  /**
+   * Reads one SFTP chunk at a specific file position.
+   *
+   * @param session Live SFTP session.
+   * @param handle Open remote file handle.
+   * @param buffer Destination buffer.
+   * @param offset Destination buffer offset.
+   * @param length Number of bytes to request.
+   * @param position Remote file position.
+   * @returns Number of bytes read by the server.
+   */
+  private async read(
+    session: SftpLiveSession,
+    handle: Buffer,
+    buffer: Buffer,
+    offset: number,
+    length: number,
+    position: number,
+  ): Promise<number> {
     return await new Promise((resolve, reject) => {
-      session.sftp.read(handle, buffer, 0, length, 0, (error, bytesRead) => {
+      session.sftp.read(handle, buffer, offset, length, position, (error, bytesRead) => {
         if (error) {
           reject(error);
           return;
