@@ -962,6 +962,7 @@
     "previewEmpty": "该文件为空。",
     "previewEmptySelection": "选择文件以预览。",
     "previewFailed": "加载预览失败。",
+    "previewImageTooLargeToOpen": "该图片超过预览支持的最大大小（{limit}）。",
     "previewLargeImage": "{size} 超过自动打开图片预览阈值（{threshold}）。",
     "previewLargeText": "{size} 超过自动打开文本预览阈值（{threshold}）。",
     "previewLoading": "正在加载预览...",

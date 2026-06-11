@@ -6,6 +6,7 @@ import {
   type ApiSftpWriteFileResponse,
   compareSftpEntryNames,
   compareSftpNames,
+  MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
   MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
   type SftpAuxiliarySidebarMode,
   type SftpDirectoryListColumnId,
@@ -86,6 +87,7 @@ import {
   flattenVisibleTreePaths,
   formatBatchFeedback,
   formatBatchPartialFailureFeedback,
+  formatFileSize,
   formatSftpTabTitle,
   formatSftpTaskToolbarLabel,
   isSameClipboardSnapshot,
@@ -2381,6 +2383,17 @@ const SFTP: React.FC<SFTPProps> = ({
       }
 
       if (isSftpImagePreviewEntry(entry)) {
+        if (entry.size > MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES) {
+          setPreviewState({
+            status: 'error',
+            entry,
+            message: t('sftp.previewImageTooLargeToOpen', {
+              limit: formatFileSize(MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES),
+            }),
+          });
+          return;
+        }
+
         if (!options.force && entry.size > sftpImagePreviewWarningThresholdBytes) {
           setPreviewState({
             status: 'large-file',

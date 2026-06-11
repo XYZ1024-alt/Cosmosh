@@ -962,6 +962,7 @@
     "previewEmpty": "This file is empty.",
     "previewEmptySelection": "Select a file to preview.",
     "previewFailed": "Failed to load preview.",
+    "previewImageTooLargeToOpen": "This image exceeds the supported preview size ({limit}).",
     "previewLargeImage": "{size} exceeds the automatic image preview threshold ({threshold}).",
     "previewLargeText": "{size} exceeds the automatic text preview threshold ({threshold}).",
     "previewLoading": "Loading preview...",
