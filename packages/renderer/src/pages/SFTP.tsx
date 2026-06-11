@@ -64,6 +64,7 @@ import type {
   SftpDeleteInvocationSource,
   SftpFileNavigationRow,
   SftpLargePreviewPrompt,
+  SftpOpenedFileRemoteSnapshot,
   SftpOpenWithApplication,
   SftpPreviewState,
   SftpQueuedTask,
@@ -165,6 +166,39 @@ const isDirtySftpTextPreviewState = (state: SftpPreviewState | null): boolean =>
   return state?.status === 'text' && state.content !== state.savedContent && !state.isSaving;
 };
 
+/**
+ * Captures the remote metadata that controls SFTP temp-file cache freshness.
+ *
+ * @param entry Remote SFTP entry.
+ * @returns Size and modified-time snapshot for cache validation.
+ */
+const createSftpEntryRemoteSnapshot = (entry: ApiSftpEntry): SftpOpenedFileRemoteSnapshot => ({
+  size: entry.size,
+  modifiedAt: entry.modifiedAt,
+});
+
+/**
+ * Checks whether one cached local temp file still reflects the selected remote entry.
+ *
+ * @param entry Remote SFTP entry from the latest directory listing.
+ * @param snapshot Snapshot stored with the cached temp file.
+ * @returns Whether the cache can be reused.
+ */
+const doesSftpEntryMatchRemoteSnapshot = (
+  entry: ApiSftpEntry,
+  snapshot: SftpOpenedFileRemoteSnapshot | undefined,
+): boolean => {
+  return Boolean(snapshot && snapshot.size === entry.size && snapshot.modifiedAt === entry.modifiedAt);
+};
+
+/**
+ * Renderer-owned image preview cache entry separated from externally opened temp files.
+ */
+type SftpImagePreviewTempFileCacheEntry = {
+  localPath: string;
+  remoteSnapshot: SftpOpenedFileRemoteSnapshot;
+};
+
 type SFTPProps = {
   connectionIntent?: SftpConnectionIntent;
   onOpenDirectoryInNewTab: (initialPath: string) => void;
@@ -242,6 +276,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpShowHiddenEntriesRef = React.useRef(sftpShowHiddenEntries);
   const syncedTabTitleRef = React.useRef<string>('');
   const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
+  const imagePreviewTempFilesRef = React.useRef<Record<string, SftpImagePreviewTempFileCacheEntry>>({});
   const watchedOpenFilesRef = React.useRef<Record<string, SftpWatchedOpenFile>>({});
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
@@ -1629,6 +1664,7 @@ const SFTP: React.FC<SFTPProps> = ({
         setClipboardState(null);
         stopAllWatchedOpenFiles();
         temporaryOpenFilePathsRef.current = {};
+        imagePreviewTempFilesRef.current = {};
         setOpenWithApplicationsByPath({});
         setLoadingOpenWithPath('');
         setPendingCreate(null);
@@ -2304,6 +2340,39 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   /**
+   * Downloads one image preview into a renderer-owned temp cache.
+   *
+   * @param entry Remote image entry to preview.
+   * @param options Cache write options.
+   * @returns Validated local temp path for main-process data URL loading.
+   */
+  const downloadEntryToImagePreviewPath = React.useCallback(
+    async (entry: ApiSftpEntry, options: { shouldCache?: () => boolean } = {}): Promise<string> => {
+      const cachedPreview = imagePreviewTempFilesRef.current[entry.path];
+      if (cachedPreview && doesSftpEntryMatchRemoteSnapshot(entry, cachedPreview.remoteSnapshot)) {
+        return cachedPreview.localPath;
+      }
+
+      const localPath =
+        cachedPreview?.localPath ?? (await window.electron?.createSftpTemporaryFile(sanitizeLocalFileName(entry.name)));
+      if (!localPath) {
+        throw new Error(t('sftp.temporaryPathUnavailable'));
+      }
+
+      await downloadEntryToLocalPath(entry, localPath);
+      if (options.shouldCache?.() ?? true) {
+        imagePreviewTempFilesRef.current[entry.path] = {
+          localPath,
+          remoteSnapshot: createSftpEntryRemoteSnapshot(entry),
+        };
+      }
+
+      return localPath;
+    },
+    [downloadEntryToLocalPath],
+  );
+
+  /**
    * Loads the preview payload for one selected SFTP entry.
    *
    * @param entry Selected remote entry to preview.
@@ -2404,8 +2473,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
         setPreviewState({ status: 'loading', entry, previewType: 'image' });
         try {
-          const localPath = await downloadEntryToTemporaryPath(entry, {
-            reuseCached: true,
+          const localPath = await downloadEntryToImagePreviewPath(entry, {
             shouldCache: () => previewLoadGenerationRef.current === generation,
           });
           if (previewLoadGenerationRef.current !== generation) {
@@ -2441,7 +2509,7 @@ const SFTP: React.FC<SFTPProps> = ({
       setPreviewState({ status: 'unsupported', entry });
     },
     [
-      downloadEntryToTemporaryPath,
+      downloadEntryToImagePreviewPath,
       hasSftpSession,
       runWithSftpReconnect,
       sftpImagePreviewWarningThresholdBytes,
@@ -3105,6 +3173,7 @@ const SFTP: React.FC<SFTPProps> = ({
           setPreviewState((previous) => (deletedPaths.has(resolvePreviewStatePath(previous)) ? null : previous));
           deletedPaths.forEach((path) => {
             delete temporaryOpenFilePathsRef.current[path];
+            delete imagePreviewTempFilesRef.current[path];
           });
           setOpenWithApplicationsByPath((previous) => {
             const next = { ...previous };
