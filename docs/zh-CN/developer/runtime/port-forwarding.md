@@ -67,6 +67,8 @@ flowchart TD
 
 SSH 意外 close/error 的清理采用 best-effort 语义：先移除运行时资源；若最终 stopped/error 元数据持久化失败，只记录错误，不得形成导致 backend 退出的未处理 rejection。
 
+显式 stop 会先移除运行时注册表条目，再关闭 SSH/listener 资源，因此 transport close 事件无法重新进入意外断线路径并对同一规则执行两次释放。
+
 转发实现：
 
 - 本地转发：backend 打开 `net.Server`；每个进入的本地 socket 通过 `ssh2.Client.forwardOut(...)` 从 SSH server 侧连接到 `targetHost:targetPort`。

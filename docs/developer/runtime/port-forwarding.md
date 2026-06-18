@@ -67,6 +67,8 @@ flowchart TD
 
 Unexpected SSH close/error cleanup is best-effort: runtime resources are removed first, and a failure to persist the final stopped/error metadata is logged without surfacing as an unhandled rejection that terminates the backend.
 
+Explicit stop removes the runtime registry entry before closing SSH/listener resources, so transport close events cannot re-enter the unexpected-close path and dispose the same rule twice.
+
 Forwarding implementations:
 
 - Local: backend opens a `net.Server`; each inbound socket opens `ssh2.Client.forwardOut(...)` to `targetHost:targetPort` from the SSH server side.

@@ -374,8 +374,8 @@ export class PortForwardSessionService {
 
     const runtimeState = this.activeRules.get(ruleId);
     if (runtimeState) {
-      await this.disposeRuntimeState(runtimeState);
       this.activeRules.delete(ruleId);
+      await this.disposeRuntimeState(runtimeState);
     }
 
     const updatedRule = await this.getDbClient().portForwardRule.update({

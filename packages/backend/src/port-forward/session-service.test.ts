@@ -97,3 +97,60 @@ test('PortForwardSessionService contains unexpected-close persistence failures',
   assert.equal(clientEnded, true);
   assert.equal(loggedErrors.length, 1);
 });
+
+test('PortForwardSessionService removes active ownership before stopping transport', async () => {
+  const now = new Date();
+  const rule = {
+    id: 'rule-1',
+    name: 'Local web',
+    type: 'local' as const,
+    serverId: 'server-1',
+    server: {
+      name: 'Server',
+      keychain: {},
+    },
+    localBindHost: '127.0.0.1',
+    localBindPort: 8080,
+    remoteBindHost: null,
+    remoteBindPort: null,
+    targetHost: '127.0.0.1',
+    targetPort: 80,
+    note: null,
+    lastStartedAt: now,
+    lastStoppedAt: now,
+    lastFailureMessage: null,
+    createdAt: now,
+    updatedAt: now,
+  };
+  const dbClient = {
+    portForwardRule: {
+      findUnique: async () => rule,
+      update: async () => rule,
+    },
+  } as unknown as PrismaClient;
+  const auditEventService = {
+    logEvent: async () => null,
+  } as unknown as AuditEventService;
+  const service = new PortForwardSessionService({
+    getDbClient: () => dbClient,
+    auditEventService,
+    credentialEncryptionKey: Buffer.alloc(32),
+  });
+  const testService = service as unknown as {
+    activeRules: Map<string, unknown>;
+    disposeRuntimeState: (runtimeState: unknown) => Promise<void>;
+  };
+  const runtimeState = {
+    ruleId: rule.id,
+  };
+  testService.activeRules.set(rule.id, runtimeState);
+  let wasActiveDuringDispose = true;
+  testService.disposeRuntimeState = async () => {
+    wasActiveDuringDispose = testService.activeRules.has(rule.id);
+  };
+
+  const result = await service.stopRule(rule.id);
+
+  assert.equal(result.type, 'success');
+  assert.equal(wasActiveDuringDispose, false);
+});
