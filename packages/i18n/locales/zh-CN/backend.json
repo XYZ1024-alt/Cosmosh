@@ -64,6 +64,8 @@
       "fileUploadFailedNoReason": "上传 SFTP 文件失败。",
       "fileUploadRemoteChanged": "远程文件在打开后已发生变化。请刷新目录后再上传。",
       "fileUploadUnsupported": "仅普通远程文件可以从已打开的临时文件更新。",
+      "fileWriteFailedNoReason": "写入 SFTP 文件失败。",
+      "fileWriteTooLarge": "SFTP 文本预览保存最大支持 {limit} 字节。",
       "localFileReadUnsupported": "本地临时路径不是普通文件。",
       "localPathRequired": "localPath 为必填项。",
       "operationFailed": "SFTP 操作失败：{reason}",
@@ -164,6 +166,7 @@
       "fileDownloaded": "SFTP 文件下载成功。",
       "fileRead": "SFTP 文件读取成功。",
       "fileUploaded": "SFTP 文件上传成功。",
+      "fileWritten": "SFTP 文件保存成功。",
       "sessionCreated": "SFTP 会话创建成功。"
     },
     "ssh": {

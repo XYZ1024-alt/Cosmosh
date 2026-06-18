@@ -64,6 +64,8 @@
       "fileUploadFailedNoReason": "Failed to upload SFTP file.",
       "fileUploadRemoteChanged": "The remote file changed after it was opened. Refresh the directory before uploading again.",
       "fileUploadUnsupported": "Only regular remote files can be updated from an opened temp file.",
+      "fileWriteFailedNoReason": "Failed to write SFTP file.",
+      "fileWriteTooLarge": "SFTP text preview saves are limited to {limit} bytes.",
       "localFileReadUnsupported": "The local temp path is not a regular file.",
       "localPathRequired": "localPath is required.",
       "operationFailed": "SFTP operation failed: {reason}",
@@ -164,6 +166,7 @@
       "fileDownloaded": "SFTP file downloaded successfully.",
       "fileRead": "SFTP file read successfully.",
       "fileUploaded": "SFTP file uploaded successfully.",
+      "fileWritten": "SFTP file saved successfully.",
       "sessionCreated": "SFTP session created successfully."
     },
     "ssh": {

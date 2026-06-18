@@ -14,8 +14,15 @@
  */
 
 import {
+  DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE,
   DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+  DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+  DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+  MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  SFTP_AUXILIARY_SIDEBAR_MODES,
   SFTP_DIRECTORY_LIST_COLUMN_IDS,
+  type SftpAuxiliarySidebarMode,
   type SftpDirectoryListViewSetting,
 } from './sftp';
 import {
@@ -106,6 +113,9 @@ export interface SettingsValues {
   sftpDimHiddenEntries: boolean;
   sftpShowParentDirectoryEntry: boolean;
   sftpShowAddressAsText: boolean;
+  sftpAuxiliarySidebarMode: SftpAuxiliarySidebarMode;
+  sftpTextPreviewWarningThresholdBytes: number;
+  sftpImagePreviewWarningThresholdBytes: number;
   sftpDirectoryListView: SftpDirectoryListViewSetting;
 }
 
@@ -555,6 +565,55 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'sftp.browser.showAddressAsText',
     commandActionId: 'settings.sftp.browser.showAddressAsText.toggle',
     searchTerms: ['sftp', 'address', 'path', 'breadcrumb', 'text', 'browser'],
+  },
+  {
+    key: 'sftpAuxiliarySidebarMode',
+    valueType: 'string',
+    defaultValue: DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE,
+    nameI18nKey: 'settings.items.sftpAuxiliarySidebarMode.title',
+    descriptionI18nKey: 'settings.items.sftpAuxiliarySidebarMode.description',
+    optionI18nNamespace: 'sftpAuxiliarySidebarMode',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'select',
+    path: 'sftp.browser.auxiliarySidebarMode',
+    commandActionId: 'settings.sftp.browser.auxiliarySidebarMode.set',
+    searchTerms: ['sftp', 'auxiliary sidebar', 'details', 'preview', 'side panel', 'file preview'],
+    options: SFTP_AUXILIARY_SIDEBAR_MODES.map((value) => ({ value })),
+  },
+  {
+    key: 'sftpTextPreviewWarningThresholdBytes',
+    valueType: 'number',
+    defaultValue: DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+    nameI18nKey: 'settings.items.sftpTextPreviewWarningThresholdBytes.title',
+    descriptionI18nKey: 'settings.items.sftpTextPreviewWarningThresholdBytes.description',
+    placeholderI18nKey: 'settings.items.sftpTextPreviewWarningThresholdBytes.placeholder',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'input',
+    path: 'sftp.browser.textPreviewWarningThresholdBytes',
+    commandActionId: 'settings.sftp.browser.textPreviewWarningThresholdBytes.set',
+    searchTerms: ['sftp', 'preview', 'monaco', 'text', 'code', 'large file', 'threshold'],
+    inputMode: 'numeric',
+    min: 1024,
+    max: MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  },
+  {
+    key: 'sftpImagePreviewWarningThresholdBytes',
+    valueType: 'number',
+    defaultValue: DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+    nameI18nKey: 'settings.items.sftpImagePreviewWarningThresholdBytes.title',
+    descriptionI18nKey: 'settings.items.sftpImagePreviewWarningThresholdBytes.description',
+    placeholderI18nKey: 'settings.items.sftpImagePreviewWarningThresholdBytes.placeholder',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'input',
+    path: 'sftp.browser.imagePreviewWarningThresholdBytes',
+    commandActionId: 'settings.sftp.browser.imagePreviewWarningThresholdBytes.set',
+    searchTerms: ['sftp', 'preview', 'image', 'large image', 'download', 'threshold'],
+    inputMode: 'numeric',
+    min: 1024,
+    max: MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
   },
   {
     key: 'sftpDirectoryListView',

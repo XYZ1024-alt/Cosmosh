@@ -362,7 +362,8 @@ export interface paths {
     /** Read one remote SFTP file for preview. */
     get: operations['sftpReadFile'];
     put?: never;
-    post?: never;
+    /** Write UTF-8 text content to one remote SFTP file. */
+    post: operations['sftpWriteFile'];
     delete?: never;
     options?: never;
     head?: never;
@@ -1073,6 +1074,16 @@ export interface components {
       /** Format: date-time */
       expectedModifiedAt: string;
       /** @description Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot. */
+      overwrite?: boolean;
+    };
+    SftpWriteFileRequest: {
+      path: string;
+      content: string;
+      /** Format: int64 */
+      expectedSize: number;
+      /** Format: date-time */
+      expectedModifiedAt: string;
+      /** @description Explicitly replace the remote file even when its size or modified time no longer matches the preview snapshot. */
       overwrite?: boolean;
     };
     SftpRenameRequest: {
@@ -2807,6 +2818,70 @@ export interface operations {
       };
       /** @description Session or file not found. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpWriteFile: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpWriteFileRequest'];
+      };
+    };
+    responses: {
+      /** @description File written. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpOperationSuccess'];
+        };
+      };
+      /** @description Validation failed or write failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or file not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Remote file changed after the preview was opened. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

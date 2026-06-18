@@ -1,5 +1,6 @@
 import type {
   ApiSftpEntry,
+  SftpAuxiliarySidebarMode,
   SftpDirectoryListColumnId,
   SftpDirectoryListSortDirection,
   SftpDirectoryListViewSetting,
@@ -19,10 +20,13 @@ import {
   ListTodo,
   Loader2,
   MoreVertical,
+  Redo2,
   RefreshCcw,
+  Save,
   Scissors,
   Search,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 import React from 'react';
 
@@ -31,8 +35,13 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSlot,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
 import { Input } from '../../components/ui/input';
@@ -76,9 +85,13 @@ type SftpToolbarProps = {
   selectedEntries: ApiSftpEntry[];
   selectedEntry: ApiSftpEntry | null;
   sessionId: string;
+  sftpAuxiliarySidebarMode: SftpAuxiliarySidebarMode;
   sftpShowAddressAsText: boolean;
   sftpShowHiddenEntries: boolean;
   activeTaskCount: number;
+  hasTextPreview: boolean;
+  isPreviewDirty: boolean;
+  isPreviewSaving: boolean;
   getBreadcrumbDirectories: (breadcrumbPath: string) => TreeDirectoryNode[];
   runningTaskCount: number;
   sortedSftpTasks: SftpTaskState[];
@@ -86,6 +99,7 @@ type SftpToolbarProps = {
   isBreadcrumbLoading: (breadcrumbPath: string) => boolean;
   keepAddressInputDuringContextMenu: () => void;
   onAddressInputPointerDown: (event: React.PointerEvent<HTMLInputElement>) => void;
+  onAuxiliarySidebarModeChange: (mode: SftpAuxiliarySidebarMode) => Promise<void>;
   onBeginCreateEntry: (type: 'file' | 'directory') => void;
   onBeginRenameEntry: (entry: ApiSftpEntry) => void;
   onCopyCurrentPath: () => Promise<void>;
@@ -108,6 +122,9 @@ type SftpToolbarProps = {
   onPathInputChange: (value: string) => void;
   onPathInputKeyDown: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   onPathSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
+  onPreviewRedo: () => void;
+  onPreviewSave: () => Promise<void>;
+  onPreviewUndo: () => void;
   onRefresh: () => void;
   onRequestBreadcrumbDirectories: (breadcrumbPath: string) => void;
   onShowAddressAsText: () => void;
@@ -139,15 +156,19 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   filterQuery,
   forwardNavigationHistoryItems,
   getBreadcrumbDirectories,
+  hasTextPreview,
   hasSelection,
   hasSingleSelection,
   isAddressInputEditing,
   isBreadcrumbLoading,
   isBusy,
+  isPreviewDirty,
+  isPreviewSaving,
   isRefreshingDirectory,
   keepAddressInputDuringContextMenu,
   navigationIndex,
   onAddressInputPointerDown,
+  onAuxiliarySidebarModeChange,
   onBeginCreateEntry,
   onBeginRenameEntry,
   onCopyCurrentPath,
@@ -167,6 +188,9 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   onPathInputChange,
   onPathInputKeyDown,
   onPathSubmit,
+  onPreviewRedo,
+  onPreviewSave,
+  onPreviewUndo,
   onRefresh,
   onRequestBreadcrumbDirectories,
   onShowAddressAsText,
@@ -179,6 +203,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   selectedEntries,
   selectedEntry,
   sessionId,
+  sftpAuxiliarySidebarMode,
   sftpShowAddressAsText,
   sftpShowHiddenEntries,
   activeTaskCount,
@@ -186,6 +211,55 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   sortedSftpTasks,
   taskToolbarLabel,
 }) => {
+  const editorControls = hasTextPreview ? (
+    <>
+      <MenubarSeparator vertical />
+      <div className="flex shrink-0 items-center gap-1">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label={t('sftp.actions.undo')}
+              variant="ghostIcon"
+              disabled={isPreviewSaving}
+              onClick={onPreviewUndo}
+            >
+              <Undo2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('sftp.actions.undo')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label={t('sftp.actions.redo')}
+              variant="ghostIcon"
+              disabled={isPreviewSaving}
+              onClick={onPreviewRedo}
+            >
+              <Redo2 className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('sftp.actions.redo')}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              aria-label={t('sftp.actions.save')}
+              variant="ghostIcon"
+              disabled={!isPreviewDirty || isPreviewSaving}
+              onClick={() => {
+                void onPreviewSave();
+              }}
+            >
+              {isPreviewSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('sftp.actions.save')}</TooltipContent>
+        </Tooltip>
+      </div>
+    </>
+  ) : null;
+
   const taskDropdown =
     sortedSftpTasks.length > 0 ? (
       <>
@@ -505,6 +579,27 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 >
                   {t('sftp.actions.showHiddenFiles')}
                 </DropdownMenuCheckboxItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>{t('sftp.actions.auxiliarySidebar')}</DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuRadioGroup
+                      value={sftpAuxiliarySidebarMode}
+                      onValueChange={(value) => {
+                        if (value === 'details' || value === 'preview' || value === 'off') {
+                          void onAuxiliarySidebarModeChange(value);
+                        }
+                      }}
+                    >
+                      <DropdownMenuRadioItem value="details">
+                        {t('sftp.auxiliarySidebar.details')}
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="preview">
+                        {t('sftp.auxiliarySidebar.preview')}
+                      </DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="off">{t('sftp.auxiliarySidebar.off')}</DropdownMenuRadioItem>
+                    </DropdownMenuRadioGroup>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuSeparator />
                 <SftpDirectoryViewMenuItems
                   directoryListView={directoryListView}
@@ -534,6 +629,8 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
               onChange={(event) => onFilterQueryChange(event.target.value)}
             />
           </div>
+
+          {editorControls}
         </div>
       </Menubar>
     </TooltipProvider>

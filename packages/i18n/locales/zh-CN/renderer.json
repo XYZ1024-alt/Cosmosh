@@ -385,6 +385,10 @@
         "description": "仅控制本地终端程序访问本地剪贴板的权限。",
         "title": "允许本地终端访问本地剪贴板"
       },
+      "sftpAuxiliarySidebarMode": {
+        "description": "控制 SFTP 辅助侧栏显示详细信息、可编辑预览或关闭。",
+        "title": "SFTP 辅助侧栏"
+      },
       "sftpDeleteConfirmationMode": {
         "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
         "title": "删除前确认"
@@ -396,6 +400,11 @@
       "sftpDirectoryListView": {
         "description": "控制 SFTP 文件列表的列显示、列顺序和排序偏好。",
         "title": "SFTP 文件列表视图"
+      },
+      "sftpImagePreviewWarningThresholdBytes": {
+        "description": "图片预览达到该字节数时，先显示确认提示再下载。",
+        "placeholder": "4194304",
+        "title": "图片预览警告阈值"
       },
       "sftpReconnectMode": {
         "description": "控制远程连接在 SFTP 标签页保持打开时断开后如何恢复。",
@@ -412,6 +421,11 @@
       "sftpShowParentDirectoryEntry": {
         "description": "在 SFTP 文件列表顶部显示“..”行，用于返回上一级目录。",
         "title": "在文件列表中显示返回按钮"
+      },
+      "sftpTextPreviewWarningThresholdBytes": {
+        "description": "文本/代码预览达到该字节数时，先显示确认提示再以可编辑方式打开。",
+        "placeholder": "524288",
+        "title": "文本预览警告阈值"
       },
       "showFullServerAddress": {
         "description": "关闭后，服务器列表中的主机/IP 地址会以星号脱敏显示。",
@@ -693,6 +707,11 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "sftpAuxiliarySidebarMode": {
+        "details": "详细信息",
+        "off": "关闭",
+        "preview": "预览"
+      },
       "sftpDeleteConfirmationMode": {
         "always": "开启",
         "batch": "批量操作时开启",
@@ -815,6 +834,7 @@
   },
   "sftp": {
     "actions": {
+      "auxiliarySidebar": "辅助侧栏",
       "back": "后退",
       "collapse": "收起文件夹",
       "copy": "复制",
@@ -837,14 +857,17 @@
       "openWith": "打开方式...",
       "paste": "粘贴",
       "properties": "属性",
+      "redo": "重做",
       "refresh": "刷新",
       "rename": "重命名",
       "retry": "重试",
+      "save": "保存",
       "saveAs": "保存到...",
       "saveToDownloads": "保存到“下载”",
       "search": "搜索当前目录",
       "showAddressAsText": "将地址显示为文本",
       "showHiddenFiles": "显示隐藏文件",
+      "undo": "撤销",
       "up": "返回上级目录"
     },
     "addressCollapsedMenuLabel": "显示隐藏的路径层级",
@@ -852,6 +875,11 @@
     "addressMenuLoading": "正在加载文件夹...",
     "addressRootLabel": "远程服务器根目录",
     "addressSegmentMenuLabel": "显示 {path} 下的文件夹",
+    "auxiliarySidebar": {
+      "details": "详细信息",
+      "off": "关闭",
+      "preview": "预览"
+    },
     "columns": {
       "accessedAt": "访问时间",
       "extension": "扩展名",
@@ -915,6 +943,7 @@
       "pathCopied": "文件地址已复制。",
       "relativePathCopied": "相对地址已复制。",
       "renamed": "已重命名。",
+      "saved": "已保存。",
       "uploaded": "更改已上传。"
     },
     "loadFailed": "加载 SFTP 目录失败。",
@@ -931,8 +960,20 @@
     "parentDirectoryEntryLabel": "返回上一级目录",
     "pathInputLabel": "远程路径",
     "previewEmpty": "该文件为空。",
+    "previewEmptySelection": "选择文件以预览。",
+    "previewFailed": "加载预览失败。",
+    "previewImageTooLargeToOpen": "该图片超过预览支持的最大大小（{limit}）。",
+    "previewLargeImage": "{size} 超过自动打开图片预览阈值（{threshold}）。",
+    "previewLargeText": "{size} 超过自动打开文本预览阈值（{threshold}）。",
+    "previewLoading": "正在加载预览...",
+    "previewModified": "已修改",
+    "previewNoPreview": "没有预览。",
+    "previewOpenAnyway": "仍然打开",
+    "previewSelectOne": "选择一个项目以预览。",
     "previewTitle": "预览",
+    "previewTooLargeToOpen": "该文件超过文本预览支持的最大大小。",
     "previewTruncated": "预览已截断",
+    "previewUnsavedChanges": "切换选择前请先保存或撤销预览更改。",
     "properties": {
       "browserUnsupported": "网页运行时暂未实现 SFTP 属性功能。",
       "close": "关闭",
@@ -1015,6 +1056,8 @@
       "reconnectComplete": "已重连",
       "reconnecting": "正在重连 SFTP 会话...",
       "rename": "重命名",
+      "save": "保存",
+      "saveSkipped": "已跳过保存",
       "status": {
         "failed": "失败",
         "queued": "排队中",

@@ -12,7 +12,13 @@ export {
 } from './settings';
 export type { SettingValidationError } from './settings';
 export {
+  DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE,
   DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
+  DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+  DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+  MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
+  SFTP_AUXILIARY_SIDEBAR_MODES,
   SFTP_DIRECTORY_LIST_COLUMN_IDS,
   compareSftpEntriesByBrowserOrder,
   compareSftpEntryNames,
@@ -21,6 +27,7 @@ export {
   sortSftpEntriesByBrowserOrder,
 } from './sftp';
 export type {
+  SftpAuxiliarySidebarMode,
   SftpDirectoryListColumnId,
   SftpDirectoryListColumnSetting,
   SftpDirectoryListSortDirection,
@@ -191,6 +198,10 @@ export type ApiSftpEntryDetailsResponse =
 export type ApiSftpReadFileQuery = paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['parameters']['query'];
 export type ApiSftpReadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/file']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpWriteFileRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/file']['post']['requestBody']['content']['application/json'];
+export type ApiSftpWriteFileResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/file']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpDownloadFileRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/download']['post']['requestBody']['content']['application/json'];
 export type ApiSftpDownloadFileResponse =

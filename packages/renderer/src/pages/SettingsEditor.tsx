@@ -1,9 +1,6 @@
 import { normalizeSettingsValuesStrict, type SettingsValues, type SettingValidationError } from '@cosmosh/api-contract';
-import MonacoEditor, { loader } from '@monaco-editor/react';
+import MonacoEditor from '@monaco-editor/react';
 import { Save } from 'lucide-react';
-import * as monacoEditor from 'monaco-editor/esm/vs/editor/editor.api.js';
-import EditorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker';
-import JsonWorker from 'monaco-editor/esm/vs/language/json/json.worker?worker';
 import { jsonDefaults } from 'monaco-editor/esm/vs/language/json/monaco.contribution';
 import React from 'react';
 
@@ -12,6 +9,7 @@ import { Menubar } from '../components/ui/menubar';
 import { type AppSettingsScope } from '../lib/app-settings';
 import { getAppSettings, updateAppSettings } from '../lib/backend';
 import { onLocaleChange, t } from '../lib/i18n';
+import { configureMonacoEnvironment, monacoEditor } from '../lib/monaco';
 import { updateSettingsStoreValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import { type SettingDefinition, SETTINGS_REGISTRY, type SettingsJsonSchemaNode } from './settings-registry';
@@ -30,33 +28,7 @@ type JsonSchemaDocument = {
 const MODEL_URI = 'inmemory://cosmosh/settings.json';
 const SCHEMA_URI = 'inmemory://cosmosh/settings.schema.json';
 
-const ensureMonacoWorkerEnvironment = (): void => {
-  const globalWithEnvironment = globalThis as typeof globalThis & {
-    MonacoEnvironment?: {
-      getWorker: (_moduleId: string, label: string) => Worker;
-    };
-  };
-
-  if (globalWithEnvironment.MonacoEnvironment) {
-    return;
-  }
-
-  globalWithEnvironment.MonacoEnvironment = {
-    getWorker: (_moduleId: string, label: string): Worker => {
-      if (label === 'json') {
-        return new JsonWorker();
-      }
-
-      return new EditorWorker();
-    },
-  };
-};
-
-ensureMonacoWorkerEnvironment();
-
-loader.config({
-  monaco: monacoEditor,
-});
+configureMonacoEnvironment();
 
 const stringifySettings = (values: SettingsValues): string => {
   return `${JSON.stringify(values, null, 2)}\n`;

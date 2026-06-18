@@ -33,6 +33,7 @@ export const API_PATHS = {
   sftpListDirectory: '/api/v1/sftp/sessions/{sessionId}/entries',
   sftpGetEntryDetails: '/api/v1/sftp/sessions/{sessionId}/entries/details',
   sftpReadFile: '/api/v1/sftp/sessions/{sessionId}/file',
+  sftpWriteFile: '/api/v1/sftp/sessions/{sessionId}/file',
   sftpDownloadFile: '/api/v1/sftp/sessions/{sessionId}/download',
   sftpUploadFile: '/api/v1/sftp/sessions/{sessionId}/upload',
   sftpCreateDirectory: '/api/v1/sftp/sessions/{sessionId}/directories',

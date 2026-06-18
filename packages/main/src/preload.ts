@@ -41,6 +41,8 @@ import type {
   ApiSftpRenameResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
+  ApiSftpWriteFileRequest,
+  ApiSftpWriteFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -248,6 +250,9 @@ contextBridge.exposeInMainWorld('electron', {
   openSftpTemporaryFile: (localPath: string) => {
     return invokeIpc<boolean>('app:open-sftp-temporary-file', localPath);
   },
+  readSftpTemporaryImagePreview: (localPath: string) => {
+    return invokeIpc<string>('app:read-sftp-temporary-image-preview', localPath);
+  },
   startSftpTemporaryFileWatch: (localPath: string) => {
     return invokeIpc<string>('app:start-sftp-temporary-file-watch', localPath);
   },
@@ -438,6 +443,9 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpReadFile: (sessionId: string, query: ApiSftpReadFileQuery) => {
     return invokeIpc<ApiSftpReadFileResponse | ApiErrorResponse>('backend:sftp-read-file', sessionId, query);
+  },
+  backendSftpWriteFile: (sessionId: string, payload: ApiSftpWriteFileRequest) => {
+    return invokeIpc<ApiSftpWriteFileResponse | ApiErrorResponse>('backend:sftp-write-file', sessionId, payload);
   },
   backendSftpDownloadFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => {
     return invokeIpc<ApiSftpDownloadFileResponse | ApiErrorResponse>('backend:sftp-download-file', sessionId, payload);

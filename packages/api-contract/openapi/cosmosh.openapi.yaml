@@ -1009,7 +1009,7 @@ paths:
           schema:
             type: integer
             minimum: 1024
-            maximum: 1048576
+            maximum: 16777216
             default: 262144
       responses:
         '200':
@@ -1020,6 +1020,55 @@ paths:
                 $ref: '#/components/schemas/SftpReadFileSuccess'
         '400':
           description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or file not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    post:
+      tags:
+        - sftp
+      summary: Write UTF-8 text content to one remote SFTP file.
+      operationId: sftpWriteFile
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpWriteFileRequest'
+      responses:
+        '200':
+          description: File written.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpOperationSuccess'
+        '400':
+          description: Validation failed or write failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: Remote file changed after the preview was opened.
           content:
             application/json:
               schema:
@@ -2785,6 +2834,30 @@ components:
         overwrite:
           type: boolean
           description: Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot.
+    SftpWriteFileRequest:
+      type: object
+      required:
+        - path
+        - content
+        - expectedSize
+        - expectedModifiedAt
+      properties:
+        path:
+          type: string
+          minLength: 1
+        content:
+          type: string
+          maxLength: 16777216
+        expectedSize:
+          type: integer
+          format: int64
+          minimum: 0
+        expectedModifiedAt:
+          type: string
+          format: date-time
+        overwrite:
+          type: boolean
+          description: Explicitly replace the remote file even when its size or modified time no longer matches the preview snapshot.
     SftpRenameRequest:
       type: object
       required:

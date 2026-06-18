@@ -39,6 +39,8 @@ import type {
   ApiSftpRenameResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
+  ApiSftpWriteFileRequest,
+  ApiSftpWriteFileResponse,
   ApiSshCreateFolderRequest,
   ApiSshCreateFolderResponse,
   ApiSshCreateKeychainRequest,
@@ -106,6 +108,7 @@ declare global {
       getDownloadsPath: () => Promise<string>;
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
+      readSftpTemporaryImagePreview: (localPath: string) => Promise<string>;
       startSftpTemporaryFileWatch: (localPath: string) => Promise<string>;
       stopSftpTemporaryFileWatch: (watchId: string) => Promise<boolean>;
       onSftpTemporaryFileChanged: (listener: (change: SftpTemporaryFileWatchChange) => void) => () => void;
@@ -222,6 +225,10 @@ declare global {
         sessionId: string,
         query: ApiSftpReadFileQuery,
       ) => Promise<ApiSftpReadFileResponse | ApiErrorResponse>;
+      backendSftpWriteFile: (
+        sessionId: string,
+        payload: ApiSftpWriteFileRequest,
+      ) => Promise<ApiSftpWriteFileResponse | ApiErrorResponse>;
       backendSftpDownloadFile: (
         sessionId: string,
         payload: ApiSftpDownloadFileRequest,

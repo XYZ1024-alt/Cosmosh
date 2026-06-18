@@ -33,6 +33,16 @@ declare module 'monaco-editor/esm/vs/editor/editor.worker?worker' {
   export default WorkerFactory;
 }
 
+declare module 'monaco-editor/esm/vs/editor/contrib/clipboard/browser/clipboard.js';
+
+declare module 'monaco-editor/esm/vs/editor/contrib/contextmenu/browser/contextmenu.js';
+
+declare module 'monaco-editor/esm/vs/editor/contrib/find/browser/findController.js';
+
+declare module 'monaco-editor/esm/vs/editor/contrib/format/browser/formatActions.js';
+
+declare module 'monaco-editor/esm/vs/editor/contrib/linesOperations/browser/linesOperations.js';
+
 declare module 'monaco-editor/esm/vs/language/json/monaco.contribution' {
   import type { json } from 'monaco-editor/esm/vs/editor/editor.main.js';
 
