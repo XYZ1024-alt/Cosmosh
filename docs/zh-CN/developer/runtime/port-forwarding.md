@@ -65,6 +65,8 @@ flowchart TD
 
 `PortForwardSessionService` 拥有所有活动 socket、SSH client、channel 与远端转发监听。backend 关闭时会调用 `stop()`，并关闭每一个活动运行时条目。
 
+SSH 意外 close/error 的清理采用 best-effort 语义：先移除运行时资源；若最终 stopped/error 元数据持久化失败，只记录错误，不得形成导致 backend 退出的未处理 rejection。
+
 转发实现：
 
 - 本地转发：backend 打开 `net.Server`；每个进入的本地 socket 通过 `ssh2.Client.forwardOut(...)` 从 SSH server 侧连接到 `targetHost:targetPort`。

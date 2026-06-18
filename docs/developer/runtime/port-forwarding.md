@@ -65,6 +65,8 @@ flowchart TD
 
 `PortForwardSessionService` owns all active sockets, SSH clients, channels, and remote-forward listeners. Backend shutdown calls `stop()` and closes every active runtime entry.
 
+Unexpected SSH close/error cleanup is best-effort: runtime resources are removed first, and a failure to persist the final stopped/error metadata is logged without surfacing as an unhandled rejection that terminates the backend.
+
 Forwarding implementations:
 
 - Local: backend opens a `net.Server`; each inbound socket opens `ssh2.Client.forwardOut(...)` to `targetHost:targetPort` from the SSH server side.

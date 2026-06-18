@@ -789,23 +789,31 @@ export class PortForwardSessionService {
   }
 
   private async handleUnexpectedClose(ruleId: string, message: string): Promise<void> {
-    const runtimeState = this.activeRules.get(ruleId);
-    if (!runtimeState) {
-      return;
-    }
+    try {
+      const runtimeState = this.activeRules.get(ruleId);
+      if (!runtimeState) {
+        return;
+      }
 
-    runtimeState.lastError = message;
-    this.activeRules.delete(ruleId);
-    await this.disposeRuntimeState(runtimeState);
-    await this.getDbClient().portForwardRule.update({
-      where: {
-        id: ruleId,
-      },
-      data: {
-        lastStoppedAt: new Date(),
-        lastFailureMessage: message,
-      },
-    });
+      runtimeState.lastError = message;
+      this.activeRules.delete(ruleId);
+      await this.disposeRuntimeState(runtimeState);
+      await this.getDbClient().portForwardRule.update({
+        where: {
+          id: ruleId,
+        },
+        data: {
+          lastStoppedAt: new Date(),
+          lastFailureMessage: message,
+        },
+      });
+    } catch (error: unknown) {
+      console.error('[port-forward] Failed to finalize an unexpectedly closed rule.', {
+        ruleId,
+        message,
+        error,
+      });
+    }
   }
 
   private async persistStartFailure(ruleId: string, message: string): Promise<void> {
