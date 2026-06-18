@@ -51,7 +51,7 @@ sequenceDiagram
 
 - 路径：`/ws/ssh/{sessionId}?token=...`
 - 非法或编码畸形的路径、token、session 直接拒绝（`1008`），URL 解码错误不得逃逸出连接边界。
-- 若已有附加 socket，将被替换（`1012`），保持单活连接。
+- 若已有附加 socket，将被替换（`1012`），保持单活连接。连接所有权切换后，旧 socket 的 close/error 事件不得清理新连接持有的会话。
 - 会话 attach 前输出会缓存，ready 后统一回放。
 
 ### 关闭会话

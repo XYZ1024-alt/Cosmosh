@@ -122,7 +122,7 @@ export abstract class BaseTerminalSessionService<
       });
 
       socket.on('close', () => {
-        if (session.disposed) {
+        if (session.disposed || session.socket !== socket) {
           return;
         }
 
@@ -130,7 +130,7 @@ export abstract class BaseTerminalSessionService<
       });
 
       socket.on('error', () => {
-        if (session.disposed) {
+        if (session.disposed || session.socket !== socket) {
           return;
         }
 

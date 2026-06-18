@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
+import net from 'node:net';
 import test from 'node:test';
+
+import { WebSocket } from 'ws';
 
 import {
   BaseTerminalSessionService,
@@ -22,10 +25,10 @@ type MockSession = TerminalManagedSessionBase & {
 };
 
 class MockTerminalService extends BaseTerminalSessionService<MockSession, OutboundMessage> {
-  public constructor() {
+  public constructor(port = 0) {
     super({
       host: '127.0.0.1',
-      port: 0,
+      port,
       pathPrefix: '/ws/test/',
     });
   }
@@ -39,6 +42,10 @@ class MockTerminalService extends BaseTerminalSessionService<MockSession, Outbou
       type: 'output',
       data,
     });
+  }
+
+  public hasSession(sessionId: string): boolean {
+    return this.sessions.has(sessionId);
   }
 
   protected handleClientMessage(): void {
@@ -57,24 +64,88 @@ class MockTerminalService extends BaseTerminalSessionService<MockSession, Outbou
   }
 }
 
+/**
+ * Reserves an available loopback port for a WebSocket integration test.
+ *
+ * @returns Available TCP port.
+ */
+const findAvailablePort = async (): Promise<number> => {
+  return await new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        server.close();
+        reject(new Error('Unable to reserve a test port.'));
+        return;
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve(address.port);
+      });
+    });
+  });
+};
+
+/**
+ * Waits for a WebSocket client to open or fail.
+ *
+ * @param socket WebSocket client.
+ * @returns Promise resolved after the connection opens.
+ */
+const waitForSocketOpen = async (socket: WebSocket): Promise<void> => {
+  await new Promise<void>((resolve, reject) => {
+    socket.once('open', resolve);
+    socket.once('error', reject);
+  });
+};
+
+/**
+ * Waits for a WebSocket client to close.
+ *
+ * @param socket WebSocket client.
+ * @returns Close code emitted by the server.
+ */
+const waitForSocketClose = async (socket: WebSocket): Promise<number> => {
+  return await new Promise<number>((resolve) => {
+    socket.once('close', (code) => resolve(code));
+  });
+};
+
+/**
+ * Creates a reusable mock terminal session.
+ *
+ * @param sessionId Session identifier.
+ * @returns Mock session record.
+ */
+const createMockSession = (sessionId: string): MockSession => {
+  return {
+    sessionId,
+    websocketToken: 'token-1',
+    pendingOutput: [],
+    pendingOutputBytes: 0,
+    pendingOutputDropCount: 0,
+    attachTimeout: setTimeout(() => undefined, 60_000),
+    t: ((key: string) => key) as MockSession['t'],
+    socket: null,
+    disposed: false,
+    telemetryInterval: null,
+    historySyncTimeout: null,
+    sent: [],
+  };
+};
+
 test('pending output buffer enforces hard caps and tracks dropped chunks', async () => {
   const service = new MockTerminalService();
 
   try {
-    const session: MockSession = {
-      sessionId: 'session-1',
-      websocketToken: 'token-1',
-      pendingOutput: [],
-      pendingOutputBytes: 0,
-      pendingOutputDropCount: 0,
-      attachTimeout: setTimeout(() => undefined, 60_000),
-      t: ((key: string) => key) as MockSession['t'],
-      socket: null,
-      disposed: false,
-      telemetryInterval: null,
-      historySyncTimeout: null,
-      sent: [],
-    };
+    const session = createMockSession('session-1');
 
     service.addSession(session);
 
@@ -95,4 +166,32 @@ test('WebSocket session path decoding rejects malformed percent-encoding', () =>
   assert.equal(resolveTerminalWebSocketSessionId('/ws/test/%', '/ws/test/'), null);
   assert.equal(resolveTerminalWebSocketSessionId('/ws/test/', '/ws/test/'), null);
   assert.equal(resolveTerminalWebSocketSessionId('/ws/other/session-1', '/ws/test/'), null);
+});
+
+test('replacing a WebSocket does not let the stale close event dispose the session', async () => {
+  const port = await findAvailablePort();
+  const service = new MockTerminalService(port);
+  const session = createMockSession('session-reconnect');
+  service.addSession(session);
+
+  const firstSocket = new WebSocket(`${service.getWebSocketBaseUrl()}/ws/test/session-reconnect?token=token-1`);
+  let secondSocket: WebSocket | null = null;
+
+  try {
+    await waitForSocketOpen(firstSocket);
+    const firstClosePromise = waitForSocketClose(firstSocket);
+
+    secondSocket = new WebSocket(`${service.getWebSocketBaseUrl()}/ws/test/session-reconnect?token=token-1`);
+    await waitForSocketOpen(secondSocket);
+
+    assert.equal(await firstClosePromise, 1012);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(service.hasSession(session.sessionId), true);
+    assert.equal(secondSocket.readyState, WebSocket.OPEN);
+  } finally {
+    secondSocket?.close();
+    firstSocket.close();
+    await service.stop();
+  }
 });

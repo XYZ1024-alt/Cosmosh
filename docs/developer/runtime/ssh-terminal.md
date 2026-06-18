@@ -51,7 +51,7 @@ sequenceDiagram
 
 - Path: `/ws/ssh/{sessionId}?token=...`
 - Invalid or malformed path encoding, token, or session is rejected (`1008`) without allowing URL decode errors to escape the connection boundary.
-- Existing attached socket is replaced (`1012`) to support single active attach.
+- Existing attached socket is replaced (`1012`) to support single active attach. Close/error events from the superseded socket are ignored after ownership moves to the new socket.
 - Pending output is buffered before attach and flushed after ready.
 
 ### Close Session
