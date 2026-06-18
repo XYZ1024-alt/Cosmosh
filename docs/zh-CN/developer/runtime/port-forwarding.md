@@ -84,6 +84,7 @@ flowchart TD
 
 运行时约束：
 
+- 每个 rule id 的启动流程保持互斥。SSH/listener 建立期间该规则也视为 active，避免重复 start、update、delete 请求创建或遗留重叠运行时。
 - 默认本地监听地址是 `127.0.0.1`。
 - 允许高级用户显式绑定非 localhost 本地地址，但 renderer UI 必须显示明确风险提示。
 - 每条活动规则最多 64 个并发连接。

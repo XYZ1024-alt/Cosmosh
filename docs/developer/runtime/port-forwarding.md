@@ -84,6 +84,7 @@ Validation rules:
 
 Runtime constraints:
 
+- Startup is exclusive per rule id. A rule is treated as active while its SSH/listener setup is in flight, so duplicate start, update, and delete requests cannot create or orphan overlapping runtimes.
 - Default local bind host is `127.0.0.1`.
 - Non-localhost local bind hosts are allowed for advanced users, but renderer UI must show an explicit risk warning.
 - Each active rule is limited to 64 concurrent connections.

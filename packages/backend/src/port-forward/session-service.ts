@@ -167,6 +167,8 @@ export class PortForwardSessionService {
 
   private readonly activeRules = new Map<string, PortForwardRuntimeState>();
 
+  private readonly startingRuleIds = new Set<string>();
+
   public constructor(options: {
     getDbClient: GetDbClient;
     auditEventService: AuditEventService;
@@ -201,17 +203,33 @@ export class PortForwardSessionService {
    * Checks whether one rule has an active runtime entry.
    */
   public isRuleActive(ruleId: string): boolean {
-    return this.activeRules.has(ruleId);
+    return this.activeRules.has(ruleId) || this.startingRuleIds.has(ruleId);
   }
 
   /**
    * Starts one stopped port-forwarding rule.
    */
   public async startRule(input: StartPortForwardRuleInput): Promise<StartPortForwardRuleResult> {
-    if (this.activeRules.has(input.ruleId)) {
+    if (this.isRuleActive(input.ruleId)) {
       return { type: 'active' };
     }
 
+    this.startingRuleIds.add(input.ruleId);
+
+    try {
+      return await this.startRuleInternal(input);
+    } finally {
+      this.startingRuleIds.delete(input.ruleId);
+    }
+  }
+
+  /**
+   * Performs one exclusive rule startup after the in-flight guard is acquired.
+   *
+   * @param input Rule startup request.
+   * @returns Normalized startup result.
+   */
+  private async startRuleInternal(input: StartPortForwardRuleInput): Promise<StartPortForwardRuleResult> {
     const i18n = createI18n({ locale: input.locale, fallbackLocale: 'en' });
     const db = this.getDbClient();
     const rule = await this.findRule(input.ruleId);
