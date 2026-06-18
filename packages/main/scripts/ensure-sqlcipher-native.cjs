@@ -163,8 +163,26 @@ const resolveElectronVersion = async () => {
 
 /**
  * Resolves node-gyp CLI path across common installation layouts.
+ *
+ * The project-pinned binary must take precedence over package-manager
+ * injection because pnpm may expose an older internal node-gyp that does not
+ * support the Visual Studio version installed on the CI runner.
  */
 const resolveNodeGypCliPath = async () => {
+  const projectNodeGypCandidates = [
+    path.join(mainNodeModulesRoot, 'node-gyp', 'bin', 'node-gyp.js'),
+    path.join(workspaceRoot, 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
+  ];
+
+  for (const candidate of projectNodeGypCandidates) {
+    try {
+      await fs.access(candidate);
+      return candidate;
+    } catch {
+      // Continue searching fallback candidates.
+    }
+  }
+
   const configuredNodeGyp = process.env.npm_config_node_gyp;
   if (configuredNodeGyp) {
     try {
@@ -176,9 +194,7 @@ const resolveNodeGypCliPath = async () => {
   }
 
   const candidates = [
-    path.join(mainNodeModulesRoot, 'node-gyp', 'bin', 'node-gyp.js'),
     path.join(path.dirname(process.execPath), 'node_modules', 'npm', 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
-    path.join(workspaceRoot, 'node_modules', 'node-gyp', 'bin', 'node-gyp.js'),
   ];
 
   for (const candidate of candidates) {
