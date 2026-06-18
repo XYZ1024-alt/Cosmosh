@@ -3,12 +3,12 @@ import net from 'node:net';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { serve } from '@hono/node-server';
 import type { PrismaClient } from '@prisma/client';
 
 import { AuditEventService } from './audit/service.js';
 import { DatabaseInitError, initializeDatabase, shutdownDatabase } from './db/prisma.js';
 import { createBackendApp } from './http/create-app.js';
+import { BACKEND_BIND_HOST, startBackendHttpServer } from './http/server.js';
 import { enableI18nDevHotReload } from './i18n-bridge.js';
 import { LocalTerminalSessionService } from './local-terminal/session-service.js';
 import { PortForwardSessionService } from './port-forward/session-service.js';
@@ -78,7 +78,7 @@ let sftpSessionService: SftpSessionService | null = null;
 let portForwardSessionService: PortForwardSessionService | null = null;
 let localTerminalSessionService: LocalTerminalSessionService | null = null;
 let auditEventService: AuditEventService | null = null;
-let httpServer: ReturnType<typeof serve> | null = null;
+let httpServer: ReturnType<typeof startBackendHttpServer> | null = null;
 let shutdownPromise: Promise<void> | null = null;
 
 if (isSecureLocalMode && !internalToken) {
@@ -264,13 +264,10 @@ const bootstrap = async (): Promise<void> => {
     localTerminalSessionService,
   });
 
-  console.log(`🚀 Cosmosh Backend starting on http://127.0.0.1:${port} (${runtimeMode})`);
+  console.log(`🚀 Cosmosh Backend starting on http://${BACKEND_BIND_HOST}:${port} (${runtimeMode})`);
   registerShutdownHooks();
 
-  httpServer = serve({
-    fetch: app.fetch,
-    port,
-  });
+  httpServer = startBackendHttpServer(app, port);
 };
 
 /**

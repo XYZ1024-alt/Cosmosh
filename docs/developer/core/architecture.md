@@ -97,7 +97,8 @@ sequenceDiagram
 
 ### Backend Access Boundary
 
-- Backend is localhost-only and guarded by an internal runtime token (`COSMOSH_INTERNAL_TOKEN`) in electron-main mode.
+- Backend HTTP explicitly binds to the IPv4 loopback interface (`127.0.0.1`) in every runtime mode. The listener must never rely on the Node server default, which can expose standalone development APIs on non-loopback interfaces.
+- Electron-main mode additionally guards `/api/v1/*` with an internal runtime token (`COSMOSH_INTERNAL_TOKEN`). Standalone mode remains loopback-only even though it does not require that token.
 - Main process injects headers and never exposes internal token to renderer.
 - Credential encryption key is derived from `COSMOSH_SECRET_KEY`/internal token hash in backend bootstrap.
 - HTTP i18n is request-scoped: backend middleware resolves locale from `x-cosmosh-locale` (fallback `accept-language`), then injects a per-request translator used by all route response messages.

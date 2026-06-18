@@ -97,7 +97,8 @@ sequenceDiagram
 
 ### Backend 访问边界
 
-- 后端仅监听 localhost，并在 electron-main 模式下由内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护。
+- 后端 HTTP 在所有运行模式下都显式绑定 IPv4 loopback 接口（`127.0.0.1`）。监听器不得依赖 Node server 默认值，因为默认值可能将 standalone 开发 API 暴露到非 loopback 网卡。
+- electron-main 模式还会使用内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护 `/api/v1/*`。standalone 模式即使不要求该 token，也必须保持仅 loopback 可访问。
 - Main 进程注入头信息，不向 renderer 暴露内部 token。
 - 凭据加密 key 由 `COSMOSH_SECRET_KEY` / 内部 token 哈希在后端启动时推导。
 - HTTP i18n 采用请求级作用域：后端中间件优先从 `x-cosmosh-locale`（回退 `accept-language`）解析语言，并为每个请求注入翻译函数供路由统一生成响应消息。
