@@ -486,27 +486,6 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       ),
     };
   }
-  const shouldUsePassword = !keychainId && (authType === 'password' || authType === 'both');
-  const shouldUsePrivateKey = !keychainId && (authType === 'key' || authType === 'both');
-
-  if (shouldUsePassword && !password) {
-    return {
-      error: buildValidationError(
-        'errors.validation.passwordRequiredForAuthType',
-        'Password is required for selected authentication type.',
-      ),
-    };
-  }
-
-  if (shouldUsePrivateKey && !privateKey) {
-    return {
-      error: buildValidationError(
-        'errors.validation.privateKeyRequiredForAuthType',
-        'Private key is required for selected authentication type.',
-      ),
-    };
-  }
-
   const folderId = normalizeOptionalString(payload.folderId);
   const note = normalizeOptionalString(payload.note);
   const iconKey = normalizeOptionalIconKey(payload.iconKey);

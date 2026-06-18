@@ -226,6 +226,7 @@ flowchart LR
 - SSH transport compression is disabled by default. When enabled on a server record, the backend applies the same compression negotiation policy to SSH shell sessions, SFTP sessions, and port-forwarding clients.
 - Keychain organization metadata reuses the same `SshFolder` and `SshTag` domains used by servers (no separate keychain-only folder/tag tables).
 - Existing per-server edit UX is preserved by allowing inline credential input in the SSH editor; backend transparently materializes/updates hidden keychains.
+- Server updates that keep inline credential mode may omit password/private-key fields; the backend retains the existing encrypted values and only rejects the update when the stored credential material cannot satisfy the selected auth type.
 - Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.
 - SSH session creation resolves credentials through server → keychain relation before opening `ssh2` connections.
 

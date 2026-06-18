@@ -78,6 +78,38 @@ test('server character width compatibility opt-out defaults to disabled', () => 
   assert.equal(parsed.value?.disableCharacterWidthCompatibilityMode, false);
 });
 
+test('server updates may retain existing inline credentials', () => {
+  const passwordUpdate = parseUpdateServerRequest({
+    name: 'Password Server',
+    host: '10.0.0.1',
+    port: 22,
+    username: 'root',
+    authType: 'password',
+  });
+  const keyUpdate = parseUpdateServerRequest({
+    name: 'Key Server',
+    host: '10.0.0.2',
+    port: 22,
+    username: 'root',
+    authType: 'key',
+  });
+  const bothUpdate = parseUpdateServerRequest({
+    name: 'Both Server',
+    host: '10.0.0.3',
+    port: 22,
+    username: 'root',
+    authType: 'both',
+  });
+
+  assert.equal(passwordUpdate.value?.authType, 'password');
+  assert.equal(passwordUpdate.value?.password, undefined);
+  assert.equal(keyUpdate.value?.authType, 'key');
+  assert.equal(keyUpdate.value?.privateKey, undefined);
+  assert.equal(bothUpdate.value?.authType, 'both');
+  assert.equal(bothUpdate.value?.password, undefined);
+  assert.equal(bothUpdate.value?.privateKey, undefined);
+});
+
 test('strictHostKey rejects non-boolean payload values', () => {
   const parsed = parseCreateSessionRequest({
     serverId: 'srv-1',
