@@ -50,7 +50,7 @@ sequenceDiagram
 ### Attach WebSocket
 
 - Path: `/ws/ssh/{sessionId}?token=...`
-- Invalid path/token/session is rejected (`1008`).
+- Invalid or malformed path encoding, token, or session is rejected (`1008`) without allowing URL decode errors to escape the connection boundary.
 - Existing attached socket is replaced (`1012`) to support single active attach.
 - Pending output is buffered before attach and flushed after ready.
 

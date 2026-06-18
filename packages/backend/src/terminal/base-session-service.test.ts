@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { BaseTerminalSessionService, type TerminalManagedSessionBase } from './base-session-service.js';
+import {
+  BaseTerminalSessionService,
+  resolveTerminalWebSocketSessionId,
+  type TerminalManagedSessionBase,
+} from './base-session-service.js';
 
 type OutboundMessage =
   | {
@@ -84,4 +88,11 @@ test('pending output buffer enforces hard caps and tracks dropped chunks', async
   } finally {
     await service.stop();
   }
+});
+
+test('WebSocket session path decoding rejects malformed percent-encoding', () => {
+  assert.equal(resolveTerminalWebSocketSessionId('/ws/test/session-1', '/ws/test/'), 'session-1');
+  assert.equal(resolveTerminalWebSocketSessionId('/ws/test/%', '/ws/test/'), null);
+  assert.equal(resolveTerminalWebSocketSessionId('/ws/test/', '/ws/test/'), null);
+  assert.equal(resolveTerminalWebSocketSessionId('/ws/other/session-1', '/ws/test/'), null);
 });

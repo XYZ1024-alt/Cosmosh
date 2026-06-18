@@ -21,6 +21,29 @@ export const TERMINAL_PENDING_OUTPUT_MAX_CHUNKS = 2048;
 export const TERMINAL_PENDING_OUTPUT_MAX_BYTES = 1024 * 1024;
 
 /**
+ * Resolves a decoded session id only when the WebSocket path is valid.
+ *
+ * Malformed percent-encoding must fail closed instead of escaping the
+ * connection callback as an uncaught URIError.
+ *
+ * @param pathname Request URL pathname.
+ * @param pathPrefix Expected terminal WebSocket path prefix.
+ * @returns Decoded session id, or null when the path is invalid.
+ */
+export const resolveTerminalWebSocketSessionId = (pathname: string, pathPrefix: string): string | null => {
+  if (!pathname.startsWith(pathPrefix)) {
+    return null;
+  }
+
+  try {
+    const sessionId = decodeURIComponent(pathname.slice(pathPrefix.length));
+    return sessionId.length > 0 ? sessionId : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * Extended session shape for services that maintain telemetry/history timers.
  */
 export type TerminalManagedSessionBase = TerminalLiveSessionBase & {
@@ -67,12 +90,12 @@ export abstract class BaseTerminalSessionService<
       }).t;
       const requestUrl = new URL(request.url ?? '', this.websocketBaseUrl);
 
-      if (!requestUrl.pathname.startsWith(options.pathPrefix)) {
+      const sessionId = resolveTerminalWebSocketSessionId(requestUrl.pathname, options.pathPrefix);
+      if (!sessionId) {
         socket.close(1008, requestTranslator('ws.invalidWebsocketPath'));
         return;
       }
 
-      const sessionId = decodeURIComponent(requestUrl.pathname.slice(options.pathPrefix.length));
       const token = requestUrl.searchParams.get('token') ?? '';
       const session = this.sessions.get(sessionId);
 
