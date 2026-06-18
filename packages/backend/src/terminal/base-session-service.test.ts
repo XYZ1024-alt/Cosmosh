@@ -119,6 +119,25 @@ const waitForSocketClose = async (socket: WebSocket): Promise<number> => {
 };
 
 /**
+ * Waits for and parses one server message.
+ *
+ * @param socket WebSocket client.
+ * @returns Parsed outbound message.
+ */
+const waitForSocketMessage = async (socket: WebSocket): Promise<OutboundMessage> => {
+  return await new Promise<OutboundMessage>((resolve, reject) => {
+    socket.once('message', (data) => {
+      try {
+        resolve(JSON.parse(data.toString()) as OutboundMessage);
+      } catch (error: unknown) {
+        reject(error);
+      }
+    });
+    socket.once('error', reject);
+  });
+};
+
+/**
  * Creates a reusable mock terminal session.
  *
  * @param sessionId Session identifier.
@@ -192,6 +211,31 @@ test('replacing a WebSocket does not let the stale close event dispose the sessi
   } finally {
     secondSocket?.close();
     firstSocket.close();
+    await service.stop();
+  }
+});
+
+test('closing a session sends the final exit message before the socket closes', async () => {
+  const port = await findAvailablePort();
+  const service = new MockTerminalService(port);
+  const session = createMockSession('session-close');
+  service.addSession(session);
+
+  const socket = new WebSocket(`${service.getWebSocketBaseUrl()}/ws/test/session-close?token=token-1`);
+
+  try {
+    await waitForSocketOpen(socket);
+    const exitMessagePromise = waitForSocketMessage(socket);
+    const closePromise = waitForSocketClose(socket);
+
+    assert.equal(service.closeSession(session.sessionId), true);
+    assert.deepEqual(await exitMessagePromise, {
+      type: 'exit',
+      reason: 'ws.sessionClosedByApiRequest',
+    });
+    assert.equal(await closePromise, 1000);
+  } finally {
+    socket.close();
     await service.stop();
   }
 });

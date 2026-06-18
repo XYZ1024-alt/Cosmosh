@@ -265,8 +265,6 @@ export abstract class BaseTerminalSessionService<
 
     const reason = session.t(reasonKey, reasonParams);
 
-    session.disposed = true;
-    this.sessions.delete(sessionId);
     clearTimeout(session.attachTimeout);
 
     if (session.telemetryInterval) {
@@ -282,6 +280,8 @@ export abstract class BaseTerminalSessionService<
     options.beforeExit?.(session, reason);
 
     this.sendServerMessage(session, options.createExitMessage(reason));
+    session.disposed = true;
+    this.sessions.delete(sessionId);
     options.disposeTransport(session);
 
     if (session.socket && session.socket.readyState === session.socket.OPEN) {

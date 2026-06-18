@@ -58,7 +58,7 @@ sequenceDiagram
 
 - API 驱动关闭：`DELETE /api/v1/ssh/sessions/{sessionId}`
 - 传输驱动关闭：socket close/error、SSH stream close、SSH client error。
-- 释放行为：发送 terminal `exit` 事件，清理遥测定时器，关闭 SSH stream/client，关闭 WS。
+- 释放行为：在 session 标记为 disposed 前发送 terminal `exit` 事件，再清理运行时所有权、关闭 SSH stream/client 与 WS。
 - 审计收尾：回写对应 `SshLoginAudit` 的 `sessionEndedAt` 与 `commandCount`。
 
 ## 2.1 连接审计与最近使用排序

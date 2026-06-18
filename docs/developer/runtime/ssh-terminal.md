@@ -58,7 +58,7 @@ sequenceDiagram
 
 - API-driven close: `DELETE /api/v1/ssh/sessions/{sessionId}`
 - Transport-driven close: socket close/error, SSH stream close, SSH client error.
-- Dispose behavior: send terminal `exit` event, clear telemetry timer, close SSH stream/client, close WS.
+- Dispose behavior: send terminal `exit` event before marking the session disposed, then clear runtime ownership, close SSH stream/client, and close WS.
 - Audit finalization: update matching `SshLoginAudit` with `sessionEndedAt` and `commandCount`.
 
 ## 2.1 Connection Audit and Last-Used Sorting
