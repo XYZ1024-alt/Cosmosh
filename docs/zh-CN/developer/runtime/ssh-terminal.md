@@ -231,6 +231,7 @@ flowchart LR
 - 通过 pending output queue 避免 attach 前早期输出丢失。
 - pending output 采用“条目数 + 字节数”双上限；超过上限时丢弃最旧输出并记录日志。
 - 遥测采用 5 秒定时采样 + 轻量文本解析，降低帧级开销。
+- 遥测、历史与补全使用的后台 SSH exec 探测限制为 15 秒和 1 MiB stdout；超时、输出过大、client 同步失败或 channel error 会按数据不可用收敛，不会让周期任务持续悬挂。
 - history 刷新使用防抖 + 节流策略，平衡实时性与远端执行开销。
 
 ## 6.1 渲染层可配置的 xterm 选项（设置驱动）

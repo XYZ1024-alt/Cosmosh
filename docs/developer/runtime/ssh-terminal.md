@@ -231,6 +231,7 @@ flowchart LR
 - Pending output queue avoids losing early SSH output before WS attach.
 - Pending output buffering is bounded by chunk count and total bytes; overflow drops oldest chunks and emits drop logs.
 - Telemetry sampling is interval-based (5s) and lightweight text parsing to reduce per-frame cost.
+- Background SSH exec probes used by telemetry, history, and completion are capped at 15 seconds and 1 MiB stdout; timeout, excessive output, synchronous client failure, or channel error resolves as unavailable data instead of leaving periodic work in flight.
 - History refresh uses debounce + throttle to balance freshness and remote execution overhead.
 
 ## 6.1 Renderer-Configurable xterm Options (Settings-Driven)

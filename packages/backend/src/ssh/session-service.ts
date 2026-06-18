@@ -35,6 +35,7 @@ import {
 } from '../terminal/shared.js';
 import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
+import { executeBoundedSshCommand } from './exec.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -965,24 +966,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   }
 
   private async executeRemoteCommand(session: SshLiveSession, command: string): Promise<string | null> {
-    return await new Promise<string | null>((resolve) => {
-      let stdout = '';
-
-      session.client.exec(command, (error, channel) => {
-        if (error) {
-          resolve(null);
-          return;
-        }
-
-        channel.on('data', (chunk: Buffer | string) => {
-          stdout += typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-        });
-
-        channel.on('close', () => {
-          resolve(stdout);
-        });
-      });
-    });
+    return await executeBoundedSshCommand(session.client, command);
   }
 
   private parseTelemetryOutput(output: string): ParsedRemoteTelemetry | null {
