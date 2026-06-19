@@ -62,6 +62,9 @@ type UseSshPrimarySessionParams = {
   setConnectionState: React.Dispatch<React.SetStateAction<'connecting' | 'connected' | 'failed'>>;
   setConnectionError: React.Dispatch<React.SetStateAction<string>>;
   setTelemetryState: React.Dispatch<React.SetStateAction<SshTelemetryState>>;
+  setRemoteBootstrapStatus: React.Dispatch<
+    React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
+  >;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -123,6 +126,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setConnectionState,
     setConnectionError,
     setTelemetryState,
+    setRemoteBootstrapStatus,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
@@ -355,6 +359,11 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
             ...previous,
             recentCommands: payload.recentCommands,
           }));
+          return;
+        }
+
+        if (payload.type === 'bootstrap-status') {
+          setRemoteBootstrapStatus(payload);
           return;
         }
 
@@ -662,6 +671,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setActivePane,
     setConnectionError,
     setConnectionState,
+    setRemoteBootstrapStatus,
     setTelemetryState,
     socketRef,
     sshConnectionTimeoutSecRef,

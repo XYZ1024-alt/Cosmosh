@@ -10,6 +10,7 @@ import {
   type HostFingerprintPrompt,
   MAX_TERMINAL_PANES,
   type MirrorPaneRuntime,
+  type RemoteBootstrapStatus,
   type ResolvedTerminalTarget,
   type SshTelemetryState,
   type TerminalAutocompleteAnchor,
@@ -200,6 +201,7 @@ export type SshCoreState = {
   connectionState: SshConnectionState;
   connectionError: string;
   telemetryState: SshTelemetryState;
+  remoteBootstrapStatus: RemoteBootstrapStatus | null;
   hostFingerprintPrompt: HostFingerprintPrompt | null;
   canSplitTerminal: boolean;
   selectionAnchor: TerminalSelectionAnchor | null;
@@ -521,6 +523,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const [connectionState, setConnectionState] = React.useState<SshConnectionState>('connecting');
   const [connectionError, setConnectionError] = React.useState<string>('');
   const [telemetryState, setTelemetryState] = React.useState<SshTelemetryState>(DEFAULT_TELEMETRY_STATE);
+  const [remoteBootstrapStatus, setRemoteBootstrapStatus] = React.useState<RemoteBootstrapStatus | null>(null);
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
 
   React.useEffect(() => {
@@ -872,6 +875,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     setConnectionState,
     setConnectionError,
     setTelemetryState,
+    setRemoteBootstrapStatus,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     setActivePane: activatePane,
     refreshSelectionAnchor,
@@ -1174,6 +1178,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       connectionState,
       connectionError,
       telemetryState,
+      remoteBootstrapStatus,
       hostFingerprintPrompt,
       canSplitTerminal: terminalPaneIds.length < MAX_TERMINAL_PANES,
       selectionAnchor,

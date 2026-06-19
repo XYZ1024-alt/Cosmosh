@@ -90,7 +90,20 @@ export type ServerInboundMessage =
       requestId: string;
       replacePrefixLength: number;
       items: TerminalAutocompleteItem[];
+    }
+  | {
+      type: 'bootstrap-status';
+      phase: 'probe' | 'manifest' | 'download' | 'install' | 'verify';
+      state: 'started' | 'ok' | 'skipped' | 'failed';
+      version?: string;
+      code?: string;
+      message?: string;
     };
+
+/**
+ * Latest remote bootstrap status surfaced by backend side-channel installation.
+ */
+export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'bootstrap-status' }>;
 
 /**
  * Aggregated telemetry state rendered in SSH sidebar cards.

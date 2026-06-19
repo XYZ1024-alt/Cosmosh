@@ -1109,6 +1109,21 @@
     "columnPort": "Port",
     "columnTags": "Tags",
     "columnUser": "Username",
+    "bootstrapPhases": {
+      "download": "Download",
+      "install": "Install",
+      "manifest": "Manifest",
+      "probe": "Probe",
+      "verify": "Verify"
+    },
+    "bootstrapStates": {
+      "failed": "Failed",
+      "ok": "Ready",
+      "skipped": "Current",
+      "started": "Running"
+    },
+    "bootstrapStatusTitle": "Remote Bootstrap",
+    "bootstrapStatusWaiting": "Waiting for status",
     "connecting": "Connecting...",
     "connectionTimeout": "Connection Timeout",
     "contextMenuClearTerminal": "Clear Terminal",
