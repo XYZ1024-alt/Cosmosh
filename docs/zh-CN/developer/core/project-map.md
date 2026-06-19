@@ -10,6 +10,7 @@ flowchart TB
   ROOT --> BACKEND[packages/backend]
   ROOT --> API[packages/api-contract]
   ROOT --> I18N[packages/i18n]
+  ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
 ```
@@ -72,6 +73,14 @@ main/backend/renderer 作用域共用的语言 JSON 源与运行时 i18n 包。
 
 - 运行时核心与具体文案资源解耦。消费端通过 `createMessages(...)` + `createI18n(...)` 显式注册所需语言 JSON。
 - backend 作用域可在注册前通过 `mergeTranslationTrees(...)` 合并生成语料（如 `backend-inshellisense.json`）。
+
+### `packages/remote-bootstrap`
+
+远端服务器 bootstrap 工具的 Go 源码。
+
+- `cmd/cosmosh-wrappergen`：为 `zsh`、`fish`、`ash`、`sh` 生成 shell 专属 bootstrap wrapper。
+- `cmd/cosmosh-bootstrap`：将下载得到的 bootstrap binary 与薄 shell helper 安装到远端用户级目录。
+- `internal/wrapper` 与 `internal/install`：封装 wrapper 渲染和幂等用户级安装逻辑，并配套单元测试。
 
 ## 3. 功能落位规则
 

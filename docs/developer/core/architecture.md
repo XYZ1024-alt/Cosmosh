@@ -41,6 +41,7 @@ flowchart LR
 - Shutdown order is explicit: stop WS session services, close HTTP listener, then disconnect Prisma/SQLite handles.
 - Windows-specific termination (`SIGBREAK`) is handled in the same path as POSIX signals to reduce stale DB lock cases.
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
+- SSH session attach starts a remote bootstrap side-channel through `RemoteBootstrapService`. The side-channel uses bounded `ssh2 exec`, never writes installer output into the interactive terminal stream, and emits structured `bootstrap-status` WS events.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
 - Simple Prisma `ALTER TABLE ... ADD COLUMN` migrations are reconciled against live SQLite table metadata before execution. If a column already exists but `_prisma_migrations` lacks the row, startup records the migration as applied instead of re-running duplicate DDL; non-simple migration drift still fails fast.
 - Schema sync is fail-fast: backend startup stops when required tables still cannot be reconciled after runtime migration execution, preventing partial/undefined API behavior.
@@ -56,6 +57,7 @@ flowchart LR
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 - SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
 - Hidden tabs are rendered but cannot start new SSH connect side effects; connect flow is active-tab gated.
+- SSH sidebar displays the latest remote bootstrap status from backend `bootstrap-status` messages so users can distinguish probing, manifest, download, install, verify, and failure states.
 
 ## 3. IPC Lifecycle (Current)
 
@@ -115,6 +117,7 @@ sequenceDiagram
 ## 5. Runtime Capabilities
 
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
+- SSH sessions now run user-scoped remote bootstrap installation after first WS attach when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is configured. Missing manifest configuration is reported as an explicit failed bootstrap status.
 - SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With; macOS uses the packaged NSWorkspace helper; Linux omits Open With.

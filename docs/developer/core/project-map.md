@@ -10,6 +10,7 @@ flowchart TB
   ROOT --> BACKEND[packages/backend]
   ROOT --> API[packages/api-contract]
   ROOT --> I18N[packages/i18n]
+  ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
 ```
@@ -72,6 +73,14 @@ Locale JSON source files and i18n runtime package for main/backend/renderer scop
 
 - Runtime core is payload-agnostic. Consumers import only required locale JSON files and register them through `createMessages(...)` + `createI18n(...)`.
 - Backend scope can merge generated completion locale data (for example `backend-inshellisense.json`) via `mergeTranslationTrees(...)` before registration.
+
+### `packages/remote-bootstrap`
+
+Go source for remote server bootstrap tooling.
+
+- `cmd/cosmosh-wrappergen`: generates shell-specific bootstrap wrappers for `zsh`, `fish`, `ash`, and `sh`.
+- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and thin shell helper into user-scoped remote directories.
+- `internal/wrapper` and `internal/install`: tested implementation packages for wrapper rendering and idempotent user-level installation.
 
 ## 3. Feature Placement Rules
 

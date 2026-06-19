@@ -99,6 +99,7 @@ sequenceDiagram
 - `telemetry`：CPU/内存/网络 + 命令历史快照。
 - `history`：仅历史快照推送，用于即时 UI 同步。
 - `completion-response`：当前命令 token 的排序补全候选。
+- `bootstrap-status`：backend 侧通道安装器返回的远端 bootstrap 探测、下载、安装与失败状态。
 - `pong`：ping 响应。
 - `error`：协议/运行时错误。
 - `exit`：会话关闭与原因。
@@ -310,7 +311,17 @@ flowchart LR
 4. 数据流方向是否完整（`input` 写入与 `output` 回放）。
 5. 会话释放路径是否正确（API close、传输关闭或 SSH 错误触发）。
 
-## 8. Windows 右键启动与本地终端工作目录
+## 8. 远端 Bootstrap 运行时
+
+- 远端 bootstrap 会在 SSH 会话首次 WebSocket attach 后自动启动。
+- Backend 通过 `RemoteBootstrapService` 使用独立且有界的 `ssh2 exec` 通道执行 bootstrap。安装器输出按 JSON lines 解析，永远不会写入交互式 shell 输出流。
+- v1 目标为 Linux `amd64` 与 `arm64` 远端，shell 覆盖 `zsh`、`fish`、`ash`、`sh`。不支持的 OS、架构或 shell 会返回失败的 `bootstrap-status` 消息。
+- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。缺少配置会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
+- Manifest asset 必须包含 HTTPS `url` 与 64 位小写 `sha256`。注入的 wrapper 会使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
+- Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh 标记块内更新内容。不要求 root，也不写全局路径。
+- Renderer 会在 SSH 侧栏显示最新 `bootstrap-status`。该状态仅用于可观测性，不阻塞终端 I/O。
+
+## 9. Windows 右键启动与本地终端工作目录
 
 - 安装器集成选项可在资源管理器右键菜单注册“在 Cosmosh 中打开终端”。
 - 安装器会写入 shell verb 元数据（`MUIVerb`、图标）以兼容资源管理器右键菜单解析路径。
@@ -325,7 +336,7 @@ flowchart LR
 - 若 Cosmosh 已在运行，`second-instance` 会通过 IPC 事件把启动上下文推送到渲染层。
 - `second-instance` 在解析上下文时会同时使用 CLI 参数与 Electron 提供的 `workingDirectory` 兜底，降低仅聚焦不触发新终端的情况。
 
-## 9. 钥匙链凭据运行时说明（2026-03）
+## 10. 钥匙链凭据运行时说明（2026-03）
 
 - SSH 连接阶段的认证材料统一从 `SshServer.keychainId` 解析。
 - 当前钥匙链认证类型仍为 `password`、`key`、`both`，运行时行为与旧版保持一致，并为后续扩展认证方式预留入口。
@@ -333,7 +344,7 @@ flowchart LR
 - 在下一次创建本地终端会话（`POST /api/v1/local-terminals/sessions`）时，Main 会透传一次 `cwd`。
 - Backend 会校验 `cwd`，若路径不可用则回退到 `os.homedir()`。
 
-## 9. macOS CLI 启动与本地终端工作目录
+## 11. macOS CLI 启动与本地终端工作目录
 
 - 在 macOS 打包版本中，Main 会准备用户级启动脚本：`~/Library/Application Support/Cosmosh/bin/cosmosh`。
 - 该脚本以 `--working-directory "$PWD"` 启动应用，因此会继承当前终端目录作为启动上下文。

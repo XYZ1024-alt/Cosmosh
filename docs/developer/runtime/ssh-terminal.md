@@ -99,6 +99,7 @@ sequenceDiagram
 - `telemetry`: CPU/memory/network + command history snapshot.
 - `history`: history-only snapshot push for immediate UI sync.
 - `completion-response`: ranked completion candidates for the active command token.
+- `bootstrap-status`: remote bootstrap probe/download/install status from the backend side-channel installer.
 - `pong`: ping response.
 - `error`: protocol/runtime error.
 - `exit`: terminal session closed with reason.
@@ -311,7 +312,17 @@ When SSH session behavior is wrong, verify in order:
 4. Stream direction integrity (`input` write and `output` flush).
 5. Session disposal path (API close vs transport close vs SSH error).
 
-## 8. Windows Context-Launch to Local Terminal CWD
+## 8. Remote Bootstrap Runtime
+
+- Remote bootstrap starts automatically after the first WebSocket attach of an SSH session.
+- Backend runs bootstrap through `RemoteBootstrapService` on a separate bounded `ssh2 exec` channel. Installer output is parsed as JSON lines and never written into the interactive shell stream.
+- v1 targets Linux `amd64` and `arm64` remotes with `zsh`, `fish`, `ash`, or `sh`. Unsupported OS, architecture, or shell returns a failed `bootstrap-status` message.
+- Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration is reported as `MANIFEST_URL_NOT_CONFIGURED`.
+- Manifest assets must include HTTPS `url` and lowercase 64-character `sha256`. The injected wrapper downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, then runs `cosmosh-bootstrap install`.
+- The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
+- Renderer displays the latest `bootstrap-status` in the SSH sidebar. The status is informational and does not block terminal I/O.
+
+## 9. Windows Context-Launch to Local Terminal CWD
 
 - Installer integration can register `Open terminal in Cosmosh` in Explorer context menus.
 - Installer writes shell verb metadata (`MUIVerb`, icon) for Explorer context menu compatibility.
@@ -325,7 +336,7 @@ When SSH session behavior is wrong, verify in order:
 - When `openDefaultLocalTerminal` is enabled, profile selection honors Settings `defaultLocalTerminalProfile` (`auto` or a concrete profile id loaded from current local terminal profiles) and falls back to first available profile.
 - If Cosmosh is already running, `second-instance` pushes launch context to renderer via IPC event.
 
-## 9. Keychain Credential Runtime Notes (2026-03)
+## 10. Keychain Credential Runtime Notes (2026-03)
 
 - Session connect flow now resolves auth material from `SshServer.keychainId`.
 - Supported keychain auth variants remain `password`, `key`, `both`; this keeps SSH runtime behavior stable while allowing future auth variant expansion in one place.
@@ -334,7 +345,7 @@ When SSH session behavior is wrong, verify in order:
 - On local terminal session creation (`POST /api/v1/local-terminals/sessions`), Main forwards `cwd` once.
 - Backend validates `cwd` and falls back to `os.homedir()` when path is invalid or inaccessible.
 
-## 9. macOS CLI Context-Launch to Local Terminal CWD
+## 11. macOS CLI Context-Launch to Local Terminal CWD
 
 - On packaged macOS builds, Main prepares a user-level launcher script at `~/Library/Application Support/Cosmosh/bin/cosmosh`.
 - The launcher invokes the app executable with `--working-directory "$PWD"`, so terminal launch context is inherited from the current shell directory.
