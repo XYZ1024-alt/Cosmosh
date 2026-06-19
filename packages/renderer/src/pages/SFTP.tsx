@@ -12,6 +12,7 @@ import {
   type SftpDirectoryListColumnId,
   type SftpDirectoryListSortDirection,
   type SftpDirectoryListViewSetting,
+  type SftpUploadLocalFile,
 } from '@cosmosh/api-contract';
 import type { editor as MonacoEditor } from 'monaco-editor';
 import React from 'react';
@@ -277,6 +278,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const temporaryOpenFilePathsRef = React.useRef<Record<string, string>>({});
   const imagePreviewTempFilesRef = React.useRef<Record<string, SftpImagePreviewTempFileCacheEntry>>({});
   const watchedOpenFilesRef = React.useRef<Record<string, SftpWatchedOpenFile>>({});
+  const stagedUploadPathsRef = React.useRef<Set<string>>(new Set());
   const renameInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldPreventMenuCloseAutoFocusRef = React.useRef(false);
   const inlineEditMenuActionTimerRef = React.useRef<number | null>(null);
@@ -379,15 +381,29 @@ const SFTP: React.FC<SFTPProps> = ({
     setUploadConflictConfirmationPrompt(null);
   }, []);
 
+  /**
+   * Removes every local file staged by the native upload picker.
+   *
+   * @returns void.
+   */
+  const cleanupAllStagedUploadFiles = React.useCallback((): void => {
+    const stagedPaths = [...stagedUploadPathsRef.current];
+    stagedUploadPathsRef.current.clear();
+    if (stagedPaths.length > 0) {
+      void window.electron?.cleanupSftpTemporaryFiles(stagedPaths);
+    }
+  }, []);
+
   React.useEffect(() => {
     return () => {
       stopAllWatchedOpenFiles();
+      cleanupAllStagedUploadFiles();
       clearAllTaskRetentionTimers();
       taskQueueGenerationRef.current += 1;
       taskQueueRef.current = [];
       isTaskQueueRunningRef.current = false;
     };
-  }, [clearAllTaskRetentionTimers, stopAllWatchedOpenFiles]);
+  }, [cleanupAllStagedUploadFiles, clearAllTaskRetentionTimers, stopAllWatchedOpenFiles]);
 
   React.useEffect(() => {
     return window.electron?.onSftpTemporaryFileChanged((change) => {
@@ -669,6 +685,7 @@ const SFTP: React.FC<SFTPProps> = ({
     [navigationState],
   );
   const canUseFileActions = hasSftpSession && status === 'ready' && !isBusy;
+  const canUploadLocalFiles = Boolean(window.electron?.selectSftpUploadFiles);
   const hasParentDirectoryListEntry = sftpShowParentDirectoryEntry;
   const canActivateParentDirectoryListEntry = Boolean(parentPath);
   const activeTextPreview = previewState?.status === 'text' ? previewState : null;
@@ -1662,6 +1679,7 @@ const SFTP: React.FC<SFTPProps> = ({
         setTreeNodes({});
         setClipboardState(null);
         stopAllWatchedOpenFiles();
+        cleanupAllStagedUploadFiles();
         temporaryOpenFilePathsRef.current = {};
         imagePreviewTempFilesRef.current = {};
         setOpenWithApplicationsByPath({});
@@ -1705,6 +1723,7 @@ const SFTP: React.FC<SFTPProps> = ({
     connectionIntent?.initialPath,
     connectionIntent?.serverId,
     clearAllTaskRetentionTimers,
+    cleanupAllStagedUploadFiles,
     createSessionForIntent,
     forceClearPreviewState,
     notifyError,
@@ -2913,6 +2932,118 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   /**
+   * Removes one native-picker upload staging file after its queued task settles.
+   *
+   * @param localPath Controlled SFTP temp file path.
+   * @returns Promise resolved after best-effort cleanup.
+   */
+  const cleanupStagedUploadFile = React.useCallback(async (localPath: string): Promise<void> => {
+    stagedUploadPathsRef.current.delete(localPath);
+    try {
+      await window.electron?.cleanupSftpTemporaryFiles([localPath]);
+    } catch {
+      // Staging cleanup must not hide the upload result from the task queue.
+    }
+  }, []);
+
+  /**
+   * Opens the native file picker and queues each selected file for upload.
+   *
+   * @param targetDirectoryPath Remote destination directory, defaulting to the visible directory.
+   * @returns Promise resolved after selected files are staged and queued.
+   */
+  const handleUploadFiles = React.useCallback(
+    async (targetDirectoryPath = currentPath): Promise<void> => {
+      const electronBridge = window.electron;
+      if (!canUseFileActions || !electronBridge?.selectSftpUploadFiles) {
+        notifyError(t('sftp.uploadUnsupported'));
+        return;
+      }
+
+      let selection: Awaited<ReturnType<typeof electronBridge.selectSftpUploadFiles>>;
+      try {
+        selection = await electronBridge.selectSftpUploadFiles();
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.uploadSelectionFailed'));
+        return;
+      }
+
+      if (selection.canceled || selection.files.length === 0) {
+        return;
+      }
+
+      selection.files.forEach((file: SftpUploadLocalFile) => {
+        stagedUploadPathsRef.current.add(file.localPath);
+        const remotePath = joinRemotePath(targetDirectoryPath, file.name);
+        runSftpOperation(
+          {
+            label: t('sftp.tasks.upload'),
+            detail: file.name,
+            progress: { completed: 0, total: 1 },
+          },
+          async ({ isCurrent, update }) => {
+            const uploadPayload: ApiSftpUploadFileRequest = {
+              path: remotePath,
+              localPath: file.localPath,
+            };
+
+            try {
+              try {
+                await runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload));
+              } catch (error: unknown) {
+                if (!isSftpUploadConflictError(error) || !isCurrent()) {
+                  throw error;
+                }
+
+                const shouldOverwrite = await requestUploadConflictConfirmation({
+                  remotePath,
+                  name: file.name,
+                  localPath: file.localPath,
+                  size: file.size,
+                  modifiedAt: file.modifiedAt,
+                });
+                if (!shouldOverwrite || !isCurrent()) {
+                  update({ detail: t('sftp.tasks.uploadSkipped') });
+                  return;
+                }
+
+                await runWithSftpReconnect((activeSessionId) =>
+                  uploadSftpFile(activeSessionId, {
+                    ...uploadPayload,
+                    overwrite: true,
+                  }),
+                );
+              }
+
+              update({ progress: { completed: 1, total: 1 } });
+              if (!isCurrent()) {
+                return;
+              }
+
+              notifySuccess(t('sftp.feedback.uploadedFile', { name: file.name }));
+              await refreshCurrentDirectoryAfterOperation([targetDirectoryPath]);
+            } finally {
+              await cleanupStagedUploadFile(file.localPath);
+            }
+          },
+        );
+      });
+    },
+    [
+      canUseFileActions,
+      cleanupStagedUploadFile,
+      currentPath,
+      isSftpUploadConflictError,
+      notifyError,
+      notifySuccess,
+      refreshCurrentDirectoryAfterOperation,
+      requestUploadConflictConfirmation,
+      runSftpOperation,
+      runWithSftpReconnect,
+    ],
+  );
+
+  /**
    * Resolves the upload prompt raised by an edited temp file.
    *
    * @param accepted Whether the user wants to upload the changed temp file.
@@ -3248,6 +3379,7 @@ const SFTP: React.FC<SFTPProps> = ({
           withIconSlot
           beginCreateEntryInDirectory={beginCreateEntryInDirectory}
           beginRenameEntry={beginRenameEntry}
+          canUploadLocalFiles={canUploadLocalFiles}
           canUseFileActions={canUseFileActions}
           canUseSftpOpenWith={canUseSftpOpenWith}
           clipboardState={clipboardState}
@@ -3267,6 +3399,7 @@ const SFTP: React.FC<SFTPProps> = ({
           handleOpenSshAtEntryLocation={handleOpenSshAtEntryLocation}
           handlePasteEntry={handlePasteEntry}
           handleTreeDirectoryRefresh={handleTreeDirectoryRefresh}
+          handleUploadFiles={handleUploadFiles}
           loadOpenWithApplications={loadOpenWithApplications}
           loadingOpenWithPath={loadingOpenWithPath}
           menuSurface={menuSurface}
@@ -3284,6 +3417,7 @@ const SFTP: React.FC<SFTPProps> = ({
     [
       beginCreateEntryInDirectory,
       beginRenameEntry,
+      canUploadLocalFiles,
       canUseFileActions,
       canUseSftpOpenWith,
       clipboardState,
@@ -3301,6 +3435,7 @@ const SFTP: React.FC<SFTPProps> = ({
       handleOpenProperties,
       handleOpenSshAtEntryLocation,
       handlePasteEntry,
+      handleUploadFiles,
       loadOpenWithApplications,
       loadingOpenWithPath,
       openWithApplicationsByPath,
@@ -3824,6 +3959,7 @@ const SFTP: React.FC<SFTPProps> = ({
           backNavigationHistoryItems={backNavigationHistoryItems}
           canGoBack={canGoBack}
           canGoForward={canGoForward}
+          canUploadLocalFiles={canUploadLocalFiles}
           canUseFileActions={canUseFileActions}
           clipboardStateExists={Boolean(clipboardState)}
           currentPath={currentPath}
@@ -3885,6 +4021,7 @@ const SFTP: React.FC<SFTPProps> = ({
           onRequestBreadcrumbDirectories={loadBreadcrumbMenuDirectories}
           onShowAddressAsText={handleShowAddressAsText}
           onShowHiddenEntriesChange={setSftpHiddenEntriesVisibility}
+          onUploadFiles={handleUploadFiles}
         />
         <div className={sftpWorkbenchGridClassName}>
           <SftpTreePanel

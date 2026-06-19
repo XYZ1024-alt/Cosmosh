@@ -70,6 +70,7 @@ import type {
   AppMenuAction,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
+  SftpUploadFileSelection,
 } from '@cosmosh/api-contract';
 
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
@@ -108,6 +109,8 @@ declare global {
       getDownloadsPath: () => Promise<string>;
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
       createSftpDownloadsFile: (fileName: string) => Promise<string>;
+      selectSftpUploadFiles: () => Promise<SftpUploadFileSelection>;
+      cleanupSftpTemporaryFiles: (localPaths: string[]) => Promise<boolean>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
       readSftpTemporaryImagePreview: (localPath: string) => Promise<string>;
       startSftpTemporaryFileWatch: (localPath: string) => Promise<string>;

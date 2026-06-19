@@ -396,7 +396,7 @@ export interface paths {
     };
     get?: never;
     put?: never;
-    /** Upload one locally edited SFTP temp file back to the remote path. */
+    /** Upload one staged local file to a remote path. */
     post: operations['sftpUploadFile'];
     delete?: never;
     options?: never;
@@ -1069,11 +1069,17 @@ export interface components {
     SftpUploadFileRequest: {
       path: string;
       localPath: string;
-      /** Format: int64 */
-      expectedSize: number;
-      /** Format: date-time */
-      expectedModifiedAt: string;
-      /** @description Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot. */
+      /**
+       * Format: int64
+       * @description Remote file size captured when an existing file was opened. Must be paired with expectedModifiedAt.
+       */
+      expectedSize?: number;
+      /**
+       * Format: date-time
+       * @description Remote modified time captured when an existing file was opened. Must be paired with expectedSize.
+       */
+      expectedModifiedAt?: string;
+      /** @description Explicitly replace an existing remote file after renderer confirmation. */
       overwrite?: boolean;
     };
     SftpWriteFileRequest: {
@@ -2999,7 +3005,7 @@ export interface operations {
           'application/json': components['schemas']['ApiError'];
         };
       };
-      /** @description Remote file changed after it was opened. */
+      /** @description The remote target already exists or changed after it was opened. */
       409: {
         headers: {
           [name: string]: unknown;

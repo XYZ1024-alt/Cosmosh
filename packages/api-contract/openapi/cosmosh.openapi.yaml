@@ -1133,7 +1133,7 @@ paths:
     post:
       tags:
         - sftp
-      summary: Upload one locally edited SFTP temp file back to the remote path.
+      summary: Upload one staged local file to a remote path.
       operationId: sftpUploadFile
       parameters:
         - $ref: '#/components/parameters/LocaleHeader'
@@ -1162,7 +1162,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/ApiError'
         '409':
-          description: Remote file changed after it was opened.
+          description: The remote target already exists or changed after it was opened.
           content:
             application/json:
               schema:
@@ -2815,8 +2815,6 @@ components:
       required:
         - path
         - localPath
-        - expectedSize
-        - expectedModifiedAt
       properties:
         path:
           type: string
@@ -2828,12 +2826,14 @@ components:
           type: integer
           format: int64
           minimum: 0
+          description: Remote file size captured when an existing file was opened. Must be paired with expectedModifiedAt.
         expectedModifiedAt:
           type: string
           format: date-time
+          description: Remote modified time captured when an existing file was opened. Must be paired with expectedSize.
         overwrite:
           type: boolean
-          description: Explicitly replace the remote file even when its size or modified time no longer matches the opening snapshot.
+          description: Explicitly replace an existing remote file after renderer confirmation.
     SftpWriteFileRequest:
       type: object
       required:

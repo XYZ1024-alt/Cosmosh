@@ -14,13 +14,14 @@ Implemented in v1:
 - Preview mode follows a Windows Explorer-style auxiliary sidebar. Text/code previews use Monaco and can save UTF-8 changes back through SFTP; image previews materialize through the same controlled temp-file download path. Large text and image previews require explicit user confirmation before opening, with thresholds backed by settings.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, automatically scrolls the current directory row near the upper third of the tree viewport after directory navigation only when the mounted parent/current/expanded-child context is outside the visible viewport, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports mouse and keyboard multi-selection with `Ctrl`/`Cmd` toggle, `Ctrl`/`Cmd+A` select-all, and `Shift` range selection.
+- The toolbar, directory blank-area menu, and tree-directory menu can upload one or more local regular files into the selected remote directory. Main stages native-picker selections under the controlled SFTP temp root; uploads run sequentially through the tab-local task queue, and existing remote names require explicit overwrite confirmation.
 - Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, failed, and progress states.
 - SFTP settings control reconnect mode, delete-confirmation scope, file-list column/sort view state, whether the center file list shows a leading `..` parent-directory row, whether the address bar always renders as text, the auxiliary sidebar mode, and the text/image preview warning thresholds.
-- Backend write operations support empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
+- Backend write operations support local-file upload, empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
 
 Intentionally not included in v1:
 
-- directory download, chmod, drag/drop, global search, and backend-level transfer queues with cancellation/conflict handling.
+- directory upload/download, chmod, drag/drop, global search, and backend-level transfer queues with byte progress and cancellation.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -56,7 +57,7 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `GET` | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/file` | Save editable UTF-8 preview content back to one regular remote file after size/mtime conflict checks. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/download` | Stream one regular remote file to a local destination selected by main/preload. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/upload` | Stream one locally edited SFTP temp file back to the original remote file after conflict checks; `overwrite: true` is accepted only after renderer conflict confirmation. |
+| `POST` | `/api/v1/sftp/sessions/{sessionId}/upload` | Stream one controlled local temp file to a new remote path, or replace an existing regular file after snapshot/explicit overwrite confirmation. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/files` | Create one empty remote file. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/directories` | Create one remote directory. |
 | `POST` | `/api/v1/sftp/sessions/{sessionId}/rename` | Rename or move one remote entry. |
@@ -168,6 +169,9 @@ Mutation rules:
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
 - Renderer file operations enter a tab-local FIFO task queue before calling the backend. The queue keeps navigation, selection, filtering, and refresh usable while work is pending, and the toolbar task menu remains visible until completed tasks expire after a short inspection window.
+- Local upload selection is owned by main through a native multi-file dialog. Each selected regular file is copied into an isolated directory under the Cosmosh SFTP temp root before its descriptor reaches renderer; the source workstation path is never exposed to backend HTTP or retained by renderer.
+- Each staged local file becomes one FIFO upload task. A missing remote target is created with exclusive-write semantics; an existing regular-file target returns `SFTP_UPLOAD_CONFLICT` unless the request carries the original opened-file snapshot or renderer retries with `overwrite: true` after explicit confirmation.
+- Staged upload files are removed after their task settles. Connection resets and tab unmount also request best-effort cleanup for queued staging paths that did not start.
 - Passive reconnect is surfaced as a regular `Reconnect` task in the same task menu. Concurrent SFTP operations that observe the same stale session share one in-flight reconnect promise, then each operation retries once against the new session id. If reconnect succeeds but the original operation still fails, the renderer reports that operation failure and does not start a second reconnect loop.
 - Reconnect prefers the tab's current path (`currentPathRef.current`) when creating the replacement session and falls back to the original connection intent path, or `.` when no initial path was provided.
 - Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
@@ -211,6 +215,7 @@ Security constraints:
 - Image previews never load `file://` URLs directly. Main/preload validates the temp path under the Cosmosh SFTP temp root, checks the image extension and size cap, and returns a data URL for the renderer image element.
 - Text preview writes accept UTF-8 strings only, enforce the backend preview-write size cap, require a regular remote file, and preserve the existing remote conflict guard before replacing the target through a remote temp file.
 - Upload write-back only accepts local paths selected through the validated temp-file flow and rejects remote writes when the target is not a regular file. Non-overwrite writes are also rejected when the remote conflict snapshot no longer matches; overwrite writes require the renderer's explicit second confirmation and `overwrite: true`.
+- Native upload selection does not grant renderer arbitrary filesystem read access. Main copies only user-selected regular files into the controlled temp root, backend accepts uploads only from that root, and cleanup IPC validates every candidate before deleting the staged file.
 - Backend rejects empty mutable targets and root/current-directory markers for write operations.
 
 ## 7. Renderer UX Contract
@@ -230,6 +235,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Show the SFTP task trigger only while the tab has active or recently completed tasks. The trigger belongs between the address control and file-operation buttons, uses `ListTodo`/spinner iconography, and opens a right-aligned dense task menu with per-task status text and compact progress bars.
 - Reconnect progress must use that task trigger instead of adding a separate banner, toast-only state, floating overlay, or persistent warning region.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
+- Expose `Upload Files` as a dedicated toolbar action and in directory-scoped blank-area/tree menus. It is disabled outside the Electron desktop bridge, while multi-file selections are queued in picker order.
 - Row and toolbar overflow menu `Properties` items open the standalone Properties window for the selected entry or selection.
 - Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.
 - Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, `Ctrl`/`Cmd+A` selects every visible entry, `Shift` selects the visible range from the current anchor, `Space` selects the focused row, and primary-clicking blank space in the center list clears the current selection. Row context menus preserve an existing multi-selection when the clicked row is already selected.
@@ -253,7 +259,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 
 Future SFTP work should be planned separately. Likely next phases:
 
-1. Streamed download/upload with progress and cancellation.
+1. Directory upload/download plus byte-level transfer progress and cancellation.
 2. chmod and richer permissions editing.
 3. Transfer queue and conflict handling for long-running copies/uploads/downloads.
 4. Richer editor workflows such as find/replace, encoding choices, and explicit reload/compare actions.

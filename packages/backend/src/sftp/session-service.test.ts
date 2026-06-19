@@ -137,7 +137,9 @@ const createUploadSftpMock = (
   sftp.stat = (targetPath, callback): void => {
     const stats = statsByPath[targetPath];
     if (!stats) {
-      callback(new Error('not found'));
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
       return;
     }
 
@@ -375,6 +377,70 @@ test('SftpSessionService uploadFile replaces a matching remote regular file', as
   } finally {
     await uploadableFile.cleanup();
   }
+});
+
+test('SftpSessionService uploadFile creates a new remote file without an opening snapshot', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/var/www/new-file.txt';
+  const uploadSftp = createUploadSftpMock({});
+  session.sftp = uploadSftp.sftp;
+  registerTestSession(service, session);
+
+  const uploadableFile = await createUploadableTempFile('new-file.txt', 'new upload');
+
+  try {
+    const result = await service.uploadFile(session.sessionId, remotePath, uploadableFile.localPath);
+
+    assert.equal(result.type, 'success');
+    assert.deepEqual(uploadSftp.writes, [remotePath]);
+    assert.deepEqual(uploadSftp.renames, []);
+    assert.equal(uploadSftp.writtenContentByPath.get(remotePath), 'new upload');
+  } finally {
+    await uploadableFile.cleanup();
+  }
+});
+
+test('SftpSessionService uploadFile requires confirmation before replacing an existing upload target', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/var/www/existing.txt';
+  const uploadSftp = createUploadSftpMock({
+    [remotePath]: createTestSftpStats({ size: 8, mtime: 1_710_000_000 }),
+  });
+  session.sftp = uploadSftp.sftp;
+  registerTestSession(service, session);
+
+  const result = await service.uploadFile(session.sessionId, remotePath, resolveUnusedSftpTemporaryTestPath());
+
+  assert.deepEqual(result, {
+    type: 'failed',
+    message: 'errors.sftp.fileUploadTargetExists',
+    reason: 'remote-conflict',
+  });
+  assert.deepEqual(uploadSftp.writes, []);
+  assert.deepEqual(uploadSftp.renames, []);
+});
+
+test('SftpSessionService uploadFile treats a deleted opened file as a remote conflict', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/var/www/deleted-after-open.txt';
+  const uploadSftp = createUploadSftpMock({});
+  session.sftp = uploadSftp.sftp;
+  registerTestSession(service, session);
+
+  const result = await service.uploadFile(session.sessionId, remotePath, resolveUnusedSftpTemporaryTestPath(), {
+    size: 8,
+    modifiedAt: new Date(1_710_000_000 * 1000).toISOString(),
+  });
+
+  assert.deepEqual(result, {
+    type: 'failed',
+    message: 'errors.sftp.fileUploadRemoteChanged',
+    reason: 'remote-conflict',
+  });
+  assert.deepEqual(uploadSftp.writes, []);
 });
 
 test('SftpSessionService uploadFile prefers OpenSSH posix rename when replacing existing files', async () => {

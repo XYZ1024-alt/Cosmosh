@@ -72,6 +72,7 @@ import type {
   AppMenuAction,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
+  SftpUploadFileSelection,
 } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -249,6 +250,12 @@ contextBridge.exposeInMainWorld('electron', {
   },
   createSftpDownloadsFile: (fileName: string) => {
     return invokeIpc<string>('app:create-sftp-downloads-file', fileName);
+  },
+  selectSftpUploadFiles: () => {
+    return invokeIpc<SftpUploadFileSelection>('app:select-sftp-upload-files');
+  },
+  cleanupSftpTemporaryFiles: (localPaths: string[]) => {
+    return invokeIpc<boolean>('app:cleanup-sftp-temporary-files', localPaths);
   },
   openSftpTemporaryFile: (localPath: string) => {
     return invokeIpc<boolean>('app:open-sftp-temporary-file', localPath);

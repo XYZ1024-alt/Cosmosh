@@ -868,7 +868,8 @@
       "showAddressAsText": "将地址显示为文本",
       "showHiddenFiles": "显示隐藏文件",
       "undo": "撤销",
-      "up": "返回上级目录"
+      "up": "返回上级目录",
+      "uploadFiles": "上传文件"
     },
     "addressCollapsedMenuLabel": "显示隐藏的路径层级",
     "addressMenuEmpty": "没有文件夹",
@@ -944,7 +945,8 @@
       "relativePathCopied": "相对地址已复制。",
       "renamed": "已重命名。",
       "saved": "已保存。",
-      "uploaded": "更改已上传。"
+      "uploaded": "更改已上传。",
+      "uploadedFile": "已上传 {name}。"
     },
     "loadFailed": "加载 SFTP 目录失败。",
     "loading": "正在加载目录...",
@@ -1081,9 +1083,11 @@
     "uploadConfirmIgnore": "忽略",
     "uploadConfirmTitle": "上传 SFTP 更改",
     "uploadConflictCancel": "取消",
-    "uploadConflictDescription": "“{name}”在打开后已在远程发生变化。要用本地更改覆盖 {path} 吗？",
+    "uploadConflictDescription": "远程已存在名为“{name}”的文件，或该文件在打开后发生了变化。要覆盖 {path} 吗？",
     "uploadConflictOverwrite": "覆盖",
     "uploadConflictTitle": "覆盖远程更改？",
+    "uploadSelectionFailed": "无法准备所选本地文件进行上传。",
+    "uploadUnsupported": "本地文件上传仅在桌面应用中可用。",
     "viewMenu": {
       "ascending": "递增",
       "columns": "列",

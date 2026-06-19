@@ -5,7 +5,12 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import type { SftpOpenWithApplication, SftpTemporaryFileWatchChange } from '@cosmosh/api-contract';
+import type {
+  SftpOpenWithApplication,
+  SftpTemporaryFileWatchChange,
+  SftpUploadFileSelection,
+  SftpUploadLocalFile,
+} from '@cosmosh/api-contract';
 import {
   app,
   BrowserWindow,
@@ -47,6 +52,7 @@ type SftpTemporaryFileWatchRecord = {
 };
 
 const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
+const stagedSftpUploadPaths = new Set<string>();
 const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
 const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
 const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
@@ -237,6 +243,123 @@ const createSftpTemporaryFilePath = async (fileName: string | undefined): Promis
   const temporaryDirectoryPath = path.join(resolveSftpTemporaryRootPath(), randomUUID());
   await fs.mkdir(temporaryDirectoryPath, { recursive: true });
   return path.join(temporaryDirectoryPath, sanitizeSftpTemporaryFileName(fileName));
+};
+
+/**
+ * Copies one user-selected local file into the controlled SFTP temp root.
+ *
+ * @param sourcePath Native-dialog-selected local file path.
+ * @returns Staged upload descriptor safe to expose to the renderer.
+ */
+const stageSftpUploadLocalFile = async (sourcePath: string): Promise<SftpUploadLocalFile> => {
+  const sourceStats = await fs.stat(sourcePath);
+  if (!sourceStats.isFile()) {
+    throw new Error('Only regular files can be uploaded.');
+  }
+
+  const name = path.basename(sourcePath);
+  const localPath = await createSftpTemporaryFilePath(name);
+  try {
+    await fs.copyFile(sourcePath, localPath);
+    const stagedStats = await fs.stat(localPath);
+    stagedSftpUploadPaths.add(path.resolve(localPath));
+    return {
+      name,
+      localPath,
+      size: stagedStats.size,
+      modifiedAt: stagedStats.mtime.toISOString(),
+    };
+  } catch (error: unknown) {
+    await fs.rm(path.dirname(localPath), { force: true, recursive: true }).catch(() => undefined);
+    throw error;
+  }
+};
+
+/**
+ * Removes staged SFTP upload files without allowing deletion outside the temp root.
+ *
+ * @param localPaths Renderer-provided staged paths.
+ * @returns Promise resolved after best-effort cleanup.
+ */
+const cleanupSftpTemporaryFiles = async (localPaths: readonly string[]): Promise<void> => {
+  const temporaryRootPath = path.resolve(resolveSftpTemporaryRootPath());
+  await Promise.all(
+    localPaths.map(async (localPath) => {
+      try {
+        const normalizedPath = resolveSftpTemporaryCandidatePath(localPath);
+        if (!stagedSftpUploadPaths.has(normalizedPath)) {
+          return;
+        }
+
+        await fs.unlink(normalizedPath);
+        stagedSftpUploadPaths.delete(normalizedPath);
+        const parentPath = path.dirname(normalizedPath);
+        if (parentPath !== temporaryRootPath && isPathInsideDirectory(parentPath, temporaryRootPath)) {
+          await fs.rmdir(parentPath).catch(() => undefined);
+        }
+      } catch {
+        // Cleanup is intentionally best-effort and never expands the allowed temp-root boundary.
+      }
+    }),
+  );
+};
+
+/**
+ * Opens the native multi-file picker and stages all accepted upload files.
+ *
+ * @param options Runtime dependencies used to resolve the owning window.
+ * @returns Native picker result with controlled temp-file descriptors.
+ */
+const selectAndStageSftpUploadFiles = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+): Promise<SftpUploadFileSelection> => {
+  const targetWindow = resolveTargetWindow(options);
+  const dialogOptions: OpenDialogOptions = {
+    title: 'Upload Files',
+    buttonLabel: 'Upload',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'All Files',
+        extensions: ['*'],
+      },
+    ],
+  };
+  const selection = targetWindow
+    ? await dialog.showOpenDialog(targetWindow, dialogOptions)
+    : await dialog.showOpenDialog(dialogOptions);
+
+  if (selection.canceled || selection.filePaths.length === 0) {
+    return { canceled: true, files: [] };
+  }
+
+  const stagedResults = await Promise.allSettled(selection.filePaths.map(stageSftpUploadLocalFile));
+  const stagedFiles = stagedResults.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
+  const failedResult = stagedResults.find((result) => result.status === 'rejected');
+  if (failedResult?.status === 'rejected') {
+    await cleanupSftpTemporaryFiles(stagedFiles.map((file) => file.localPath));
+    throw failedResult.reason;
+  }
+
+  return {
+    canceled: false,
+    files: stagedFiles,
+  };
+};
+
+/**
+ * Validates renderer-provided staging paths before requesting cleanup.
+ *
+ * @param localPaths Unknown IPC payload.
+ * @returns Whether the cleanup request was valid and processed.
+ */
+const cleanupRendererStagedSftpUploadFiles = async (localPaths: unknown): Promise<boolean> => {
+  if (!Array.isArray(localPaths) || !localPaths.every((localPath) => typeof localPath === 'string')) {
+    return false;
+  }
+
+  await cleanupSftpTemporaryFiles(localPaths);
+  return true;
 };
 
 /**
@@ -670,6 +793,14 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   ipcMain.handle('app:create-sftp-downloads-file', (event, fileName?: string): string => {
     const localPath = path.join(app.getPath('downloads'), sanitizeSftpTemporaryFileName(fileName));
     return authorizeSftpDownloadTarget(event.sender, localPath, false);
+  });
+
+  ipcMain.handle('app:select-sftp-upload-files', async (): Promise<SftpUploadFileSelection> => {
+    return selectAndStageSftpUploadFiles(options);
+  });
+
+  ipcMain.handle('app:cleanup-sftp-temporary-files', async (_event, localPaths?: unknown): Promise<boolean> => {
+    return cleanupRendererStagedSftpUploadFiles(localPaths);
   });
 
   ipcMain.handle('app:open-sftp-temporary-file', async (_event, localPath?: string): Promise<boolean> => {

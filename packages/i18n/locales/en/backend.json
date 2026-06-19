@@ -63,6 +63,7 @@
       "fileReadUnsupported": "Only regular files can be opened in the SFTP preview.",
       "fileUploadFailedNoReason": "Failed to upload SFTP file.",
       "fileUploadRemoteChanged": "The remote file changed after it was opened. Refresh the directory before uploading again.",
+      "fileUploadTargetExists": "A remote file already exists at the upload target.",
       "fileUploadUnsupported": "Only regular remote files can be updated from an opened temp file.",
       "fileWriteFailedNoReason": "Failed to write SFTP file.",
       "fileWriteTooLarge": "SFTP text preview saves are limited to {limit} bytes.",

@@ -27,6 +27,7 @@ import {
   Search,
   Trash2,
   Undo2,
+  Upload,
 } from 'lucide-react';
 import React from 'react';
 
@@ -69,6 +70,7 @@ type SftpToolbarProps = {
   addressInputRef: React.RefObject<HTMLInputElement | null>;
   canGoBack: boolean;
   canGoForward: boolean;
+  canUploadLocalFiles: boolean;
   canUseFileActions: boolean;
   clipboardStateExists: boolean;
   currentPath: string;
@@ -129,6 +131,7 @@ type SftpToolbarProps = {
   onRequestBreadcrumbDirectories: (breadcrumbPath: string) => void;
   onShowAddressAsText: () => void;
   onShowHiddenEntriesChange: (showHiddenEntries: boolean) => Promise<void>;
+  onUploadFiles: (targetDirectoryPath?: string) => Promise<void>;
   renderActionMenuItems: (options: SftpActionMenuOptions) => React.ReactNode;
   renderNavigationHistoryControl: (options: NavigationHistoryControlOptions) => React.ReactNode;
   navigationIndex: number;
@@ -149,6 +152,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   backNavigationHistoryItems,
   canGoBack,
   canGoForward,
+  canUploadLocalFiles,
   canUseFileActions,
   clipboardStateExists,
   currentPath,
@@ -195,6 +199,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   onRequestBreadcrumbDirectories,
   onShowAddressAsText,
   onShowHiddenEntriesChange,
+  onUploadFiles,
   parentPath,
   pathInput,
   primarySelectedEntry,
@@ -493,6 +498,21 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>{t('sftp.actions.paste')}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  aria-label={t('sftp.actions.uploadFiles')}
+                  variant="ghostIcon"
+                  disabled={!canUseFileActions || !canUploadLocalFiles}
+                  onClick={() => {
+                    void onUploadFiles();
+                  }}
+                >
+                  <Upload className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{t('sftp.actions.uploadFiles')}</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>

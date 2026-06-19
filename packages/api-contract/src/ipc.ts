@@ -35,3 +35,21 @@ export type SftpTemporaryFileWatchChange = {
   size: number;
   modifiedAt: string;
 };
+
+/**
+ * One user-selected local file staged under the Cosmosh-controlled SFTP temp root.
+ */
+export type SftpUploadLocalFile = {
+  name: string;
+  localPath: string;
+  size: number;
+  modifiedAt: string;
+};
+
+/**
+ * Result returned by the native SFTP upload file picker.
+ */
+export type SftpUploadFileSelection = {
+  canceled: boolean;
+  files: SftpUploadLocalFile[];
+};

@@ -115,10 +115,10 @@ sequenceDiagram
 ## 5. Runtime Capabilities
 
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
-- SFTP uses request/response IPC + backend HTTP routes for directory browsing, download, create, rename, copy, delete, and batch file operations.
+- SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With; macOS uses the packaged NSWorkspace helper; Linux omits Open With.
-- SFTP upload, directory download, chmod, transfer queues, full editor write-back, and SSH terminal session reuse remain planned follow-up work.
+- SFTP directory upload/download, chmod, byte-level transfer progress/cancellation, richer transfer queues, and SSH terminal session reuse remain planned follow-up work.
 
 ## 5.1 SSH Port Forwarding Runtime (Implemented)
 

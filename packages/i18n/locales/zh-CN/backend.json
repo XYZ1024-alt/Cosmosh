@@ -63,6 +63,7 @@
       "fileReadUnsupported": "SFTP 预览仅支持打开普通文件。",
       "fileUploadFailedNoReason": "上传 SFTP 文件失败。",
       "fileUploadRemoteChanged": "远程文件在打开后已发生变化。请刷新目录后再上传。",
+      "fileUploadTargetExists": "上传目标已存在同名远程文件。",
       "fileUploadUnsupported": "仅普通远程文件可以从已打开的临时文件更新。",
       "fileWriteFailedNoReason": "写入 SFTP 文件失败。",
       "fileWriteTooLarge": "SFTP 文本预览保存最大支持 {limit} 字节。",

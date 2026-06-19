@@ -100,7 +100,7 @@ flowchart TD
 
 ## 5. Not Implemented Yet (Planned)
 
-- Full SFTP transfer queue module (upload streams, directory download, progress/cancellation, conflict handling, and editor write-back integration).
+- Full SFTP transfer queue module (directory upload/download, byte-level progress/cancellation, retry policies, and persisted transfer history).
 - Dedicated shared `common` package is not present yet; current sharing is done through `api-contract` + `i18n`.
 
 ## 6. Common Change Scenarios

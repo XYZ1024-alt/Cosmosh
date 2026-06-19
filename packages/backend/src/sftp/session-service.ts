@@ -1088,19 +1088,19 @@ export class SftpSessionService {
   }
 
   /**
-   * Uploads one locally edited temp file back to the original remote file.
+   * Uploads one controlled local temp file to a new or existing remote path.
    *
    * @param sessionId Live SFTP session id.
    * @param requestedPath Remote file path.
    * @param localPath Absolute local temp path selected by the main process.
-   * @param expectedRemoteSnapshot Remote metadata captured when the file was opened.
+   * @param expectedRemoteSnapshot Optional metadata captured when an existing remote file was opened.
    * @returns Upload result.
    */
   public async uploadFile(
     sessionId: string,
     requestedPath: string | undefined,
     localPath: string | undefined,
-    expectedRemoteSnapshot: UploadSftpFileConflictSnapshot,
+    expectedRemoteSnapshot?: UploadSftpFileConflictSnapshot,
     options: UploadSftpFileOptions = {},
   ): Promise<UploadSftpFileResult> {
     const session = this.getOpenSession(sessionId);
@@ -1131,15 +1131,41 @@ export class SftpSessionService {
     }
 
     try {
-      const targetStats = await this.stat(session, normalizedPath);
-      if (!targetStats.isFile()) {
-        return {
-          type: 'failed',
-          message: session.t('errors.sftp.fileUploadUnsupported'),
-        };
+      let targetStats: Stats | undefined;
+      try {
+        targetStats = await this.stat(session, normalizedPath);
+      } catch (error: unknown) {
+        if (!this.isNoSuchFileError(error)) {
+          throw error;
+        }
       }
 
-      if (!options.overwrite && !this.doesRemoteSnapshotMatch(targetStats, expectedRemoteSnapshot)) {
+      if (targetStats) {
+        if (!targetStats.isFile()) {
+          return {
+            type: 'failed',
+            message: session.t('errors.sftp.fileUploadUnsupported'),
+          };
+        }
+
+        if (!options.overwrite) {
+          if (!expectedRemoteSnapshot) {
+            return {
+              type: 'failed',
+              message: session.t('errors.sftp.fileUploadTargetExists'),
+              reason: 'remote-conflict',
+            };
+          }
+
+          if (!this.doesRemoteSnapshotMatch(targetStats, expectedRemoteSnapshot)) {
+            return {
+              type: 'failed',
+              message: session.t('errors.sftp.fileUploadRemoteChanged'),
+              reason: 'remote-conflict',
+            };
+          }
+        }
+      } else if (expectedRemoteSnapshot && !options.overwrite) {
         return {
           type: 'failed',
           message: session.t('errors.sftp.fileUploadRemoteChanged'),
@@ -1155,9 +1181,14 @@ export class SftpSessionService {
         };
       }
 
-      await this.uploadLocalFileToRemotePath(session, normalizedLocalPath, normalizedPath, targetStats.mode & 0o777, {
-        expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
-      });
+      if (targetStats) {
+        await this.uploadLocalFileToRemotePath(session, normalizedLocalPath, normalizedPath, targetStats.mode & 0o777, {
+          expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
+        });
+      } else {
+        await this.createRemoteFileFromLocalPath(session, normalizedLocalPath, normalizedPath, 0o644);
+      }
+
       this.logSftpMutation(session, 'upload', {
         path: normalizedPath,
       });
@@ -2234,6 +2265,42 @@ export class SftpSessionService {
   }
 
   /**
+   * Streams a local file into a new remote path without replacing an existing entry.
+   *
+   * @param session Live SFTP session.
+   * @param localPath Existing local file path.
+   * @param targetPath New remote file path.
+   * @param mode Initial remote permission bits.
+   * @returns Nothing.
+   */
+  private async createRemoteFileFromLocalPath(
+    session: SftpLiveSession,
+    localPath: string,
+    targetPath: string,
+    mode: number,
+  ): Promise<void> {
+    let didOpenTarget = false;
+
+    try {
+      const readStream = createReadStream(localPath, { flags: 'r' });
+      const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode });
+      writeStream.once('open', () => {
+        didOpenTarget = true;
+      });
+      await pipeline(readStream, writeStream);
+    } catch (error: unknown) {
+      if (this.isFileAlreadyExistsError(error)) {
+        throw new SftpRemoteConflictError(session.t('errors.sftp.fileUploadTargetExists'));
+      }
+
+      if (didOpenTarget) {
+        await this.unlinkRemoteTempFile(session, targetPath);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Writes an in-memory buffer through a remote temp file before replacing the target.
    *
    * @param session Live SFTP session.
@@ -2379,6 +2446,22 @@ export class SftpSessionService {
     }
 
     return this.readSftpErrorMessage(error).includes('no such file');
+  }
+
+  /**
+   * Detects exclusive-create failures caused by a remote target already existing.
+   *
+   * @param error Raw ssh2/SFTP error.
+   * @returns True when the target already exists.
+   */
+  private isFileAlreadyExistsError(error: unknown): boolean {
+    const code = this.readSftpErrorCode(error);
+    if (code === 11 || code === 'EEXIST') {
+      return true;
+    }
+
+    const message = this.readSftpErrorMessage(error);
+    return message.includes('already exists') || message.includes('file exists');
   }
 
   /**

@@ -22,6 +22,8 @@ flowchart TB
 | `app:get-downloads-path` | `invoke` | none | `Promise<string>` | 返回系统下载目录，供本地保存默认路径使用 |
 | `app:create-sftp-temporary-file` | `invoke` | `fileName: string` | `Promise<string>` | 在 Cosmosh SFTP 临时根目录下创建唯一的本地目标路径，供 backend 下载与打开流程使用 |
 | `app:create-sftp-downloads-file` | `invoke` | `fileName: string` | `Promise<string>` | 在系统 Downloads 目录下为发起请求的 renderer 授权一个精确的单次下载目标 |
+| `app:select-sftp-upload-files` | `invoke` | none | `Promise<{ canceled: boolean; files: Array<{ name: string; localPath: string; size: number; modifiedAt: string }> }>` | 打开原生多文件选择器，并将所选普通文件复制到受控 SFTP 临时根目录下的隔离目录 |
+| `app:cleanup-sftp-temporary-files` | `invoke` | `localPaths: string[]` | `Promise<boolean>` | 尽力删除经过校验的上传暂存文件及其已清空的隔离临时目录 |
 | `app:open-sftp-temporary-file` | `invoke` | `localPath: string` | `Promise<boolean>` | 使用系统默认应用打开 Cosmosh SFTP 临时根目录下的既有文件 |
 | `app:read-sftp-temporary-image-preview` | `invoke` | `localPath: string` | `Promise<string>` | 校验 Cosmosh SFTP 临时根目录下的既有图片文件，并返回有大小上限的 data URL 供 renderer 图片预览使用 |
 | `app:start-sftp-temporary-file-watch` | `invoke` | `localPath: string` | `Promise<string>` | 为 Cosmosh SFTP 临时根目录下的既有文件启动防抖监听，并返回 watch id |
@@ -80,7 +82,7 @@ flowchart TB
 | `backend:sftp-read-file` | `invoke` | `sessionId: string, query: ApiSftpReadFileQuery` | `Promise<ApiSftpReadFileResponse \| ApiErrorResponse>` | GET 当前 SFTP 会话内有上限的 UTF-8 文件预览 |
 | `backend:sftp-write-file` | `invoke` | `sessionId: string, payload: ApiSftpWriteFileRequest` | `Promise<ApiSftpWriteFileResponse \| ApiErrorResponse>` | POST 经过远程 size/mtime 冲突检查后，将可编辑 UTF-8 SFTP 预览内容保存回一个远程普通文件；远程冲突返回 `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-download-file` | `invoke` | `sessionId: string, payload: ApiSftpDownloadFileRequest` | `Promise<ApiSftpDownloadFileResponse \| ApiErrorResponse>` | POST 仅将一个远程普通 SFTP 文件流式写入 app utility IPC 为该 renderer 所有者授权的精确路径 |
-| `backend:sftp-upload-file` | `invoke` | `sessionId: string, payload: ApiSftpUploadFileRequest` | `Promise<ApiSftpUploadFileResponse \| ApiErrorResponse>` | POST 在远程 size/mtime 冲突检查通过后，将一个本地已编辑的 SFTP 临时文件流式写回远程文件；`overwrite: true` 只在 renderer 冲突确认后发送，远程冲突返回 `SFTP_UPLOAD_CONFLICT` |
+| `backend:sftp-upload-file` | `invoke` | `sessionId: string, payload: ApiSftpUploadFileRequest` | `Promise<ApiSftpUploadFileResponse \| ApiErrorResponse>` | POST 将一个受控本地临时文件流式写入新的远程路径，或在快照/显式覆盖确认后替换既有普通文件；冲突返回 `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-create-directory` | `invoke` | `sessionId: string, payload: ApiSftpCreateDirectoryRequest` | `Promise<ApiSftpCreateDirectoryResponse \| ApiErrorResponse>` | POST 创建远程 SFTP 目录 |
 | `backend:sftp-create-file` | `invoke` | `sessionId: string, payload: ApiSftpCreateFileRequest` | `Promise<ApiSftpCreateFileResponse \| ApiErrorResponse>` | POST 创建远程 SFTP 空文件 |
 | `backend:sftp-rename-entry` | `invoke` | `sessionId: string, payload: ApiSftpRenameRequest` | `Promise<ApiSftpRenameResponse \| ApiErrorResponse>` | POST 重命名或移动远程 SFTP 条目 |

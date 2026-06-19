@@ -12,6 +12,7 @@ import {
   Scissors,
   Terminal,
   Trash2,
+  Upload,
 } from 'lucide-react';
 import React from 'react';
 
@@ -61,6 +62,7 @@ type SftpActionMenuHandlers = {
   handleOpenSshAtEntryLocation: (entry: ApiSftpEntry | null, targetDirectoryPath?: string) => void;
   handlePasteEntry: (targetDirectoryPath?: string) => Promise<void>;
   handleTreeDirectoryRefresh: (directoryPath: string) => void;
+  handleUploadFiles: (targetDirectoryPath?: string) => Promise<void>;
   loadOpenWithApplications: (entry: ApiSftpEntry) => Promise<void>;
   runInlineEditMenuActionAfterClose: (action: InlineEditMenuAction) => void;
 };
@@ -70,6 +72,7 @@ type SftpActionMenuHandlers = {
  */
 type SftpActionMenuItemsProps = SftpActionMenuOptions &
   SftpActionMenuHandlers & {
+    canUploadLocalFiles: boolean;
     canUseFileActions: boolean;
     canUseSftpOpenWith: boolean;
     clipboardState: ClipboardState | null;
@@ -95,6 +98,7 @@ type SftpActionMenuItemsProps = SftpActionMenuOptions &
 export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   beginCreateEntryInDirectory,
   beginRenameEntry,
+  canUploadLocalFiles,
   canUseFileActions,
   canUseSftpOpenWith,
   clipboardState,
@@ -114,6 +118,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   handleOpenSshAtEntryLocation,
   handlePasteEntry,
   handleTreeDirectoryRefresh,
+  handleUploadFiles,
   loadOpenWithApplications,
   loadingOpenWithPath,
   menuSurface,
@@ -134,6 +139,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const shouldShowEntryMutationActions = scope === 'entry';
   const shouldShowCreateActions = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowPasteAction = scope === 'directory' || isTreeDirectoryScope;
+  const shouldShowUploadAction = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowRefreshAction = isTreeDirectoryScope;
   const shouldShowLocationActions =
     scope === 'entry' || scope === 'toolbarMore' || scope === 'directory' || isTreeDirectoryScope;
@@ -159,9 +165,11 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
     shouldShowLocationActions ||
     shouldShowEntryMutationActions ||
     shouldShowRefreshAction ||
+    shouldShowUploadAction ||
     shouldShowPasteAction ||
     shouldShowCreateActions;
-  const shouldShowCreateSeparator = (shouldShowPasteAction || shouldShowRefreshAction) && shouldShowCreateActions;
+  const shouldShowCreateSeparator =
+    (shouldShowUploadAction || shouldShowPasteAction || shouldShowRefreshAction) && shouldShowCreateActions;
 
   const ShortcutComponent = menuSurface === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
   const ItemComponent = menuSurface === 'context' ? ContextMenuItem : DropdownMenuItem;
@@ -331,6 +339,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
           ) : null}
           {shouldShowEntryMutationActions ||
           shouldShowRefreshAction ||
+          shouldShowUploadAction ||
           shouldShowPasteAction ||
           shouldShowCreateActions ? (
             <SeparatorComponent />
@@ -391,6 +400,17 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
           onSelect={() => handleTreeDirectoryRefresh(targetDirectoryPath)}
         >
           {t('sftp.actions.refresh')}
+        </ItemComponent>
+      ) : null}
+      {shouldShowUploadAction ? (
+        <ItemComponent
+          icon={Upload}
+          disabled={!canUseFileActions || !canUploadLocalFiles}
+          onSelect={() => {
+            void handleUploadFiles(targetDirectoryPath);
+          }}
+        >
+          {t('sftp.actions.uploadFiles')}
         </ItemComponent>
       ) : null}
       {shouldShowPasteAction ? (

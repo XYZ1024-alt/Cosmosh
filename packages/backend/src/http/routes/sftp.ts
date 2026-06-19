@@ -54,8 +54,8 @@ type NormalizedSftpDownloadFileRequest = {
 type NormalizedSftpUploadFileRequest = {
   path: string;
   localPath: string;
-  expectedSize: number;
-  expectedModifiedAt: string;
+  expectedSize?: number;
+  expectedModifiedAt?: string;
   overwrite: boolean;
 };
 
@@ -246,15 +246,29 @@ const parseSftpUploadFileRequest = (payload: unknown): ValidationResult<Normaliz
     };
   }
 
-  const expectedSize = Number(payload.expectedSize);
-  if (!Number.isSafeInteger(expectedSize) || expectedSize < 0) {
+  const hasExpectedSize = payload.expectedSize !== undefined;
+  const hasExpectedModifiedAt = payload.expectedModifiedAt !== undefined;
+  if (hasExpectedSize !== hasExpectedModifiedAt) {
+    return {
+      error: buildValidationError(
+        'errors.validation.invalidPayload',
+        'expectedSize and expectedModifiedAt must be provided together.',
+      ),
+    };
+  }
+
+  const expectedSize = hasExpectedSize ? payload.expectedSize : undefined;
+  if (
+    expectedSize !== undefined &&
+    (typeof expectedSize !== 'number' || !Number.isSafeInteger(expectedSize) || expectedSize < 0)
+  ) {
     return {
       error: buildValidationError('errors.sftp.expectedSizeRequired', 'expectedSize must be a non-negative integer.'),
     };
   }
 
-  const expectedModifiedAt = normalizeOptionalString(payload.expectedModifiedAt);
-  if (!expectedModifiedAt || Number.isNaN(Date.parse(expectedModifiedAt))) {
+  const expectedModifiedAt = hasExpectedModifiedAt ? normalizeOptionalString(payload.expectedModifiedAt) : undefined;
+  if (hasExpectedModifiedAt && (!expectedModifiedAt || Number.isNaN(Date.parse(expectedModifiedAt)))) {
     return {
       error: buildValidationError('errors.sftp.expectedModifiedAtRequired', 'expectedModifiedAt must be a date-time.'),
     };
@@ -919,10 +933,12 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
       sessionId,
       parsed.value.path,
       parsed.value.localPath,
-      {
-        size: parsed.value.expectedSize,
-        modifiedAt: parsed.value.expectedModifiedAt,
-      },
+      parsed.value.expectedSize !== undefined && parsed.value.expectedModifiedAt
+        ? {
+            size: parsed.value.expectedSize,
+            modifiedAt: parsed.value.expectedModifiedAt,
+          }
+        : undefined,
       {
         overwrite: parsed.value.overwrite,
       },

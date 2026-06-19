@@ -868,7 +868,8 @@
       "showAddressAsText": "Show Address as Text",
       "showHiddenFiles": "Show Hidden Files",
       "undo": "Undo",
-      "up": "Parent Directory"
+      "up": "Parent Directory",
+      "uploadFiles": "Upload Files"
     },
     "addressCollapsedMenuLabel": "Show hidden path levels",
     "addressMenuEmpty": "No folders",
@@ -944,7 +945,8 @@
       "relativePathCopied": "Relative address copied.",
       "renamed": "Renamed.",
       "saved": "Saved.",
-      "uploaded": "Uploaded changes."
+      "uploaded": "Uploaded changes.",
+      "uploadedFile": "Uploaded {name}."
     },
     "loadFailed": "Failed to load SFTP directory.",
     "loading": "Loading directory...",
@@ -1081,9 +1083,11 @@
     "uploadConfirmIgnore": "Ignore",
     "uploadConfirmTitle": "Upload SFTP Changes",
     "uploadConflictCancel": "Cancel",
-    "uploadConflictDescription": "\"{name}\" changed on the remote server after it was opened. Overwrite {path} with your local changes?",
+    "uploadConflictDescription": "A remote file named \"{name}\" already exists or changed after it was opened. Overwrite {path}?",
     "uploadConflictOverwrite": "Overwrite",
     "uploadConflictTitle": "Overwrite Remote Changes?",
+    "uploadSelectionFailed": "Failed to prepare the selected local files for upload.",
+    "uploadUnsupported": "Local file upload is only available in the desktop app.",
     "viewMenu": {
       "ascending": "Ascending",
       "columns": "Columns",
