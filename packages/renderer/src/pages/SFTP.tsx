@@ -94,7 +94,6 @@ import {
   isSameClipboardSnapshot,
   isSftpImagePreviewEntry,
   isSftpTextPreviewEntry,
-  joinLocalPath,
   joinRemotePath,
   mergeResolvedDirectoryIntoTree,
   resolveAddressBreadcrumbRenderState,
@@ -2290,12 +2289,7 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   const resolveDefaultLocalDownloadPath = React.useCallback(async (entry: ApiSftpEntry): Promise<string | null> => {
-    const downloadsPath = await window.electron?.getDownloadsPath();
-    if (!downloadsPath) {
-      return null;
-    }
-
-    return joinLocalPath(downloadsPath, sanitizeLocalFileName(entry.name));
+    return (await window.electron?.createSftpDownloadsFile(sanitizeLocalFileName(entry.name))) ?? null;
   }, []);
 
   const downloadEntryToLocalPath = React.useCallback(

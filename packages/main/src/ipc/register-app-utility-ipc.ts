@@ -6,9 +6,19 @@ import os from 'node:os';
 import path from 'node:path';
 
 import type { SftpOpenWithApplication, SftpTemporaryFileWatchChange } from '@cosmosh/api-contract';
-import { app, BrowserWindow, dialog, ipcMain, type OpenDialogOptions, type SaveDialogOptions, shell } from 'electron';
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  type OpenDialogOptions,
+  type SaveDialogOptions,
+  shell,
+  type WebContents,
+} from 'electron';
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
+import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
 import {
   collectProcessPerformanceStats,
   createMainCpuUsagePercentSampler,
@@ -124,6 +134,8 @@ export type RegisterAppUtilityIpcHandlersOptions = {
   getBackendProcessId: () => number | null;
   /** Applies runtime Windows title bar symbol color for system menu controls. */
   setWindowsSystemMenuSymbolColor: (symbolColor: string) => boolean;
+  /** Tracks exact renderer-owned paths that the backend SFTP download proxy may write. */
+  sftpDownloadTargetAuthorizations: SftpDownloadTargetAuthorizationRegistry;
 };
 
 /**
@@ -545,6 +557,31 @@ const openWithApplicationMacOs = async (filePath: string, applicationPath: strin
 export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHandlersOptions): void => {
   const sampleMainCpuUsagePercent = createMainCpuUsagePercentSampler();
   const sftpTemporaryFileWatchers = new Map<string, SftpTemporaryFileWatchRecord>();
+  const sftpAuthorizationCleanupOwnerIds = new Set<number>();
+
+  /**
+   * Authorizes a Main-selected SFTP download target and revokes it with its renderer owner.
+   *
+   * @param ownerWebContents Renderer that requested the local target.
+   * @param localPath Main-selected local path.
+   * @param reusable Whether repeated backend downloads may reuse the same target.
+   * @returns Normalized authorized path.
+   */
+  const authorizeSftpDownloadTarget = (ownerWebContents: WebContents, localPath: string, reusable: boolean): string => {
+    const authorizedPath = options.sftpDownloadTargetAuthorizations.authorize(ownerWebContents.id, localPath, {
+      reusable,
+    });
+
+    if (!sftpAuthorizationCleanupOwnerIds.has(ownerWebContents.id)) {
+      sftpAuthorizationCleanupOwnerIds.add(ownerWebContents.id);
+      ownerWebContents.once('destroyed', () => {
+        options.sftpDownloadTargetAuthorizations.revokeOwner(ownerWebContents.id);
+        sftpAuthorizationCleanupOwnerIds.delete(ownerWebContents.id);
+      });
+    }
+
+    return authorizedPath;
+  };
 
   const resolveCommit = (): string => {
     const fromEnv = process.env.COSMOSH_GIT_COMMIT ?? process.env.GIT_COMMIT ?? process.env.VERCEL_GIT_COMMIT_SHA;
@@ -625,8 +662,14 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     return app.getPath('downloads');
   });
 
-  ipcMain.handle('app:create-sftp-temporary-file', async (_event, fileName?: string): Promise<string> => {
-    return createSftpTemporaryFilePath(fileName);
+  ipcMain.handle('app:create-sftp-temporary-file', async (event, fileName?: string): Promise<string> => {
+    const localPath = await createSftpTemporaryFilePath(fileName);
+    return authorizeSftpDownloadTarget(event.sender, localPath, true);
+  });
+
+  ipcMain.handle('app:create-sftp-downloads-file', (event, fileName?: string): string => {
+    const localPath = path.join(app.getPath('downloads'), sanitizeSftpTemporaryFileName(fileName));
+    return authorizeSftpDownloadTarget(event.sender, localPath, false);
   });
 
   ipcMain.handle('app:open-sftp-temporary-file', async (_event, localPath?: string): Promise<boolean> => {
@@ -843,7 +886,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
 
   ipcMain.handle(
     'app:show-save-file-dialog',
-    async (_event, defaultPath?: string): Promise<{ canceled: boolean; filePath?: string }> => {
+    async (event, defaultPath?: string): Promise<{ canceled: boolean; filePath?: string }> => {
       const targetWindow = resolveTargetWindow(options);
       const dialogOptions: SaveDialogOptions = {
         title: 'Save File',
@@ -864,7 +907,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
 
         return {
           canceled: false,
-          filePath: selection.filePath,
+          filePath: authorizeSftpDownloadTarget(event.sender, selection.filePath, false),
         };
       } catch {
         return { canceled: true };

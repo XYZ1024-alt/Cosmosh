@@ -107,6 +107,7 @@ declare global {
       getPendingLaunchWorkingDirectory: () => Promise<string | null>;
       getDownloadsPath: () => Promise<string>;
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
+      createSftpDownloadsFile: (fileName: string) => Promise<string>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
       readSftpTemporaryImagePreview: (localPath: string) => Promise<string>;
       startSftpTemporaryFileWatch: (localPath: string) => Promise<string>;

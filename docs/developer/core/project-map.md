@@ -22,6 +22,7 @@ flowchart TB
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
+  - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations.
   - `src/preload.ts`: secure renderer bridge.
   - `src/security/database-encryption.ts`: DB path/key handling helpers.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.

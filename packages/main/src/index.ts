@@ -26,6 +26,7 @@ import path from 'path';
 
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
 import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
+import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-target-authorizations';
 import {
   getDatabaseEncryptionKey,
   getDatabasePath,
@@ -45,6 +46,7 @@ let backendStartupPromise: Promise<void> | null = null;
 let backendShutdownPromise: Promise<void> | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
+const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
 
 let isAppShutdownInProgress = false;
 
@@ -1321,6 +1323,7 @@ registerAppUtilityIpcHandlers({
   restartBackendRuntime: restartBackendService,
   getBackendProcessId: () => backendProcess?.pid ?? null,
   setWindowsSystemMenuSymbolColor,
+  sftpDownloadTargetAuthorizations,
 });
 
 registerBackendIpcHandlers({
@@ -1329,6 +1332,7 @@ registerBackendIpcHandlers({
   requireBackendConfig,
   requestBackend,
   consumePendingLaunchWorkingDirectory,
+  sftpDownloadTargetAuthorizations,
 });
 
 // -----------------------------------------------------------------------------

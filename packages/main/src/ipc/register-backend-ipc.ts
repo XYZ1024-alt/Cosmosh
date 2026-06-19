@@ -73,6 +73,8 @@ import type {
 import { API_HEADERS, API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
 import { ipcMain } from 'electron';
 
+import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
+
 /**
  * Runtime dependencies required by backend IPC registration.
  */
@@ -96,6 +98,8 @@ export type RegisterBackendIpcHandlersOptions = {
   ) => Promise<TSuccess | ApiErrorResponse>;
   /** Returns and clears one-shot launch working directory context. */
   consumePendingLaunchWorkingDirectory: () => string | null;
+  /** Validates renderer-owned local paths before proxying SFTP downloads. */
+  sftpDownloadTargetAuthorizations: SftpDownloadTargetAuthorizationRegistry;
 };
 
 /**
@@ -430,14 +434,18 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
   ipcMain.handle(
     'backend:sftp-download-file',
     async (
-      _event,
+      event,
       sessionId: string,
       payload: ApiSftpDownloadFileRequest,
     ): Promise<ApiSftpDownloadFileResponse | ApiErrorResponse> => {
       const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
+      const localPath = options.sftpDownloadTargetAuthorizations.consume(event.sender.id, payload.localPath);
       return options.requestBackend<ApiSftpDownloadFileResponse>(path, {
         method: 'POST',
-        body: payload,
+        body: {
+          ...payload,
+          localPath,
+        },
       });
     },
   );

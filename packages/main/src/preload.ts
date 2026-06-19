@@ -247,6 +247,9 @@ contextBridge.exposeInMainWorld('electron', {
   createSftpTemporaryFile: (fileName: string) => {
     return invokeIpc<string>('app:create-sftp-temporary-file', fileName);
   },
+  createSftpDownloadsFile: (fileName: string) => {
+    return invokeIpc<string>('app:create-sftp-downloads-file', fileName);
+  },
   openSftpTemporaryFile: (localPath: string) => {
     return invokeIpc<boolean>('app:open-sftp-temporary-file', localPath);
   },

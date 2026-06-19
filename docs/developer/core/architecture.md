@@ -100,6 +100,7 @@ sequenceDiagram
 - Backend HTTP explicitly binds to the IPv4 loopback interface (`127.0.0.1`) in every runtime mode. The listener must never rely on the Node server default, which can expose standalone development APIs on non-loopback interfaces.
 - Electron-main mode additionally guards `/api/v1/*` with an internal runtime token (`COSMOSH_INTERNAL_TOKEN`). Standalone mode remains loopback-only even though it does not require that token.
 - Main process injects headers and never exposes internal token to renderer.
+- Main also capability-gates local SFTP download destinations. App utility IPC authorizes an exact normalized path for the requesting renderer webContents, and the backend proxy rejects any download path without that owner-bound authorization. Temporary preview/open paths are reusable; Downloads and save-dialog paths are consumed after one request.
 - Credential encryption key is derived from `COSMOSH_SECRET_KEY`/internal token hash in backend bootstrap.
 - HTTP i18n is request-scoped: backend middleware resolves locale from `x-cosmosh-locale` (fallback `accept-language`), then injects a per-request translator used by all route response messages.
 - WS runtime i18n is session-scoped: session creation carries resolved locale into SSH/local terminal runtime so WS `error`/`exit` messages and close reasons are localized consistently.

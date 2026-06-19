@@ -21,6 +21,7 @@ flowchart TB
 | `app:get-pending-launch-working-directory` | `invoke` | none | `Promise<string \| null>` | 返回当前待消费的上下文启动工作目录（来自 CLI 参数） |
 | `app:get-downloads-path` | `invoke` | none | `Promise<string>` | 返回系统下载目录，供本地保存默认路径使用 |
 | `app:create-sftp-temporary-file` | `invoke` | `fileName: string` | `Promise<string>` | 在 Cosmosh SFTP 临时根目录下创建唯一的本地目标路径，供 backend 下载与打开流程使用 |
+| `app:create-sftp-downloads-file` | `invoke` | `fileName: string` | `Promise<string>` | 在系统 Downloads 目录下为发起请求的 renderer 授权一个精确的单次下载目标 |
 | `app:open-sftp-temporary-file` | `invoke` | `localPath: string` | `Promise<boolean>` | 使用系统默认应用打开 Cosmosh SFTP 临时根目录下的既有文件 |
 | `app:read-sftp-temporary-image-preview` | `invoke` | `localPath: string` | `Promise<string>` | 校验 Cosmosh SFTP 临时根目录下的既有图片文件，并返回有大小上限的 data URL 供 renderer 图片预览使用 |
 | `app:start-sftp-temporary-file-watch` | `invoke` | `localPath: string` | `Promise<string>` | 为 Cosmosh SFTP 临时根目录下的既有文件启动防抖监听，并返回 watch id |
@@ -39,7 +40,7 @@ flowchart TB
 | `app:show-in-file-manager` | `invoke` | `targetPath?: string` | `Promise<boolean>` | Opens file/folder in OS file manager |
 | `app:open-external-url` | `invoke` | `targetUrl: string` | `Promise<boolean>` | 使用系统默认浏览器打开受信任的 HTTP(S) 链接 |
 | `app:set-windows-system-menu-symbol-color` | `invoke` | `symbolColor: string` | `Promise<boolean>` | 将 token 驱动的 Windows 标题栏系统菜单符号色应用到当前主窗口 overlay |
-| `app:show-save-file-dialog` | `invoke` | `defaultPath?: string` | `Promise<{ canceled: boolean; filePath?: string }>` | 打开原生保存对话框，并在确认后返回所选本地文件路径 |
+| `app:show-save-file-dialog` | `invoke` | `defaultPath?: string` | `Promise<{ canceled: boolean; filePath?: string }>` | 打开原生保存对话框，并为发起请求的 renderer 授权所选路径执行一次 SFTP 下载 |
 | `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; content?: string }>` | 调起系统文件选择器并在选择后返回 UTF-8 私钥内容 |
 | `app:get-process-performance-stats` | `invoke` | none | `Promise<{ sampledAt: number; cpuPercent: number \| null; mainProcessMemory: { rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number; arrayBuffersBytes: number }; rendererProcessMemory: { residentSetBytes: number; privateBytes: number; sharedBytes: number } \| null; backendProcess: { pid: number; cpuPercent: number \| null; memoryRssBytes: number \| null } \| null }>` | 为调试浮层采样主进程 CPU/内存，基于当前活动窗口获取渲染进程内存，并补充 backend 子进程 CPU/RSS 内存数据 |
 | `app:export-main-heap-snapshot` | `invoke` | none | `Promise<{ ok: boolean; filePath?: string; message?: string }>` | 将主进程 V8 堆快照写入应用 user-data 下的 debug 快照目录 |
@@ -78,7 +79,7 @@ flowchart TB
 | `backend:sftp-get-entry-details` | `invoke` | `sessionId: string, payload: ApiSftpEntryDetailsRequest` | `Promise<ApiSftpEntryDetailsResponse \| ApiErrorResponse>` | POST 获取已选 SFTP 条目的非递归元数据 |
 | `backend:sftp-read-file` | `invoke` | `sessionId: string, query: ApiSftpReadFileQuery` | `Promise<ApiSftpReadFileResponse \| ApiErrorResponse>` | GET 当前 SFTP 会话内有上限的 UTF-8 文件预览 |
 | `backend:sftp-write-file` | `invoke` | `sessionId: string, payload: ApiSftpWriteFileRequest` | `Promise<ApiSftpWriteFileResponse \| ApiErrorResponse>` | POST 经过远程 size/mtime 冲突检查后，将可编辑 UTF-8 SFTP 预览内容保存回一个远程普通文件；远程冲突返回 `SFTP_UPLOAD_CONFLICT` |
-| `backend:sftp-download-file` | `invoke` | `sessionId: string, payload: ApiSftpDownloadFileRequest` | `Promise<ApiSftpDownloadFileResponse \| ApiErrorResponse>` | POST 将一个远程普通 SFTP 文件流式写入由 app utility IPC 选定的本地路径 |
+| `backend:sftp-download-file` | `invoke` | `sessionId: string, payload: ApiSftpDownloadFileRequest` | `Promise<ApiSftpDownloadFileResponse \| ApiErrorResponse>` | POST 仅将一个远程普通 SFTP 文件流式写入 app utility IPC 为该 renderer 所有者授权的精确路径 |
 | `backend:sftp-upload-file` | `invoke` | `sessionId: string, payload: ApiSftpUploadFileRequest` | `Promise<ApiSftpUploadFileResponse \| ApiErrorResponse>` | POST 在远程 size/mtime 冲突检查通过后，将一个本地已编辑的 SFTP 临时文件流式写回远程文件；`overwrite: true` 只在 renderer 冲突确认后发送，远程冲突返回 `SFTP_UPLOAD_CONFLICT` |
 | `backend:sftp-create-directory` | `invoke` | `sessionId: string, payload: ApiSftpCreateDirectoryRequest` | `Promise<ApiSftpCreateDirectoryResponse \| ApiErrorResponse>` | POST 创建远程 SFTP 目录 |
 | `backend:sftp-create-file` | `invoke` | `sessionId: string, payload: ApiSftpCreateFileRequest` | `Promise<ApiSftpCreateFileResponse \| ApiErrorResponse>` | POST 创建远程 SFTP 空文件 |
