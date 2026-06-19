@@ -8,6 +8,11 @@ import type { AuditEventService } from '../audit/service.js';
 import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import {
+  REMOTE_BOOTSTRAP_EXEC_OPTIONS,
+  RemoteBootstrapService,
+  type RemoteBootstrapStatus,
+} from '../remote-bootstrap/service.js';
+import {
   BaseTerminalSessionService,
   TERMINAL_PENDING_OUTPUT_MAX_BYTES,
   TERMINAL_PENDING_OUTPUT_MAX_CHUNKS,
@@ -156,10 +161,12 @@ type ServerOutboundMessage =
         kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
         score: number;
       }>;
-    };
+    }
+  | RemoteBootstrapStatus;
 
 type SshLiveSession = TerminalManagedSessionBase & {
   serverId: string;
+  requestId?: string;
   loginAuditId: string | null;
   client: Client;
   stream: ClientChannel;
@@ -181,6 +188,7 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionHomeDirectory: string | null;
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
+  remoteBootstrapStarted: boolean;
 };
 
 type ParsedRemoteTelemetry = {
@@ -214,6 +222,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
   private readonly credentialEncryptionKey: Buffer;
 
+  private readonly remoteBootstrapService: RemoteBootstrapService;
+
   constructor(options: {
     host: string;
     port: number;
@@ -230,6 +240,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
     this.credentialEncryptionKey = options.credentialEncryptionKey;
+    this.remoteBootstrapService = new RemoteBootstrapService({
+      auditEventService: options.auditEventService,
+      manifestUrl: process.env.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL?.trim() || undefined,
+    });
   }
 
   public async createSession(input: CreateSshSessionInput): Promise<CreateSshSessionResult> {
@@ -421,6 +435,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     liveSession = {
       sessionId,
       serverId: server.id,
+      requestId: input.requestId,
       loginAuditId,
       websocketToken,
       client: shellResult.client,
@@ -447,6 +462,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         shouldSuggestSecret: false,
       },
       completionSecretValue: shellResult.completionSecretValue,
+      remoteBootstrapStarted: false,
       t: i18n.t,
       socket: null,
       disposed: false,
@@ -594,6 +610,31 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       type: 'output',
       data,
     }));
+    this.startRemoteBootstrap(session);
+  }
+
+  /**
+   * Starts the remote bootstrap flow once per SSH session using a side-channel exec command.
+   *
+   * @param session Live SSH session that owns the client transport.
+   * @returns Nothing.
+   */
+  private startRemoteBootstrap(session: SshLiveSession): void {
+    if (session.remoteBootstrapStarted) {
+      return;
+    }
+
+    session.remoteBootstrapStarted = true;
+    void this.remoteBootstrapService.runForSession({
+      serverId: session.serverId,
+      sessionId: session.sessionId,
+      requestId: session.requestId,
+      executeCommand: async (command) =>
+        await executeBoundedSshCommand(session.client, command, REMOTE_BOOTSTRAP_EXEC_OPTIONS),
+      sendStatus: (status) => {
+        this.sendServerMessage(session, status);
+      },
+    });
   }
 
   protected handleClientMessage(session: SshLiveSession, rawPayload: RawData): void {
