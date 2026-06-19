@@ -543,7 +543,7 @@
       },
       "terminalFontFamily": {
         "description": "Terminal font family fallback list.",
-        "placeholder": "monospace, Consolas, \"JetBrains Mono\", \"Liberation Mono\", \"Microsoft YaHei\", \"SFMono-Regular\", \"PingFang SC\"",
+        "placeholder": "Consolas, \"JetBrains Mono\", \"Liberation Mono\", \"Microsoft YaHei\", \"SFMono-Regular\", \"PingFang SC\", monospace",
         "title": "Terminal Font Family"
       },
       "terminalFontSize": {

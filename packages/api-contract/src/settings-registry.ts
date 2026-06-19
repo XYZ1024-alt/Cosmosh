@@ -408,7 +408,7 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     key: 'terminalFontFamily',
     valueType: 'string',
     defaultValue:
-      'monospace, Consolas, "JetBrains Mono", "Liberation Mono", "Microsoft YaHei", "SFMono-Regular", "PingFang SC"',
+      'Consolas, "JetBrains Mono", "Liberation Mono", "Microsoft YaHei", "SFMono-Regular", "PingFang SC", monospace',
     nameI18nKey: 'settings.items.terminalFontFamily.title',
     descriptionI18nKey: 'settings.items.terminalFontFamily.description',
     placeholderI18nKey: 'settings.items.terminalFontFamily.placeholder',
