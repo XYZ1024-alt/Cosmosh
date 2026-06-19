@@ -124,6 +124,7 @@ Home -> Port Forwarding：
 
 - 保留搜索、当前模式独立的排序/分组控件，以及单一 New Rule 操作。
 - Home 的排序/分组偏好与 SSH、钥匙链两个 Home 模式相互独立保存。
+- 根据每条规则引用的 SSH 服务器的文件夹与标签元数据过滤规则，因为转发规则自身不拥有独立的文件夹或标签字段。
 - 使用高密度表格展示 status、type、server、bind endpoint、target endpoint、activity 与 actions。
 - 支持不分组、按状态分组、按转发类型分组的表格视图；状态分组使用 running/stopped 运行时状态。
 - 提供 New/Edit dialog、Start/Stop、Copy Endpoint、Delete，以及 host trust retry 流程。

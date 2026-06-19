@@ -1467,6 +1467,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
   const activeEntityKind = homeModeEntityKindMap[activeHomeMode];
 
+  const serverById = React.useMemo(() => {
+    const map = new Map<string, SshServerListItem>();
+    servers.forEach((server) => map.set(server.id, server));
+    return map;
+  }, [servers]);
+
   const tagSourceServers = React.useMemo(() => {
     return servers.filter((server) => {
       if (activeFolderId === LOCAL_TERMINAL_FOLDER_ID) {
@@ -1507,13 +1513,36 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     });
   }, [activeFolderId, keychains, quickFilter, recentKeychainIdSet]);
 
+  const tagSourcePortForwardRules = React.useMemo(() => {
+    return portForwardRules.filter((rule) => {
+      const server = serverById.get(rule.serverId);
+
+      if (activeFolderId !== 'all' && server?.folder?.id !== activeFolderId) {
+        return false;
+      }
+
+      if (quickFilter === 'recent' && rule.runtime.status !== 'running') {
+        return false;
+      }
+
+      return quickFilter !== 'favorite';
+    });
+  }, [activeFolderId, portForwardRules, quickFilter, serverById]);
+
   const tags = React.useMemo(() => {
-    if (activeHomeMode === 'portForwarding' || activeFolderId === LOCAL_TERMINAL_FOLDER_ID) {
+    if (activeFolderId === LOCAL_TERMINAL_FOLDER_ID) {
       return ['all'];
     }
 
     const nameSet = new Set<string>();
-    const sourceItems = activeHomeMode === 'keychains' ? tagSourceKeychains : tagSourceServers;
+    const sourceItems =
+      activeHomeMode === 'keychains'
+        ? tagSourceKeychains
+        : activeHomeMode === 'portForwarding'
+          ? tagSourcePortForwardRules
+              .map((rule) => serverById.get(rule.serverId))
+              .filter((server): server is SshServerListItem => Boolean(server))
+          : tagSourceServers;
     sourceItems.forEach((item) => {
       (item.tags ?? []).forEach((tag) => {
         /* Hide the internal "favorite" tag from user-facing tag filters */
@@ -1524,7 +1553,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     });
 
     return ['all', ...Array.from(nameSet)];
-  }, [activeFolderId, activeHomeMode, tagSourceKeychains, tagSourceServers]);
+  }, [activeFolderId, activeHomeMode, serverById, tagSourceKeychains, tagSourcePortForwardRules, tagSourceServers]);
 
   React.useEffect(() => {
     if (!tags.includes(activeTag)) {
@@ -1601,11 +1630,21 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     const keyword = search.trim().toLowerCase();
 
     return portForwardRules.filter((rule) => {
+      const server = serverById.get(rule.serverId);
+
+      if (activeFolderId !== 'all' && server?.folder?.id !== activeFolderId) {
+        return false;
+      }
+
       if (quickFilter === 'recent' && rule.runtime.status !== 'running') {
         return false;
       }
 
       if (quickFilter === 'favorite') {
+        return false;
+      }
+
+      if (activeTag !== 'all' && !(server?.tags ?? []).some((tag) => tag.name === activeTag)) {
         return false;
       }
 
@@ -1616,6 +1655,8 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
       const searchableValues = [
         rule.name,
         rule.serverName ?? '',
+        server?.host ?? '',
+        server?.username ?? '',
         rule.type,
         rule.note ?? '',
         formatPortForwardBindEndpoint(rule),
@@ -1624,7 +1665,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
 
       return searchableValues.some((value) => value.toLowerCase().includes(keyword));
     });
-  }, [portForwardRules, quickFilter, search]);
+  }, [activeFolderId, activeTag, portForwardRules, quickFilter, search, serverById]);
 
   const filteredLocalTerminalProfiles = React.useMemo(() => {
     if (activeFolderId !== LOCAL_TERMINAL_FOLDER_ID) {
@@ -1990,6 +2031,38 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     return countMap;
   }, [keychains]);
 
+  const folderPortForwardRuleCountMap = React.useMemo(() => {
+    const countMap = new Map<string, number>();
+    portForwardRules.forEach((rule) => {
+      const folderId = serverById.get(rule.serverId)?.folder?.id;
+      if (!folderId) {
+        return;
+      }
+
+      countMap.set(folderId, (countMap.get(folderId) ?? 0) + 1);
+    });
+
+    return countMap;
+  }, [portForwardRules, serverById]);
+
+  const folderPortForwardRunningRuleCountMap = React.useMemo(() => {
+    const countMap = new Map<string, number>();
+    portForwardRules.forEach((rule) => {
+      if (rule.runtime.status !== 'running') {
+        return;
+      }
+
+      const folderId = serverById.get(rule.serverId)?.folder?.id;
+      if (!folderId) {
+        return;
+      }
+
+      countMap.set(folderId, (countMap.get(folderId) ?? 0) + 1);
+    });
+
+    return countMap;
+  }, [portForwardRules, serverById]);
+
   const quickSidebarCards = React.useMemo<SidebarCardItem[]>(() => {
     const recentTitle =
       activeHomeMode === 'keychains'
@@ -2049,7 +2122,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         activeHomeMode === 'keychains'
           ? (folderKeychainCountMap.get(folder.id) ?? 0)
           : activeHomeMode === 'portForwarding'
-            ? 0
+            ? quickFilter === 'recent'
+              ? (folderPortForwardRunningRuleCountMap.get(folder.id) ?? 0)
+              : (folderPortForwardRuleCountMap.get(folder.id) ?? 0)
             : (folderServerCountMap.get(folder.id) ?? 0);
       const colorKey = isEntityColorKey(folder.colorKey) ? folder.colorKey : 'slate';
 
@@ -2093,9 +2168,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     activeFolderId,
     activeHomeMode,
     folderKeychainCountMap,
+    folderPortForwardRuleCountMap,
+    folderPortForwardRunningRuleCountMap,
     folderServerCountMap,
     folders,
     localTerminalProfiles.length,
+    quickFilter,
   ]);
 
   const allSidebarCard = React.useMemo<SidebarCardItem>(() => {
