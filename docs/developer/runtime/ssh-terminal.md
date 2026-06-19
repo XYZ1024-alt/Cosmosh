@@ -228,6 +228,7 @@ flowchart LR
 - Renderer uses `@xterm/addon-webgl` for hardware-accelerated terminal rendering when Settings `terminalHardwareAccelerationEnabled` is enabled (default on).
 - Renderer uses `@xterm/addon-web-links` to detect HTTP/HTTPS URLs in terminal output when Settings `terminalWebLinksEnabled` is enabled (default on).
 - Backend normalizes terminal sizes to prevent extreme allocations (`20-400 cols`, `10-200 rows`).
+- Backend rejects any single client WebSocket message above 1 MiB with close code `1009`, before terminal JSON parsing or transport writes.
 - Pending output queue avoids losing early SSH output before WS attach.
 - Pending output buffering is bounded by chunk count and total bytes; overflow drops oldest chunks and emits drop logs.
 - Telemetry sampling is interval-based (5s) and lightweight text parsing to reduce per-frame cost.

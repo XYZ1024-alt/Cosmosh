@@ -19,6 +19,7 @@ export type TerminalLiveSessionBase = {
 
 export const TERMINAL_PENDING_OUTPUT_MAX_CHUNKS = 2048;
 export const TERMINAL_PENDING_OUTPUT_MAX_BYTES = 1024 * 1024;
+export const TERMINAL_CLIENT_MESSAGE_MAX_BYTES = 1024 * 1024;
 
 /**
  * Resolves a decoded session id only when the WebSocket path is valid.
@@ -79,6 +80,7 @@ export abstract class BaseTerminalSessionService<
     this.websocketServer = new WebSocketServer({
       host: options.host,
       port: options.port,
+      maxPayload: TERMINAL_CLIENT_MESSAGE_MAX_BYTES,
     });
 
     this.websocketBaseUrl = `ws://${options.host}:${options.port}`;

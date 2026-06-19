@@ -228,6 +228,7 @@ flowchart LR
 - 当设置项 `terminalHardwareAccelerationEnabled` 开启时（默认开启），Renderer 使用 `@xterm/addon-webgl` 为终端渲染启用硬件加速。
 - 当设置项 `terminalWebLinksEnabled` 开启时（默认开启），Renderer 使用 `@xterm/addon-web-links` 识别终端输出中的 HTTP/HTTPS URL。
 - Backend 对终端尺寸做归一化限制（`20-400 cols`、`10-200 rows`）。
+- Backend 会在终端 JSON 解析或 transport 写入前拒绝任何超过 1 MiB 的单条客户端 WebSocket 消息，并以关闭码 `1009` 断开连接。
 - 通过 pending output queue 避免 attach 前早期输出丢失。
 - pending output 采用“条目数 + 字节数”双上限；超过上限时丢弃最旧输出并记录日志。
 - 遥测采用 5 秒定时采样 + 轻量文本解析，降低帧级开销。

@@ -7,6 +7,7 @@ import { WebSocket } from 'ws';
 import {
   BaseTerminalSessionService,
   resolveTerminalWebSocketSessionId,
+  TERMINAL_CLIENT_MESSAGE_MAX_BYTES,
   type TerminalManagedSessionBase,
 } from './base-session-service.js';
 
@@ -211,6 +212,28 @@ test('replacing a WebSocket does not let the stale close event dispose the sessi
   } finally {
     secondSocket?.close();
     firstSocket.close();
+    await service.stop();
+  }
+});
+
+test('WebSocket rejects client messages above the terminal payload limit', async () => {
+  const port = await findAvailablePort();
+  const service = new MockTerminalService(port);
+  const session = createMockSession('session-oversized-payload');
+  service.addSession(session);
+
+  const socket = new WebSocket(`${service.getWebSocketBaseUrl()}/ws/test/session-oversized-payload?token=token-1`);
+  socket.on('error', () => undefined);
+
+  try {
+    await waitForSocketOpen(socket);
+    const closePromise = waitForSocketClose(socket);
+
+    socket.send(Buffer.alloc(TERMINAL_CLIENT_MESSAGE_MAX_BYTES + 1));
+
+    assert.equal(await closePromise, 1009);
+  } finally {
+    socket.close();
     await service.stop();
   }
 });
