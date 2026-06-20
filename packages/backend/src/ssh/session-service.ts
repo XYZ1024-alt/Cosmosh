@@ -12,6 +12,7 @@ import {
   RemoteBootstrapService,
   type RemoteBootstrapStatus,
 } from '../remote-bootstrap/service.js';
+import { readDefaultSettingsValues } from '../settings/read.js';
 import {
   BaseTerminalSessionService,
   TERMINAL_PENDING_OUTPUT_MAX_BYTES,
@@ -60,6 +61,7 @@ type CreateSshSessionInput = {
   connectTimeoutSec: number;
   strictHostKey?: boolean;
   enableSshCompression?: boolean;
+  remoteEnhancementsEnabled?: boolean;
 };
 
 type CreateSshSessionSuccess = {
@@ -189,6 +191,7 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
   remoteBootstrapStarted: boolean;
+  remoteEnhancementsEnabled: boolean;
 };
 
 type ParsedRemoteTelemetry = {
@@ -277,6 +280,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
     const enableSshCompression = input.enableSshCompression ?? server.enableSshCompression;
+    const remoteEnhancementsEnabled = input.remoteEnhancementsEnabled ?? server.remoteEnhancementsEnabled;
     const pendingOutput: string[] = [];
     let pendingOutputBytes = 0;
     let pendingOutputDropCount = 0;
@@ -354,6 +358,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           port: server.port,
           strictHostKey,
           enableSshCompression,
+          remoteEnhancementsEnabled,
           fingerprint: shellResult.fingerprint,
           reason: shellResult.message || 'Host fingerprint is not trusted.',
         },
@@ -390,6 +395,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           port: server.port,
           strictHostKey,
           enableSshCompression,
+          remoteEnhancementsEnabled,
           reason: shellResult.message,
         },
       });
@@ -429,6 +435,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         port: server.port,
         strictHostKey,
         enableSshCompression,
+        remoteEnhancementsEnabled,
       },
     });
 
@@ -463,6 +470,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       },
       completionSecretValue: shellResult.completionSecretValue,
       remoteBootstrapStarted: false,
+      remoteEnhancementsEnabled,
       t: i18n.t,
       socket: null,
       disposed: false,
@@ -625,6 +633,42 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     }
 
     session.remoteBootstrapStarted = true;
+    void this.runRemoteBootstrapWhenEnabled(session);
+  }
+
+  /**
+   * Checks global/server Remote Enhancements gates before running side-channel bootstrap.
+   *
+   * @param session Live SSH session that owns the client transport.
+   * @returns Nothing.
+   */
+  private async runRemoteBootstrapWhenEnabled(session: SshLiveSession): Promise<void> {
+    if (!session.remoteEnhancementsEnabled) {
+      this.sendRemoteBootstrapSkipped(session);
+      return;
+    }
+
+    let remoteEnhancementsEnabled: boolean;
+    try {
+      const settings = await readDefaultSettingsValues(this.getDbClient());
+      remoteEnhancementsEnabled = settings.remoteEnhancementsEnabled;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'failed to read settings';
+      this.sendServerMessage(session, {
+        type: 'bootstrap-status',
+        phase: 'probe',
+        state: 'failed',
+        code: 'SETTINGS_READ_FAILED',
+        message,
+      });
+      return;
+    }
+
+    if (!remoteEnhancementsEnabled) {
+      this.sendRemoteBootstrapSkipped(session);
+      return;
+    }
+
     void this.remoteBootstrapService.runForSession({
       serverId: session.serverId,
       sessionId: session.sessionId,
@@ -634,6 +678,22 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       sendStatus: (status) => {
         this.sendServerMessage(session, status);
       },
+    });
+  }
+
+  /**
+   * Emits an explicit skipped status when Remote Enhancements are disabled.
+   *
+   * @param session Live SSH session receiving the status.
+   * @returns Nothing.
+   */
+  private sendRemoteBootstrapSkipped(session: SshLiveSession): void {
+    this.sendServerMessage(session, {
+      type: 'bootstrap-status',
+      phase: 'probe',
+      state: 'skipped',
+      code: 'REMOTE_ENHANCEMENTS_DISABLED',
+      message: 'remote enhancements are disabled',
     });
   }
 

@@ -118,6 +118,7 @@
       "portRange": "端口必须是 1-65535 范围内的整数。",
       "privateKeyRequiredForAuthType": "所选认证类型必须提供私钥。",
       "profileIdRequired": "profileId 为必填项。",
+      "remoteEnhancementsEnabledType": "remoteEnhancementsEnabled 必须是 boolean 值。",
       "requestBodyMustBeObject": "请求体必须是 JSON 对象。",
       "rowsRange": "rows 必须是 10 到 200 之间的整数。",
       "scopeAccountIdLength": "scope.accountId 长度不能超过 120 个字符。",

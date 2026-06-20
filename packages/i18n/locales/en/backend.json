@@ -118,6 +118,7 @@
       "portRange": "Port must be an integer in range 1-65535.",
       "privateKeyRequiredForAuthType": "Private key is required for selected authentication type.",
       "profileIdRequired": "profileId is required.",
+      "remoteEnhancementsEnabledType": "remoteEnhancementsEnabled must be a boolean value.",
       "requestBodyMustBeObject": "Request body must be a JSON object.",
       "rowsRange": "rows must be an integer between 10 and 200.",
       "scopeAccountIdLength": "scope.accountId must be 120 characters or fewer.",

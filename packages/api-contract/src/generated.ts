@@ -823,6 +823,7 @@ export interface components {
       authType: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      remoteEnhancementsEnabled?: boolean;
       disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       hasPassword: boolean;
@@ -851,6 +852,7 @@ export interface components {
       authType?: components['schemas']['SshAuthType'];
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      remoteEnhancementsEnabled?: boolean;
       disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
       iconKey?: string;
@@ -891,6 +893,7 @@ export interface components {
       connectTimeoutSec: number;
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      remoteEnhancementsEnabled?: boolean;
     };
     /** @enum {string} */
     TerminalClipboardAccess: 'off' | 'writeAskRead' | 'readWrite' | 'askAlways';

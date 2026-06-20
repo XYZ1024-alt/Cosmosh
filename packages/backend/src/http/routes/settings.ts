@@ -8,6 +8,7 @@ import {
   createApiSuccess,
 } from '@cosmosh/api-contract';
 
+import { findSettingsRow, toSettingsScopeColumns, toSettingsScopePayload } from '../../settings/read.js';
 import {
   DEFAULT_SETTINGS_SCOPE,
   parseSettingsUpdateRequest,
@@ -16,56 +17,6 @@ import {
 import { buildErrorPayload } from '../errors.js';
 import { type BackendHttpApp, getTranslator } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
-
-/**
- * Converts API scope object into flat DB key columns.
- */
-const toScopeColumns = (scope: {
-  accountId?: string;
-  deviceId: string;
-}): { scopeAccountId: string; scopeDeviceId: string } => {
-  return {
-    scopeAccountId: scope.accountId ?? '',
-    scopeDeviceId: scope.deviceId,
-  };
-};
-
-/**
- * Converts DB scope columns back into API response shape.
- */
-const toScopePayload = (scopeAccountId: string, scopeDeviceId: string): { accountId?: string; deviceId: string } => {
-  return {
-    accountId: scopeAccountId.length > 0 ? scopeAccountId : undefined,
-    deviceId: scopeDeviceId,
-  };
-};
-
-type AppSettingsRow = {
-  scopeAccountId: string;
-  scopeDeviceId: string;
-  payloadJson: string;
-  revision: number;
-  updatedAt: Date | string;
-};
-
-/**
- * Loads one settings row for a specific scope.
- */
-const findSettingsRow = async (
-  context: BackendAppContext,
-  scopeColumns: { scopeAccountId: string; scopeDeviceId: string },
-): Promise<AppSettingsRow | null> => {
-  const db = context.getDbClient();
-  const rows = await db.$queryRaw<AppSettingsRow[]>`
-    SELECT "scopeAccountId", "scopeDeviceId", "payloadJson", "revision", "updatedAt"
-    FROM "AppSettings"
-    WHERE "scopeAccountId" = ${scopeColumns.scopeAccountId}
-      AND "scopeDeviceId" = ${scopeColumns.scopeDeviceId}
-    LIMIT 1
-  `;
-
-  return rows[0] ?? null;
-};
 
 /**
  * Normalizes Date/string values to ISO timestamp in responses.
@@ -104,15 +55,16 @@ const collectChangedSettingKeys = (previousValues: object, nextValues: object): 
 export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppContext): void => {
   app.get(API_PATHS.settingsGet, async (c) => {
     const t = getTranslator(c);
-    const scopeColumns = toScopeColumns(DEFAULT_SETTINGS_SCOPE);
-    const row = await findSettingsRow(context, scopeColumns);
+    const db = context.getDbClient();
+    const scopeColumns = toSettingsScopeColumns(DEFAULT_SETTINGS_SCOPE);
+    const row = await findSettingsRow(db, scopeColumns);
 
     const payload: ApiSettingsGetResponse = createApiSuccess({
       code: API_CODES.settingsGetOk,
       message: t('success.settings.fetched'),
       data: {
         item: {
-          scope: toScopePayload(scopeColumns.scopeAccountId, scopeColumns.scopeDeviceId),
+          scope: toSettingsScopePayload(scopeColumns.scopeAccountId, scopeColumns.scopeDeviceId),
           revision: row?.revision ?? 0,
           updatedAt: row ? toIsoTimestamp(row.updatedAt) : new Date().toISOString(),
           values: parseStoredSettingsValues(row?.payloadJson),
@@ -137,10 +89,10 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
       );
     }
 
-    const scopeColumns = toScopeColumns(parsed.value.scope ?? DEFAULT_SETTINGS_SCOPE);
+    const scopeColumns = toSettingsScopeColumns(parsed.value.scope ?? DEFAULT_SETTINGS_SCOPE);
     const payloadJson = JSON.stringify(parsed.value.values);
     const db = context.getDbClient();
-    const previousRow = await findSettingsRow(context, scopeColumns);
+    const previousRow = await findSettingsRow(db, scopeColumns);
     const previousValues = parseStoredSettingsValues(previousRow?.payloadJson);
     const changedKeys = collectChangedSettingKeys(previousValues, parsed.value.values);
 
@@ -169,7 +121,7 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
         "updatedAt" = CURRENT_TIMESTAMP
     `;
 
-    const row = await findSettingsRow(context, scopeColumns);
+    const row = await findSettingsRow(db, scopeColumns);
 
     if (!row) {
       return c.json(buildErrorPayload(API_CODES.settingsValidationFailed, t('errors.settings.rowNotPersisted')), 400);
@@ -181,7 +133,7 @@ export const registerSettingsRoutes = (app: BackendHttpApp, context: BackendAppC
       requestId,
       data: {
         item: {
-          scope: toScopePayload(row.scopeAccountId, row.scopeDeviceId),
+          scope: toSettingsScopePayload(row.scopeAccountId, row.scopeDeviceId),
           revision: row.revision,
           updatedAt: toIsoTimestamp(row.updatedAt),
           values: parseStoredSettingsValues(row.payloadJson),
