@@ -1,7 +1,7 @@
 import classNames from 'classnames';
 import {
-  ArrowUpDown,
   AlertTriangle,
+  ArrowUpDown,
   Cpu,
   LoaderCircle,
   MemoryStick,
@@ -353,8 +353,10 @@ export const SSHSidebar: React.FC<SSHSidebarProps> = ({
           />
           <div className="min-w-0 flex-1">
             <div className="truncate text-xs font-medium">{t('ssh.bootstrapStatusTitle')}</div>
-            <div className="truncate text-xs text-muted-text">{bootstrapStatusLabel}</div>
-            {bootstrapDetailLabel ? <div className="truncate text-xs text-muted-text">{bootstrapDetailLabel}</div> : null}
+            <div className="text-muted-text truncate text-xs">{bootstrapStatusLabel}</div>
+            {bootstrapDetailLabel ? (
+              <div className="text-muted-text truncate text-xs">{bootstrapDetailLabel}</div>
+            ) : null}
           </div>
         </div>
       </div>

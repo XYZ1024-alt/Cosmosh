@@ -24,6 +24,7 @@ export type ServerEditorFormState = {
   tagIds: string[];
   strictHostKey: boolean;
   enableSshCompression: boolean;
+  remoteEnhancementsEnabled: boolean;
   disableCharacterWidthCompatibilityMode: boolean;
   terminalClipboardAccess: TerminalClipboardAccess;
 };
@@ -114,6 +115,7 @@ export const createInitialServerFormState = (defaultServerNoteTemplate = ''): Se
     tagIds: [],
     strictHostKey: true,
     enableSshCompression: false,
+    remoteEnhancementsEnabled: true,
     disableCharacterWidthCompatibilityMode: false,
     terminalClipboardAccess: DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
   };
@@ -146,6 +148,7 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
     tagIds: (server.tags ?? []).map((tag) => tag.id),
     strictHostKey: server.strictHostKey ?? true,
     enableSshCompression: server.enableSshCompression ?? false,
+    remoteEnhancementsEnabled: server.remoteEnhancementsEnabled ?? true,
     disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode ?? false,
     terminalClipboardAccess: server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
   };

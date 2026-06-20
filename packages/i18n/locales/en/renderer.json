@@ -385,6 +385,10 @@
         "description": "Controls clipboard requests from local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "remoteEnhancementsEnabled": {
+        "description": "Allows SSH sessions to install Cosmosh's remote helper for OS detection, SFTP enhancement, and command completion support when a manifest URL is configured.",
+        "title": "Remote Enhancements"
+      },
       "sftpAuxiliarySidebarMode": {
         "description": "Controls whether the SFTP auxiliary sidebar shows details, editable previews, or stays closed.",
         "title": "SFTP Auxiliary Sidebar"
@@ -1101,14 +1105,6 @@
     "authTypeKey": "Private Key",
     "authTypePassword": "Password",
     "authTypePlaceholder": "Select auth type",
-    "columnAuth": "Auth",
-    "columnFolder": "Folder",
-    "columnHost": "Host",
-    "columnLastLogin": "Last Login",
-    "columnName": "Name",
-    "columnPort": "Port",
-    "columnTags": "Tags",
-    "columnUser": "Username",
     "bootstrapPhases": {
       "download": "Download",
       "install": "Install",
@@ -1122,8 +1118,16 @@
       "skipped": "Current",
       "started": "Running"
     },
-    "bootstrapStatusTitle": "Remote Bootstrap",
+    "bootstrapStatusTitle": "Remote Enhancements",
     "bootstrapStatusWaiting": "Waiting for status",
+    "columnAuth": "Auth",
+    "columnFolder": "Folder",
+    "columnHost": "Host",
+    "columnLastLogin": "Last Login",
+    "columnName": "Name",
+    "columnPort": "Port",
+    "columnTags": "Tags",
+    "columnUser": "Username",
     "connecting": "Connecting...",
     "connectionTimeout": "Connection Timeout",
     "contextMenuClearTerminal": "Clear Terminal",
@@ -1225,6 +1229,8 @@
     "privateKeyPlaceholder": "Private key content",
     "privateKeySavedPlaceholder": "Saved private key (paste a new one only if you want to replace it)",
     "privateKeyTooShort": "Key seems too short.",
+    "remoteEnhancements": "Remote Enhancements",
+    "remoteEnhancementsTooltip": "When enabled, this server can run Cosmosh's remote helper installer after connection if the global Remote Enhancements setting and manifest URL are configured.",
     "retry": "Retry",
     "saveChanges": "Save Changes",
     "saveInlineCredentialsToKeychain": "Save as Keychain",
