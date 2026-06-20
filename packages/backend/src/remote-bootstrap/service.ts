@@ -20,7 +20,7 @@ export type RemoteBootstrapStatus = {
 type RemoteBootstrapProbe = {
   os: 'linux';
   arch: 'amd64' | 'arm64';
-  shell: 'ash' | 'fish' | 'sh' | 'zsh';
+  shell: 'ash' | 'bash' | 'fish' | 'sh' | 'zsh';
 };
 
 type RemoteBootstrapAsset = {
@@ -51,12 +51,12 @@ type RunForSessionOptions = {
 
 const REMOTE_BOOTSTRAP_COMMAND_TIMEOUT_MS = 60_000;
 const REMOTE_BOOTSTRAP_OUTPUT_MAX_BYTES = 256 * 1024;
-const REMOTE_BOOTSTRAP_SUPPORTED_SHELLS = new Set(['ash', 'fish', 'sh', 'zsh']);
+const REMOTE_BOOTSTRAP_SUPPORTED_SHELLS = new Set(['ash', 'bash', 'fish', 'sh', 'zsh']);
 const REMOTE_BOOTSTRAP_SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const REMOTE_BOOTSTRAP_VERSION_PATTERN = /^[A-Za-z0-9._+-]+$/;
 
 const PROBE_COMMAND =
-  ' sh -lc \'os=$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); arch=$(uname -m 2>/dev/null); shell_name=$(basename "${SHELL:-sh}"); case "$arch" in x86_64|amd64) arch=amd64;; aarch64|arm64) arch=arm64;; *) arch=unsupported;; esac; case "$shell_name" in zsh|fish|ash|sh) shell="$shell_name";; *) shell=unsupported;; esac; printf "{\\"os\\":\\"%s\\",\\"arch\\":\\"%s\\",\\"shell\\":\\"%s\\"}\\n" "$os" "$arch" "$shell"\''; 
+  ' sh -lc \'os=$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); arch=$(uname -m 2>/dev/null); shell_name=$(basename "${SHELL:-sh}"); case "$arch" in x86_64|amd64) arch=amd64;; aarch64|arm64) arch=arm64;; *) arch=unsupported;; esac; case "$shell_name" in zsh|fish|bash|ash|sh) shell="$shell_name";; *) shell=unsupported;; esac; printf "{\\"os\\":\\"%s\\",\\"arch\\":\\"%s\\",\\"shell\\":\\"%s\\"}\\n" "$os" "$arch" "$shell"\'';
 
 /**
  * Orchestrates remote bootstrap probe, wrapper injection, and status parsing.
@@ -108,7 +108,9 @@ export class RemoteBootstrapService {
     this.forwardStatuses(output, emit, manifest.version);
   }
 
-  private async probeRemote(executeCommand: RunForSessionOptions['executeCommand']): Promise<RemoteBootstrapProbe | null> {
+  private async probeRemote(
+    executeCommand: RunForSessionOptions['executeCommand'],
+  ): Promise<RemoteBootstrapProbe | null> {
     const output = await executeCommand(PROBE_COMMAND);
     if (!output) {
       return null;
@@ -143,11 +145,7 @@ export class RemoteBootstrapService {
     return manifest;
   }
 
-  private forwardStatuses(
-    output: string | null,
-    emit: (status: RemoteBootstrapStatus) => void,
-    version: string,
-  ): void {
+  private forwardStatuses(output: string | null, emit: (status: RemoteBootstrapStatus) => void, version: string): void {
     const statuses = parseStatusLines(output);
     if (statuses.length === 0) {
       emit(this.failed('install', 'NO_STATUS_OUTPUT', 'bootstrap wrapper did not emit status output', version));
@@ -157,12 +155,7 @@ export class RemoteBootstrapService {
     statuses.forEach(emit);
   }
 
-  private failed(
-    phase: RemoteBootstrapPhase,
-    code: string,
-    message: string,
-    version?: string,
-  ): RemoteBootstrapStatus {
+  private failed(phase: RemoteBootstrapPhase, code: string, message: string, version?: string): RemoteBootstrapStatus {
     return {
       type: 'bootstrap-status',
       phase,
@@ -268,10 +261,7 @@ const isHttpsUrl = (value: string): boolean => {
   }
 };
 
-const selectAsset = (
-  manifest: RemoteBootstrapManifest,
-  probe: RemoteBootstrapProbe,
-): RemoteBootstrapAsset | null => {
+const selectAsset = (manifest: RemoteBootstrapManifest, probe: RemoteBootstrapProbe): RemoteBootstrapAsset | null => {
   return manifest.assets.find((asset) => asset.os === probe.os && asset.arch === probe.arch) ?? null;
 };
 
@@ -282,14 +272,22 @@ const buildInstallCommand = (
 ): string => {
   const wrapper = buildWrapperScript(probe, manifest, asset);
   const wrapperPayload = Buffer.from(wrapper, 'utf8').toString('base64');
-  const interpreter = probe.shell === 'fish' ? 'fish' : 'sh';
+  const interpreter = probe.shell === 'fish' || probe.shell === 'bash' ? probe.shell : 'sh';
   const base64MissingStatus = escapedJsonStatus(manifest.version, 'BASE64_NOT_FOUND', 'base64 is required');
   const shellMissingStatus = escapedJsonStatus(manifest.version, 'SHELL_NOT_FOUND', 'target shell is unavailable');
   return ` sh -lc 'if ! command -v base64 >/dev/null 2>&1; then printf "${base64MissingStatus}"; exit 1; fi; if ! command -v ${interpreter} >/dev/null 2>&1; then printf "${shellMissingStatus}"; exit 1; fi; tmp="\${TMPDIR:-/tmp}/cosmosh-wrapper-$$"; printf %s "${wrapperPayload}" | base64 -d > "$tmp" && ${interpreter} "$tmp"; rc=$?; rm -f "$tmp"; exit $rc'`;
 };
 
 const escapedJsonStatus = (version: string, code: string, message: string): string => {
-  return `{\\\"type\\\":\\\"bootstrap-status\\\",\\\"phase\\\":\\\"install\\\",\\\"state\\\":\\\"failed\\\",\\\"version\\\":\\\"${version}\\\",\\\"code\\\":\\\"${code}\\\",\\\"message\\\":\\\"${message}\\\"}\\\\n`;
+  const payload = JSON.stringify({
+    type: 'bootstrap-status',
+    phase: 'install',
+    state: 'failed',
+    version,
+    code,
+    message,
+  });
+  return `${payload.replace(/"/g, '\\$&')}\\n`;
 };
 
 const buildWrapperScript = (

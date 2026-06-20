@@ -110,7 +110,7 @@ func validateOptions(options Options) error {
 
 func validateShell(shell string) error {
 	switch shell {
-	case "ash", "fish", "sh", "zsh":
+	case "ash", "bash", "fish", "sh", "zsh":
 		return nil
 	default:
 		return fmt.Errorf("unsupported shell: %s", shell)
@@ -272,6 +272,10 @@ func resolveProfilePath(homeDir string, configRoot string, shell string) string 
 
 	if shell == "zsh" {
 		return filepath.Join(homeDir, ".zshrc")
+	}
+
+	if shell == "bash" {
+		return filepath.Join(homeDir, ".bashrc")
 	}
 
 	return filepath.Join(homeDir, ".profile")

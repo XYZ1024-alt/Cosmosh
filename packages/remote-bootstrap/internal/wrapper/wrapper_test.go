@@ -29,6 +29,17 @@ func TestGeneratePosixWrapper(t *testing.T) {
 	assertContains(t, script, "\"type\":\"bootstrap-status\"")
 }
 
+func TestGenerateBashWrapper(t *testing.T) {
+	script, err := Generate(validConfig("bash"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertContains(t, script, "set -eu")
+	assertContains(t, script, "install --shell \"bash\"")
+	assertContains(t, script, "\"type\":\"bootstrap-status\"")
+}
+
 func TestGenerateFishWrapper(t *testing.T) {
 	script, err := Generate(validConfig("fish"))
 	if err != nil {

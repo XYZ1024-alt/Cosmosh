@@ -315,7 +315,7 @@ flowchart LR
 
 - 远端 bootstrap 会在 SSH 会话首次 WebSocket attach 后自动启动。
 - Backend 通过 `RemoteBootstrapService` 使用独立且有界的 `ssh2 exec` 通道执行 bootstrap。安装器输出按 JSON lines 解析，永远不会写入交互式 shell 输出流。
-- v1 目标为 Linux `amd64` 与 `arm64` 远端，shell 覆盖 `zsh`、`fish`、`ash`、`sh`。不支持的 OS、架构或 shell 会返回失败的 `bootstrap-status` 消息。
+- v1 目标为 Linux `amd64` 与 `arm64` 远端，shell 覆盖 `bash`、`zsh`、`fish`、`ash`、`sh`。不支持的 OS、架构或 shell 会返回失败的 `bootstrap-status` 消息。
 - Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。缺少配置会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 - Manifest asset 必须包含 HTTPS `url` 与 64 位小写 `sha256`。注入的 wrapper 会使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
 - Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh 标记块内更新内容。不要求 root，也不写全局路径。

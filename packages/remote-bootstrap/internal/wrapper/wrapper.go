@@ -21,6 +21,7 @@ type Config struct {
 
 var supportedShells = map[string]bool{
 	"ash":  true,
+	"bash": true,
 	"fish": true,
 	"sh":   true,
 	"zsh":  true,

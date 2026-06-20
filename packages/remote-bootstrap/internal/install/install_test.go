@@ -38,6 +38,30 @@ func TestRunInstallsUserScopedFiles(t *testing.T) {
 	}
 }
 
+func TestRunInstallsBashProfile(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
+	err := Run(Options{
+		Shell:            "bash",
+		Version:          "1.2.3",
+		HelperPayloadB64: payload,
+		Stdout:           &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertFileContains(t, filepath.Join(homeDir, ".bashrc"), markerStart)
+	assertFileContains(t, filepath.Join(homeDir, ".bashrc"), "helper.sh")
+}
+
 func TestRunSkipsCurrentInstall(t *testing.T) {
 	homeDir := t.TempDir()
 	dataDir := filepath.Join(homeDir, "data")
