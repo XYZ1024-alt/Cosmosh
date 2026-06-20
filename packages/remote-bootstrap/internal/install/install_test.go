@@ -88,6 +88,98 @@ func TestRunSkipsCurrentInstall(t *testing.T) {
 	}
 }
 
+func TestRunRepairsMissingPosixProfileHook(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
+	options := Options{Shell: "sh", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}}
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	profilePath := filepath.Join(homeDir, ".profile")
+	if err := os.WriteFile(profilePath, []byte("custom profile\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := bytes.Buffer{}
+	options.Stdout = &stdout
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(stdout.String(), `"state":"skipped"`) {
+		t.Fatalf("expected hook repair instead of skipped status, got %s", stdout.String())
+	}
+	assertFileContains(t, profilePath, markerStart)
+	assertFileContains(t, profilePath, "helper.sh")
+}
+
+func TestRunRepairsMissingFishProfileHook(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	payload := base64.StdEncoding.EncodeToString([]byte("set -gx COSMOSH_BOOTSTRAP_READY 1\n"))
+	options := Options{Shell: "fish", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}}
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	profilePath := filepath.Join(configDir, "fish", "conf.d", "cosmosh.fish")
+	if err := os.WriteFile(profilePath, []byte("set -gx CUSTOM 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := bytes.Buffer{}
+	options.Stdout = &stdout
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(stdout.String(), `"state":"skipped"`) {
+		t.Fatalf("expected fish hook repair instead of skipped status, got %s", stdout.String())
+	}
+	assertFileContains(t, profilePath, "helper.fish")
+	assertFileContains(t, profilePath, "set -gx PATH")
+}
+
+func TestRunDoesNotWriteVersionWhenProfileUpdateFails(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	if err := os.Mkdir(filepath.Join(homeDir, ".profile"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+
+	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
+	stdout := bytes.Buffer{}
+	err := Run(Options{Shell: "sh", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &stdout})
+	if err == nil {
+		t.Fatal("expected profile update failure")
+	}
+
+	if !strings.Contains(stdout.String(), `"code":"PROFILE_UPDATE_FAILED"`) {
+		t.Fatalf("expected profile update failure status, got %s", stdout.String())
+	}
+	assertFileNotExists(t, filepath.Join(dataDir, "cosmosh", "bootstrap", "bin", ".version"))
+}
+
 func TestReplaceMarkedBlockIsIdempotent(t *testing.T) {
 	existing := "before\n" + markerStart + "\nold\n" + markerEnd + "\nafter\n"
 	next := replaceMarkedBlock(existing, "new\n")
@@ -128,5 +220,13 @@ func assertFileContains(t *testing.T, path string, expected string) {
 
 	if !strings.Contains(string(content), expected) {
 		t.Fatalf("expected %s to contain %q", path, expected)
+	}
+}
+
+func assertFileNotExists(t *testing.T, path string) {
+	t.Helper()
+
+	if _, err := os.Stat(path); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("expected %s to not exist", path)
 	}
 }

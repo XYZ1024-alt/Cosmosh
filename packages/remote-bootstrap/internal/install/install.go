@@ -71,6 +71,11 @@ func Run(options Options) error {
 		return err
 	}
 
+	if err := writeVersionFile(options, resolvedPaths); err != nil {
+		writeStatus(options.Stdout, "install", "failed", options.Version, "VERSION_WRITE_FAILED", err.Error())
+		return err
+	}
+
 	writeStatus(options.Stdout, "verify", "ok", options.Version, "", "bootstrap installed")
 	return nil
 }
@@ -146,13 +151,29 @@ func isCurrentInstallation(options Options, resolvedPaths paths) bool {
 		return false
 	}
 
-	for _, requiredPath := range []string{resolvedPaths.binaryPath, resolvedPaths.helperPath, resolvedPaths.profilePath} {
+	for _, requiredPath := range []string{resolvedPaths.binaryPath, resolvedPaths.helperPath} {
 		if _, err := os.Stat(requiredPath); err != nil {
 			return false
 		}
 	}
 
-	return true
+	return profileHasCurrentHook(options, resolvedPaths)
+}
+
+func profileHasCurrentHook(options Options, resolvedPaths paths) bool {
+	contentBytes, err := os.ReadFile(resolvedPaths.profilePath)
+	if err != nil {
+		return false
+	}
+
+	content := string(contentBytes)
+	if options.Shell == "fish" {
+		return strings.Contains(content, fishProfileBlock(resolvedPaths))
+	}
+
+	return strings.Contains(content, markerStart) &&
+		strings.Contains(content, posixProfileBlock(resolvedPaths)) &&
+		strings.Contains(content, markerEnd)
 }
 
 func installFiles(options Options, resolvedPaths paths) error {
@@ -182,6 +203,10 @@ func installFiles(options Options, resolvedPaths paths) error {
 		return err
 	}
 
+	return nil
+}
+
+func writeVersionFile(options Options, resolvedPaths paths) error {
 	return os.WriteFile(resolvedPaths.versionPath, []byte(options.Version+"\n"), 0o600)
 }
 
@@ -204,8 +229,7 @@ func writeFishProfile(resolvedPaths paths) error {
 		return err
 	}
 
-	block := fmt.Sprintf("set -gx PATH %q $PATH\nsource %q\n", resolvedPaths.binDir, resolvedPaths.helperPath)
-	return os.WriteFile(resolvedPaths.profilePath, []byte(block), 0o600)
+	return os.WriteFile(resolvedPaths.profilePath, []byte(fishProfileBlock(resolvedPaths)), 0o600)
 }
 
 func replaceMarkedBlock(existing string, block string) string {
@@ -229,6 +253,10 @@ func replaceMarkedBlock(existing string, block string) string {
 
 func posixProfileBlock(resolvedPaths paths) string {
 	return fmt.Sprintf("export PATH=%q:$PATH\n. %q\n", resolvedPaths.binDir, resolvedPaths.helperPath)
+}
+
+func fishProfileBlock(resolvedPaths paths) string {
+	return fmt.Sprintf("set -gx PATH %q $PATH\nsource %q\n", resolvedPaths.binDir, resolvedPaths.helperPath)
 }
 
 func copyFile(sourcePath string, targetPath string, mode os.FileMode) error {
