@@ -41,7 +41,7 @@ flowchart LR
 - 关闭顺序固定：先停 WS 会话服务，再关闭 HTTP 监听，最后断开 Prisma/SQLite 连接句柄。
 - Windows 终止信号（`SIGBREAK`）与 POSIX 信号共用同一路径，降低数据库文件锁残留概率。
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
-- SSH 会话首次 attach 后会通过 `RemoteBootstrapService` 启动远端 bootstrap 侧通道。该侧通道使用有界 `ssh2 exec`，不会把安装器输出写入交互终端流，并通过结构化 `bootstrap-status` WS 事件回传状态。
+- SSH 会话首次 attach 后，在全局与服务器级开关均启用时，可以通过 `RemoteBootstrapService` 启动远端增强 bootstrap 侧通道。该侧通道使用有界 `ssh2 exec`，不会把安装器输出写入交互终端流，并通过结构化 `bootstrap-status` WS 事件回传状态。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
 - 简单的 Prisma `ALTER TABLE ... ADD COLUMN` migration 会先对照实时 SQLite 表元数据；若列已存在但 `_prisma_migrations` 缺少记录，启动会补记该 migration，而不是再次执行重复 DDL；非简单 migration 漂移仍然快速失败。
 - Schema 同步采用快速失败策略：若运行时 migration 执行后仍无法满足必需表结构，backend 将中止启动，避免 API 进入部分可用/行为不确定状态。
@@ -57,7 +57,7 @@ flowchart LR
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 - SSH 页面使用 tab 作用域的连接意图快照模型（不再依赖全局可变目标单例），重试与分屏互不串扰。
 - 隐藏 tab 保留渲染但不会触发新的 SSH 连接副作用，连接流程仅允许 active tab 发起。
-- SSH 侧栏会显示 backend `bootstrap-status` 消息中的最新远端 bootstrap 状态，让用户能区分探测、清单、下载、安装、校验与失败状态。
+- SSH 侧栏会显示 backend `bootstrap-status` 消息中的最新远端增强状态，让用户能区分 skipped、探测、清单、下载、安装、校验与失败状态。
 
 ## 3. IPC 生命周期（当前）
 
@@ -117,7 +117,7 @@ sequenceDiagram
 ## 5. 运行时能力
 
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
-- 当配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，SSH 会话会在首次 WS attach 后执行用户级远端 bootstrap 安装。缺少 manifest 配置会作为明确失败状态上报。
+- 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 均允许时，SSH 会话会在首次 WS attach 后执行用户级远端增强 bootstrap 安装。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置仍会作为明确失败状态上报。
 - SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除与批量文件操作。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
 - SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；macOS 使用打包的 NSWorkspace helper；Linux 不显示打开方式。
@@ -142,6 +142,7 @@ sequenceDiagram
 - Renderer 启动阶段（`packages/renderer/src/main.tsx`）会优先使用缓存设置应用语言与主题，并在后台与 backend 同步。
 - Renderer 时间显示通过 `packages/renderer/src/lib/date-time-format.ts` 使用已持久化的时区、日期格式与时间格式设置；`system` 会保留操作系统时区，Settings UI 会列出当前运行时支持的 IANA 时区及其当前 UTC 偏移。
 - Renderer 终端字符宽度兼容模式通过 `terminalCharacterWidthCompatibilityModeEnabled` 持久化；SSH server 记录可通过 `disableCharacterWidthCompatibilityMode` 按服务器禁用，本地终端只遵循全局设置。
+- 远端增强同时使用全局 Settings 开关 `remoteEnhancementsEnabled` 与每服务器字段 `SshServer.remoteEnhancementsEnabled`。两者默认均为 true，因此 manifest URL 在用户显式关闭任一开关前仍是部署级启用条件。
 - 非视觉设置（如 SSH 运行时限制）当前仅做持久化与可发现，部分暂未绑定真实运行时行为。
 - 所有设置定义（类型、默认值、约束、枚举集、JSON schema、UI 元数据、分类）统一存放在单一注册表：`packages/api-contract/src/settings-registry.ts`。增删设置项仅需编辑此文件（加 i18n 语言文件）。
 - `packages/api-contract/src/settings.ts` 中的校验逻辑对通用标量规则采用注册表驱动方式（类型检查、枚举、范围、maxLength），并对需要运行时判断或结构化 JSON 归一化的设置保留窄范围自定义校验，例如 IANA 时区支持和 SFTP 目录列表视图。

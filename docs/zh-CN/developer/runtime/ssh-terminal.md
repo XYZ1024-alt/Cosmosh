@@ -311,15 +311,17 @@ flowchart LR
 4. 数据流方向是否完整（`input` 写入与 `output` 回放）。
 5. 会话释放路径是否正确（API close、传输关闭或 SSH 错误触发）。
 
-## 8. 远端 Bootstrap 运行时
+## 8. 远端增强运行时
 
-- 远端 bootstrap 会在 SSH 会话首次 WebSocket attach 后自动启动。
-- Backend 通过 `RemoteBootstrapService` 使用独立且有界的 `ssh2 exec` 通道执行 bootstrap。安装器输出按 JSON lines 解析，永远不会写入交互式 shell 输出流。
+- 远端增强是 OS/发行版检测、SFTP 增强、命令快捷嗅探与补全支持的可选运行时开关。v1 只 gate 现有 Go 远端 bootstrap 安装链；更深层能力会在后续运行时工作中继续挂到同一开关之后。
+- 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此已配置部署只需提供 manifest URL 即可启用该功能。
+- 任一开关关闭时，backend 不会执行任何远端命令，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
+- 两个开关均启用时，backend 会在 SSH 会话首次 WebSocket attach 后通过 `RemoteBootstrapService` 使用独立且有界的 `ssh2 exec` 通道执行 bootstrap。安装器输出按 JSON lines 解析，永远不会写入交互式 shell 输出流。
 - v1 目标为 Linux `amd64` 与 `arm64` 远端，shell 覆盖 `bash`、`zsh`、`fish`、`ash`、`sh`。不支持的 OS、架构或 shell 会返回失败的 `bootstrap-status` 消息。
-- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。缺少配置会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
+- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。远端增强启用但缺少配置时，仍会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 - Manifest asset 必须包含 HTTPS `url` 与 64 位小写 `sha256`。注入的 wrapper 会使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
 - Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh 标记块内更新内容。不要求 root，也不写全局路径。
-- Renderer 会在 SSH 侧栏显示最新 `bootstrap-status`。该状态仅用于可观测性，不阻塞终端 I/O。
+- Renderer 会在 SSH 侧栏的远端增强区域显示最新 `bootstrap-status`。该状态仅用于可观测性，不阻塞终端 I/O。
 
 ## 9. Windows 右键启动与本地终端工作目录
 

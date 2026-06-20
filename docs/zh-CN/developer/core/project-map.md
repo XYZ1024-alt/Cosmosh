@@ -50,7 +50,7 @@ flowchart TB
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测），以及非 shell SSH 连接共享 helper。
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
   - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
-  - `src/settings`：设置默认值与请求校验解析。
+  - `src/settings`：设置默认值、请求校验解析，以及供 HTTP 路由和运行时服务复用的 AppSettings 读取器。
   - `src/validation-utils.ts`：后端 HTTP 边界校验共享原语，供路由与领域 payload 解析器复用。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
@@ -142,8 +142,10 @@ flowchart TD
 ### 新增应用设置项
 
 1. 在 `packages/api-contract/src/settings-registry.ts` 中：
-  - 在 `SettingsValues` 接口中添加 key 及其类型。
-  - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
+
+- 在 `SettingsValues` 接口中添加 key 及其类型。
+- 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
+
 2. 在 `packages/i18n/locales/en/*.json` 和 `zh-CN/*.json` 中添加 i18n key。
 3. 无需修改其他文件——校验、默认值与 UI 渲染均从注册表自动派生。
 

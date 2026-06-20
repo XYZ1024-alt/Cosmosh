@@ -50,7 +50,7 @@ flowchart TB
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
-  - `src/settings`: settings payload defaults and validation parsers.
+  - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
   - `src/validation-utils.ts`: shared backend HTTP-boundary validation primitives used by route and domain payload parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
@@ -142,8 +142,10 @@ flowchart TD
 ### Add New Application Setting
 
 1. In `packages/api-contract/src/settings-registry.ts`:
-  - Add the key and its type to the `SettingsValues` interface.
-  - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+
+- Add the key and its type to the `SettingsValues` interface.
+- Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+
 2. Add i18n keys in `packages/i18n/locales/en/*.json` and `zh-CN/*.json`.
 3. No other files need changes — validation, defaults, and UI rendering are derived from the registry automatically.
 
