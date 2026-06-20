@@ -57,7 +57,7 @@ flowchart LR
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 - SSH 页面使用 tab 作用域的连接意图快照模型（不再依赖全局可变目标单例），重试与分屏互不串扰。
 - 隐藏 tab 保留渲染但不会触发新的 SSH 连接副作用，连接流程仅允许 active tab 发起。
-- SSH 侧栏会显示 backend `bootstrap-status` 消息中的最新远端增强状态，让用户能区分 skipped、探测、清单、下载、安装、校验与失败状态。
+- Renderer 会消费 backend `bootstrap-status` 消息用于远端增强可观测性，但 v1 不在 SSH 侧栏渲染专用的远端增强卡片。
 
 ## 3. IPC 生命周期（当前）
 

@@ -1118,8 +1118,6 @@
       "skipped": "Current",
       "started": "Running"
     },
-    "bootstrapStatusTitle": "Remote Enhancements",
-    "bootstrapStatusWaiting": "Waiting for status",
     "columnAuth": "Auth",
     "columnFolder": "Folder",
     "columnHost": "Host",

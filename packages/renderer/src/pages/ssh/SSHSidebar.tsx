@@ -1,15 +1,12 @@
 import classNames from 'classnames';
 import {
-  AlertTriangle,
   ArrowUpDown,
   Cpu,
-  LoaderCircle,
   MemoryStick,
   Play,
   Plus,
   Search,
   Send,
-  ShieldCheck,
   Sparkles,
   SplitSquareHorizontal,
   Terminal,
@@ -31,12 +28,11 @@ import {
 import { Input } from '../../components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { t } from '../../lib/i18n';
-import { MAX_TERMINAL_PANES, type RemoteBootstrapStatus, type SshTelemetryState } from './ssh-types';
+import { MAX_TERMINAL_PANES, type SshTelemetryState } from './ssh-types';
 import { formatCpuPercent, formatMemoryUsage, formatTrafficRate } from './ssh-utils';
 
 type SSHSidebarProps = {
   telemetryState: SshTelemetryState;
-  remoteBootstrapStatus: RemoteBootstrapStatus | null;
   terminalPaneIds: string[];
   activePaneId: string;
   canSplitTerminal: boolean;
@@ -50,59 +46,6 @@ type SSHSidebarProps = {
 };
 
 /**
- * Resolves a compact icon for the latest remote bootstrap status.
- *
- * @param status Latest bootstrap status from backend.
- * @returns Icon component rendered in the sidebar status card.
- */
-const resolveBootstrapIcon = (
-  status: RemoteBootstrapStatus | null,
-): typeof LoaderCircle | typeof AlertTriangle | typeof ShieldCheck => {
-  if (!status || status.state === 'started') {
-    return LoaderCircle;
-  }
-
-  if (status.state === 'failed') {
-    return AlertTriangle;
-  }
-
-  return ShieldCheck;
-};
-
-/**
- * Resolves localized one-line bootstrap state copy.
- *
- * @param status Latest bootstrap status from backend.
- * @returns Localized status label.
- */
-const resolveBootstrapStatusLabel = (status: RemoteBootstrapStatus | null): string => {
-  if (!status) {
-    return t('ssh.bootstrapStatusWaiting');
-  }
-
-  return t(`ssh.bootstrapStates.${status.state}`);
-};
-
-/**
- * Resolves localized bootstrap phase and diagnostic details.
- *
- * @param status Latest bootstrap status from backend.
- * @returns Detail line for the status card.
- */
-const resolveBootstrapDetailLabel = (status: RemoteBootstrapStatus | null): string => {
-  if (!status) {
-    return '';
-  }
-
-  const phase = t(`ssh.bootstrapPhases.${status.phase}`);
-  if (status.state === 'failed' && status.code) {
-    return `${phase} - ${status.code}`;
-  }
-
-  return status.version ? `${phase} - ${status.version}` : phase;
-};
-
-/**
  * Renders SSH page telemetry and command quick-access sidebar.
  *
  * The component is intentionally presentational to keep page-level connection
@@ -111,7 +54,6 @@ const resolveBootstrapDetailLabel = (status: RemoteBootstrapStatus | null): stri
  *
  * @param props Sidebar telemetry and command handlers.
  * @param props.telemetryState Current SSH telemetry snapshot.
- * @param props.remoteBootstrapStatus Latest remote bootstrap status.
  * @param props.terminalPaneIds Ordered terminal pane ids.
  * @param props.activePaneId Current active terminal pane id.
  * @param props.canSplitTerminal Whether a new split terminal can be created.
@@ -126,7 +68,6 @@ const resolveBootstrapDetailLabel = (status: RemoteBootstrapStatus | null): stri
  */
 export const SSHSidebar: React.FC<SSHSidebarProps> = ({
   telemetryState,
-  remoteBootstrapStatus,
   terminalPaneIds,
   activePaneId,
   canSplitTerminal,
@@ -147,10 +88,6 @@ export const SSHSidebar: React.FC<SSHSidebarProps> = ({
   const commandPreviewMaxLength = 200;
   const shouldShowTargetTerminalSubmenu = terminalPaneIds.length > 1;
   const shouldShowSplitAndAdd = canSplitTerminal && terminalPaneIds.length < MAX_TERMINAL_PANES;
-  const bootstrapIcon = resolveBootstrapIcon(remoteBootstrapStatus);
-  const bootstrapStatusLabel = resolveBootstrapStatusLabel(remoteBootstrapStatus);
-  const bootstrapDetailLabel = resolveBootstrapDetailLabel(remoteBootstrapStatus);
-  const BootstrapIcon = bootstrapIcon;
 
   return (
     <div className="flex w-[300px] min-w-[300px] shrink-0 flex-col items-center justify-between gap-2.5 overflow-auto">
@@ -342,22 +279,6 @@ export const SSHSidebar: React.FC<SSHSidebarProps> = ({
               })}
             </TooltipProvider>
           )}
-        </div>
-      </div>
-
-      <div className={sidebarCardStyle}>
-        <div className="flex h-full min-h-[72px] items-center gap-3 px-3 py-2">
-          <BootstrapIcon
-            size={16}
-            className={classNames(remoteBootstrapStatus?.state === 'started' ? 'animate-spin' : '')}
-          />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-xs font-medium">{t('ssh.bootstrapStatusTitle')}</div>
-            <div className="text-muted-text truncate text-xs">{bootstrapStatusLabel}</div>
-            {bootstrapDetailLabel ? (
-              <div className="text-muted-text truncate text-xs">{bootstrapDetailLabel}</div>
-            ) : null}
-          </div>
         </div>
       </div>
 

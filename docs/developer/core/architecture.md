@@ -57,7 +57,7 @@ flowchart LR
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 - SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
 - Hidden tabs are rendered but cannot start new SSH connect side effects; connect flow is active-tab gated.
-- SSH sidebar displays the latest Remote Enhancements status from backend `bootstrap-status` messages so users can distinguish skipped, probing, manifest, download, install, verify, and failure states.
+- Renderer consumes backend `bootstrap-status` messages for Remote Enhancements observability, but SSH sidebar does not render a dedicated Remote Enhancements card in v1.
 
 ## 3. IPC Lifecycle (Current)
 

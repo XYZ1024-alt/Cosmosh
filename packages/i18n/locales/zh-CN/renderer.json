@@ -1118,8 +1118,6 @@
       "skipped": "已是最新",
       "started": "运行中"
     },
-    "bootstrapStatusTitle": "远端增强",
-    "bootstrapStatusWaiting": "等待状态",
     "columnAuth": "认证",
     "columnFolder": "文件夹",
     "columnHost": "主机",

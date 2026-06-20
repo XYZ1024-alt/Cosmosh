@@ -388,7 +388,6 @@ const SSH: React.FC<SSHProps> = ({
       connectionState,
       connectionError,
       telemetryState,
-      remoteBootstrapStatus,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -1450,7 +1449,6 @@ const SSH: React.FC<SSHProps> = ({
 
       <SSHSidebar
         telemetryState={telemetryState}
-        remoteBootstrapStatus={remoteBootstrapStatus}
         terminalPaneIds={terminalPaneIds}
         activePaneId={activePaneId}
         canSplitTerminal={canSplitTerminal}
