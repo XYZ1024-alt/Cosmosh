@@ -40,12 +40,18 @@ sequenceDiagram
 - 步骤：
   1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
-  3. 使用服务器作用域的压缩协商配置，通过 `ssh2.Client.shell` 打开 SSH shell。
+  3. 使用服务器作用域的压缩协商配置，并携带 UTF-8 locale 请求，通过 `ssh2.Client.shell` 打开 SSH shell。
   4. 写入 `SshLoginAudit` 记录：
      - 会话创建成功时写入 `result = success`，并记录 `sessionId` 与 `sessionStartedAt`。
      - 主机信任/认证/连接失败时写入 `result = failed`，并记录 `failureReason`。
   5. 在内存中注册会话状态（`Map<sessionId, SshLiveSession>`）。
   6. 返回短期 attach token 与 WS 端点。
+
+Locale 行为：
+
+- SSH shell 创建时会通过 `ssh2` shell 环境选项请求 `LANG=C.UTF-8` 与 `LC_CTYPE=C.UTF-8`，让支持 UTF-8 的终端程序默认继承 Unicode 字符类型 locale。
+- 不设置 `LC_ALL`，以保留远端用户对时间、排序、数字格式等 locale 类别的偏好。
+- Cosmosh 不会向交互式 shell 输入流注入 locale 命令。如果 SSH 服务器的 `sshd_config` 未接受这些环境变量请求，服务器可能会忽略它们。
 
 ### 附加 WebSocket
 

@@ -40,12 +40,18 @@ sequenceDiagram
 - Steps:
   1. Load server record + linked keychain encrypted credentials.
   2. Resolve trusted host fingerprints.
-  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation.
+  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation and a UTF-8 locale request.
   4. Write `SshLoginAudit` record:
      - `result = success` on successful session creation, with `sessionId` and `sessionStartedAt`.
      - `result = failed` on host-trust/auth/connect failures, with `failureReason`.
   5. Register live session state in memory (`Map<sessionId, SshLiveSession>`).
   6. Return short-lived attach token + WS endpoint.
+
+Locale behavior:
+
+- SSH shell creation requests `LANG=C.UTF-8` and `LC_CTYPE=C.UTF-8` through `ssh2` shell environment options, so UTF-8-aware terminal programs inherit a Unicode character type locale by default.
+- `LC_ALL` is not set, leaving remote user preferences for time, collation, and numeric formatting intact.
+- Cosmosh does not inject locale commands into the interactive shell stream. SSH servers may ignore these environment requests when their `sshd_config` does not accept them.
 
 ### Attach WebSocket
 
