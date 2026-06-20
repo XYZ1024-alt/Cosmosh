@@ -227,7 +227,15 @@ const parseManifest = (value: unknown): RemoteBootstrapManifest | null => {
     return null;
   }
 
-  const assets = value.assets.filter(isValidAsset);
+  const assets: RemoteBootstrapAsset[] = [];
+  for (const asset of value.assets) {
+    if (!isValidAsset(asset)) {
+      return null;
+    }
+
+    assets.push(asset);
+  }
+
   if (assets.length === 0) {
     return null;
   }
@@ -274,8 +282,43 @@ const buildInstallCommand = (
   const wrapperPayload = Buffer.from(wrapper, 'utf8').toString('base64');
   const interpreter = probe.shell === 'fish' || probe.shell === 'bash' ? probe.shell : 'sh';
   const base64MissingStatus = escapedJsonStatus(manifest.version, 'BASE64_NOT_FOUND', 'base64 is required');
+  const mktempMissingStatus = escapedJsonStatus(manifest.version, 'MKTEMP_NOT_FOUND', 'mktemp is required');
+  const mktempFailedStatus = escapedJsonStatus(manifest.version, 'MKTEMP_FAILED', 'mktemp failed');
   const shellMissingStatus = escapedJsonStatus(manifest.version, 'SHELL_NOT_FOUND', 'target shell is unavailable');
-  return ` sh -lc 'if ! command -v base64 >/dev/null 2>&1; then printf "${base64MissingStatus}"; exit 1; fi; if ! command -v ${interpreter} >/dev/null 2>&1; then printf "${shellMissingStatus}"; exit 1; fi; tmp="\${TMPDIR:-/tmp}/cosmosh-wrapper-$$"; printf %s "${wrapperPayload}" | base64 -d > "$tmp" && ${interpreter} "$tmp"; rc=$?; rm -f "$tmp"; exit $rc'`;
+  const launcher = buildLauncherScript({
+    base64MissingStatus,
+    interpreter,
+    mktempFailedStatus,
+    mktempMissingStatus,
+    shellMissingStatus,
+    wrapperPayload,
+  });
+  return ` sh -lc ${quotePosixShell(launcher)}`;
+};
+
+/**
+ * Builds the POSIX launcher that decodes and executes the shell-specific bootstrap wrapper.
+ *
+ * @param config Precomputed launcher payload and status strings.
+ * @returns Shell source passed as one literal argument to `sh -lc`.
+ */
+const buildLauncherScript = (config: {
+  base64MissingStatus: string;
+  interpreter: string;
+  mktempFailedStatus: string;
+  mktempMissingStatus: string;
+  shellMissingStatus: string;
+  wrapperPayload: string;
+}): string => {
+  return `if ! command -v base64 >/dev/null 2>&1; then printf "${config.base64MissingStatus}"; exit 1; fi
+if ! command -v mktemp >/dev/null 2>&1; then printf "${config.mktempMissingStatus}"; exit 1; fi
+if ! command -v ${config.interpreter} >/dev/null 2>&1; then printf "${config.shellMissingStatus}"; exit 1; fi
+umask 077
+tmp="$(mktemp "\${TMPDIR:-/tmp}/cosmosh-wrapper.XXXXXX")" || { printf "${config.mktempFailedStatus}"; exit 1; }
+trap 'rm -f "$tmp"' EXIT HUP INT TERM
+printf %s "${config.wrapperPayload}" | base64 -d > "$tmp" && ${config.interpreter} "$tmp"
+rc=$?
+exit $rc`;
 };
 
 const escapedJsonStatus = (version: string, code: string, message: string): string => {
@@ -322,18 +365,31 @@ const buildPosixWrapper = (config: {
   sha256: string;
   helperPayload: string;
 }): string => {
+  const shell = quotePosixShell(config.shell);
+  const version = quotePosixShell(config.version);
+  const url = quotePosixShell(config.url);
+  const sha256 = quotePosixShell(config.sha256);
+  const helperPayload = quotePosixShell(config.helperPayload);
+
   return `set -eu
-cosmosh_fail() { printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"${config.version}","code":"%s","message":"%s"}\\n' "$1" "$2" "$3"; exit 1; }
-tmp="\${TMPDIR:-/tmp}/cosmosh-bootstrap-${config.version}-$$"
-mkdir -p "$tmp"
+cosmosh_shell=${shell}
+cosmosh_version=${version}
+cosmosh_asset_url=${url}
+cosmosh_sha256=${sha256}
+cosmosh_helper_payload_b64=${helperPayload}
+cosmosh_fail() { printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"%s","code":"%s","message":"%s"}\\n' "$1" "$cosmosh_version" "$2" "$3"; exit 1; }
+if ! command -v mktemp >/dev/null 2>&1; then cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"; fi
+umask 077
+tmp="$(mktemp -d "\${TMPDIR:-/tmp}/cosmosh-bootstrap.XXXXXX")" || cosmosh_fail download MKTEMP_FAILED "mktemp failed"
+trap 'rm -rf "$tmp"' EXIT HUP INT TERM
 bin="$tmp/cosmosh-bootstrap"
-printf '{"type":"bootstrap-status","phase":"download","state":"started","version":"${config.version}"}\\n'
-if command -v curl >/dev/null 2>&1; then curl -fsSL "${config.url}" -o "$bin" || cosmosh_fail download DOWNLOAD_FAILED "curl download failed"; elif command -v wget >/dev/null 2>&1; then wget -q -O "$bin" "${config.url}" || cosmosh_fail download DOWNLOAD_FAILED "wget download failed"; else cosmosh_fail download DOWNLOADER_NOT_FOUND "curl or wget is required"; fi
-printf '{"type":"bootstrap-status","phase":"verify","state":"started","version":"${config.version}"}\\n'
-if command -v sha256sum >/dev/null 2>&1; then printf '%s  %s\\n' "${config.sha256}" "$bin" | sha256sum -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "sha256sum verification failed"; elif command -v shasum >/dev/null 2>&1; then printf '%s  %s\\n' "${config.sha256}" "$bin" | shasum -a 256 -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "shasum verification failed"; else cosmosh_fail verify HASH_TOOL_NOT_FOUND "sha256sum or shasum is required"; fi
+printf '{"type":"bootstrap-status","phase":"download","state":"started","version":"%s"}\\n' "$cosmosh_version"
+if command -v curl >/dev/null 2>&1; then curl -fsSL "$cosmosh_asset_url" -o "$bin" || cosmosh_fail download DOWNLOAD_FAILED "curl download failed"; elif command -v wget >/dev/null 2>&1; then wget -q -O "$bin" "$cosmosh_asset_url" || cosmosh_fail download DOWNLOAD_FAILED "wget download failed"; else cosmosh_fail download DOWNLOADER_NOT_FOUND "curl or wget is required"; fi
+printf '{"type":"bootstrap-status","phase":"verify","state":"started","version":"%s"}\\n' "$cosmosh_version"
+if command -v sha256sum >/dev/null 2>&1; then printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | sha256sum -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "sha256sum verification failed"; elif command -v shasum >/dev/null 2>&1; then printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | shasum -a 256 -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "shasum verification failed"; else cosmosh_fail verify HASH_TOOL_NOT_FOUND "sha256sum or shasum is required"; fi
 chmod 700 "$bin"
-printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"${config.version}"}\\n'
-"$bin" install --shell "${config.shell}" --version "${config.version}" --helper-payload-b64 "${config.helperPayload}"
+printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"%s"}\\n' "$cosmosh_version"
+"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
 `;
 };
 
@@ -344,32 +400,74 @@ const buildFishWrapper = (config: {
   sha256: string;
   helperPayload: string;
 }): string => {
+  const shell = quoteFishShell(config.shell);
+  const version = quoteFishShell(config.version);
+  const url = quoteFishShell(config.url);
+  const sha256 = quoteFishShell(config.sha256);
+  const helperPayload = quoteFishShell(config.helperPayload);
+
   return `function cosmosh_fail
-  printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"${config.version}","code":"%s","message":"%s"}\\n' $argv[1] $argv[2] $argv[3]
+  printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"%s","code":"%s","message":"%s"}\\n' $argv[1] "$cosmosh_version" $argv[2] $argv[3]
   exit 1
 end
-set tmp (mktemp -d "/tmp/cosmosh-bootstrap-${config.version}.XXXXXX")
+set cosmosh_shell ${shell}
+set cosmosh_version ${version}
+set cosmosh_asset_url ${url}
+set cosmosh_sha256 ${sha256}
+set cosmosh_helper_payload_b64 ${helperPayload}
+if not command -q mktemp
+  cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"
+end
+set tmpdir "$TMPDIR"
+if test -z "$tmpdir"
+  set tmpdir /tmp
+end
+umask 077
+set tmp (mktemp -d "$tmpdir/cosmosh-bootstrap.XXXXXX"); or cosmosh_fail download MKTEMP_FAILED "mktemp failed"
+function cosmosh_cleanup --on-event fish_exit
+  rm -rf "$tmp"
+end
 set bin "$tmp/cosmosh-bootstrap"
-printf '{"type":"bootstrap-status","phase":"download","state":"started","version":"${config.version}"}\\n'
+printf '{"type":"bootstrap-status","phase":"download","state":"started","version":"%s"}\\n' "$cosmosh_version"
 if command -q curl
-  curl -fsSL "${config.url}" -o "$bin"; or cosmosh_fail download DOWNLOAD_FAILED "curl download failed"
+  curl -fsSL "$cosmosh_asset_url" -o "$bin"; or cosmosh_fail download DOWNLOAD_FAILED "curl download failed"
 else if command -q wget
-  wget -q -O "$bin" "${config.url}"; or cosmosh_fail download DOWNLOAD_FAILED "wget download failed"
+  wget -q -O "$bin" "$cosmosh_asset_url"; or cosmosh_fail download DOWNLOAD_FAILED "wget download failed"
 else
   cosmosh_fail download DOWNLOADER_NOT_FOUND "curl or wget is required"
 end
-printf '{"type":"bootstrap-status","phase":"verify","state":"started","version":"${config.version}"}\\n'
+printf '{"type":"bootstrap-status","phase":"verify","state":"started","version":"%s"}\\n' "$cosmosh_version"
 if command -q sha256sum
-  printf '%s  %s\\n' "${config.sha256}" "$bin" | sha256sum -c - >/dev/null; or cosmosh_fail verify CHECKSUM_MISMATCH "sha256sum verification failed"
+  printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | sha256sum -c - >/dev/null; or cosmosh_fail verify CHECKSUM_MISMATCH "sha256sum verification failed"
 else if command -q shasum
-  printf '%s  %s\\n' "${config.sha256}" "$bin" | shasum -a 256 -c - >/dev/null; or cosmosh_fail verify CHECKSUM_MISMATCH "shasum verification failed"
+  printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | shasum -a 256 -c - >/dev/null; or cosmosh_fail verify CHECKSUM_MISMATCH "shasum verification failed"
 else
   cosmosh_fail verify HASH_TOOL_NOT_FOUND "sha256sum or shasum is required"
 end
 chmod 700 "$bin"
-printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"${config.version}"}\\n'
-"$bin" install --shell "${config.shell}" --version "${config.version}" --helper-payload-b64 "${config.helperPayload}"
+printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"%s"}\\n' "$cosmosh_version"
+"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
 `;
+};
+
+/**
+ * Converts arbitrary data into a POSIX single-quoted shell literal.
+ *
+ * @param value Data to embed in shell source.
+ * @returns Literal that evaluates back to the original value without command evaluation.
+ */
+const quotePosixShell = (value: string): string => {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+};
+
+/**
+ * Converts arbitrary data into a fish single-quoted shell literal.
+ *
+ * @param value Data to embed in fish source.
+ * @returns Literal that evaluates back to the original value without command evaluation.
+ */
+const quoteFishShell = (value: string): string => {
+  return `'${value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 };
 
 const parseStatusLines = (output: string | null): RemoteBootstrapStatus[] => {

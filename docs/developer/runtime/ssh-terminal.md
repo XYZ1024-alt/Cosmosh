@@ -337,7 +337,9 @@ When SSH session behavior is wrong, verify in order:
   COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
   ```
 
-- Manifest assets must include HTTPS `url` and lowercase 64-character `sha256`. The injected wrapper downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, then runs `cosmosh-bootstrap install`.
+- Every manifest asset must include HTTPS `url` and lowercase 64-character `sha256`; one malformed asset invalidates the whole manifest so polluted release metadata fails visibly. The injected wrapper treats all manifest fields as quoted data, never as executable shell source, then downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, and runs `cosmosh-bootstrap install`.
+- `cosmosh-wrappergen` independently enforces HTTPS asset URLs and lowercase SHA-256 input validation before rendering shell source.
+- Wrapper files and bootstrap working directories are created with `mktemp` under `${TMPDIR:-/tmp}` using restrictive permissions and exit cleanup. Missing `mktemp`, `base64`, downloader, hash tool, or target shell remains an explicit `bootstrap-status` failure rather than a silent fallback.
 - The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
 - Renderer consumes the latest `bootstrap-status` so the message stream stays observable, but v1 does not render a dedicated Remote Enhancements status card in the SSH sidebar. The status is informational and does not block terminal I/O.
 

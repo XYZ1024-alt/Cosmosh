@@ -336,7 +336,9 @@ flowchart LR
   COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
   ```
 
-- Manifest asset 必须包含 HTTPS `url` 与 64 位小写 `sha256`。注入的 wrapper 会使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
+- 每个 manifest asset 都必须包含 HTTPS `url` 与 64 位小写 `sha256`；任一 asset 格式错误都会让整个 manifest 无效，确保被污染的发布元数据明确失败。注入的 wrapper 会把所有 manifest 字段作为已引用的数据处理，永远不把它们当作可执行 shell source，然后使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
+- `cosmosh-wrappergen` 会在渲染 shell source 之前独立校验 asset URL 必须为 HTTPS，且 SHA-256 必须为小写 hex。
+- Wrapper 文件与 bootstrap 工作目录通过 `mktemp` 在 `${TMPDIR:-/tmp}` 下创建，使用受限权限并在退出时清理。缺少 `mktemp`、`base64`、下载器、hash 工具或目标 shell 时，继续明确上报 `bootstrap-status` 失败，而不是静默降级。
 - Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh 标记块内更新内容。不要求 root，也不写全局路径。
 - Renderer 会消费最新 `bootstrap-status`，保证消息流可观测，但 v1 不在 SSH 侧栏渲染专用的远端增强状态卡。该状态仅用于可观测性，不阻塞终端 I/O。
 
