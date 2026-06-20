@@ -326,6 +326,17 @@ When SSH session behavior is wrong, verify in order:
 - When both gates are enabled, backend starts bootstrap after the first WebSocket attach of an SSH session through `RemoteBootstrapService` on a separate bounded `ssh2 exec` channel. Installer output is parsed as JSON lines and never written into the interactive shell stream.
 - v1 targets Linux `amd64` and `arm64` remotes with `bash`, `zsh`, `fish`, `ash`, or `sh`. Unsupported OS, architecture, or shell returns a failed `bootstrap-status` message.
 - Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration remains an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
+- During development, set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh so the backend process inherits it. Keep examples placeholder-only in documentation and use a real HTTPS manifest URL only in the local shell environment:
+
+  ```powershell
+  $env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
+  pnpm dev:main
+  ```
+
+  ```sh
+  COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
+  ```
+
 - Manifest assets must include HTTPS `url` and lowercase 64-character `sha256`. The injected wrapper downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, then runs `cosmosh-bootstrap install`.
 - The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
 - Renderer consumes the latest `bootstrap-status` so the message stream stays observable, but v1 does not render a dedicated Remote Enhancements status card in the SSH sidebar. The status is informational and does not block terminal I/O.
