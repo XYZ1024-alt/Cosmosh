@@ -1,6 +1,5 @@
 import { normalizeSettingsValuesStrict, type SettingValidationError } from '@cosmosh/api-contract';
 import {
-  CircleHelp,
   Cloud,
   Folder,
   Info,
@@ -43,7 +42,6 @@ import { Menubar } from '../components/ui/menubar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import type { LocalTerminalProfile } from '../lib/api/transport';
 import { type AppSettingsScope, type AppSettingsValues, DEFAULT_APP_SETTINGS_VALUES } from '../lib/app-settings';
 import { getAppSettings, listLocalTerminalProfiles, updateAppSettings } from '../lib/backend';
@@ -77,8 +75,6 @@ const AUTOCOMPLETE_DEPENDENT_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>
   'terminalAutoCompleteFuzzyMatch',
   'terminalAutoCompletePromptRegex',
 ]);
-
-const INLINE_HELP_SETTING_KEYS: ReadonlySet<SettingKey> = new Set<SettingKey>(['serverProxyMode', 'serverProxyUrl']);
 
 const FALLBACK_TIME_ZONE_OPTIONS = [
   'UTC',
@@ -1055,72 +1051,45 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                       className="grid gap-3"
                     >
                       <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
-                      {section.items.map((item) => {
-                        const usesInlineHelp = INLINE_HELP_SETTING_KEYS.has(item.key);
-
-                        return (
-                          <FormField
-                            key={item.path}
-                            className="group/setting"
-                          >
-                            <div className="flex items-center">
-                              <Label>{t(item.nameI18nKey)}</Label>
-                              {usesInlineHelp ? (
-                                <TooltipProvider delayDuration={180}>
-                                  <Tooltip>
-                                    <TooltipTrigger asChild>
-                                      <button
-                                        type="button"
-                                        aria-label={t(item.descriptionI18nKey)}
-                                        className="focus-visible:ring-form-active/60 ml-1 inline-flex h-4 w-4 items-center justify-center rounded-full text-form-text-muted outline-none transition [-webkit-app-region:no-drag] hover:bg-form-control-hover hover:text-form-text focus-visible:ring-2"
-                                      >
-                                        <CircleHelp className="h-3 w-3" />
-                                      </button>
-                                    </TooltipTrigger>
-                                    <TooltipContent
-                                      side="top"
-                                      className="max-w-sm whitespace-pre-wrap"
-                                    >
-                                      {t(item.descriptionI18nKey)}
-                                    </TooltipContent>
-                                  </Tooltip>
-                                </TooltipProvider>
-                              ) : null}
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    type="button"
-                                    aria-label={t('settings.itemActions.openMenu')}
-                                    className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
-                                  >
-                                    <SettingsIcon className="h-3.5 w-3.5" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent>
+                      {section.items.map((item) => (
+                        <FormField
+                          key={item.path}
+                          className="group/setting"
+                        >
+                          <div className="flex items-center">
+                            <Label>{t(item.nameI18nKey)}</Label>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  aria-label={t('settings.itemActions.openMenu')}
+                                  className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
+                                >
+                                  <SettingsIcon className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent>
+                                <DropdownMenuItem
+                                  icon={RotateCcw}
+                                  onSelect={() => resetSettingToDefault(item)}
+                                >
+                                  {t('settings.itemActions.resetToDefault')}
+                                </DropdownMenuItem>
+                                {item.control !== 'json' ? (
                                   <DropdownMenuItem
-                                    icon={RotateCcw}
-                                    onSelect={() => resetSettingToDefault(item)}
+                                    icon={Settings2}
+                                    onSelect={() => onOpenSettingInEditor?.(item.key)}
                                   >
-                                    {t('settings.itemActions.resetToDefault')}
+                                    {t('settings.itemActions.editInSettingsEditor')}
                                   </DropdownMenuItem>
-                                  {item.control !== 'json' ? (
-                                    <DropdownMenuItem
-                                      icon={Settings2}
-                                      onSelect={() => onOpenSettingInEditor?.(item.key)}
-                                    >
-                                      {t('settings.itemActions.editInSettingsEditor')}
-                                    </DropdownMenuItem>
-                                  ) : null}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                            {renderControl(item)}
-                            {usesInlineHelp ? null : (
-                              <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
-                            )}
-                          </FormField>
-                        );
-                      })}
+                                ) : null}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          {renderControl(item)}
+                          <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
+                        </FormField>
+                      ))}
                     </section>
                   ))}
                 </div>
