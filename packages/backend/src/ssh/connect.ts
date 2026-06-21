@@ -1,9 +1,10 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ConnectConfig } from 'ssh2';
 
 import type { I18nInstance } from '../i18n-bridge.js';
 import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
+import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from './proxy.js';
 
 export type SshServerWithKeychain = Prisma.SshServerGetPayload<{
   include: {
@@ -16,15 +17,18 @@ export type OpenSshClientResult =
       type: 'ready';
       client: Client;
       completionSecretValue: string | null;
+      proxyMetadata: SshProxyMetadata;
     }
   | {
       type: 'host-untrusted';
       fingerprint: string;
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     }
   | {
       type: 'failed';
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     };
 
 /**
@@ -38,6 +42,8 @@ export const openSshClient = async (
   server: SshServerWithKeychain,
   options: {
     connectTimeoutSec: number;
+    db: PrismaClient;
+    systemProxyRules?: string;
     strictHostKey: boolean;
     trustedFingerprintSet: Set<string>;
     credentialEncryptionKey: Buffer;
@@ -112,6 +118,27 @@ export const openSshClient = async (
     };
   }
 
+  let proxyTransport;
+  try {
+    proxyTransport = await prepareSshProxyTransport(
+      options.db,
+      server,
+      options.systemProxyRules,
+      options.connectTimeoutSec * 1000,
+    );
+  } catch (error: unknown) {
+    return {
+      type: 'failed',
+      message: error instanceof Error ? error.message : 'Proxy connection failed.',
+      proxyMetadata: error instanceof SshProxyConnectionError ? error.metadata : undefined,
+    };
+  }
+
+  connectConfig.readyTimeout = proxyTransport.readyTimeoutMs;
+  if (proxyTransport.socket) {
+    connectConfig.sock = proxyTransport.socket;
+  }
+
   return await new Promise<OpenSshClientResult>((resolve) => {
     let settled = false;
 
@@ -129,6 +156,7 @@ export const openSshClient = async (
         type: 'ready',
         client,
         completionSecretValue,
+        proxyMetadata: proxyTransport.metadata,
       });
     });
 
@@ -140,6 +168,7 @@ export const openSshClient = async (
           type: 'host-untrusted',
           fingerprint: presentedFingerprint,
           message: error.message,
+          proxyMetadata: proxyTransport.metadata,
         });
         return;
       }
@@ -147,6 +176,7 @@ export const openSshClient = async (
       settle({
         type: 'failed',
         message: error.message,
+        proxyMetadata: proxyTransport.metadata,
       });
     });
 

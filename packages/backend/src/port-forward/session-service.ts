@@ -76,6 +76,7 @@ export type StartPortForwardRuleInput = {
   requestId?: string;
   ruleId: string;
   connectTimeoutSec: number;
+  systemProxyRules?: string;
 };
 
 export type StartPortForwardRuleResult =
@@ -252,6 +253,8 @@ export class PortForwardSessionService {
     const strictHostKey = rule.server.strictHostKey;
     const openResult = await openSshClient(rule.server, {
       connectTimeoutSec: input.connectTimeoutSec,
+      db,
+      systemProxyRules: input.systemProxyRules,
       strictHostKey,
       trustedFingerprintSet: new Set(trustedKeys.map((item) => item.fingerprint)),
       credentialEncryptionKey: this.credentialEncryptionKey,
@@ -274,6 +277,8 @@ export class PortForwardSessionService {
           strictHostKey,
           fingerprint: openResult.fingerprint,
           reason: openResult.message,
+          proxyMode: openResult.proxyMetadata?.mode,
+          proxyProtocol: openResult.proxyMetadata?.protocol,
         },
       });
 
@@ -289,7 +294,7 @@ export class PortForwardSessionService {
 
     if (openResult.type === 'failed') {
       await this.persistStartFailure(rule.id, openResult.message);
-      this.logStartFailure(rule, input.requestId, openResult.message);
+      this.logStartFailure(rule, input.requestId, openResult.message, openResult.proxyMetadata);
       return { type: 'failed', message: openResult.message };
     }
 
@@ -316,7 +321,7 @@ export class PortForwardSessionService {
       const message = this.resolveErrorMessage(error, i18n.t('errors.portForward.startFailedNoReason'));
       await this.disposeRuntimeState(runtimeState);
       await this.persistStartFailure(rule.id, message);
-      this.logStartFailure(rule, input.requestId, message);
+      this.logStartFailure(rule, input.requestId, message, openResult.proxyMetadata);
       return { type: 'failed', message };
     }
 
@@ -354,7 +359,11 @@ export class PortForwardSessionService {
       entityType: 'port-forward-rule',
       entityId: rule.id,
       requestId: input.requestId,
-      metadata: this.buildAuditMetadata(updatedRule),
+      metadata: {
+        ...this.buildAuditMetadata(updatedRule),
+        proxyMode: openResult.proxyMetadata.mode,
+        proxyProtocol: openResult.proxyMetadata.protocol,
+      },
     });
 
     return {
@@ -827,7 +836,12 @@ export class PortForwardSessionService {
     });
   }
 
-  private logStartFailure(rule: PortForwardRuleWithServer, requestId: string | undefined, message: string): void {
+  private logStartFailure(
+    rule: PortForwardRuleWithServer,
+    requestId: string | undefined,
+    message: string,
+    proxyMetadata?: { mode: string; protocol: string },
+  ): void {
     this.logAuditEvent({
       category: 'port-forward',
       action: 'start',
@@ -839,6 +853,8 @@ export class PortForwardSessionService {
       metadata: {
         ...this.buildAuditMetadata(rule),
         reason: message,
+        proxyMode: proxyMetadata?.mode,
+        proxyProtocol: proxyMetadata?.protocol,
       },
     });
   }

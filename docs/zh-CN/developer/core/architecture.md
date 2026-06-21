@@ -336,3 +336,13 @@ sequenceDiagram
 
 - 运行时 migration 同步是幂等操作，并在每次启动执行。
 - 在修复结构漂移时必须保持现有用户数据不被破坏。
+
+## 10. 服务器代理运行时
+
+- 全局设置定义 `serverProxyMode = off | system | custom` 与 `serverProxyUrl`，默认值为 `system`。
+- 每个 `SshServer` 定义 `proxyMode = default | off | custom` 与可选 `proxyUrl`；`default` 继承全局策略。
+- 仅当有效模式为 `system` 时，Renderer 才通过特权 Main IPC `app:resolve-system-proxy` 解析系统/PAC 代理规则。
+- Backend 是策略最终裁决者。`packages/backend/src/ssh/proxy.ts` 会重新读取持久化全局设置、应用服务器覆盖、解析 Chromium 有序代理规则，并建立 HTTP、HTTPS CONNECT、SOCKS5 或显式 `DIRECT` socket。
+- 预连接 socket 通过 `ssh2` 的 `ConnectConfig.sock` 注入，因此 SSH Shell、SFTP 与端口转发共用同一套代理实现。
+- 代理候选共享 SSH 连接超时预算。代理失败不会静默回退直连；只有 `off` 模式或系统规则显式返回 `DIRECT` 时才允许直连。
+- 审计 metadata 只记录代理模式和协议，不得记录代理 URL 或其中的凭据。

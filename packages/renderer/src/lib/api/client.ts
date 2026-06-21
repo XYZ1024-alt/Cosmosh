@@ -6,6 +6,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -104,7 +105,10 @@ export type BackendClient = {
     ruleId: string,
     payload: ApiPortForwardUpdateRuleRequest,
   ) => Promise<ApiPortForwardUpdateRuleResponse>;
-  startPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse>;
+  startPortForwardRule: (
+    ruleId: string,
+    payload: ApiPortForwardStartRuleRequest,
+  ) => Promise<ApiPortForwardStartRuleResponse>;
   stopPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse>;
   deletePortForwardRule: (ruleId: string) => Promise<{ success: boolean }>;
   createSshSession: (
@@ -396,8 +400,8 @@ export const createBackendClient = (): BackendClient => {
 
       return payload;
     },
-    startPortForwardRule: async (ruleId) => {
-      const payload = await transport.startPortForwardRule(ruleId);
+    startPortForwardRule: async (ruleId, requestPayload) => {
+      const payload = await transport.startPortForwardRule(ruleId, requestPayload);
 
       if (payload.success) {
         return payload;

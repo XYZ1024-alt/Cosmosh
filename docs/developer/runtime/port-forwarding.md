@@ -130,3 +130,10 @@ Home -> Port Forwarding:
 - Provides New/Edit dialog, Start/Stop, Copy Endpoint, Delete, and host trust retry flow.
 
 Running state should update from start/stop responses and refresh from list on Home reload. A backend restart intentionally resets all rows to stopped.
+
+## 9. Server Proxy Behavior
+
+- The start request carries optional transient `systemProxyRules`; renderer resolves it through Main only when the referenced server effectively uses the global system proxy.
+- `PortForwardSessionService` uses the shared SSH proxy helper, so HTTP, HTTPS CONNECT, SOCKS5, explicit `DIRECT`, credentials, timeout, and host-trust behavior remain aligned with SSH and SFTP.
+- Start failures never silently bypass the selected proxy.
+- Audit metadata records resolved proxy mode/protocol only. Proxy URLs and credentials are excluded.

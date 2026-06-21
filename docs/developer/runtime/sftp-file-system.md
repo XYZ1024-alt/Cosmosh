@@ -264,3 +264,9 @@ Future SFTP work should be planned separately. Likely next phases:
 3. Transfer queue and conflict handling for long-running copies/uploads/downloads.
 4. Richer editor workflows such as find/replace, encoding choices, and explicit reload/compare actions.
 5. Optional terminal-path handoff once the SSH terminal and SFTP session model can share state safely.
+
+## 9. Server Proxy Behavior
+
+- SFTP session creation uses the same effective global/per-server proxy policy and shared backend proxy tunnel as SSH shell sessions.
+- Passive or active reconnect resolves the current system proxy again before opening the replacement session.
+- Proxy failure never bypasses the selected policy. Direct SFTP transport is used only for proxy mode `off` or an explicit system `DIRECT` rule.

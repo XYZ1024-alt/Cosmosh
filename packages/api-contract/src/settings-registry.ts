@@ -13,6 +13,7 @@
  * and enum sets live here exclusively.
  */
 
+import type { GlobalServerProxyMode } from './proxy';
 import {
   DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE,
   DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
@@ -63,6 +64,8 @@ export interface SettingsValues {
   terminalLineHeight: string;
   sshMaxRows: number;
   sshConnectionTimeoutSec: number;
+  serverProxyMode: GlobalServerProxyMode;
+  serverProxyUrl: string;
   terminalHardwareAccelerationEnabled: boolean;
   terminalDrawBoldTextInBrightColors: boolean;
   terminalScrollSensitivity: string;
@@ -172,6 +175,7 @@ export const SETTINGS_CATEGORIES = {
     labelI18nKey: 'settings.categories.connection',
     sections: {
       connection: { labelI18nKey: 'settings.sections.connection' },
+      proxy: { labelI18nKey: 'settings.sections.proxy' },
     },
   },
   sftp: {
@@ -483,6 +487,37 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'connection.ssh.reconnectOnFocus',
     commandActionId: 'settings.connection.ssh.reconnectOnFocus.toggle',
     searchTerms: ['ssh', 'reconnect', 'tab', 'focus', 'auto reconnect', 'connection'],
+  },
+  {
+    key: 'serverProxyMode',
+    valueType: 'string',
+    defaultValue: 'system',
+    nameI18nKey: 'settings.items.serverProxyMode.title',
+    descriptionI18nKey: 'settings.items.serverProxyMode.description',
+    optionI18nNamespace: 'serverProxyMode',
+    category: SETTINGS_CATEGORIES.connection,
+    section: SETTINGS_CATEGORIES.connection.sections.proxy,
+    control: 'select',
+    path: 'connection.proxy.mode',
+    commandActionId: 'settings.connection.proxy.mode.set',
+    searchTerms: ['proxy', 'system proxy', 'server connection', 'socks5', 'http connect'],
+    options: [{ value: 'off' }, { value: 'system' }, { value: 'custom' }],
+  },
+  {
+    key: 'serverProxyUrl',
+    valueType: 'string',
+    defaultValue: '',
+    nameI18nKey: 'settings.items.serverProxyUrl.title',
+    descriptionI18nKey: 'settings.items.serverProxyUrl.description',
+    placeholderI18nKey: 'settings.items.serverProxyUrl.placeholder',
+    category: SETTINGS_CATEGORIES.connection,
+    section: SETTINGS_CATEGORIES.connection.sections.proxy,
+    control: 'input',
+    path: 'connection.proxy.url',
+    commandActionId: 'settings.connection.proxy.url.set',
+    searchTerms: ['proxy url', 'http proxy', 'https proxy', 'socks5 proxy', 'authentication'],
+    inputMode: 'url',
+    maxLength: 2048,
   },
   {
     key: 'sftpReconnectMode',

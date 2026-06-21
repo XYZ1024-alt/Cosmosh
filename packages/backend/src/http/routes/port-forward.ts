@@ -5,20 +5,47 @@ import {
   API_PATHS,
   type ApiPortForwardCreateRuleResponse,
   type ApiPortForwardListRulesResponse,
+  type ApiPortForwardStartRuleRequest,
   type ApiPortForwardStartRuleResponse,
   type ApiPortForwardStopRuleResponse,
   type ApiPortForwardUpdateRuleResponse,
   type ApiSshCreateSessionHostVerificationRequiredResponse,
   createApiSuccess,
+  MAX_SYSTEM_PROXY_RULES_LENGTH,
 } from '@cosmosh/api-contract';
 import prismaClientPackage from '@prisma/client';
 
 import { parsePortForwardRulePayload } from '../../port-forward/validation.js';
+import { isRecord, normalizeOptionalString } from '../../validation-utils.js';
 import { buildErrorPayload } from '../errors.js';
 import { type BackendHttpApp, getTranslator } from '../i18n.js';
 import type { BackendAppContext } from '../types.js';
 
 const { Prisma } = prismaClientPackage;
+
+/**
+ * Parses the optional system proxy result attached to a forwarding start request.
+ *
+ * @param payload Raw request body.
+ * @returns Normalized start payload or null when invalid.
+ */
+const parsePortForwardStartRequest = (payload: unknown): ApiPortForwardStartRuleRequest | null => {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  const systemProxyRules = normalizeOptionalString(payload.systemProxyRules);
+  if (
+    payload.systemProxyRules !== undefined &&
+    (!systemProxyRules || systemProxyRules.length > MAX_SYSTEM_PROXY_RULES_LENGTH)
+  ) {
+    return null;
+  }
+
+  return {
+    systemProxyRules,
+  };
+};
 
 /**
  * Builds a host-verification response shared with SSH/SFTP creation flows.
@@ -279,11 +306,20 @@ export const registerPortForwardRoutes = (app: BackendHttpApp, context: BackendA
       );
     }
 
+    const startRequest = parsePortForwardStartRequest(await c.req.json().catch(() => undefined));
+    if (!startRequest) {
+      return c.json(
+        buildErrorPayload(API_CODES.portForwardValidationFailed, t('errors.validation.invalidPayload')),
+        400,
+      );
+    }
+
     const result = await context.portForwardSessionService.startRule({
       ruleId,
       locale: c.get('locale'),
       requestId,
       connectTimeoutSec: 45,
+      systemProxyRules: startRequest.systemProxyRules,
     });
 
     if (result.type === 'not-found') {

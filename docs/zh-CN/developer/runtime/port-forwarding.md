@@ -130,3 +130,10 @@ Home -> Port Forwarding：
 - 提供 New/Edit dialog、Start/Stop、Copy Endpoint、Delete，以及 host trust retry 流程。
 
 运行状态应根据 start/stop 响应更新，并在 Home 重新加载时从列表接口刷新。backend 重启后所有行有意回到 stopped。
+
+## 9. 服务器代理行为
+
+- Start 请求可携带临时 `systemProxyRules`；只有规则引用的服务器最终使用全局系统代理时，renderer 才通过 Main 解析该字段。
+- `PortForwardSessionService` 使用共享 SSH 代理 helper，因此 HTTP、HTTPS CONNECT、SOCKS5、显式 `DIRECT`、凭据、超时与主机信任行为和 SSH/SFTP 保持一致。
+- 启动失败不会静默绕过已选代理。
+- 审计 metadata 只记录解析后的代理模式/协议，不包含代理 URL 或凭据。

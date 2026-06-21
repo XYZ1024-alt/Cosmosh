@@ -825,6 +825,8 @@ export interface components {
       enableSshCompression?: boolean;
       disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
+      proxyMode?: components['schemas']['SshServerProxyMode'];
+      proxyUrl?: string;
       hasPassword: boolean;
       hasPrivateKey: boolean;
       note?: string;
@@ -853,6 +855,8 @@ export interface components {
       enableSshCompression?: boolean;
       disableCharacterWidthCompatibilityMode?: boolean;
       terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
+      proxyMode?: components['schemas']['SshServerProxyMode'];
+      proxyUrl?: string;
       iconKey?: string;
       colorKey?: components['schemas']['SshVisualColorKey'];
       password?: string;
@@ -876,6 +880,8 @@ export interface components {
     };
     /** @enum {string} */
     SshVisualColorKey: 'slate' | 'blue' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan' | 'indigo' | 'teal' | 'lime';
+    /** @enum {string} */
+    SshServerProxyMode: 'default' | 'off' | 'custom';
     SshTagCreateRequest: {
       name: string;
     };
@@ -891,6 +897,7 @@ export interface components {
       connectTimeoutSec: number;
       strictHostKey?: boolean;
       enableSshCompression?: boolean;
+      systemProxyRules?: string;
     };
     /** @enum {string} */
     TerminalClipboardAccess: 'off' | 'writeAskRead' | 'readWrite' | 'askAlways';
@@ -1051,11 +1058,15 @@ export interface components {
     PortForwardRuleData: {
       item: components['schemas']['PortForwardRuleListItem'];
     };
+    PortForwardRuleStartRequest: {
+      systemProxyRules?: string;
+    };
     SftpSessionCreateRequest: {
       serverId: string;
       initialPath?: string;
       connectTimeoutSec?: number;
       strictHostKey?: boolean;
+      systemProxyRules?: string;
     };
     SftpPathRequest: {
       path: string;
@@ -3718,7 +3729,11 @@ export interface operations {
       };
       cookie?: never;
     };
-    requestBody?: never;
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['PortForwardRuleStartRequest'];
+      };
+    };
     responses: {
       /** @description Port-forwarding rule started. */
       200: {

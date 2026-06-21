@@ -385,6 +385,15 @@
         "description": "仅控制本地终端程序访问本地剪贴板的权限。",
         "title": "允许本地终端访问本地剪贴板"
       },
+      "serverProxyMode": {
+        "description": "控制新建 SSH、SFTP 和端口转发连接默认使用的代理策略。",
+        "title": "服务器代理"
+      },
+      "serverProxyUrl": {
+        "description": "HTTP、HTTPS 或 SOCKS5 代理 URL。可以在 URL 中包含凭据，数据会保存在加密数据库中。",
+        "placeholder": "socks5://user:password@127.0.0.1:1080",
+        "title": "自定义代理 URL"
+      },
       "sftpAuxiliarySidebarMode": {
         "description": "控制 SFTP 辅助侧栏显示详细信息、可编辑预览或关闭。",
         "title": "SFTP 辅助侧栏"
@@ -707,6 +716,11 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "serverProxyMode": {
+        "custom": "自定义代理",
+        "off": "关闭",
+        "system": "使用系统代理"
+      },
       "sftpAuxiliarySidebarMode": {
         "details": "详细信息",
         "off": "关闭",
@@ -794,6 +808,7 @@
       "connection": "连接",
       "editorDefaults": "默认值",
       "localization": "本地化",
+      "proxy": "代理",
       "runtime": "运行时",
       "search": "搜索",
       "sftpBrowser": "浏览器",
@@ -813,6 +828,7 @@
       "maxLengthExceeded": "“{name}”不得超过 {limit} 个字符。",
       "missingKey": "“{name}”为必填项。",
       "notObject": "设置值必须是 JSON 对象。",
+      "proxyUrlInvalid": "自定义代理 URL 必须使用 http://、https:// 或 socks5://，且不能包含路径、查询参数或片段。",
       "stringRequired": "“{name}”必须是字符串。",
       "timeZoneUnsupported": "“{name}”必须是 system 或受支持的 IANA 时区。",
       "unknownKeys": "设置包含未知键：“{keys}”。",
@@ -1210,6 +1226,16 @@
     "privateKeyPlaceholder": "私钥内容",
     "privateKeySavedPlaceholder": "已保存私钥（仅在需要替换时粘贴新私钥）",
     "privateKeyTooShort": "私钥内容可能过短。",
+    "proxyModeHint": "“默认”会继承全局服务器代理设置；“关闭”始终直接连接。",
+    "proxyModeLabel": "代理",
+    "proxyModeOptions": {
+      "custom": "自定义代理",
+      "default": "默认",
+      "off": "关闭"
+    },
+    "proxyUrlHint": "支持 HTTP、HTTPS CONNECT 和 SOCKS5 代理 URL，也支持在 URL 中携带凭据。",
+    "proxyUrlLabel": "自定义代理 URL",
+    "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
     "retry": "重试",
     "saveChanges": "保存修改",
     "saveInlineCredentialsToKeychain": "保存为钥匙链",
@@ -1289,6 +1315,7 @@
     "validationKeychainNotFound": "未找到已选择的钥匙链。",
     "validationPasswordRequired": "当前认证方式需要密码。",
     "validationPrivateKeyRequired": "当前认证方式需要私钥。",
+    "validationProxyUrl": "请输入有效的 http://、https:// 或 socks5:// 代理 URL，且不要包含路径、查询参数或片段。",
     "validationRequiredFields": "名称、主机和用户名不能为空。",
     "validationServerNotFound": "未找到已选择的服务器。",
     "websocketClosed": "连接已中断。",

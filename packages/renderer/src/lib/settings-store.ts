@@ -155,6 +155,15 @@ export const isSettingsStoreReady = (): boolean => {
   return storeInitialized;
 };
 
+/**
+ * Returns the current immutable settings snapshot for non-React connection helpers.
+ *
+ * @returns Current settings values.
+ */
+export const getSettingsValuesSnapshot = (): SettingsSnapshot => {
+  return currentSnapshot;
+};
+
 // ── React Hooks ──────────────────────────────────────────────
 
 /**

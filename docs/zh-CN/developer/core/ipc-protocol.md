@@ -33,6 +33,7 @@ flowchart TB
 | `app:open-sftp-file-with-application` | `invoke` | `localPath: string, applicationPath: string` | `Promise<boolean>` | 仅 macOS：校验临时文件与所选应用属于可用应用列表后，使用该应用打开文件 |
 | `app:sftp-temporary-file-changed` | `event (main -> renderer)` | `{ watchId: string; localPath: string; size: number; modifiedAt: string }` | none | 向拥有该监听的 renderer webContents 推送一次防抖后的 SFTP 临时文件变更事件 |
 | `app:get-database-security-info` | `invoke` | none | `Promise<{ runtimeMode: 'development' \| 'production'; resolverMode: 'development-fixed-key' \| 'safe-storage' \| 'master-password-fallback'; safeStorageAvailable: boolean; databasePath: string; securityConfigPath: string; hasEncryptedDbMasterKey: boolean; hasMasterPasswordHash: boolean; hasMasterPasswordSalt: boolean; hasMasterPasswordEnv: boolean; fallbackReady: boolean }>` | 为设置 → 高级页返回非敏感的数据库加密引导诊断信息 |
+| `app:resolve-system-proxy` | `invoke` | `{ host: string; port: number }` | `Promise<{ proxyRules: string }>` | 校验一个 SSH 服务器目标，并为 `https://host:port/` 解析 Chromium 系统/PAC 代理规则 |
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | 当第二实例触发时，向渲染层推送上下文启动工作目录 |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | 将 macOS 系统菜单触发的应用菜单命令以受控枚举形式分发到渲染层标签页/状态处理器 |
 | `app:open-devtools` | `invoke` | none | `Promise<boolean>` | 为当前主窗口打开 DevTools（窗口可用时） |
@@ -73,7 +74,7 @@ flowchart TB
 | `backend:port-forward-list-rules` | `invoke` | none | `Promise<ApiPortForwardListRulesResponse \| ApiErrorResponse>` | GET 已持久化的 SSH 端口转发规则，并合并内存运行状态 |
 | `backend:port-forward-create-rule` | `invoke` | `payload: ApiPortForwardCreateRuleRequest` | `Promise<ApiPortForwardCreateRuleResponse \| ApiErrorResponse>` | POST 创建一条 stopped 端口转发规则 |
 | `backend:port-forward-update-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardUpdateRuleRequest` | `Promise<ApiPortForwardUpdateRuleResponse \| ApiErrorResponse>` | PUT 更新一条 stopped 端口转发规则 |
-| `backend:port-forward-start-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST 启动一条规则；可能返回共享 `SSH_HOST_UNTRUSTED` payload 供指纹信任后重试 |
+| `backend:port-forward-start-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardStartRuleRequest` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST 启动一条规则，并可携带临时系统代理规则；可能返回共享 `SSH_HOST_UNTRUSTED` payload 供指纹信任后重试 |
 | `backend:port-forward-stop-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStopRuleResponse \| ApiErrorResponse>` | POST 停止一条活动规则；已停止规则由 backend 幂等处理 |
 | `backend:port-forward-delete-rule` | `invoke` | `ruleId: string` | `Promise<{ success: boolean }>` | DELETE 一条 stopped 端口转发规则 |
 | `backend:sftp-create-session` | `invoke` | `payload: ApiSftpCreateSessionRequest` | `Promise<ApiSftpCreateSessionResponse \| ApiSftpCreateSessionHostVerificationRequiredResponse \| ApiErrorResponse>` | POST 创建 SFTP 文件系统会话 |
@@ -180,3 +181,11 @@ flowchart TB
 5. Main 行为：后端代理或本地特权动作
 6. 安全说明：token/header 处理、权限边界、暴露范围
 7. 文档同步：同一变更集更新中英文协议文档
+
+## 6. 服务器代理契约
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest` 可携带 `proxyMode = default | off | custom` 与可选 `proxyUrl`。
+- `ApiSshListServersResponse` 返回持久化代理模式和 URL，用于编辑与连接规划。
+- `ApiSshCreateSessionRequest`、`ApiSftpCreateSessionRequest` 与 `ApiPortForwardStartRuleRequest` 可携带临时 `systemProxyRules`；该字段永不持久化。
+- `SystemProxyResolveRequest` 与 `SystemProxyResolveResult` 是 `packages/api-contract/src/ipc.ts` 中的 IPC-only 类型。
+- Main 根据已校验 host/port 构造解析 URL，Renderer 不能向 `Session.resolveProxy` 提交任意 URL。

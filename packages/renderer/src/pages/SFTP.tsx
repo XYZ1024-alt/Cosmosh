@@ -38,6 +38,7 @@ import {
   writeSftpFile,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
+import { resolveSystemProxyRulesForServerId } from '../lib/server-proxy';
 import { updateSettingsStoreValues, useSettingsValue, useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import type { SftpConnectionIntent } from '../types/tabs';
@@ -1070,6 +1071,7 @@ const SFTP: React.FC<SFTPProps> = ({
       const fallbackPath = connectionIntent.initialPath ?? '.';
       const candidatePaths = Array.from(new Set([preferredPath.trim() || fallbackPath, fallbackPath]));
       const trustRejectedMessage = t('ssh.hostFingerprintNotTrusted');
+      const systemProxyRules = await resolveSystemProxyRulesForServerId(connectionIntent.serverId);
 
       for (const initialPath of candidatePaths) {
         try {
@@ -1080,6 +1082,7 @@ const SFTP: React.FC<SFTPProps> = ({
               serverId: connectionIntent.serverId,
               initialPath,
               connectTimeoutSec: 45,
+              systemProxyRules,
             });
 
             if (!response.success && response.code === 'SSH_HOST_UNTRUSTED') {
@@ -1601,6 +1604,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
       setStatus('connecting');
       setErrorMessage('');
+      const systemProxyRules = await resolveSystemProxyRulesForServerId(connectionIntent.serverId);
 
       let shouldRetry = true;
       while (shouldRetry) {
@@ -1609,6 +1613,7 @@ const SFTP: React.FC<SFTPProps> = ({
           serverId: connectionIntent.serverId,
           initialPath: connectionIntent.initialPath ?? '.',
           connectTimeoutSec: 45,
+          systemProxyRules,
         });
 
         if (!response.success && response.code === 'SSH_HOST_UNTRUSTED') {

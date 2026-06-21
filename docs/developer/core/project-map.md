@@ -190,3 +190,17 @@ flowchart TD
   - `packages/renderer/src/lib/api/*` and `packages/renderer/src/lib/backend.ts` for typed transport wrappers.
 - Documentation owner:
   - `docs/developer/runtime/port-forwarding.md` and `docs/zh-CN/developer/runtime/port-forwarding.md`.
+
+## 10. Server Proxy Ownership Map (2026-06)
+
+- Contract and validation:
+  - `packages/api-contract/src/proxy.ts` owns proxy modes, URL validation, protocols, and limits.
+  - `packages/api-contract/openapi/cosmosh.openapi.yaml` owns server proxy fields and transient system proxy request fields.
+- Persistent model:
+  - `packages/backend/prisma/schema.prisma` owns `SshServer.proxyMode` and `SshServer.proxyUrl`.
+- Privileged system resolution:
+  - `packages/main/src/ipc/register-app-utility-ipc.ts` owns `app:resolve-system-proxy` through Electron `Session.resolveProxy`.
+- Renderer orchestration:
+  - `packages/renderer/src/lib/server-proxy.ts` decides whether system resolution is needed before SSH, SFTP, or port-forward startup.
+- Backend runtime:
+  - `packages/backend/src/ssh/proxy.ts` owns precedence, PAC result parsing, tunnel construction, timeout sharing, and credential-safe errors.

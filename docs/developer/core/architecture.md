@@ -335,3 +335,13 @@ Handling principle:
 
 - Runtime migration sync is idempotent and executes on every startup.
 - Existing user data must remain intact while structural drift is repaired incrementally.
+
+## 10. Server Proxy Runtime
+
+- Global settings define `serverProxyMode = off | system | custom` and `serverProxyUrl`; the default is `system`.
+- Each `SshServer` defines `proxyMode = default | off | custom` and an optional `proxyUrl`. `default` inherits the global policy.
+- Renderer resolves system/PAC proxy rules through the privileged `app:resolve-system-proxy` Main IPC only when the effective mode is `system`.
+- Backend remains the policy authority. `packages/backend/src/ssh/proxy.ts` reloads persisted global settings, applies the server override, parses ordered Chromium proxy rules, and creates HTTP, HTTPS CONNECT, SOCKS5, or explicit `DIRECT` sockets.
+- The prepared socket is injected through `ssh2` `ConnectConfig.sock`, so SSH shell, SFTP, and port-forwarding connections share one proxy implementation.
+- Proxy candidates share the configured SSH connection timeout. Proxy failure never silently falls back to direct transport; direct transport is allowed only for `off` mode or an explicit system `DIRECT` candidate.
+- Audit metadata records only proxy mode and protocol. Proxy URLs and embedded credentials are never written to audit metadata.

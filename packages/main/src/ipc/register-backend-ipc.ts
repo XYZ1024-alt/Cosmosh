@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -594,10 +595,15 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
 
   ipcMain.handle(
     'backend:port-forward-start-rule',
-    async (_event, ruleId: string): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
+    async (
+      _event,
+      ruleId: string,
+      payload: ApiPortForwardStartRuleRequest,
+    ): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
       const path = replaceApiPathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
       return options.requestBackend<ApiPortForwardStartRuleResponse>(path, {
         method: 'POST',
+        body: payload,
       });
     },
   );

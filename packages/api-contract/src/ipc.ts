@@ -9,6 +9,15 @@ export const APP_MENU_ACTIONS = [
 
 export type AppMenuAction = (typeof APP_MENU_ACTIONS)[number];
 
+export type SystemProxyResolveRequest = {
+  host: string;
+  port: number;
+};
+
+export type SystemProxyResolveResult = {
+  proxyRules: string;
+};
+
 const APP_MENU_ACTION_SET: ReadonlySet<string> = new Set(APP_MENU_ACTIONS);
 
 /**

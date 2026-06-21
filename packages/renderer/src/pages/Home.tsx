@@ -108,6 +108,7 @@ import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-a
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
+import { resolveSystemProxyRulesForServer } from '../lib/server-proxy';
 import { useSettingsValue } from '../lib/settings-store';
 import {
   filterSharedKeychains,
@@ -2514,7 +2515,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const handleStartPortForwardRule = React.useCallback(
     async (ruleId: string) => {
       try {
-        const response = await startPortForwardRule(ruleId);
+        const rule = portForwardRules.find((item) => item.id === ruleId);
+        const server = rule ? servers.find((item) => item.id === rule.serverId) : undefined;
+        if (!server) {
+          throw new Error(t('home.portForwardingUnknownServer'));
+        }
+
+        const systemProxyRules = await resolveSystemProxyRulesForServer(server);
+        const response = await startPortForwardRule(ruleId, { systemProxyRules });
 
         if (!response.success && response.code === 'SSH_HOST_UNTRUSTED' && 'data' in response) {
           setPortForwardHostFingerprintPrompt({
@@ -2540,7 +2548,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         notifyError(error instanceof Error ? error.message : t('home.portForwardingStartFailed'));
       }
     },
-    [notifyError, notifySuccess],
+    [notifyError, notifySuccess, portForwardRules, servers],
   );
 
   const handleStopPortForwardRule = React.useCallback(

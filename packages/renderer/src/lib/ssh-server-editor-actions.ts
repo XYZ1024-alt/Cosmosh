@@ -1,4 +1,5 @@
 import type { components } from '@cosmosh/api-contract';
+import { validateProxyUrl } from '@cosmosh/api-contract';
 
 import { createSshServer, createSshTag, updateSshServer } from './backend';
 import { isEntityColorKey } from './entity-visuals';
@@ -90,6 +91,7 @@ type SaveServerFromEditorParams = {
   validationServerNotFoundMessage: string;
   validationPasswordRequiredMessage: string;
   validationPrivateKeyRequiredMessage: string;
+  validationProxyUrlMessage: string;
 };
 
 /**
@@ -167,6 +169,7 @@ export const saveServerFromEditor = async ({
   validationServerNotFoundMessage,
   validationPasswordRequiredMessage,
   validationPrivateKeyRequiredMessage,
+  validationProxyUrlMessage,
 }: SaveServerFromEditorParams): Promise<SaveServerFromEditorResult | null> => {
   const port = parsePort(formState.port);
   if (!formState.name.trim() || !formState.host.trim() || !formState.username.trim()) {
@@ -191,6 +194,11 @@ export const saveServerFromEditor = async ({
 
   if (requiresPrivateKey && !formState.privateKey.trim() && !activeServer?.hasPrivateKey) {
     onWarning(validationPrivateKeyRequiredMessage);
+    return null;
+  }
+
+  if (formState.proxyMode === 'custom' && !validateProxyUrl(formState.proxyUrl).valid) {
+    onWarning(validationProxyUrlMessage);
     return null;
   }
 
@@ -220,6 +228,8 @@ export const saveServerFromEditor = async ({
     enableSshCompression: formState.enableSshCompression,
     disableCharacterWidthCompatibilityMode: formState.disableCharacterWidthCompatibilityMode,
     terminalClipboardAccess: formState.terminalClipboardAccess,
+    proxyMode: formState.proxyMode,
+    proxyUrl: formState.proxyUrl.trim() || undefined,
   };
 
   const savedServer = serverId
