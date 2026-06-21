@@ -386,11 +386,11 @@
         "title": "Allow Local Terminal Clipboard Access"
       },
       "serverProxyMode": {
-        "description": "Controls the default proxy policy for new SSH, SFTP, and port-forwarding connections.",
+        "description": "Controls the default proxy policy for new SSH, SFTP, and port-forwarding connections. Individual servers can override this setting.",
         "title": "Server Proxy"
       },
       "serverProxyUrl": {
-        "description": "HTTP, HTTPS, or SOCKS5 proxy URL. Credentials may be included in the URL and are stored in the encrypted database.",
+        "description": "HTTP, HTTPS, or SOCKS5 proxy URL. Credentials may be included in the URL.",
         "placeholder": "socks5://user:password@127.0.0.1:1080",
         "title": "Custom Proxy URL"
       },

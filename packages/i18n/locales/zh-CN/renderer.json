@@ -386,11 +386,11 @@
         "title": "允许本地终端访问本地剪贴板"
       },
       "serverProxyMode": {
-        "description": "控制新建 SSH、SFTP 和端口转发连接默认使用的代理策略。",
+        "description": "控制新建 SSH、SFTP 和端口转发连接默认使用的代理策略。单个服务器可以单独设置代理。",
         "title": "服务器代理"
       },
       "serverProxyUrl": {
-        "description": "HTTP、HTTPS 或 SOCKS5 代理 URL。可以在 URL 中包含凭据，数据会保存在加密数据库中。",
+        "description": "HTTP、HTTPS 或 SOCKS5 代理 URL。可以在 URL 中包含凭据。",
         "placeholder": "socks5://user:password@127.0.0.1:1080",
         "title": "自定义代理 URL"
       },
