@@ -28,6 +28,7 @@ import CreateFolderDialog from '../home/CreateFolderDialog';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPrimaryButton,
@@ -415,6 +416,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
         >
           <DialogHeader className="px-2.5">
             <DialogTitle>{displayServerId ? t('home.contextEdit') : t('home.quickAddServer')}</DialogTitle>
+            <DialogDescription className="sr-only">{t('ssh.serverEditorDialogDescription')}</DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[calc(92vh-136px)] overflow-auto">

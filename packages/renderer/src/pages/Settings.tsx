@@ -22,6 +22,7 @@ import { Button } from '../components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPrimaryButton,
@@ -1119,7 +1120,9 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           </DialogHeader>
 
           <div className="grid gap-2 rounded-md border border-home-divider p-3 text-sm">
-            <p className="pb-1 text-home-text-subtle">{t('settings.databaseSecurity.description')}</p>
+            <DialogDescription className="pb-1 text-home-text-subtle">
+              {t('settings.databaseSecurity.description')}
+            </DialogDescription>
 
             <div className="grid grid-cols-[220px,1fr] items-start gap-3">
               <span className="text-home-text-subtle">{t('settings.databaseSecurity.fields.runtimeMode')}</span>
