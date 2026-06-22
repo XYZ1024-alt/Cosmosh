@@ -72,10 +72,11 @@ import {
 } from '../components/ui/dialog';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { formStyles } from '../components/ui/form-styles';
@@ -3004,15 +3005,19 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive, initialSta
                       </Tooltip>
                       <DropdownMenuContent>
                         <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
-                        {groupModeOptions.map((option) => (
-                          <DropdownMenuCheckboxItem
-                            key={option.value}
-                            checked={groupMode === option.value}
-                            onSelect={() => setActiveGroupMode(option.value)}
-                          >
-                            {option.label}
-                          </DropdownMenuCheckboxItem>
-                        ))}
+                        <DropdownMenuRadioGroup
+                          value={groupMode}
+                          onValueChange={(value) => setActiveGroupMode(value as GroupMode)}
+                        >
+                          {groupModeOptions.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -3033,30 +3038,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive, initialSta
                       </Tooltip>
                       <DropdownMenuContent>
                         <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameAsc'}
-                          onSelect={() => setActiveSortMode('nameAsc')}
+                        <DropdownMenuRadioGroup
+                          value={sortMode}
+                          onValueChange={(value) => setActiveSortMode(value as SortMode)}
                         >
-                          {t('home.sortByNameAsc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameDesc'}
-                          onSelect={() => setActiveSortMode('nameDesc')}
-                        >
-                          {t('home.sortByNameDesc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'lastUsed'}
-                          onSelect={() => setActiveSortMode('lastUsed')}
-                        >
-                          {t('home.sortByLastUsed')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'createdAt'}
-                          onSelect={() => setActiveSortMode('createdAt')}
-                        >
-                          {t('home.sortByCreatedAt')}
-                        </DropdownMenuCheckboxItem>
+                          <DropdownMenuRadioItem value="nameAsc">{t('home.sortByNameAsc')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="nameDesc">{t('home.sortByNameDesc')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="lastUsed">{t('home.sortByLastUsed')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="createdAt">{t('home.sortByCreatedAt')}</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
 

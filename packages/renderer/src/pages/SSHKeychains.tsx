@@ -20,9 +20,10 @@ import {
 import { Button } from '../components/ui/button';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
@@ -458,30 +459,15 @@ const SSHKeychains: React.FC<SSHKeychainsProps> = ({ preferredKeychainId }) => {
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'default'}
-                    onSelect={() => setSortMode('default')}
+                  <DropdownMenuRadioGroup
+                    value={sortMode}
+                    onValueChange={(value) => setSortMode(value as SortMode)}
                   >
-                    {t('ssh.sortDefault')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'nameAsc'}
-                    onSelect={() => setSortMode('nameAsc')}
-                  >
-                    {t('home.sortByNameAsc')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'nameDesc'}
-                    onSelect={() => setSortMode('nameDesc')}
-                  >
-                    {t('home.sortByNameDesc')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'createdAt'}
-                    onSelect={() => setSortMode('createdAt')}
-                  >
-                    {t('home.sortByCreatedAt')}
-                  </DropdownMenuCheckboxItem>
+                    <DropdownMenuRadioItem value="default">{t('ssh.sortDefault')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="nameAsc">{t('home.sortByNameAsc')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="nameDesc">{t('home.sortByNameDesc')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="createdAt">{t('home.sortByCreatedAt')}</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
 

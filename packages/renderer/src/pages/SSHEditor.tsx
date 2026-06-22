@@ -38,10 +38,11 @@ import { Button } from '../components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '../components/ui/context-menu';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { Input } from '../components/ui/input';
@@ -784,36 +785,16 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
                 </DropdownMenuTrigger>
                 <DropdownMenuContent>
                   <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'default'}
-                    onSelect={() => setSortMode('default')}
+                  <DropdownMenuRadioGroup
+                    value={sortMode}
+                    onValueChange={(value) => setSortMode(value as SortMode)}
                   >
-                    {t('ssh.sortDefault')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'nameAsc'}
-                    onSelect={() => setSortMode('nameAsc')}
-                  >
-                    {t('home.sortByNameAsc')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'nameDesc'}
-                    onSelect={() => setSortMode('nameDesc')}
-                  >
-                    {t('home.sortByNameDesc')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'lastUsed'}
-                    onSelect={() => setSortMode('lastUsed')}
-                  >
-                    {t('home.sortByLastUsed')}
-                  </DropdownMenuCheckboxItem>
-                  <DropdownMenuCheckboxItem
-                    checked={sortMode === 'createdAt'}
-                    onSelect={() => setSortMode('createdAt')}
-                  >
-                    {t('home.sortByCreatedAt')}
-                  </DropdownMenuCheckboxItem>
+                    <DropdownMenuRadioItem value="default">{t('ssh.sortDefault')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="nameAsc">{t('home.sortByNameAsc')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="nameDesc">{t('home.sortByNameDesc')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="lastUsed">{t('home.sortByLastUsed')}</DropdownMenuRadioItem>
+                    <DropdownMenuRadioItem value="createdAt">{t('home.sortByCreatedAt')}</DropdownMenuRadioItem>
+                  </DropdownMenuRadioGroup>
                 </DropdownMenuContent>
               </DropdownMenu>
 
