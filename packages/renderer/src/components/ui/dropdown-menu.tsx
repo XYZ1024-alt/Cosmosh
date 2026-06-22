@@ -1,6 +1,6 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import classNames from 'classnames';
-import { Check, ChevronRight, Dot } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -181,7 +181,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   >
     <span className={menuStyles.itemIndicator}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Dot className="h-4 w-4" />
+        <Check className="h-4 w-4" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     <span className={menuStyles.leadingIconSlot} />

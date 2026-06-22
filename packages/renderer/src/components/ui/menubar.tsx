@@ -1,7 +1,7 @@
 import * as MenubarPrimitive from '@radix-ui/react-menubar';
 import * as ToggleGroupPrimitive from '@radix-ui/react-toggle-group';
 import classNames from 'classnames';
-import { Check, ChevronRight, Dot } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -196,7 +196,7 @@ const MenubarRadioItem = React.forwardRef<
   >
     <span className={menuStyles.itemIndicator}>
       <MenubarPrimitive.ItemIndicator>
-        <Dot className="h-4 w-4" />
+        <Check className="h-4 w-4" />
       </MenubarPrimitive.ItemIndicator>
     </span>
     <span className={menuStyles.leadingIconSlot} />

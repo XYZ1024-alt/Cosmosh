@@ -49,6 +49,7 @@ flowchart TD
 - Radix 原语仅通过内部封装使用（`dialog.tsx`、`menubar.tsx`、`toast.tsx` 等）。
 - 样式契约集中在独立 style map（`menu-styles.ts`、`form-styles.ts`、`dialog-styles.ts`、`toast-styles.ts`）。
 - 可访问性/状态选择器（`data-state`、碰撞处理、键盘语义）放在封装层内部。
+- 菜单中的单选/Radio 项必须使用共享的前置对勾选中标识，与 checkbox/menu 选中反馈保持一致，不使用小点标记。
 
 ## 6. 交互密度规则
 

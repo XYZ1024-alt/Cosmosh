@@ -49,6 +49,7 @@ Implementation principles:
 - Use Radix primitives only via internal wrappers (`dialog.tsx`, `menubar.tsx`, `toast.tsx`, etc.).
 - Store style contracts in dedicated style maps (`menu-styles.ts`, `form-styles.ts`, `dialog-styles.ts`, `toast-styles.ts`).
 - Keep accessibility/state selectors (`data-state`, collision handling, keyboard semantics) inside wrappers.
+- Menu single-choice/radio items must use the shared leading checkmark indicator, matching checkbox/menu selection affordances instead of dot markers.
 
 ## 6. Interaction Density Rules
 

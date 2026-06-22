@@ -1,6 +1,6 @@
 import * as ContextMenuPrimitive from '@radix-ui/react-context-menu';
 import classNames from 'classnames';
-import { Check, ChevronRight, Dot } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -191,7 +191,7 @@ const ContextMenuRadioItem = React.forwardRef<
   >
     <span className={menuStyles.itemIndicator}>
       <ContextMenuPrimitive.ItemIndicator>
-        <Dot className="h-4 w-4" />
+        <Check className="h-4 w-4" />
       </ContextMenuPrimitive.ItemIndicator>
     </span>
     <span className={menuStyles.leadingIconSlot} />
