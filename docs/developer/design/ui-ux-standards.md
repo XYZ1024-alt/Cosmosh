@@ -99,6 +99,12 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - The fallback menu must reuse the internal `ContextMenu` wrapper, tokenized menu styles, localized renderer copy, and platform shortcut hint.
 - Standalone renderer documents, including SFTP entry properties popup windows, must mount the same fallback provider at the renderer root.
 
+## 7.5 Command Palette Keyboard Focus
+
+- When a command palette displays its search input, the input owns navigation keys even if a mouse click or nested control focus temporarily moves DOM focus to a list action or footer control.
+- Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.
+- Nested buttons must keep their normal activation semantics; focus handoff should not convert every descendant key into a command selection.
+
 ## 8. Compliance Checklist
 
 Before merging UI changes:

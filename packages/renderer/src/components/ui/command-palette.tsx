@@ -5,6 +5,8 @@ import React from 'react';
 import { Input } from './input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 
+const textEntryTargetSelector = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])';
+
 type CommandPaletteAction = {
   key: string;
   icon: React.ReactNode;
@@ -43,6 +45,20 @@ type CommandPaletteProps = {
   onOpenChange?: (open: boolean) => void;
   className?: string;
   onQueryChange: (query: string) => void;
+};
+
+/**
+ * Checks whether the original event target should retain normal text-entry keyboard behavior.
+ *
+ * @param target Event target from a keyboard event.
+ * @returns True when the target is a text-entry surface.
+ */
+const isTextEntryEventTarget = (target: EventTarget | null): boolean => {
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  return target.closest(textEntryTargetSelector) !== null;
 };
 
 /**
@@ -98,6 +114,23 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 
     return mouseRecent && !keyboardRecent;
   }, []);
+
+  /**
+   * Determines whether a nested control should hand the key back to the command input.
+   *
+   * @param event Keyboard event emitted by a command-palette descendant.
+   * @returns True when the input owns the key semantics.
+   */
+  const shouldRouteDescendantKeyToInput = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>): boolean => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        return true;
+      }
+
+      return event.key === 'Escape' && closeOnEsc;
+    },
+    [closeOnEsc],
+  );
 
   const activeIndex = React.useMemo(() => {
     const base = typeof activeIndexProp === 'number' ? activeIndexProp : internalActiveIndex;
@@ -180,12 +213,18 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
     });
   }, [activeIndex, open, rendered]);
 
-  const handleKeyDown = React.useCallback(
-    (event: React.KeyboardEvent<HTMLInputElement>) => {
+  /**
+   * Handles keys owned by the search input so redirected descendant events stay behaviorally identical.
+   *
+   * @param event Keyboard event from the input or a descendant rerouted to the input contract.
+   * @returns True when the event was handled by command-palette semantics.
+   */
+  const handleInputOwnedKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLElement>): boolean => {
       if (event.key === 'Escape' && closeOnEsc) {
         event.preventDefault();
         onOpenChange?.(false);
-        return;
+        return true;
       }
 
       if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -193,30 +232,32 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         event.preventDefault();
         if (event.key === 'ArrowDown' && onInputArrowDown) {
           onInputArrowDown();
-          return;
+          return true;
         }
 
         if (event.key === 'ArrowUp' && onInputArrowUp) {
           onInputArrowUp();
-          return;
+          return true;
         }
 
         if (items.length === 0) {
-          return;
+          return true;
         }
 
         setActiveIndex((previous) =>
           event.key === 'ArrowDown' ? (previous + 1) % items.length : (previous - 1 + items.length) % items.length,
         );
-        return;
+        return true;
       }
 
       if (event.key === 'Enter') {
         markKeyboardInteraction();
         event.preventDefault();
         items[activeIndex]?.onSelect();
-        return;
+        return true;
       }
+
+      return false;
     },
     [
       activeIndex,
@@ -228,6 +269,33 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
       onOpenChange,
       setActiveIndex,
     ],
+  );
+
+  const handleInputKeyDown = React.useCallback(
+    (event: React.KeyboardEvent<HTMLInputElement>) => {
+      handleInputOwnedKeyDown(event);
+    },
+    [handleInputOwnedKeyDown],
+  );
+
+  const handlePanelKeyDownCapture = React.useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (
+        !showInput ||
+        event.defaultPrevented ||
+        isTextEntryEventTarget(event.target) ||
+        !shouldRouteDescendantKeyToInput(event)
+      ) {
+        return;
+      }
+
+      inputRef.current?.focus({ preventScroll: true });
+
+      if (handleInputOwnedKeyDown(event)) {
+        event.stopPropagation();
+      }
+    },
+    [handleInputOwnedKeyDown, shouldRouteDescendantKeyToInput, showInput],
   );
 
   const handlePanelKeyDown = React.useCallback(
@@ -285,6 +353,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         tabIndex={showInput ? undefined : -1}
         data-state={open ? 'open' : 'closed'}
         className="flex flex-col overflow-hidden rounded-xl border border-command-border bg-command-surface shadow-menu-content backdrop-blur-[4px] data-[state=closed]:animate-out data-[state=closed]:fade-out-10 data-[state=closed]:zoom-out-95 data-[state=closed]:slide-out-to-top-1"
+        onKeyDownCapture={showInput ? handlePanelKeyDownCapture : undefined}
         onKeyDown={showInput ? undefined : handlePanelKeyDown}
       >
         {showInput ? (
@@ -297,7 +366,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 placeholder={placeholder}
                 className="placeholder:!text-command-text-muted/80 h-[34px] !rounded-none !bg-transparent !px-0 !text-command-text hover:!bg-transparent focus-visible:!outline-none"
                 onChange={(event) => onQueryChange(event.target.value)}
-                onKeyDown={handleKeyDown}
+                onKeyDown={handleInputKeyDown}
               />
             </div>
           </div>
@@ -419,6 +488,11 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                                     'inline-flex h-6 w-6 items-center justify-center rounded-[8px] outline-none',
                                     actionColorClassName,
                                   )}
+                                  onMouseDown={(event) => {
+                                    if (showInput) {
+                                      event.preventDefault();
+                                    }
+                                  }}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     action.onSelect();
