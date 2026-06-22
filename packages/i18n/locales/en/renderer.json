@@ -62,6 +62,13 @@
         "toggleMainHeapSnapshotExport": "Toggle Enable Main Process Heap Snapshot",
         "toggleSystemMonitorOverlay": "Toggle System Monitor Overlay"
       },
+      "resources": {
+        "connectSftp": "Connect Server SFTP",
+        "connectSsh": "Connect Server SSH",
+        "editForward": "Edit Port Forward",
+        "editKeychain": "Edit Keychain",
+        "editServer": "Edit Server"
+      },
       "tabs": {
         "closeCurrentTab": "Close Current Tab",
         "closeRightTabs": "Close Tabs to the Right",
@@ -80,13 +87,19 @@
       "mainHeapSnapshotExportFailed": "Failed to capture main process heap snapshot.",
       "mainHeapSnapshotUnavailable": "Main process heap snapshot export is unavailable in this runtime.",
       "reloadWebViewFailed": "Failed to reload current WebView.",
+      "resourceLoadFailed": "Failed to load command palette resources.",
       "systemMonitorOverlayDisabled": "System monitor overlay hidden.",
       "systemMonitorOverlayEnabled": "System monitor overlay shown."
     },
     "placeholder": "Type a command or search settings",
     "scopes": {
       "developer": "Developer",
+      "forward": "Forward",
+      "keychain": "Keychain",
+      "server": "Server",
       "settings": "Settings",
+      "sftp": "SFTP",
+      "ssh": "SSH",
       "tabs": "Tabs"
     }
   },
@@ -227,6 +240,7 @@
     "portForwardingNoServers": "No SSH servers available",
     "portForwardingRemoteBindHost": "Remote Bind Host",
     "portForwardingRemoteBindPort": "Remote Port",
+    "portForwardingRuleNotFound": "Port forwarding rule was not found.",
     "portForwardingRunningGroup": "Running Tunnels",
     "portForwardingSaveFailed": "Failed to save port forwarding rule.",
     "portForwardingServerRequired": "Select an SSH server first.",

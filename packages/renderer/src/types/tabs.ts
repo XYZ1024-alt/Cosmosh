@@ -41,11 +41,20 @@ export type SshEditorState = {
   createMode?: boolean;
 };
 
+export type SshKeychainEditorState = {
+  preferredKeychainId?: string;
+};
+
 export type SftpConnectionIntent = {
   serverId: string;
   serverName: string;
   initialPath?: string;
   createdAt: number;
+};
+
+export type HomeState = {
+  initialMode?: 'ssh' | 'keychains' | 'portForwarding';
+  initialPortForwardRuleId?: string;
 };
 
 export type TabItem = {
@@ -62,5 +71,7 @@ export type TabItem = {
     sshConnectionIntent?: SshConnectionIntent;
     sftpConnectionIntent?: SftpConnectionIntent;
     sshEditor?: SshEditorState;
+    sshKeychainEditor?: SshKeychainEditorState;
+    home?: HomeState;
   };
 };

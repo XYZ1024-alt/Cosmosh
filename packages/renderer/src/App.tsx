@@ -454,6 +454,7 @@ const App: React.FC = () => {
               {tab.page === 'home' && (
                 <Home
                   isActive={tab.id === activeTabId}
+                  initialState={tab.state?.home}
                   onOpenSSH={(serverId, tabTitle, options) => {
                     if (options?.openInNewTab) {
                       const newTabId = addTab('ssh', undefined, {
@@ -653,7 +654,7 @@ const App: React.FC = () => {
               )}
               {tab.page === 'ssh-keychains' && (
                 <React.Suspense fallback={pageLoadingFallback}>
-                  <SSHKeychains />
+                  <SSHKeychains preferredKeychainId={tab.state?.sshKeychainEditor?.preferredKeychainId} />
                 </React.Suspense>
               )}
               {tab.page === 'settings' && (

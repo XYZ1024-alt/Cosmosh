@@ -53,7 +53,11 @@ type SshTag = components['schemas']['SshTag'];
 
 type SortMode = 'default' | 'nameAsc' | 'nameDesc' | 'createdAt';
 
-const SSHKeychains: React.FC = () => {
+type SSHKeychainsProps = {
+  preferredKeychainId?: string;
+};
+
+const SSHKeychains: React.FC<SSHKeychainsProps> = ({ preferredKeychainId }) => {
   const { success: notifySuccess, error: notifyError, warning: notifyWarning } = useToast();
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSubmitting, setIsSubmitting] = React.useState<boolean>(false);
@@ -162,8 +166,8 @@ const SSHKeychains: React.FC = () => {
   );
 
   React.useEffect(() => {
-    void reloadData();
-  }, [reloadData]);
+    void reloadData(preferredKeychainId);
+  }, [preferredKeychainId, reloadData]);
 
   const { refreshKeychainCredentials } = useKeychainCredentialsRefresh({
     enabled: Boolean(activeKeychainId),

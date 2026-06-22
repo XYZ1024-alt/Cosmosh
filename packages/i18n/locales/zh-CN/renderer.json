@@ -62,6 +62,13 @@
         "toggleMainHeapSnapshotExport": "切换启用主进程堆快照",
         "toggleSystemMonitorOverlay": "切换系统监视器浮层"
       },
+      "resources": {
+        "connectSftp": "连接服务器 SFTP",
+        "connectSsh": "连接服务器 SSH",
+        "editForward": "编辑端口转发",
+        "editKeychain": "编辑钥匙链",
+        "editServer": "编辑服务器"
+      },
       "tabs": {
         "closeCurrentTab": "关闭当前标签页",
         "closeRightTabs": "关闭右侧标签页",
@@ -80,13 +87,19 @@
       "mainHeapSnapshotExportFailed": "拍摄主进程堆快照失败。",
       "mainHeapSnapshotUnavailable": "当前运行时不可用主进程堆快照导出能力。",
       "reloadWebViewFailed": "重新加载当前 WebView 失败。",
+      "resourceLoadFailed": "加载命令面板资源失败。",
       "systemMonitorOverlayDisabled": "系统监视器浮层已隐藏。",
       "systemMonitorOverlayEnabled": "系统监视器浮层已显示。"
     },
     "placeholder": "输入命令或搜索设置",
     "scopes": {
       "developer": "开发者",
+      "forward": "Forward",
+      "keychain": "Keychain",
+      "server": "Server",
       "settings": "设置",
+      "sftp": "SFTP",
+      "ssh": "SSH",
       "tabs": "标签页"
     }
   },
@@ -227,6 +240,7 @@
     "portForwardingNoServers": "暂无 SSH 服务器",
     "portForwardingRemoteBindHost": "远端监听地址",
     "portForwardingRemoteBindPort": "远端端口",
+    "portForwardingRuleNotFound": "未找到端口转发规则。",
     "portForwardingRunningGroup": "运行中的转发",
     "portForwardingSaveFailed": "保存端口转发规则失败。",
     "portForwardingServerRequired": "请先选择 SSH 服务器。",

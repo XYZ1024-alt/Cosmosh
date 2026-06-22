@@ -107,6 +107,11 @@ import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } fr
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
+import {
+  formatPortForwardBindEndpoint,
+  formatPortForwardCopyEndpoint,
+  formatPortForwardTargetEndpoint,
+} from '../lib/port-forward-display';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
 import {
@@ -120,6 +125,7 @@ import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
 import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
+import type { HomeState } from '../types/tabs';
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
@@ -129,6 +135,7 @@ type HomeProps = {
     options?: { openInNewTab?: boolean; iconColorKey?: EntityColorKey },
   ) => void;
   isActive: boolean;
+  initialState?: HomeState;
 };
 
 type SshServerListItem = components['schemas']['SshServerListItem'];
@@ -344,48 +351,6 @@ const resolveGroupModeLabel = (homeMode: HomeMode, mode: GroupMode): string => {
   }
 
   return mode === 'lastUsed' ? t('home.groupModeLastUsed') : t('home.groupModeTag');
-};
-
-/**
- * Builds the listen endpoint shown for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Human-readable bind endpoint.
- */
-const formatPortForwardBindEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'remote') {
-    return `${rule.remoteBindHost ?? '127.0.0.1'}:${rule.remoteBindPort ?? '-'}`;
-  }
-
-  return `${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? '-'}`;
-};
-
-/**
- * Builds the target endpoint shown for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Human-readable target endpoint.
- */
-const formatPortForwardTargetEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'dynamic') {
-    return t('home.portForwardingSocksTarget');
-  }
-
-  return `${rule.targetHost ?? '-'}:${rule.targetPort ?? '-'}`;
-};
-
-/**
- * Builds a clipboard-friendly endpoint for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Endpoint text copied by the row action.
- */
-const formatPortForwardCopyEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'dynamic') {
-    return `socks5://${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? ''}`;
-  }
-
-  return `${formatPortForwardBindEndpoint(rule)} -> ${formatPortForwardTargetEndpoint(rule)}`;
 };
 
 /**
@@ -1252,11 +1217,11 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   );
 };
 
-const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive, initialState }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
-  const [activeHomeMode, setActiveHomeMode] = React.useState<HomeMode>('ssh');
+  const [activeHomeMode, setActiveHomeMode] = React.useState<HomeMode>(initialState?.initialMode ?? 'ssh');
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [keychains, setKeychains] = React.useState<SshKeychainListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
@@ -1300,6 +1265,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
+  const pendingInitialPortForwardRuleIdRef = React.useRef<string | null>(
+    initialState?.initialPortForwardRuleId ?? null,
+  );
   const sshViewPreference = viewPreferences.ssh;
   const keychainViewPreference = viewPreferences.keychains;
   const portForwardingViewPreference = viewPreferences.portForwarding;
@@ -2422,6 +2390,27 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     [notifyWarning],
   );
 
+  React.useEffect(() => {
+    const pendingRuleId = pendingInitialPortForwardRuleIdRef.current;
+    if (isLoading || errorMessage || !pendingRuleId) {
+      return;
+    }
+
+    setActiveHomeMode('portForwarding');
+    setActiveFolderId('all');
+    setActiveTag('all');
+    setQuickFilter('none');
+    setSearch('');
+    pendingInitialPortForwardRuleIdRef.current = null;
+
+    const targetRule = portForwardRules.find((rule) => rule.id === pendingRuleId);
+    if (!targetRule) {
+      notifyWarning(t('home.portForwardingRuleNotFound'));
+      return;
+    }
+
+    openEditPortForwardRuleDialog(targetRule);
+  }, [errorMessage, isLoading, notifyWarning, openEditPortForwardRuleDialog, portForwardRules]);
   const openDeletePortForwardRuleDialog = React.useCallback(
     (rule: PortForwardRuleListItem) => {
       if (rule.runtime.status === 'running') {

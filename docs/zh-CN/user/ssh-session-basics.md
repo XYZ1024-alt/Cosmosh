@@ -37,7 +37,9 @@
 
 - 在 Windows/Linux 使用 Ctrl+Shift+P，在 macOS 使用 Cmd+Shift+P，可全局唤起命令面板。
 - 即使终端或输入框处于焦点状态，该快捷键也可用。
-- 可用于新建标签页、切换标签页、关闭当前标签页、关闭右侧标签页，以及跳转到设置搜索。
+- 可用于新建标签页、切换标签页、关闭当前标签页、关闭右侧标签页、跳转到设置搜索，以及打开已保存资源。
+- 资源命令包括`SSH: <server name> (<host>)`、`SFTP: <server name> (<host>)`、`Server: <server name> (<host>)`、`Keychain: <keychain name>`和`Forward: <forward name>`。
+- 服务器主机文本遵循“显示完整服务器地址”设置，因此命令标题中也会保持脱敏地址。
 - 设置命令支持多维检索：本地化标题、英文标题、setting key、path、searchTerms、commandActionId。
 
 ## 信任与校验
