@@ -7,15 +7,18 @@
       "hostTrust": "Host Trust",
       "portForward": "Port Forwarding",
       "settings": "Settings",
+      "sftpSession": "SFTP Session",
       "sshKeychain": "SSH Keychain",
       "sshServer": "SSH Server",
       "sshSession": "SSH Session"
     },
     "columns": {
+      "category": "Category",
       "device": "Device",
       "event": "Event",
       "noneTarget": "(none)",
       "outcome": "Outcome",
+      "severity": "Severity",
       "target": "Target",
       "time": "Time"
     },
@@ -23,8 +26,28 @@
     "detailEmpty": "Select an event to inspect details.",
     "detailLoadFailed": "Failed to load audit event detail.",
     "detailLoading": "Loading event detail...",
+    "detailSections": {
+      "correlation": "Correlation",
+      "identity": "Identity",
+      "scope": "Scope"
+    },
     "detailTitle": "Event Detail",
     "empty": "No audit events found in this range.",
+    "fields": {
+      "correlationId": "Correlation ID",
+      "emptyValue": "-",
+      "entity": "Entity",
+      "eventId": "Event ID",
+      "occurredAt": "Occurred At",
+      "outcome": "Outcome",
+      "relatedRecordId": "Related Record",
+      "requestId": "Request ID",
+      "retentionUntilAt": "Retention Until",
+      "scopeAccountId": "Account Scope",
+      "scopeDeviceId": "Device Scope",
+      "sessionId": "Session ID",
+      "severity": "Severity"
+    },
     "filters": {
       "allCategories": "All Categories",
       "allOutcomes": "All Outcomes",
@@ -44,6 +67,11 @@
       "page": "Page {page}"
     },
     "retentionHint": "Default retention policy keeps events for 180 days.",
+    "severity": {
+      "critical": "Critical",
+      "info": "Info",
+      "warning": "Warning"
+    },
     "timeRange": {
       "last180d": "Last 180 Days",
       "last24h": "Last 24 Hours",

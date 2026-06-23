@@ -7,15 +7,18 @@
       "hostTrust": "主机信任",
       "portForward": "端口转发",
       "settings": "设置",
+      "sftpSession": "SFTP 会话",
       "sshKeychain": "SSH 钥匙链",
       "sshServer": "SSH 服务器",
       "sshSession": "SSH 会话"
     },
     "columns": {
+      "category": "类别",
       "device": "设备",
       "event": "事件",
       "noneTarget": "（无）",
       "outcome": "结果",
+      "severity": "级别",
       "target": "对象",
       "time": "时间"
     },
@@ -23,8 +26,28 @@
     "detailEmpty": "请选择一个事件查看详情。",
     "detailLoadFailed": "加载审计事件详情失败。",
     "detailLoading": "正在加载事件详情...",
+    "detailSections": {
+      "correlation": "关联链路",
+      "identity": "事件标识",
+      "scope": "作用域"
+    },
     "detailTitle": "事件详情",
     "empty": "当前范围内没有审计事件。",
+    "fields": {
+      "correlationId": "关联 ID",
+      "emptyValue": "-",
+      "entity": "对象",
+      "eventId": "事件 ID",
+      "occurredAt": "发生时间",
+      "outcome": "结果",
+      "relatedRecordId": "关联记录",
+      "requestId": "请求 ID",
+      "retentionUntilAt": "保留至",
+      "scopeAccountId": "账号作用域",
+      "scopeDeviceId": "设备作用域",
+      "sessionId": "会话 ID",
+      "severity": "级别"
+    },
     "filters": {
       "allCategories": "全部类别",
       "allOutcomes": "全部结果",
@@ -44,6 +67,11 @@
       "page": "第 {page} 页"
     },
     "retentionHint": "默认保留策略会保存最近 180 天的事件。",
+    "severity": {
+      "critical": "严重",
+      "info": "信息",
+      "warning": "警告"
+    },
     "timeRange": {
       "last180d": "最近 180 天",
       "last24h": "最近 24 小时",
