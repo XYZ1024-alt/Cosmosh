@@ -16,6 +16,7 @@ import {
   InputContextMenuItem,
   InputMenuTarget,
 } from './input-context-menu-registry';
+import { textEditingShortcut } from './text-editing-context-menu-utils';
 
 const isSupportedInput = (element: Element): element is InputMenuTarget => {
   if (!(element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement)) {
@@ -62,17 +63,6 @@ const getEditableTarget = (node: EventTarget | null): InputMenuTarget | null => 
   return editable;
 };
 
-const isMac = navigator.platform.toLowerCase().includes('mac');
-
-const shortcut = {
-  undo: isMac ? '⌘Z' : 'Ctrl+Z',
-  redo: isMac ? '⇧⌘Z' : 'Ctrl+Y',
-  cut: isMac ? '⌘X' : 'Ctrl+X',
-  copy: isMac ? '⌘C' : 'Ctrl+C',
-  paste: isMac ? '⌘V' : 'Ctrl+V',
-  selectAll: isMac ? '⌘A' : 'Ctrl+A',
-};
-
 const executeCommand = (target: InputMenuTarget, command: 'undo' | 'redo' | 'cut' | 'copy' | 'paste'): boolean => {
   target.focus({ preventScroll: true });
 
@@ -108,7 +98,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'undo',
     label: t('inputContextMenu.undo'),
     icon: Undo,
-    shortcut: shortcut.undo,
+    shortcut: textEditingShortcut.undo,
     disabled: target.readOnly,
     onSelect: (currentTarget) => executeCommand(currentTarget, 'undo'),
   },
@@ -116,7 +106,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'redo',
     label: t('inputContextMenu.redo'),
     icon: Redo,
-    shortcut: shortcut.redo,
+    shortcut: textEditingShortcut.redo,
     disabled: target.readOnly,
     onSelect: (currentTarget) => executeCommand(currentTarget, 'redo'),
   },
@@ -124,7 +114,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'cut',
     label: t('inputContextMenu.cut'),
     icon: Scissors,
-    shortcut: shortcut.cut,
+    shortcut: textEditingShortcut.cut,
     disabled: (currentTarget) => currentTarget.readOnly || !hasSelection(currentTarget),
     onSelect: (currentTarget) => executeCommand(currentTarget, 'cut'),
   },
@@ -132,7 +122,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'copy',
     label: t('inputContextMenu.copy'),
     icon: Copy,
-    shortcut: shortcut.copy,
+    shortcut: textEditingShortcut.copy,
     disabled: (currentTarget) => !hasSelection(currentTarget),
     onSelect: (currentTarget) => executeCommand(currentTarget, 'copy'),
   },
@@ -140,7 +130,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'paste',
     label: t('inputContextMenu.paste'),
     icon: ClipboardPaste,
-    shortcut: shortcut.paste,
+    shortcut: textEditingShortcut.paste,
     disabled: target.readOnly,
     onSelect: (currentTarget) => {
       void handlePaste(currentTarget);
@@ -150,7 +140,7 @@ const buildDefaultItems = (target: InputMenuTarget): InputContextMenuItem[] => [
     key: 'select-all',
     label: t('inputContextMenu.selectAll'),
     icon: TextSelect,
-    shortcut: shortcut.selectAll,
+    shortcut: textEditingShortcut.selectAll,
     disabled: (currentTarget) => currentTarget.value.length === 0,
     onSelect: (currentTarget) => {
       currentTarget.focus({ preventScroll: true });

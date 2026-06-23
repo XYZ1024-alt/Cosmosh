@@ -10,6 +10,7 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from './context-menu';
+import { textEditingShortcut } from './text-editing-context-menu-utils';
 
 type SelectionContextMenuState = {
   position: {
@@ -35,9 +36,6 @@ const SELECTION_CONTEXT_MENU_IGNORE_SELECTOR = [
   '.monaco-editor',
   '.cm-editor',
 ].join(', ');
-
-const isMac = navigator.platform.toLowerCase().includes('mac');
-const copyShortcut = isMac ? '⌘C' : 'Ctrl+C';
 
 /**
  * Resolves an event target to the closest element that can be queried with DOM selectors.
@@ -335,7 +333,7 @@ const SelectionContextMenuProvider: React.FC<React.PropsWithChildren> = ({ child
             }}
           >
             {t('inputContextMenu.copy')}
-            <ContextMenuShortcut>{copyShortcut}</ContextMenuShortcut>
+            <ContextMenuShortcut>{textEditingShortcut.copy}</ContextMenuShortcut>
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
