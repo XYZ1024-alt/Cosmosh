@@ -6,6 +6,7 @@
  * adding a setting to the registry automatically enables its validation.
  */
 
+import { validateProxyUrl } from './proxy';
 import type { SettingKey, SettingsValues } from './settings-registry';
 import { DEFAULT_SETTINGS_VALUES, SETTINGS_DEFINITION_MAP, SETTINGS_REGISTRY } from './settings-registry';
 import {
@@ -399,6 +400,21 @@ export const normalizeSettingsValuesStrict = (
     }
 
     result[key] = parsed.value;
+  }
+
+  if (result.serverProxyMode === 'custom') {
+    const proxyUrlResult = validateProxyUrl(result.serverProxyUrl);
+    if (!proxyUrlResult.valid) {
+      return {
+        error: validationError(
+          'settings.validation.proxyUrlInvalid',
+          { key: 'serverProxyUrl' },
+          'serverProxyUrl must be a valid http, https, or socks5 proxy URL when custom proxy mode is selected.',
+        ),
+      };
+    }
+
+    result.serverProxyUrl = proxyUrlResult.normalizedUrl;
   }
 
   return { value: result as SettingsValues };

@@ -5,6 +5,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -180,8 +181,11 @@ export const updatePortForwardRule = async (
   return backendClient.updatePortForwardRule(ruleId, payload);
 };
 
-export const startPortForwardRule = async (ruleId: string): Promise<ApiPortForwardStartRuleResponse> => {
-  return backendClient.startPortForwardRule(ruleId);
+export const startPortForwardRule = async (
+  ruleId: string,
+  payload: ApiPortForwardStartRuleRequest,
+): Promise<ApiPortForwardStartRuleResponse> => {
+  return backendClient.startPortForwardRule(ruleId, payload);
 };
 
 export const stopPortForwardRule = async (ruleId: string): Promise<ApiPortForwardStopRuleResponse> => {

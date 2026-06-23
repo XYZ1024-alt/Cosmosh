@@ -33,6 +33,7 @@ flowchart TB
 | `app:open-sftp-file-with-application` | `invoke` | `localPath: string, applicationPath: string` | `Promise<boolean>` | macOS only: validates the temp file and selected app against the available application list, then opens the file with that app |
 | `app:sftp-temporary-file-changed` | `event (main -> renderer)` | `{ watchId: string; localPath: string; size: number; modifiedAt: string }` | none | Pushes one debounced change event for a watched SFTP temp file owned by the renderer webContents |
 | `app:get-database-security-info` | `invoke` | none | `Promise<{ runtimeMode: 'development' \| 'production'; resolverMode: 'development-fixed-key' \| 'safe-storage' \| 'master-password-fallback'; safeStorageAvailable: boolean; databasePath: string; securityConfigPath: string; hasEncryptedDbMasterKey: boolean; hasMasterPasswordHash: boolean; hasMasterPasswordSalt: boolean; hasMasterPasswordEnv: boolean; fallbackReady: boolean }>` | Returns non-sensitive database encryption bootstrap diagnostics for Settings → Advanced |
+| `app:resolve-system-proxy` | `invoke` | `{ host: string; port: number }` | `Promise<{ proxyRules: string }>` | Validates one SSH server destination and resolves Chromium system/PAC proxy rules for `https://host:port/` |
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | Pushes context-launch working directory when a second instance is invoked |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | Dispatches validated app-menu commands from the macOS system menu to renderer tab/state handlers |
 | `app:open-devtools` | `invoke` | none | `Promise<boolean>` | Opens devtools for the current main window when available |
@@ -73,7 +74,7 @@ flowchart TB
 | `backend:port-forward-list-rules` | `invoke` | none | `Promise<ApiPortForwardListRulesResponse \| ApiErrorResponse>` | GET persisted SSH port-forwarding rules and merge in-memory runtime status |
 | `backend:port-forward-create-rule` | `invoke` | `payload: ApiPortForwardCreateRuleRequest` | `Promise<ApiPortForwardCreateRuleResponse \| ApiErrorResponse>` | POST create a stopped port-forwarding rule |
 | `backend:port-forward-update-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardUpdateRuleRequest` | `Promise<ApiPortForwardUpdateRuleResponse \| ApiErrorResponse>` | PUT update a stopped port-forwarding rule |
-| `backend:port-forward-start-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST start one rule; may return shared `SSH_HOST_UNTRUSTED` payload for fingerprint trust retry |
+| `backend:port-forward-start-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardStartRuleRequest` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST start one rule with optional transient system proxy rules; may return shared `SSH_HOST_UNTRUSTED` payload for fingerprint trust retry |
 | `backend:port-forward-stop-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStopRuleResponse \| ApiErrorResponse>` | POST stop one active rule; stopped rules are handled idempotently by backend |
 | `backend:port-forward-delete-rule` | `invoke` | `ruleId: string` | `Promise<{ success: boolean }>` | DELETE one stopped port-forwarding rule |
 | `backend:sftp-create-session` | `invoke` | `payload: ApiSftpCreateSessionRequest` | `Promise<ApiSftpCreateSessionResponse \| ApiSftpCreateSessionHostVerificationRequiredResponse \| ApiErrorResponse>` | POST create SFTP file-system session |
@@ -180,3 +181,11 @@ Use this checklist when introducing a new channel:
 5. Main behavior: backend proxy or privileged local action
 6. Security notes: token/header handling, permission boundary, exposure limits
 7. Docs sync: update EN + ZH protocol pages in same change set
+
+## 6. Server Proxy Contract
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest` carry optional `proxyMode = default | off | custom` and optional `proxyUrl`.
+- `ApiSshListServersResponse` returns persisted proxy mode and URL for editing and connection planning.
+- `ApiSshCreateSessionRequest`, `ApiSftpCreateSessionRequest`, and `ApiPortForwardStartRuleRequest` carry optional transient `systemProxyRules`; this field is never persisted.
+- `SystemProxyResolveRequest` and `SystemProxyResolveResult` are IPC-only types in `packages/api-contract/src/ipc.ts`.
+- Main constructs the resolution URL from validated host/port fields. Renderer cannot submit an arbitrary URL to `Session.resolveProxy`.

@@ -9,8 +9,12 @@ import type {
 } from '@cosmosh/api-contract';
 import {
   DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  isSshServerProxyMode,
   isTerminalClipboardAccess,
+  MAX_SYSTEM_PROXY_RULES_LENGTH,
+  type SshServerProxyMode,
   type TerminalClipboardAccess,
+  validateProxyUrl,
 } from '@cosmosh/api-contract';
 import type { SshAuthType } from '@prisma/client';
 
@@ -89,6 +93,77 @@ const normalizeOptionalTerminalClipboardAccess = (value: unknown): TerminalClipb
   }
 
   return isTerminalClipboardAccess(normalized) ? normalized : undefined;
+};
+
+/**
+ * Normalizes optional system proxy rules resolved by Electron.
+ *
+ * @param value Raw request value.
+ * @returns Trimmed proxy rules or undefined when omitted.
+ */
+const normalizeOptionalSystemProxyRules = (value: unknown): string | undefined => {
+  const normalized = normalizeOptionalString(value);
+  if (!normalized || normalized.length > MAX_SYSTEM_PROXY_RULES_LENGTH) {
+    return undefined;
+  }
+
+  return normalized;
+};
+
+/**
+ * Validates one server-level proxy configuration pair.
+ *
+ * @param mode Raw proxy mode.
+ * @param url Raw proxy URL.
+ * @param defaultMode Mode used when the request omits the field.
+ * @returns Normalized proxy fields or a validation error.
+ */
+const normalizeServerProxyConfiguration = (
+  mode: unknown,
+  url: unknown,
+  defaultMode?: SshServerProxyMode,
+): ValidationResult<{ proxyMode?: SshServerProxyMode; proxyUrl?: string }> => {
+  const normalizedMode = mode === undefined ? defaultMode : mode;
+  if (normalizedMode !== undefined && !isSshServerProxyMode(normalizedMode)) {
+    return {
+      error: buildValidationError('errors.validation.proxyModeEnum', 'proxyMode must be one of: default, off, custom.'),
+    };
+  }
+
+  const normalizedUrl = normalizeOptionalString(url);
+  if (!normalizedUrl) {
+    if (normalizedMode === 'custom') {
+      return {
+        error: buildValidationError(
+          'errors.validation.proxyUrlInvalid',
+          'proxyUrl is required when proxyMode is custom.',
+        ),
+      };
+    }
+
+    return {
+      value: {
+        proxyMode: normalizedMode,
+      },
+    };
+  }
+
+  const proxyUrlResult = validateProxyUrl(normalizedUrl);
+  if (!proxyUrlResult.valid) {
+    return {
+      error: buildValidationError(
+        'errors.validation.proxyUrlInvalid',
+        'proxyUrl must be a valid http, https, or socks5 proxy URL without a path, query, or fragment.',
+      ),
+    };
+  }
+
+  return {
+    value: {
+      proxyMode: normalizedMode,
+      proxyUrl: proxyUrlResult.normalizedUrl,
+    },
+  };
 };
 
 /**
@@ -296,6 +371,10 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
     payload.disableCharacterWidthCompatibilityMode,
   );
   const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
+  const proxyConfiguration = normalizeServerProxyConfiguration(payload.proxyMode, payload.proxyUrl, 'default');
+  if (!proxyConfiguration.value) {
+    return { error: proxyConfiguration.error };
+  }
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
@@ -379,6 +458,8 @@ export const parseCreateServerRequest = (payload: unknown): ValidationResult<Api
       enableSshCompression: enableSshCompression ?? false,
       disableCharacterWidthCompatibilityMode: disableCharacterWidthCompatibilityMode ?? false,
       terminalClipboardAccess: terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+      proxyMode: proxyConfiguration.value.proxyMode,
+      proxyUrl: proxyConfiguration.value.proxyUrl,
       folderId,
       iconKey,
       colorKey,
@@ -450,6 +531,10 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
     payload.disableCharacterWidthCompatibilityMode,
   );
   const terminalClipboardAccess = normalizeOptionalTerminalClipboardAccess(payload.terminalClipboardAccess);
+  const proxyConfiguration = normalizeServerProxyConfiguration(payload.proxyMode, payload.proxyUrl);
+  if (!proxyConfiguration.value) {
+    return { error: proxyConfiguration.error };
+  }
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
@@ -532,6 +617,8 @@ export const parseUpdateServerRequest = (payload: unknown): ValidationResult<Api
       enableSshCompression,
       disableCharacterWidthCompatibilityMode,
       terminalClipboardAccess,
+      proxyMode: proxyConfiguration.value.proxyMode,
+      proxyUrl: proxyConfiguration.value.proxyUrl,
       folderId,
       iconKey,
       colorKey,
@@ -565,6 +652,7 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
     typeof payload.connectTimeoutSec === 'number' ? payload.connectTimeoutSec : Number(payload.connectTimeoutSec ?? 45);
   const strictHostKey = normalizeOptionalBoolean(payload.strictHostKey);
   const enableSshCompression = normalizeOptionalBoolean(payload.enableSshCompression);
+  const systemProxyRules = normalizeOptionalSystemProxyRules(payload.systemProxyRules);
 
   if (payload.strictHostKey !== undefined && strictHostKey === undefined) {
     return {
@@ -577,6 +665,15 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
       error: buildValidationError(
         'errors.validation.enableSshCompressionType',
         'enableSshCompression must be a boolean value.',
+      ),
+    };
+  }
+
+  if (payload.systemProxyRules !== undefined && systemProxyRules === undefined) {
+    return {
+      error: buildValidationError(
+        'errors.validation.systemProxyRulesLength',
+        `systemProxyRules must be ${MAX_SYSTEM_PROXY_RULES_LENGTH} characters or fewer.`,
       ),
     };
   }
@@ -617,6 +714,7 @@ export const parseCreateSessionRequest = (payload: unknown): ValidationResult<Ap
       connectTimeoutSec,
       strictHostKey,
       enableSshCompression,
+      systemProxyRules,
     },
   };
 };

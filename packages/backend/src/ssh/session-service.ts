@@ -36,6 +36,7 @@ import {
 import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
 import { executeBoundedSshCommand } from './exec.js';
+import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from './proxy.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -55,6 +56,7 @@ type CreateSshSessionInput = {
   connectTimeoutSec: number;
   strictHostKey?: boolean;
   enableSshCompression?: boolean;
+  systemProxyRules?: string;
 };
 
 type CreateSshSessionSuccess = {
@@ -100,15 +102,18 @@ type OpenShellResult =
       client: Client;
       stream: ClientChannel;
       completionSecretValue: string | null;
+      proxyMetadata: SshProxyMetadata;
     }
   | {
       type: 'host-untrusted';
       fingerprint: string;
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     }
   | {
       type: 'failed';
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     };
 
 type ServerOutboundMessage =
@@ -292,6 +297,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       connectTimeoutSec: input.connectTimeoutSec,
       strictHostKey,
       enableSshCompression,
+      systemProxyRules: input.systemProxyRules,
       trustedFingerprintSet,
       t: i18n.t,
       onOutput: (data) => {
@@ -342,6 +348,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           enableSshCompression,
           fingerprint: shellResult.fingerprint,
           reason: shellResult.message || 'Host fingerprint is not trusted.',
+          proxyMode: shellResult.proxyMetadata?.mode,
+          proxyProtocol: shellResult.proxyMetadata?.protocol,
         },
       });
 
@@ -377,6 +385,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           strictHostKey,
           enableSshCompression,
           reason: shellResult.message,
+          proxyMode: shellResult.proxyMetadata?.mode,
+          proxyProtocol: shellResult.proxyMetadata?.protocol,
         },
       });
 
@@ -415,6 +425,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         port: server.port,
         strictHostKey,
         enableSshCompression,
+        proxyMode: shellResult.proxyMetadata.mode,
+        proxyProtocol: shellResult.proxyMetadata.protocol,
       },
     });
 
@@ -1087,6 +1099,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       connectTimeoutSec: number;
       strictHostKey: boolean;
       enableSshCompression: boolean;
+      systemProxyRules?: string;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
       onOutput: (data: string) => void;
@@ -1161,6 +1174,27 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       };
     }
 
+    let proxyTransport;
+    try {
+      proxyTransport = await prepareSshProxyTransport(
+        this.getDbClient(),
+        server,
+        options.systemProxyRules,
+        options.connectTimeoutSec * 1000,
+      );
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: error instanceof Error ? error.message : 'Proxy connection failed.',
+        proxyMetadata: error instanceof SshProxyConnectionError ? error.metadata : undefined,
+      };
+    }
+
+    connectConfig.readyTimeout = proxyTransport.readyTimeoutMs;
+    if (proxyTransport.socket) {
+      connectConfig.sock = proxyTransport.socket;
+    }
+
     return await new Promise<OpenShellResult>((resolve) => {
       let settled = false;
 
@@ -1203,6 +1237,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
             client,
             stream,
             completionSecretValue,
+            proxyMetadata: proxyTransport.metadata,
           });
         });
       });
@@ -1219,6 +1254,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
             type: 'host-untrusted',
             fingerprint: presentedFingerprint,
             message: error.message,
+            proxyMetadata: proxyTransport.metadata,
           });
           return;
         }
@@ -1226,6 +1262,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         settle({
           type: 'failed',
           message: error.message,
+          proxyMetadata: proxyTransport.metadata,
         });
       });
 

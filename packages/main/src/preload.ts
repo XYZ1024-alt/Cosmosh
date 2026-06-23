@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -73,6 +74,8 @@ import type {
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
+  SystemProxyResolveRequest,
+  SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -295,6 +298,9 @@ contextBridge.exposeInMainWorld('electron', {
       fallbackReady: boolean;
     }>('app:get-database-security-info');
   },
+  resolveSystemProxy: (request: SystemProxyResolveRequest) => {
+    return invokeIpc<SystemProxyResolveResult>('app:resolve-system-proxy', request);
+  },
   /**
    * Subscribes to launch cwd events emitted when a second instance forwards context.
    */
@@ -514,8 +520,12 @@ contextBridge.exposeInMainWorld('electron', {
       payload,
     );
   },
-  backendPortForwardStartRule: (ruleId: string) => {
-    return invokeIpc<ApiPortForwardStartRuleResponse | ApiErrorResponse>('backend:port-forward-start-rule', ruleId);
+  backendPortForwardStartRule: (ruleId: string, payload: ApiPortForwardStartRuleRequest) => {
+    return invokeIpc<ApiPortForwardStartRuleResponse | ApiErrorResponse>(
+      'backend:port-forward-start-rule',
+      ruleId,
+      payload,
+    );
   },
   backendPortForwardStopRule: (ruleId: string) => {
     return invokeIpc<ApiPortForwardStopRuleResponse | ApiErrorResponse>('backend:port-forward-stop-rule', ruleId);

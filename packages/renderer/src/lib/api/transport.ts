@@ -10,6 +10,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -168,7 +169,10 @@ export type ApiTransport = {
     ruleId: string,
     payload: ApiPortForwardUpdateRuleRequest,
   ) => Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>;
-  startPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
+  startPortForwardRule: (
+    ruleId: string,
+    payload: ApiPortForwardStartRuleRequest,
+  ) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
   stopPortForwardRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse>;
   deletePortForwardRule: (ruleId: string) => Promise<{ success: boolean }>;
   createSshSession: (
@@ -349,8 +353,8 @@ const createElectronTransport = (): ApiTransport => {
         | ApiPortForwardUpdateRuleResponse
         | ApiErrorResponse;
     },
-    startPortForwardRule: async (ruleId) => {
-      return (await window.electron!.backendPortForwardStartRule(ruleId)) as
+    startPortForwardRule: async (ruleId, payload) => {
+      return (await window.electron!.backendPortForwardStartRule(ruleId, payload)) as
         | ApiPortForwardStartRuleResponse
         | ApiErrorResponse;
     },
@@ -589,9 +593,9 @@ const createBrowserTransport = (): ApiTransport => {
       const path = replaceApiPathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
       return (await callBrowserApi(path, 'PUT', payload)) as ApiPortForwardUpdateRuleResponse | ApiErrorResponse;
     },
-    startPortForwardRule: async (ruleId) => {
+    startPortForwardRule: async (ruleId, payload) => {
       const path = replaceApiPathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
-      return (await callBrowserApi(path, 'POST')) as ApiPortForwardStartRuleResponse | ApiErrorResponse;
+      return (await callBrowserApi(path, 'POST', payload)) as ApiPortForwardStartRuleResponse | ApiErrorResponse;
     },
     stopPortForwardRule: async (ruleId) => {
       const path = replaceApiPathToken(API_PATHS.portForwardStopRule, 'ruleId', ruleId);

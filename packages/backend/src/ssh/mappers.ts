@@ -63,6 +63,8 @@ export const mapServerToListItem = (
     enableSshCompression: server.enableSshCompression,
     disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode,
     terminalClipboardAccess: normalizeTerminalClipboardAccess(server.terminalClipboardAccess),
+    proxyMode: server.proxyMode,
+    proxyUrl: server.proxyUrl ?? undefined,
     keychainId: server.keychain.id,
     authType: server.keychain.authType,
     hasPassword: Boolean(server.keychain.passwordEncrypted),

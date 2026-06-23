@@ -1,4 +1,5 @@
 import { createLocalTerminalSession, createSshSession, trustSshFingerprint } from '../../lib/backend';
+import { resolveSystemProxyRulesForServer } from '../../lib/server-proxy';
 import type { HostFingerprintPrompt, ResolvedTerminalTarget } from './ssh-types';
 
 export type OpenTerminalSessionResult = {
@@ -56,6 +57,7 @@ export const openTerminalSessionSocket = async (
     };
   }
 
+  const systemProxyRules = await resolveSystemProxyRulesForServer(target.server);
   let createResult = await createSshSession({
     serverId: target.server.id,
     cols,
@@ -64,6 +66,7 @@ export const openTerminalSessionSocket = async (
     connectTimeoutSec,
     strictHostKey: target.server.strictHostKey,
     enableSshCompression: target.server.enableSshCompression,
+    systemProxyRules,
   });
 
   if (!createResult.success && createResult.code === 'SSH_HOST_UNTRUSTED') {
@@ -93,6 +96,7 @@ export const openTerminalSessionSocket = async (
       connectTimeoutSec,
       strictHostKey: target.server.strictHostKey,
       enableSshCompression: target.server.enableSshCompression,
+      systemProxyRules,
     });
   }
 

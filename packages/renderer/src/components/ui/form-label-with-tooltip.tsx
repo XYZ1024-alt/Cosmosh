@@ -45,7 +45,12 @@ const FormLabelWithTooltip: React.FC<FormLabelWithTooltipProps> = ({
               <CircleHelp className="h-3 w-3" />
             </button>
           </TooltipTrigger>
-          <TooltipContent side="top">{tooltip}</TooltipContent>
+          <TooltipContent
+            side="top"
+            className="max-w-sm whitespace-pre-wrap"
+          >
+            {tooltip}
+          </TooltipContent>
         </Tooltip>
       </div>
     </TooltipProvider>

@@ -359,6 +359,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           validationServerNotFoundMessage: t('ssh.validationServerNotFound'),
           validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
           validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
+          validationProxyUrlMessage: t('ssh.validationProxyUrl'),
         });
         if (!result) {
           return;

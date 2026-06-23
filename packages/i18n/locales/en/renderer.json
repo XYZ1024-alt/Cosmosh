@@ -428,6 +428,15 @@
         "description": "Controls clipboard requests from local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "serverProxyMode": {
+        "description": "Controls the default proxy policy for new SSH, SFTP, and port-forwarding connections. Individual servers can override this setting.",
+        "title": "Server Proxy"
+      },
+      "serverProxyUrl": {
+        "description": "HTTP, HTTPS, or SOCKS5 proxy URL. Credentials may be included in the URL.",
+        "placeholder": "socks5://user:password@127.0.0.1:1080",
+        "title": "Custom Proxy URL"
+      },
       "sftpAuxiliarySidebarMode": {
         "description": "Controls whether the SFTP auxiliary sidebar shows details, editable previews, or stays closed.",
         "title": "SFTP Auxiliary Sidebar"
@@ -750,6 +759,11 @@
         "duckduckgo": "DuckDuckGo",
         "google": "Google"
       },
+      "serverProxyMode": {
+        "custom": "Custom proxy",
+        "off": "Off",
+        "system": "Use system proxy"
+      },
       "sftpAuxiliarySidebarMode": {
         "details": "Details",
         "off": "Off",
@@ -837,6 +851,7 @@
       "connection": "Connection",
       "editorDefaults": "Defaults",
       "localization": "Localization",
+      "proxy": "Proxy",
       "runtime": "Runtime",
       "search": "Search",
       "sftpBrowser": "Browser",
@@ -856,6 +871,7 @@
       "maxLengthExceeded": "{name} must be {limit} characters or fewer.",
       "missingKey": "{name} is required.",
       "notObject": "Settings values must be a JSON object.",
+      "proxyUrlInvalid": "Custom proxy URL must use http://, https://, or socks5:// without a path, query, or fragment.",
       "stringRequired": "{name} must be a string.",
       "timeZoneUnsupported": "{name} must be system or a supported IANA time zone.",
       "unknownKeys": "Settings contain unknown keys: {keys}.",
@@ -1253,6 +1269,16 @@
     "privateKeyPlaceholder": "Private key content",
     "privateKeySavedPlaceholder": "Saved private key (paste a new one only if you want to replace it)",
     "privateKeyTooShort": "Key seems too short.",
+    "proxyModeHint": "Default inherits the global server proxy setting. Off always connects directly.",
+    "proxyModeLabel": "Proxy",
+    "proxyModeOptions": {
+      "custom": "Custom proxy",
+      "default": "Default",
+      "off": "Off"
+    },
+    "proxyUrlHint": "Supports HTTP, HTTPS CONNECT, and SOCKS5 proxy URLs, including URL credentials.",
+    "proxyUrlLabel": "Custom Proxy URL",
+    "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
     "retry": "Retry",
     "saveChanges": "Save Changes",
     "saveInlineCredentialsToKeychain": "Save as Keychain",
@@ -1333,6 +1359,7 @@
     "validationKeychainNotFound": "Selected keychain was not found.",
     "validationPasswordRequired": "Password is required for selected authentication type.",
     "validationPrivateKeyRequired": "Private key is required for selected authentication type.",
+    "validationProxyUrl": "Enter a valid http://, https://, or socks5:// proxy URL without a path, query, or fragment.",
     "validationRequiredFields": "Name, host and username are required.",
     "validationServerNotFound": "Selected server was not found.",
     "websocketClosed": "Connection disconnected.",

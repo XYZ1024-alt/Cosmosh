@@ -190,3 +190,17 @@ flowchart TD
   - `packages/renderer/src/lib/api/*` 与 `packages/renderer/src/lib/backend.ts` 负责类型化 transport wrapper。
 - 文档归属：
   - `docs/developer/runtime/port-forwarding.md` 与 `docs/zh-CN/developer/runtime/port-forwarding.md`。
+
+## 10. 服务器代理模块归属（2026-06）
+
+- 契约与校验：
+  - `packages/api-contract/src/proxy.ts` 负责代理模式、URL 校验、支持协议与长度限制。
+  - `packages/api-contract/openapi/cosmosh.openapi.yaml` 负责服务器代理字段与临时系统代理请求字段。
+- 持久模型：
+  - `packages/backend/prisma/schema.prisma` 负责 `SshServer.proxyMode` 与 `SshServer.proxyUrl`。
+- 特权系统解析：
+  - `packages/main/src/ipc/register-app-utility-ipc.ts` 通过 Electron `Session.resolveProxy` 负责 `app:resolve-system-proxy`。
+- Renderer 编排：
+  - `packages/renderer/src/lib/server-proxy.ts` 在 SSH、SFTP 或端口转发启动前判断是否需要系统代理解析。
+- Backend 运行时：
+  - `packages/backend/src/ssh/proxy.ts` 负责优先级、PAC 结果解析、隧道建立、共享超时与凭据安全错误。

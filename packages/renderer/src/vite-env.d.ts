@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -71,6 +72,8 @@ import type {
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
+  SystemProxyResolveRequest,
+  SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
 
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
@@ -131,6 +134,7 @@ declare global {
         hasMasterPasswordEnv: boolean;
         fallbackReady: boolean;
       }>;
+      resolveSystemProxy: (request: SystemProxyResolveRequest) => Promise<SystemProxyResolveResult>;
       onLaunchWorkingDirectory: (listener: (cwd: string) => void) => () => void;
       onAppMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
       openDevTools: () => Promise<boolean>;
@@ -277,7 +281,10 @@ declare global {
         ruleId: string,
         payload: ApiPortForwardUpdateRuleRequest,
       ) => Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>;
-      backendPortForwardStartRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
+      backendPortForwardStartRule: (
+        ruleId: string,
+        payload: ApiPortForwardStartRuleRequest,
+      ) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
       backendPortForwardStopRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse>;
       backendPortForwardDeleteRule: (ruleId: string) => Promise<{ success: boolean }>;
       backendLocalTerminalListProfiles: () => Promise<LocalTerminalListResponse | ApiErrorResponse>;

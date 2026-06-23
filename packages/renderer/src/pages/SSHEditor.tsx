@@ -709,6 +709,7 @@ const SSHEditor: React.FC<SSHEditorProps> = ({ preferredServerId, preferCreateMo
           validationServerNotFoundMessage: t('ssh.validationServerNotFound'),
           validationPasswordRequiredMessage: t('ssh.validationPasswordRequired'),
           validationPrivateKeyRequiredMessage: t('ssh.validationPrivateKeyRequired'),
+          validationProxyUrlMessage: t('ssh.validationProxyUrl'),
         });
         if (!result) {
           return;

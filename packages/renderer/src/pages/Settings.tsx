@@ -633,12 +633,17 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         return formState.terminalSelectionSearchEngine === 'custom';
       }
 
+      if (item.key === 'serverProxyUrl') {
+        return formState.serverProxyMode === 'custom';
+      }
+
       return true;
     });
   }, [
     categorySettings,
     formState.terminalAutoCompleteEnabled,
     formState.terminalSelectionSearchEngine,
+    formState.serverProxyMode,
     isSearchMode,
     visibleSettings,
   ]);

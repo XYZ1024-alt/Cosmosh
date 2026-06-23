@@ -15,12 +15,16 @@ test('server transport booleans validate and flow through payload parsing', () =
     enableSshCompression: true,
     disableCharacterWidthCompatibilityMode: true,
     terminalClipboardAccess: 'writeAskRead',
+    proxyMode: 'custom',
+    proxyUrl: 'socks5://user:pass@127.0.0.1:1080',
   });
 
   assert.equal(createServer.value?.strictHostKey, false);
   assert.equal(createServer.value?.enableSshCompression, true);
   assert.equal(createServer.value?.disableCharacterWidthCompatibilityMode, true);
   assert.equal(createServer.value?.terminalClipboardAccess, 'writeAskRead');
+  assert.equal(createServer.value?.proxyMode, 'custom');
+  assert.equal(createServer.value?.proxyUrl, 'socks5://user:pass@127.0.0.1:1080');
 
   const updateServer = parseUpdateServerRequest({
     name: 'Server',
@@ -46,10 +50,12 @@ test('server transport booleans validate and flow through payload parsing', () =
     rows: 30,
     strictHostKey: false,
     enableSshCompression: true,
+    systemProxyRules: 'PROXY 127.0.0.1:8080; DIRECT',
   });
 
   assert.equal(createSession.value?.strictHostKey, false);
   assert.equal(createSession.value?.enableSshCompression, true);
+  assert.equal(createSession.value?.systemProxyRules, 'PROXY 127.0.0.1:8080; DIRECT');
 });
 
 test('server terminal clipboard access defaults to off', () => {
@@ -163,4 +169,20 @@ test('terminalClipboardAccess rejects unsupported payload values', () => {
 
   assert.equal(parsed.value, undefined);
   assert.ok(parsed.error);
+});
+
+test('custom server proxy requires a supported URL without path data', () => {
+  const parsed = parseCreateServerRequest({
+    name: 'Proxy server',
+    host: 'example.test',
+    port: 22,
+    username: 'root',
+    authType: 'password',
+    password: 'secret',
+    proxyMode: 'custom',
+    proxyUrl: 'http://127.0.0.1:8080/path',
+  });
+
+  assert.equal(parsed.value, undefined);
+  assert.equal(parsed.error?.i18nKey, 'errors.validation.proxyUrlInvalid');
 });
