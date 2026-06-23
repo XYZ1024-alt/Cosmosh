@@ -33,6 +33,7 @@ const SELECTION_CONTEXT_MENU_IGNORE_SELECTOR = [
   INTERACTIVE_CONTEXT_MENU_IGNORE_SELECTOR,
   CONTEXT_MENU_TRIGGER_SELECTOR,
   '.monaco-editor',
+  '.cm-editor',
 ].join(', ');
 
 const isMac = navigator.platform.toLowerCase().includes('mac');

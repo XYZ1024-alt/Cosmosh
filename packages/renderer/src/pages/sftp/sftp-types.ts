@@ -123,7 +123,7 @@ export type SftpLargePreviewPrompt = {
 };
 
 /**
- * Monaco-backed text preview state for one remote file.
+ * Editor-backed text preview state for one remote file.
  */
 export type SftpPreviewTextState = {
   status: 'text';

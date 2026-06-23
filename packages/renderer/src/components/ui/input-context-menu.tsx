@@ -31,7 +31,7 @@ const isSupportedInput = (element: Element): element is InputMenuTarget => {
   return textLikeTypes.has(element.type);
 };
 
-const INPUT_CONTEXT_MENU_IGNORE_SELECTOR = '[data-input-context-menu-ignore="true"], .monaco-editor';
+const INPUT_CONTEXT_MENU_IGNORE_SELECTOR = '[data-input-context-menu-ignore="true"], .monaco-editor, .cm-editor';
 
 const isInsideIgnoredInputContextMenuRegion = (node: Element): boolean => {
   return node.closest(INPUT_CONTEXT_MENU_IGNORE_SELECTOR) !== null;
