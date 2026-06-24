@@ -22,6 +22,7 @@ import {
   syncTerminalWebglAddon,
   type TerminalExternalLinkHandler,
   type TerminalHardwareAccelerationState,
+  type TerminalInlineImageSettings,
   type TerminalWebglAddonRuntime,
   type TerminalWebLinksSettings,
 } from './terminal-addons';
@@ -180,6 +181,7 @@ export type UseSshCoreParams = {
   characterWidthCompatibilityModeEnabled: boolean;
   terminalClipboardProvider: TerminalClipboardProvider;
   terminalHardwareAccelerationEnabled: boolean;
+  terminalInlineImageSettings: TerminalInlineImageSettings;
   terminalWebLinksSettings: TerminalWebLinksSettings;
   terminalSelectionBarEnabled: boolean;
   sshReconnectOnFocus: boolean;
@@ -391,6 +393,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
+    terminalInlineImageSettings,
     terminalWebLinksSettings,
     terminalSelectionBarEnabled,
     sshReconnectOnFocus,
@@ -508,6 +511,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const characterWidthCompatibilityModeEnabledRef = React.useRef<boolean>(characterWidthCompatibilityModeEnabled);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
   const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
+  const terminalInlineImageSettingsRef = React.useRef<TerminalInlineImageSettings>(terminalInlineImageSettings);
   const terminalWebLinksSettingsRef = React.useRef<TerminalWebLinksSettings>(terminalWebLinksSettings);
   const openExternalLinkRef = React.useRef<TerminalExternalLinkHandler>(openExternalLink);
   const hardwareAccelerationStateRef = React.useRef<TerminalHardwareAccelerationState>({
@@ -550,6 +554,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     sshReconnectOnFocusRef.current = sshReconnectOnFocus;
   }, [sshReconnectOnFocus]);
+
+  React.useEffect(() => {
+    terminalInlineImageSettingsRef.current = terminalInlineImageSettings;
+  }, [terminalInlineImageSettings]);
 
   React.useEffect(() => {
     terminalWebLinksSettingsRef.current = terminalWebLinksSettings;
@@ -862,6 +870,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
     terminalClipboardProvider,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
@@ -901,6 +910,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
     terminalClipboardProvider,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,

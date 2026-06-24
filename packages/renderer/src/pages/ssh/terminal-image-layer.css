@@ -1,0 +1,14 @@
+/*
+ * @xterm/addon-image draws inline images on a full terminal canvas layer. Keep
+ * only that layer above renderer canvases. xterm owns the DOM rows, selection,
+ * decoration, and link stacking contract, so avoid overriding those layers.
+ */
+.xterm .xterm-screen {
+  isolation: isolate;
+}
+
+.xterm .xterm-screen .xterm-image-layer {
+  z-index: 1;
+  background: transparent;
+  pointer-events: none;
+}

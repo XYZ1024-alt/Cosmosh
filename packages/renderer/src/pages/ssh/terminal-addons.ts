@@ -1,4 +1,6 @@
+import type { TerminalInlineImageOptions } from '@cosmosh/api-contract';
 import { FitAddon } from '@xterm/addon-fit';
+import { type IImageAddonOptions, ImageAddon } from '@xterm/addon-image';
 import { SearchAddon } from '@xterm/addon-search';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
@@ -26,6 +28,7 @@ export type TerminalHardwareAccelerationState = {
 export type TerminalAddonRuntime = {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  imageAddon: ImageAddon | null;
   webglAddon: WebglAddon | null;
 };
 
@@ -48,8 +51,23 @@ export type TerminalWebLinksSettings = {
   platform: TerminalWebLinksPlatform;
 };
 
+/**
+ * Settings that control xterm inline image protocol support.
+ */
+export type TerminalInlineImageSettings = {
+  enabled: boolean;
+  options: TerminalInlineImageOptions;
+};
+
 /** Class applied by xterm when the active link should show a pointer cursor. */
 const TERMINAL_LINK_POINTER_CURSOR_CLASS = 'xterm-cursor-pointer';
+const TERMINAL_IMAGE_LAYER_CLASS = 'xterm-image-layer';
+
+declare global {
+  interface Window {
+    __cosmoshTerminalImageLayerCanvasContextPatched?: boolean;
+  }
+}
 
 /**
  * Determines whether the configured web-link modifier is pressed.
@@ -156,6 +174,98 @@ const disposeAddonSafely = (addon: { dispose: () => void } | null): void => {
   }
 };
 
+/**
+ * Creates xterm's inline image add-on options without leaking registry objects into addon state.
+ *
+ * @param options Strict Cosmosh inline image options from settings.
+ * @returns xterm image add-on options.
+ */
+const toImageAddonOptions = (options: TerminalInlineImageOptions): IImageAddonOptions => ({
+  enableSizeReports: options.enableSizeReports,
+  pixelLimit: options.pixelLimit,
+  sixelSupport: options.sixelSupport,
+  sixelScrolling: options.sixelScrolling,
+  sixelPaletteLimit: options.sixelPaletteLimit,
+  sixelSizeLimit: options.sixelSizeLimit,
+  storageLimit: options.storageLimit,
+  showPlaceholder: options.showPlaceholder,
+  iipSupport: options.iipSupport,
+  iipSizeLimit: options.iipSizeLimit,
+});
+
+/**
+ * Checks whether a canvas context option value can be copied into 2D settings.
+ *
+ * @param options Canvas context options from the original caller.
+ * @returns Whether the value is an object-like settings bag.
+ */
+const isCanvas2DSettings = (options: unknown): options is CanvasRenderingContext2DSettings =>
+  typeof options === 'object' && options !== null;
+
+/**
+ * Keeps xterm's image layer transparent when it is composited above WebGL.
+ *
+ * @returns Nothing.
+ */
+const ensureTerminalImageLayerCanvasContextPatch = (): void => {
+  if (
+    typeof window === 'undefined' ||
+    typeof HTMLCanvasElement === 'undefined' ||
+    window.__cosmoshTerminalImageLayerCanvasContextPatched
+  ) {
+    return;
+  }
+
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
+  const patchedGetContext = function (
+    this: HTMLCanvasElement,
+    contextId: string,
+    options?: unknown,
+  ): RenderingContext | null {
+    if (contextId === '2d' && this.classList.contains(TERMINAL_IMAGE_LAYER_CLASS)) {
+      const contextOptions: CanvasRenderingContext2DSettings = {
+        ...(isCanvas2DSettings(options) ? options : {}),
+        alpha: true,
+        desynchronized: false,
+      };
+      const context = originalGetContext.call(this, '2d', contextOptions) as CanvasRenderingContext2D | null;
+      context?.clearRect(0, 0, this.width, this.height);
+      return context;
+    }
+
+    const contextArgs: [string] | [string, unknown] = options === undefined ? [contextId] : [contextId, options];
+    return Reflect.apply(originalGetContext, this, contextArgs) as RenderingContext | null;
+  };
+
+  HTMLCanvasElement.prototype.getContext = patchedGetContext as typeof HTMLCanvasElement.prototype.getContext;
+  window.__cosmoshTerminalImageLayerCanvasContextPatched = true;
+};
+
+/**
+ * Attaches optional inline image protocol support to one xterm instance.
+ *
+ * @param terminal Terminal instance that will own the image add-on.
+ * @param settings Settings that control inline image support and limits.
+ * @returns Loaded image add-on, or `null` when disabled/unavailable.
+ */
+const attachImageAddon = (terminal: Terminal, settings: TerminalInlineImageSettings): ImageAddon | null => {
+  if (!settings.enabled) {
+    return null;
+  }
+
+  let imageAddon: ImageAddon | null = null;
+
+  try {
+    ensureTerminalImageLayerCanvasContextPatch();
+    imageAddon = new ImageAddon(toImageAddonOptions(settings.options));
+    terminal.loadAddon(imageAddon);
+    return imageAddon;
+  } catch (error: unknown) {
+    disposeAddonSafely(imageAddon);
+    console.warn('Terminal inline image support is unavailable; continuing without the image addon.', error);
+    return null;
+  }
+};
 /**
  * Attaches optional WebGL rendering to one xterm instance.
  *
@@ -335,15 +445,18 @@ class TerminalWebLinksCursorAddon implements ITerminalAddon {
 
 /**
  * Creates and loads standard terminal add-ons shared by primary and split panes.
- * WebGL is synchronized after `terminal.open(...)` because it needs a mounted renderer.
+ * Inline images are loaded before `terminal.open(...)`; WebGL is synchronized
+ * after open because it needs a mounted renderer.
  *
  * @param terminal Terminal instance that will own the add-ons.
+ * @param inlineImageSettings Settings that control inline image protocols and limits.
  * @param webLinksSettings Settings that control URL recognition and click behavior.
  * @param openExternalLink Secure external URL opener used by recognized terminal links.
  * @returns Runtime handles for loaded add-ons.
  */
 export const loadTerminalAddons = (
   terminal: Terminal,
+  inlineImageSettings: TerminalInlineImageSettings,
   webLinksSettings: TerminalWebLinksSettings,
   openExternalLink: TerminalExternalLinkHandler,
 ): TerminalAddonRuntime => {
@@ -352,6 +465,7 @@ export const loadTerminalAddons = (
 
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(searchAddon);
+  const imageAddon = attachImageAddon(terminal, inlineImageSettings);
 
   if (webLinksSettings.enabled) {
     const webLinksCursorAddon = webLinksSettings.requireModifierKey
@@ -393,6 +507,7 @@ export const loadTerminalAddons = (
   return {
     fitAddon,
     searchAddon,
+    imageAddon,
     webglAddon: null,
   };
 };

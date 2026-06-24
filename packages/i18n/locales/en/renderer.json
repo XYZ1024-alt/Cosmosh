@@ -621,6 +621,14 @@
         "description": "Use WebGL rendering for terminal sessions when available, with automatic fallback if the GPU context is unavailable.",
         "title": "Terminal Hardware Acceleration"
       },
+      "terminalInlineImageOptions": {
+        "description": "Advanced JSON options passed to the inline image addon for size reports, SIXEL, storage, placeholders, and iTerm image protocol limits.",
+        "title": "Terminal Inline Image Options"
+      },
+      "terminalInlineImagesEnabled": {
+        "description": "Loads xterm's experimental inline image addon for SIXEL and iTerm image protocol output. Disabled by default because remote output can allocate image memory.",
+        "title": "Terminal Inline Images (Experimental)"
+      },
       "terminalLargePasteWarningThreshold": {
         "description": "Shows the large-text paste warning when pasted text reaches this many characters.",
         "placeholder": "5120",

@@ -621,6 +621,14 @@
         "description": "可用时使用 WebGL 渲染终端会话；GPU 上下文不可用时会自动回退。",
         "title": "启用终端硬件加速"
       },
+      "terminalInlineImageOptions": {
+        "description": "传递给内联图片插件的高级 JSON 选项，用于控制尺寸报告、SIXEL、存储、占位符和 iTerm 图片协议限制。",
+        "title": "终端内联图片参数"
+      },
+      "terminalInlineImagesEnabled": {
+        "description": "加载 xterm 的实验性终端内联图片插件，支持 SIXEL 与 iTerm 图片协议输出。默认关闭，因为远端输出可能分配图片内存。",
+        "title": "终端内联图片（实验性）"
+      },
       "terminalLargePasteWarningThreshold": {
         "description": "当粘贴文本达到该字符数时，触发大文本粘贴警告。",
         "placeholder": "5120",

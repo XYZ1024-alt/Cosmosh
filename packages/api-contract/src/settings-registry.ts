@@ -32,6 +32,12 @@ import {
   type TerminalClipboardAccess,
 } from './terminal-clipboard';
 import {
+  DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS,
+  TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS,
+  TERMINAL_INLINE_IMAGE_OPTION_KEYS,
+  type TerminalInlineImageOptions,
+} from './terminal-inline-images';
+import {
   DEFAULT_TERMINAL_FORCE_SELECTION_MODIFIER,
   DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
   TERMINAL_FORCE_SELECTION_MODIFIER_OPTIONS,
@@ -67,6 +73,8 @@ export interface SettingsValues {
   serverProxyMode: GlobalServerProxyMode;
   serverProxyUrl: string;
   terminalHardwareAccelerationEnabled: boolean;
+  terminalInlineImagesEnabled: boolean;
+  terminalInlineImageOptions: TerminalInlineImageOptions;
   terminalDrawBoldTextInBrightColors: boolean;
   terminalScrollSensitivity: string;
   terminalFastScrollSensitivity: string;
@@ -210,7 +218,7 @@ export const SETTINGS_CATEGORY_IDS: ReadonlyArray<SettingsCategoryId> = Object.k
 
 type SettingValueType = 'string' | 'number' | 'boolean' | 'json';
 type SettingSelectOption = { value: string };
-type SettingDefaultValue = string | number | boolean | SftpDirectoryListViewSetting;
+type SettingDefaultValue = string | number | boolean | SftpDirectoryListViewSetting | TerminalInlineImageOptions;
 
 export type SettingsJsonSchemaNode = {
   readonly type?: 'object' | 'array' | 'string' | 'boolean' | 'integer';
@@ -270,7 +278,7 @@ type SwitchSettingDefinition = SettingDefinitionBase & {
 type JsonSettingDefinition = SettingDefinitionBase & {
   valueType: 'json';
   control: 'json';
-  defaultValue: SftpDirectoryListViewSetting;
+  defaultValue: SftpDirectoryListViewSetting | TerminalInlineImageOptions;
   jsonSchema: SettingsJsonSchemaNode;
   optionI18nNamespace?: never;
   options?: never;
@@ -282,6 +290,69 @@ export type SettingDefinition =
   | InputLikeSettingDefinition
   | SwitchSettingDefinition
   | JsonSettingDefinition;
+
+const createTerminalInlineImageOptionsSchemaProperties = (): Readonly<Record<string, SettingsJsonSchemaNode>> => ({
+  enableSizeReports: {
+    type: 'boolean',
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.enableSizeReports,
+    description: 'Enable CSI window/cell size reports used by inline image-capable programs.',
+  },
+  pixelLimit: {
+    type: 'integer',
+    minimum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.pixelLimit.minimum,
+    maximum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.pixelLimit.maximum,
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.pixelLimit,
+    description: 'Maximum decoded pixel count for a single image.',
+  },
+  sixelSupport: {
+    type: 'boolean',
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.sixelSupport,
+    description: 'Enable SIXEL image sequence parsing.',
+  },
+  sixelScrolling: {
+    type: 'boolean',
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.sixelScrolling,
+    description: 'Allow SIXEL output to scroll the terminal buffer.',
+  },
+  sixelPaletteLimit: {
+    type: 'integer',
+    minimum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.sixelPaletteLimit.minimum,
+    maximum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.sixelPaletteLimit.maximum,
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.sixelPaletteLimit,
+    description: 'Maximum initial SIXEL palette size.',
+  },
+  sixelSizeLimit: {
+    type: 'integer',
+    minimum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.sixelSizeLimit.minimum,
+    maximum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.sixelSizeLimit.maximum,
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.sixelSizeLimit,
+    description: 'Maximum byte size of a single SIXEL sequence.',
+  },
+  storageLimit: {
+    type: 'integer',
+    minimum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.storageLimit.minimum,
+    maximum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.storageLimit.maximum,
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.storageLimit,
+    description: 'FIFO inline image storage limit in MB.',
+  },
+  showPlaceholder: {
+    type: 'boolean',
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.showPlaceholder,
+    description: 'Show placeholders for images evicted from the addon storage cache.',
+  },
+  iipSupport: {
+    type: 'boolean',
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.iipSupport,
+    description: 'Enable iTerm inline image protocol parsing.',
+  },
+  iipSizeLimit: {
+    type: 'integer',
+    minimum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.iipSizeLimit.minimum,
+    maximum: TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS.iipSizeLimit.maximum,
+    default: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS.iipSizeLimit,
+    description: 'Maximum byte size of a single iTerm inline image protocol sequence.',
+  },
+});
 
 // ── The Registry ─────────────────────────────────────────────
 
@@ -968,6 +1039,38 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.hardwareAcceleration.enabled',
     commandActionId: 'settings.terminal.runtime.hardwareAcceleration.enabled.toggle',
     searchTerms: ['terminal', 'hardware acceleration', 'webgl', 'gpu', 'renderer'],
+  },
+  {
+    key: 'terminalInlineImagesEnabled',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.terminalInlineImagesEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalInlineImagesEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.inlineImages.enabled',
+    commandActionId: 'settings.terminal.runtime.inlineImages.enabled.toggle',
+    searchTerms: ['terminal', 'inline image', 'image', 'sixel', 'iterm', 'iip', 'experimental'],
+  },
+  {
+    key: 'terminalInlineImageOptions',
+    valueType: 'json',
+    defaultValue: DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS,
+    nameI18nKey: 'settings.items.terminalInlineImageOptions.title',
+    descriptionI18nKey: 'settings.items.terminalInlineImageOptions.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'json',
+    path: 'terminal.runtime.inlineImages.options',
+    commandActionId: 'settings.terminal.runtime.inlineImages.options.edit',
+    searchTerms: ['terminal', 'inline image', 'image options', 'sixel limit', 'iterm iip', 'json'],
+    jsonSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: TERMINAL_INLINE_IMAGE_OPTION_KEYS,
+      properties: createTerminalInlineImageOptionsSchemaProperties(),
+    },
   },
   {
     key: 'terminalBracketedPasteEnabled',

@@ -91,6 +91,17 @@ export {
   TERMINAL_RIGHT_CLICK_ACTION_OPTIONS,
 } from './terminal-interaction';
 export type { TerminalForceSelectionModifier, TerminalRightClickAction } from './terminal-interaction';
+export {
+  DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS,
+  MAX_TERMINAL_INLINE_IMAGE_PIXEL_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_SEQUENCE_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_SIXEL_PALETTE_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_STORAGE_LIMIT_MB,
+  TERMINAL_INLINE_IMAGE_BOOLEAN_OPTION_KEYS,
+  TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS,
+  TERMINAL_INLINE_IMAGE_OPTION_KEYS,
+} from './terminal-inline-images';
+export type { TerminalInlineImageOptions } from './terminal-inline-images';
 
 import type { components, paths } from './generated';
 import type { SettingsValues } from './settings-registry';

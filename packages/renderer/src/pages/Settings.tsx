@@ -637,11 +637,16 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         return formState.serverProxyMode === 'custom';
       }
 
+      if (item.key === 'terminalInlineImageOptions') {
+        return formState.terminalInlineImagesEnabled === true;
+      }
+
       return true;
     });
   }, [
     categorySettings,
     formState.terminalAutoCompleteEnabled,
+    formState.terminalInlineImagesEnabled,
     formState.terminalSelectionSearchEngine,
     formState.serverProxyMode,
     isSearchMode,

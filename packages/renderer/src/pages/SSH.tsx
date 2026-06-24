@@ -1,4 +1,5 @@
 import '@xterm/xterm/css/xterm.css';
+import './ssh/terminal-image-layer.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
@@ -39,7 +40,7 @@ import {
 } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
-import type { TerminalWebLinksPlatform } from './ssh/terminal-addons';
+import type { TerminalInlineImageSettings, TerminalWebLinksPlatform } from './ssh/terminal-addons';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
@@ -178,6 +179,8 @@ const SSH: React.FC<SSHProps> = ({
   }, [connectionIntent.lastResolvedSnapshot, terminalCharacterWidthCompatibilityModeEnabled]);
   const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
+  const terminalInlineImagesEnabled = settingsValues.terminalInlineImagesEnabled;
+  const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
   const terminalWebLinksSettings = React.useMemo(
@@ -187,6 +190,13 @@ const SSH: React.FC<SSHProps> = ({
       platform: resolveTerminalWebLinksPlatform(window.electron?.platform),
     }),
     [terminalWebLinksEnabled, terminalWebLinksRequireModifierKey],
+  );
+  const terminalInlineImageSettings = React.useMemo<TerminalInlineImageSettings>(
+    () => ({
+      enabled: terminalInlineImagesEnabled,
+      options: terminalInlineImageOptions,
+    }),
+    [terminalInlineImageOptions, terminalInlineImagesEnabled],
   );
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
@@ -371,6 +381,7 @@ const SSH: React.FC<SSHProps> = ({
     characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
+    terminalInlineImageSettings,
     terminalWebLinksSettings,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,

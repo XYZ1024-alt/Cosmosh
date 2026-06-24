@@ -91,6 +91,7 @@ sequenceDiagram
 - `nodeIntegration: false`
 - `contextIsolation: true`
 - Renderer 仅获得显式 bridge API（`contextBridge.exposeInMainWorld`）。
+- Renderer 的 Content Security Policy 将 `script-src` 限制为 `'self'` 加 `'wasm-unsafe-eval'`。WebAssembly 许可用于 `@xterm/addon-image` 等 renderer 打包库执行内联图片解码，不会开启通用 JavaScript `eval`。
 - sandboxed preload 脚本不得在运行时导入 workspace package。它可以在编译期使用共享 API contract 类型，但 preload 内部使用的运行时校验器必须保持本地实现或被打包进 preload，避免 Electron 在 bridge 加载前解析项目模块。
 - 特权操作保留在 Main/Backend 进程。
 - Renderer 发起的应用窗口默认被拒绝。当前白名单仅允许同 renderer 的 SFTP 属性弹窗，这些子窗口复用安全 preload，并保持 `nodeIntegration` 关闭、`contextIsolation` 开启。

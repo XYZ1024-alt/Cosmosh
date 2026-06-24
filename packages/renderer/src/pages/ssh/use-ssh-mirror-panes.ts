@@ -14,6 +14,7 @@ import {
   syncTerminalWebglAddon,
   type TerminalExternalLinkHandler,
   type TerminalHardwareAccelerationState,
+  type TerminalInlineImageSettings,
   type TerminalWebLinksSettings,
 } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
@@ -33,6 +34,7 @@ type UseSshMirrorPanesParams = {
   resolvedTerminalTargetRef: React.RefObject<ResolvedTerminalTarget | null>;
   sshConnectionTimeoutSecRef: React.RefObject<number>;
   terminalClipboardProvider: TerminalClipboardProvider;
+  terminalInlineImageSettingsRef: React.RefObject<TerminalInlineImageSettings>;
   terminalWebLinksSettingsRef: React.RefObject<TerminalWebLinksSettings>;
   openExternalLinkRef: React.RefObject<TerminalExternalLinkHandler>;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
@@ -82,6 +84,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
     terminalClipboardProvider,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
@@ -149,9 +152,14 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         effectiveCharacterWidthCompatibilityModeEnabled,
       );
       const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
-      const addonRuntime = loadTerminalAddons(terminal, terminalWebLinksSettingsRef.current, (targetUrl) => {
-        openExternalLinkRef.current(targetUrl);
-      });
+      const addonRuntime = loadTerminalAddons(
+        terminal,
+        terminalInlineImageSettingsRef.current,
+        terminalWebLinksSettingsRef.current,
+        (targetUrl) => {
+          openExternalLinkRef.current(targetUrl);
+        },
+      );
       const { fitAddon, searchAddon } = addonRuntime;
       terminal.loadAddon(clipboardAddon);
       terminal.open(containerElement);
@@ -400,6 +408,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     sshConnectionTimeoutSecRef,
     terminalClipboardProvider,
     terminalInitOptionsRef,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     terminalPaneIds,
     notifyAutocompleteOutputEchoRef,
