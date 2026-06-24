@@ -160,7 +160,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           openExternalLinkRef.current(targetUrl);
         },
       );
-      const { fitAddon, searchAddon } = addonRuntime;
+      const { fitAddon, searchAddon, serializeAddon } = addonRuntime;
       terminal.loadAddon(clipboardAddon);
       terminal.open(containerElement);
       syncTerminalWebglAddon(
@@ -174,6 +174,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         terminal,
         fitAddon,
         searchAddon,
+        serializeAddon,
         clipboardProvider: terminalClipboardProvider,
         webglAddon: addonRuntime.webglAddon,
         containerElement,

@@ -2,6 +2,7 @@ import type { TerminalInlineImageOptions } from '@cosmosh/api-contract';
 import { FitAddon } from '@xterm/addon-fit';
 import { type IImageAddonOptions, ImageAddon } from '@xterm/addon-image';
 import { SearchAddon } from '@xterm/addon-search';
+import { SerializeAddon } from '@xterm/addon-serialize';
 import { Unicode11Addon } from '@xterm/addon-unicode11';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { WebglAddon } from '@xterm/addon-webgl';
@@ -28,6 +29,7 @@ export type TerminalHardwareAccelerationState = {
 export type TerminalAddonRuntime = {
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
+  serializeAddon: SerializeAddon;
   imageAddon: ImageAddon | null;
   webglAddon: WebglAddon | null;
 };
@@ -462,9 +464,11 @@ export const loadTerminalAddons = (
 ): TerminalAddonRuntime => {
   const fitAddon = new FitAddon();
   const searchAddon = new SearchAddon();
+  const serializeAddon = new SerializeAddon();
 
   terminal.loadAddon(fitAddon);
   terminal.loadAddon(searchAddon);
+  terminal.loadAddon(serializeAddon);
   const imageAddon = attachImageAddon(terminal, inlineImageSettings);
 
   if (webLinksSettings.enabled) {
@@ -507,6 +511,7 @@ export const loadTerminalAddons = (
   return {
     fitAddon,
     searchAddon,
+    serializeAddon,
     imageAddon,
     webglAddon: null,
   };

@@ -1,4 +1,5 @@
 import { type ISearchOptions, type SearchAddon } from '@xterm/addon-search';
+import type { SerializeAddon } from '@xterm/addon-serialize';
 import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
@@ -68,6 +69,7 @@ class SshRuntimeCoordinator {
   public activeTerminal: Terminal | null = null;
   public primaryTerminal: Terminal | null = null;
   public primarySearchAddon: SearchAddon | null = null;
+  public primarySerializeAddon: SerializeAddon | null = null;
   public primaryWebglAddonRuntime: TerminalWebglAddonRuntime = {
     webglAddon: null,
   };
@@ -275,6 +277,12 @@ export type SshCoreActions = {
    */
   getSelectionText: () => string;
   /**
+   * Returns current terminal selection serialized as HTML from active pane.
+   *
+   * @returns Selection HTML, or empty string when serialization is unavailable.
+   */
+  getSelectionHtml: () => string;
+  /**
    * Focuses currently active terminal instance.
    *
    * @returns Nothing.
@@ -446,6 +454,13 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     (runtime) => runtime.primarySearchAddon,
     (runtime, value) => {
       runtime.primarySearchAddon = value;
+    },
+  );
+  const primarySerializeAddonRef = useRuntimeFieldRef(
+    runtimeRef,
+    (runtime) => runtime.primarySerializeAddon,
+    (runtime, value) => {
+      runtime.primarySerializeAddon = value;
     },
   );
   const primaryWebglAddonRuntimeRef = useRuntimeFieldRef(
@@ -861,6 +876,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primarySerializeAddonRef,
     primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
@@ -1065,6 +1081,36 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   }, [terminalRef]);
 
   /**
+   * Serializes active terminal selected text as clipboard-ready HTML.
+   *
+   * @returns HTML fragment from xterm's SerializeAddon, or empty string when unavailable.
+   */
+  const getSelectionHtml = React.useCallback((): string => {
+    const terminal = terminalRef.current;
+    if (!terminal?.hasSelection()) {
+      return '';
+    }
+
+    const serializeAddon =
+      activePaneIdRef.current === primaryPaneIdRef.current
+        ? primarySerializeAddonRef.current
+        : (mirrorPaneRuntimeMapRef.current.get(activePaneIdRef.current)?.serializeAddon ?? null);
+    if (!serializeAddon) {
+      return '';
+    }
+
+    try {
+      return serializeAddon.serializeAsHTML({
+        includeGlobalBackground: true,
+        onlySelection: true,
+      });
+    } catch (error: unknown) {
+      console.warn('Failed to serialize terminal selection as HTML.', error);
+      return '';
+    }
+  }, [activePaneIdRef, mirrorPaneRuntimeMapRef, primaryPaneIdRef, primarySerializeAddonRef, terminalRef]);
+
+  /**
    * Focuses active terminal instance.
    *
    * @returns Nothing.
@@ -1202,6 +1248,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       deleteHistoryCommand,
       selectAll,
       getSelectionText,
+      getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
       findActiveTerminalText,

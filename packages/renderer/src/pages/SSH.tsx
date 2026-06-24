@@ -417,6 +417,7 @@ const SSH: React.FC<SSHProps> = ({
       deleteHistoryCommand,
       selectAll,
       getSelectionText,
+      getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
       findActiveTerminalText,
@@ -553,6 +554,40 @@ const SSH: React.FC<SSHProps> = ({
         notifySuccess(t('ssh.selectionBarCopySuccess'));
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('ssh.selectionBarCopyFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
+  /**
+   * Copies selected terminal HTML with a plain-text fallback payload in the same clipboard item.
+   *
+   * @param html Serialized HTML from xterm's SerializeAddon.
+   * @param plainText Plain selection text included for non-rich paste targets.
+   * @returns Nothing.
+   */
+  const copyHtmlToClipboard = React.useCallback(
+    async (html: string, plainText: string): Promise<void> => {
+      if (
+        !html ||
+        !plainText ||
+        typeof ClipboardItem === 'undefined' ||
+        typeof navigator.clipboard.write !== 'function'
+      ) {
+        notifyError(t('ssh.selectionBarCopyHtmlUnsupported'));
+        return;
+      }
+
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([plainText], { type: 'text/plain' }),
+          }),
+        ]);
+        notifySuccess(t('ssh.selectionBarCopyHtmlSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('ssh.selectionBarCopyHtmlFailed'));
       }
     },
     [notifyError, notifySuccess],
@@ -729,6 +764,15 @@ const SSH: React.FC<SSHProps> = ({
 
     void copyTextToClipboard(selectionText);
   }, [copyTextToClipboard, getSelectionText]);
+
+  const handleContextMenuCopyAsHtml = React.useCallback(() => {
+    const selectionText = getSelectionText();
+    if (!selectionText) {
+      return;
+    }
+
+    void copyHtmlToClipboard(getSelectionHtml(), selectionText);
+  }, [copyHtmlToClipboard, getSelectionHtml, getSelectionText]);
 
   const handleContextMenuPaste = React.useCallback(() => {
     void navigator.clipboard
@@ -1332,6 +1376,10 @@ const SSH: React.FC<SSHProps> = ({
           onCopy={(paneId) => {
             activatePane(paneId);
             handleContextMenuCopy();
+          }}
+          onCopyAsHtml={(paneId) => {
+            activatePane(paneId);
+            handleContextMenuCopyAsHtml();
           }}
           onPaste={(paneId) => {
             activatePane(paneId);

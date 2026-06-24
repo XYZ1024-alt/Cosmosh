@@ -3,6 +3,7 @@ import {
   ClipboardPaste,
   Copy,
   Eraser,
+  FileCode2,
   FolderOpen,
   Globe,
   ScanSearch,
@@ -30,6 +31,8 @@ type TerminalContextMenuProps = {
   copyLabel: string;
   /** Optional shortcut hint shown on the "Copy" menu item. */
   copyShortcutLabel?: string;
+  /** Label for the "Copy as HTML" menu item. */
+  copyAsHtmlLabel: string;
   /** Label for the "Paste" menu item. */
   pasteLabel: string;
   /** Optional shortcut hint shown on the "Paste" menu item. */
@@ -61,6 +64,7 @@ type TerminalContextMenuProps = {
   /** Action executed by terminal right-click gestures. */
   rightClickAction?: TerminalRightClickAction;
   onCopy: () => void;
+  onCopyAsHtml: () => void;
   onPaste: () => void;
   onSearchOnline: () => void;
   onOpenDirectoryInSftp: () => void;
@@ -82,6 +86,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   isConnected,
   copyLabel,
   copyShortcutLabel,
+  copyAsHtmlLabel,
   pasteLabel,
   pasteShortcutLabel,
   searchOnlineLabel,
@@ -98,6 +103,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   canOpenDirectoryInSftp = false,
   rightClickAction = DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
   onCopy,
+  onCopyAsHtml,
   onPaste,
   onSearchOnline,
   onOpenDirectoryInSftp,
@@ -263,6 +269,15 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
         >
           {copyLabel}
           {copyShortcutLabel ? <ContextMenuShortcut>{copyShortcutLabel}</ContextMenuShortcut> : null}
+        </ContextMenuItem>
+
+        {/* Copy as HTML preserves xterm colors/styles for rich-text paste targets. */}
+        <ContextMenuItem
+          icon={FileCode2}
+          disabled={!hasSelection}
+          onSelect={onCopyAsHtml}
+        >
+          {copyAsHtmlLabel}
         </ContextMenuItem>
 
         {/* Paste reads from the system clipboard and sends to the terminal input stream. */}
