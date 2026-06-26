@@ -1,5 +1,17 @@
 import classNames from 'classnames';
-import { Bug, FileText, Folder, Home, icons, KeyRound, ScrollText, Server, Settings, Terminal } from 'lucide-react';
+import {
+  Bug,
+  CornerUpRight,
+  FileText,
+  Folder,
+  Home,
+  icons,
+  KeyRound,
+  ScrollText,
+  Server,
+  Settings,
+  Terminal,
+} from 'lucide-react';
 import React from 'react';
 
 import type { TabIconColorKey, TabIconKey, TabItem } from '../types/tabs';
@@ -16,6 +28,7 @@ const builtinTabIconMap: Record<TabIconKey, React.ReactNode> = {
   terminal: <Terminal className="h-4 w-4 shrink-0" />,
   debug: <Bug className="h-4 w-4 shrink-0" />,
   keychain: <KeyRound className="h-4 w-4 shrink-0" />,
+  portForwarding: <CornerUpRight className="h-4 w-4 shrink-0" />,
   audit: <ScrollText className="h-4 w-4 shrink-0" />,
 };
 

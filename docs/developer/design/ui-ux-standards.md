@@ -92,7 +92,12 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - SSH and SFTP tabs may apply the source server color background when the shared server-visual tab setting is enabled.
 - SFTP tabs must keep a folder icon even when they inherit server color, so users can distinguish file-system tabs from terminal tabs quickly.
 
-## 7.4 Plain Text Selection Context Menu
+## 7.4 Page-State Tab Identity
+
+- Pages with major internal categories should keep the tab strip aligned with the active category when that category changes the user's task context.
+- Home tabs in Keychains or Port Forwarding mode must show that category's localized title and matching icon; returning to SSH mode restores the standard Home title and icon.
+
+## 7.5 Plain Text Selection Context Menu
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.
 - The fallback menu must open only when the pointer is inside the selected text rectangle, not merely because the page has an active selection.
@@ -100,7 +105,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - The fallback menu must reuse the internal `ContextMenu` wrapper, tokenized menu styles, localized renderer copy, and platform shortcut hint.
 - Standalone renderer documents, including SFTP entry properties popup windows, must mount the same fallback provider at the renderer root.
 
-## 7.5 Command Palette Keyboard Focus
+## 7.6 Command Palette Keyboard Focus
 
 - When a command palette displays its search input, the input owns navigation keys even if a mouse click or nested control focus temporarily moves DOM focus to a list action or footer control.
 - Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.

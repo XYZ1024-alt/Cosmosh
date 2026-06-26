@@ -22,7 +22,7 @@ import { renderTabIconByKey } from './lib/tab-icon';
 import { AppToastProvider } from './lib/toast';
 import { resolvePageDefaults, useTabs } from './lib/useTabs';
 import Home from './pages/Home';
-import type { TabItem } from './types/tabs';
+import type { TabIconKey, TabItem } from './types/tabs';
 
 const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
 const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
@@ -358,6 +358,26 @@ const App: React.FC = () => {
     launchWorkingDirectoryHandlerRef.current = handleLaunchWorkingDirectory;
   }, [handleLaunchWorkingDirectory]);
 
+  const handleHomeTabVisualChange = React.useCallback(
+    (tabId: string, visual: { title: string; iconKey: TabIconKey }): void => {
+      const targetTab = tabsById.get(tabId);
+      if (!targetTab || targetTab.page !== 'home') {
+        return;
+      }
+
+      if (targetTab.title === visual.title && targetTab.iconKey === visual.iconKey && !targetTab.iconColorKey) {
+        return;
+      }
+
+      updateTab(tabId, {
+        title: visual.title,
+        iconKey: visual.iconKey,
+        iconColorKey: undefined,
+      });
+    },
+    [tabsById, updateTab],
+  );
+
   React.useEffect(() => {
     const electronBridge = window.electron;
     if (!electronBridge) {
@@ -453,8 +473,10 @@ const App: React.FC = () => {
             >
               {tab.page === 'home' && (
                 <Home
+                  tabId={tab.id}
                   isActive={tab.id === activeTabId}
                   initialState={tab.state?.home}
+                  onTabVisualChange={handleHomeTabVisualChange}
                   onOpenSSH={(serverId, tabTitle, options) => {
                     if (options?.openInNewTab) {
                       const newTabId = addTab('ssh', undefined, {
@@ -744,6 +766,7 @@ const App: React.FC = () => {
     activeTabId,
     addTab,
     contentTabOrder,
+    handleHomeTabVisualChange,
     handleShowSystemMonitorOverlayChange,
     openPageInTab,
     setActiveTabId,

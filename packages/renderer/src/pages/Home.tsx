@@ -127,7 +127,7 @@ import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
 import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
-import type { HomeState } from '../types/tabs';
+import type { HomeState, TabIconKey } from '../types/tabs';
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
@@ -136,6 +136,8 @@ type HomeProps = {
     tabTitle?: string,
     options?: { openInNewTab?: boolean; iconColorKey?: EntityColorKey },
   ) => void;
+  tabId: string;
+  onTabVisualChange?: (tabId: string, visual: { title: string; iconKey: TabIconKey }) => void;
   isActive: boolean;
   initialState?: HomeState;
 };
@@ -249,6 +251,35 @@ const homeModeItems: Array<{ value: HomeMode; icon: React.ComponentType<{ classN
     labelKey: 'home.modePortForwarding',
   },
 ];
+
+const homeModeTabVisuals: Record<HomeMode, { titleKey: string; iconKey: TabIconKey }> = {
+  ssh: {
+    titleKey: 'tabs.page.home',
+    iconKey: 'home',
+  },
+  keychains: {
+    titleKey: 'home.modeKeychains',
+    iconKey: 'keychain',
+  },
+  portForwarding: {
+    titleKey: 'home.modePortForwarding',
+    iconKey: 'portForwarding',
+  },
+};
+
+/**
+ * Resolves the tab-strip title and icon for the active Home category.
+ *
+ * @param mode Active Home category.
+ * @returns Localized tab title and icon key.
+ */
+const resolveHomeModeTabVisual = (mode: HomeMode): { title: string; iconKey: TabIconKey } => {
+  const visual = homeModeTabVisuals[mode];
+  return {
+    title: t(visual.titleKey),
+    iconKey: visual.iconKey,
+  };
+};
 
 /**
  * Checks whether a tag is the internal "favorite" tag.
@@ -1219,7 +1250,7 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   );
 };
 
-const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive, initialState }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualChange, isActive, initialState }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
@@ -1360,6 +1391,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive, initialSta
   React.useEffect(() => {
     void reloadHomeData();
   }, [reloadHomeData]);
+
+  React.useEffect(() => {
+    onTabVisualChange?.(tabId, resolveHomeModeTabVisual(activeHomeMode));
+  }, [activeHomeMode, onTabVisualChange, tabId]);
 
   React.useEffect(() => {
     if (activeHomeMode !== 'ssh' && activeFolderId === LOCAL_TERMINAL_FOLDER_ID) {
