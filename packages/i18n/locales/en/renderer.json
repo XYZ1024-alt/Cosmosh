@@ -895,6 +895,41 @@
     "saveFailed": "Failed to save settings.",
     "saveSuccess": "Settings saved successfully.",
     "saving": "Saving...",
+    "schema": {
+      "diagnostics": {
+        "duplicateProperty": "Duplicate property \"{key}\".",
+        "expectedEnum": "Expected one of: {options}.",
+        "expectedType": "Expected {type}.",
+        "invalidSyntax": "Invalid JSON syntax.",
+        "maximum": "Value must be at most {max}.",
+        "maxLength": "Value must be {limit} characters or fewer.",
+        "minimum": "Value must be at least {min}.",
+        "minItems": "Array must contain at least {count} item(s).",
+        "missingProperty": "Missing required property \"{key}\".",
+        "rootObject": "Settings JSON must contain an object.",
+        "unknownProperty": "Unknown property \"{key}\"."
+      },
+      "labels": {
+        "default": "Default",
+        "enum": "Allowed values",
+        "maxLength": "Max length",
+        "minItems": "Min items",
+        "range": "Range",
+        "type": "Type"
+      },
+      "range": "{min} to {max}",
+      "types": {
+        "array": "array",
+        "boolean": "boolean",
+        "enum": "enum",
+        "integer": "integer",
+        "object": "object",
+        "string": "string",
+        "value": "value"
+      },
+      "unboundedMaximum": "unbounded",
+      "unboundedMinimum": "unbounded"
+    },
     "schemaTitle": "Cosmosh Settings",
     "title": "Settings Editor",
     "validationFailed": "Settings validation failed."

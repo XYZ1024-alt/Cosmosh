@@ -1,26 +1,12 @@
-import { redo, redoDepth, selectAll, undo, undoDepth } from '@codemirror/commands';
+import { redo, undo } from '@codemirror/commands';
 import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
-import { Compartment, EditorSelection, EditorState, type Extension, Prec, Transaction } from '@codemirror/state';
+import { Compartment, EditorState, type Extension, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
 import { tags } from '@lezer/highlight';
 import { basicSetup } from 'codemirror';
-import { ClipboardPaste, Copy, Redo, Scissors, TextSelect, Undo } from 'lucide-react';
 import React from 'react';
 
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuShortcut,
-  ContextMenuTrigger,
-} from '../../components/ui/context-menu';
-import {
-  readTextFromClipboard,
-  textEditingShortcut,
-  writeTextToClipboard,
-} from '../../components/ui/text-editing-context-menu-utils';
-import { t } from '../../lib/i18n';
+import { CodeMirrorTextContextMenu } from '../../components/ui/codemirror-text-context-menu';
 
 type SftpCodeMirrorLanguageLoader = () => Promise<Extension>;
 
@@ -39,22 +25,6 @@ const CODEMIRROR_LANGUAGE_LOADERS: Partial<Record<string, SftpCodeMirrorLanguage
 
 const editorEditableCompartment = new Compartment();
 const editorReadOnlyCompartment = new Compartment();
-
-type SftpEditorContextMenuSnapshot = {
-  canCopy: boolean;
-  canEditSelection: boolean;
-  canRedo: boolean;
-  canSelectAll: boolean;
-  canUndo: boolean;
-};
-
-const emptyMenuSnapshot: SftpEditorContextMenuSnapshot = {
-  canCopy: false,
-  canEditSelection: false,
-  canRedo: false,
-  canSelectAll: false,
-  canUndo: false,
-};
 
 /**
  * Low-saturation syntax colors matched to Cosmosh workbench tokens.
@@ -125,84 +95,6 @@ const loadLanguageExtension = async (language: string): Promise<Extension | null
   }
 
   return loader();
-};
-
-/**
- * Resolves the active editor capability snapshot for context-menu disabled states.
- *
- * @param view CodeMirror editor view.
- * @param readOnly Whether editing commands should be disabled.
- * @returns Context-menu capability snapshot.
- */
-const resolveContextMenuSnapshot = (view: EditorView | null, readOnly: boolean): SftpEditorContextMenuSnapshot => {
-  if (!view) {
-    return emptyMenuSnapshot;
-  }
-
-  const hasSelection = view.state.selection.ranges.some((range) => !range.empty);
-
-  return {
-    canCopy: hasSelection,
-    canEditSelection: !readOnly && hasSelection,
-    canRedo: !readOnly && redoDepth(view.state) > 0,
-    canSelectAll: view.state.doc.length > 0,
-    canUndo: !readOnly && undoDepth(view.state) > 0,
-  };
-};
-
-/**
- * Returns the selected text across every CodeMirror selection range.
- *
- * @param view CodeMirror editor view.
- * @returns Selected text joined by newlines, or an empty string when collapsed.
- */
-const getSelectedEditorText = (view: EditorView): string => {
-  return view.state.selection.ranges
-    .filter((range) => !range.empty)
-    .map((range) => view.state.doc.sliceString(range.from, range.to))
-    .join('\n');
-};
-
-/**
- * Deletes selected ranges and collapses each cursor at the deletion point.
- *
- * @param view CodeMirror editor view.
- * @returns Nothing.
- */
-const deleteEditorSelection = (view: EditorView): void => {
-  const changes = view.state.changeByRange((range) => {
-    if (range.empty) {
-      return { range };
-    }
-
-    return {
-      changes: { from: range.from, to: range.to, insert: '' },
-      range: EditorSelection.cursor(range.from),
-    };
-  });
-
-  view.dispatch({
-    ...changes,
-    annotations: Transaction.userEvent.of('delete.selection'),
-    scrollIntoView: true,
-  });
-  view.focus();
-};
-
-/**
- * Inserts text at the current CodeMirror selection.
- *
- * @param view CodeMirror editor view.
- * @param text Text to insert.
- * @returns Nothing.
- */
-const insertEditorText = (view: EditorView, text: string): void => {
-  view.dispatch({
-    ...view.state.replaceSelection(text),
-    annotations: Transaction.userEvent.of('input.paste'),
-    scrollIntoView: true,
-  });
-  view.focus();
 };
 
 /**
@@ -452,141 +344,18 @@ export const SftpCodeMirrorPreviewEditor: React.FC<SftpCodeMirrorPreviewEditorPr
     });
   }, [value]);
 
-  const [menuSnapshot, setMenuSnapshot] = React.useState<SftpEditorContextMenuSnapshot>(emptyMenuSnapshot);
-
-  const refreshMenuSnapshot = React.useCallback((): void => {
-    setMenuSnapshot(resolveContextMenuSnapshot(viewRef.current, readOnlyRef.current));
-  }, []);
-
-  const runEditorCommand = React.useCallback((command: (view: EditorView) => void): void => {
-    const view = viewRef.current;
-    if (!view) {
-      return;
-    }
-
-    command(view);
-    setMenuSnapshot(resolveContextMenuSnapshot(view, readOnlyRef.current));
-  }, []);
-
-  const handleCopy = React.useCallback((): void => {
-    runEditorCommand((view) => {
-      void writeTextToClipboard(getSelectedEditorText(view));
-      view.focus();
-    });
-  }, [runEditorCommand]);
-
-  const handleCut = React.useCallback((): void => {
-    if (readOnlyRef.current) {
-      return;
-    }
-
-    const view = viewRef.current;
-    if (!view) {
-      return;
-    }
-
-    void (async () => {
-      const copied = await writeTextToClipboard(getSelectedEditorText(view));
-      if (!copied) {
-        view.focus();
-        return;
-      }
-
-      deleteEditorSelection(view);
-      setMenuSnapshot(resolveContextMenuSnapshot(view, readOnlyRef.current));
-    })();
-  }, []);
-
-  const handlePaste = React.useCallback((): void => {
-    if (readOnlyRef.current) {
-      return;
-    }
-
-    const view = viewRef.current;
-    if (!view) {
-      return;
-    }
-
-    void (async () => {
-      const clipboardText = await readTextFromClipboard();
-      if (clipboardText === null) {
-        view.focus();
-        return;
-      }
-
-      insertEditorText(view, clipboardText);
-      setMenuSnapshot(resolveContextMenuSnapshot(view, readOnlyRef.current));
-    })();
-  }, []);
+  const getEditorView = React.useCallback((): EditorView | null => viewRef.current, []);
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          ref={containerRef}
-          className="h-full min-h-0"
-          data-input-context-menu-ignore="true"
-          onContextMenuCapture={refreshMenuSnapshot}
-        />
-      </ContextMenuTrigger>
-      <ContextMenuContent
-        onCloseAutoFocus={(event) => {
-          event.preventDefault();
-          viewRef.current?.focus();
-        }}
-      >
-        <ContextMenuItem
-          icon={Undo}
-          disabled={!menuSnapshot.canUndo}
-          onSelect={() => runEditorCommand((view) => undo(view))}
-        >
-          {t('inputContextMenu.undo')}
-          <ContextMenuShortcut>{textEditingShortcut.undo}</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem
-          icon={Redo}
-          disabled={!menuSnapshot.canRedo}
-          onSelect={() => runEditorCommand((view) => redo(view))}
-        >
-          {t('inputContextMenu.redo')}
-          <ContextMenuShortcut>{textEditingShortcut.redo}</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          icon={Scissors}
-          disabled={!menuSnapshot.canEditSelection}
-          onSelect={handleCut}
-        >
-          {t('inputContextMenu.cut')}
-          <ContextMenuShortcut>{textEditingShortcut.cut}</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem
-          icon={Copy}
-          disabled={!menuSnapshot.canCopy}
-          onSelect={handleCopy}
-        >
-          {t('inputContextMenu.copy')}
-          <ContextMenuShortcut>{textEditingShortcut.copy}</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuItem
-          icon={ClipboardPaste}
-          disabled={readOnly}
-          onSelect={handlePaste}
-        >
-          {t('inputContextMenu.paste')}
-          <ContextMenuShortcut>{textEditingShortcut.paste}</ContextMenuShortcut>
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          icon={TextSelect}
-          disabled={!menuSnapshot.canSelectAll}
-          onSelect={() => runEditorCommand((view) => selectAll(view))}
-        >
-          {t('inputContextMenu.selectAll')}
-          <ContextMenuShortcut>{textEditingShortcut.selectAll}</ContextMenuShortcut>
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
+    <CodeMirrorTextContextMenu
+      getEditorView={getEditorView}
+      readOnly={readOnly}
+    >
+      <div
+        ref={containerRef}
+        className="h-full min-h-0"
+      />
+    </CodeMirrorTextContextMenu>
   );
 };
 

@@ -895,6 +895,41 @@
     "saveFailed": "保存设置失败。",
     "saveSuccess": "设置已保存。",
     "saving": "保存中...",
+    "schema": {
+      "diagnostics": {
+        "duplicateProperty": "重复属性“{key}”。",
+        "expectedEnum": "应为以下值之一：{options}。",
+        "expectedType": "应为 {type}。",
+        "invalidSyntax": "JSON 语法无效。",
+        "maximum": "值必须不大于 {max}。",
+        "maxLength": "值不得超过 {limit} 个字符。",
+        "minimum": "值必须不小于 {min}。",
+        "minItems": "数组至少需要 {count} 项。",
+        "missingProperty": "缺少必填属性“{key}”。",
+        "rootObject": "设置 JSON 必须是对象。",
+        "unknownProperty": "未知属性“{key}”。"
+      },
+      "labels": {
+        "default": "默认值",
+        "enum": "可选值",
+        "maxLength": "最大长度",
+        "minItems": "最少项数",
+        "range": "范围",
+        "type": "类型"
+      },
+      "range": "{min} 到 {max}",
+      "types": {
+        "array": "数组",
+        "boolean": "布尔值",
+        "enum": "枚举值",
+        "integer": "整数",
+        "object": "对象",
+        "string": "字符串",
+        "value": "值"
+      },
+      "unboundedMaximum": "无限制",
+      "unboundedMinimum": "无限制"
+    },
     "schemaTitle": "Cosmosh 设置",
     "title": "设置编辑器",
     "validationFailed": "设置校验失败。"

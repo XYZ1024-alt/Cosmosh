@@ -699,7 +699,7 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     control: 'input',
     path: 'sftp.browser.textPreviewWarningThresholdBytes',
     commandActionId: 'settings.sftp.browser.textPreviewWarningThresholdBytes.set',
-    searchTerms: ['sftp', 'preview', 'monaco', 'text', 'code', 'large file', 'threshold'],
+    searchTerms: ['sftp', 'preview', 'codemirror', 'text', 'code', 'large file', 'threshold'],
     inputMode: 'numeric',
     min: 1024,
     max: MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,

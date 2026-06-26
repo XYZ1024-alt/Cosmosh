@@ -96,7 +96,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.
 - The fallback menu must open only when the pointer is inside the selected text rectangle, not merely because the page has an active selection.
-- Existing specialized menus keep priority: inputs, textareas, contenteditable regions, Monaco, CodeMirror editor surfaces, xterm/terminal surfaces, SFTP rows, tabs, and any component-level context menu trigger must not be replaced by the fallback menu. CodeMirror editor surfaces that need text editing commands should expose those commands through the shared internal `ContextMenu` styling and localized text-editing labels instead of falling back to the browser menu.
+- Existing specialized menus keep priority: inputs, textareas, contenteditable regions, CodeMirror editor surfaces, xterm/terminal surfaces, SFTP rows, tabs, and any component-level context menu trigger must not be replaced by the fallback menu. CodeMirror editor surfaces that need text editing commands should expose those commands through the shared internal `ContextMenu` styling and localized text-editing labels instead of falling back to the browser menu.
 - The fallback menu must reuse the internal `ContextMenu` wrapper, tokenized menu styles, localized renderer copy, and platform shortcut hint.
 - Standalone renderer documents, including SFTP entry properties popup windows, must mount the same fallback provider at the renderer root.
 
