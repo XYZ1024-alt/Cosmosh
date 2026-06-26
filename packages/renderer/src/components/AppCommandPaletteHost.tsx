@@ -1,8 +1,8 @@
 import type { components } from '@cosmosh/api-contract';
-import { Bug, CornerUpRight, RefreshCcw, Server, Settings2 } from 'lucide-react';
+import { Bug, CornerUpRight, RefreshCcw, Settings2 } from 'lucide-react';
 import React from 'react';
 
-import { listPortForwardRules, listSshKeychains, listSshServers } from '../lib/backend';
+import { listPortForwardRules, listSshServers } from '../lib/backend';
 import {
   collectCommandPaletteCommands,
   type CommandPaletteCommand,
@@ -21,7 +21,6 @@ import {
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
 import { createSshConnectionIntent } from '../lib/ssh-connection-intent';
-import { filterSharedKeychains } from '../lib/ssh-keychain-editor-shared';
 import { renderTabIconByKey } from '../lib/tab-icon';
 import { useToast } from '../lib/toast-context';
 import { resolveCategoryId, SETTINGS_REGISTRY } from '../pages/settings-registry';
@@ -29,12 +28,10 @@ import type { TabItem } from '../types/tabs';
 import { CommandPalette, type CommandPaletteItem } from './ui/command-palette';
 
 type SshServerListItem = components['schemas']['SshServerListItem'];
-type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
 type PortForwardRuleListItem = components['schemas']['PortForwardRuleListItem'];
 
 type AppCommandPaletteResourceSnapshot = {
   servers: ReadonlyArray<SshServerListItem>;
-  keychains: ReadonlyArray<SshKeychainListItem>;
   portForwardRules: ReadonlyArray<PortForwardRuleListItem>;
 };
 
@@ -77,7 +74,7 @@ type BilingualCommandLabel = {
   secondary?: string;
 };
 
-type CommandPaletteScopeId = 'tabs' | 'settings' | 'developer' | 'ssh' | 'sftp' | 'server' | 'keychain' | 'forward';
+type CommandPaletteScopeId = 'tabs' | 'settings' | 'developer' | 'ssh' | 'sftp' | 'forward';
 
 /**
  * Resolves localized and English labels for command rendering.
@@ -154,14 +151,6 @@ const resolveCommandPaletteScopeLabel = (domainId: string, locale: string): Bili
 
   if (scopedDomainId === 'sftp') {
     return resolveBilingualCommandLabel('commandPalette.scopes.sftp', locale);
-  }
-
-  if (scopedDomainId === 'server') {
-    return resolveBilingualCommandLabel('commandPalette.scopes.server', locale);
-  }
-
-  if (scopedDomainId === 'keychain') {
-    return resolveBilingualCommandLabel('commandPalette.scopes.keychain', locale);
   }
 
   if (scopedDomainId === 'forward') {
@@ -446,102 +435,6 @@ const createSftpResourceCommandPaletteProvider = (): CommandPaletteProvider<AppC
                 serverId: server.id,
                 serverName: server.name,
                 createdAt: Date.now(),
-              },
-            },
-          });
-        },
-      }),
-    );
-  });
-};
-
-/**
- * Creates an SSH server editor command provider.
- *
- * @returns Provider with server editor deep-link commands.
- */
-const createServerResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
-  return createCommandPaletteProvider('server', (context) => {
-    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.server', context.locale);
-    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
-    const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.editServer', context.locale);
-
-    return context.resources.servers.map(
-      (server): CommandPaletteCommand => ({
-        kind: 'action',
-        id: server.id,
-        commandActionId: 'resources.server.edit',
-        title: formatServerCommandTitle(server, context.showFullServerAddress),
-        subtitle: actionLabel.primary,
-        icon: <Server className="h-4 w-4" />,
-        searchTerms: buildSearchTerms(
-          [
-            'server',
-            'edit server',
-            'resources.server.edit',
-            server.id,
-            server.name,
-            server.host,
-            String(server.port),
-            server.username,
-            server.note ?? '',
-            ...(server.tags ?? []).map((tag) => tag.name),
-          ],
-          scopeSearchTerms,
-          [actionLabel.english],
-        ),
-        run: () => {
-          context.addTab('ssh-editor', {
-            state: {
-              sshEditor: {
-                preferredServerId: server.id,
-              },
-            },
-          });
-        },
-      }),
-    );
-  });
-};
-
-/**
- * Creates a keychain editor command provider.
- *
- * @returns Provider with shared keychain editor deep-link commands.
- */
-const createKeychainResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
-  return createCommandPaletteProvider('keychain', (context) => {
-    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.keychain', context.locale);
-    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
-    const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.editKeychain', context.locale);
-
-    return context.resources.keychains.map(
-      (keychain): CommandPaletteCommand => ({
-        kind: 'action',
-        id: keychain.id,
-        commandActionId: 'resources.keychain.edit',
-        title: keychain.name,
-        subtitle: actionLabel.primary,
-        icon: renderEntityIcon(keychain.iconKey),
-        searchTerms: buildSearchTerms(
-          [
-            'keychain',
-            'edit keychain',
-            'resources.keychain.edit',
-            keychain.id,
-            keychain.name,
-            keychain.note ?? '',
-            keychain.authType,
-            ...(keychain.tags ?? []).map((tag) => tag.name),
-          ],
-          scopeSearchTerms,
-          [actionLabel.english],
-        ),
-        run: () => {
-          context.addTab('ssh-keychains', {
-            state: {
-              sshKeychainEditor: {
-                preferredKeychainId: keychain.id,
               },
             },
           });
@@ -900,7 +793,6 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
   const [locale, setLocale] = React.useState<string>(() => getLocale());
   const [resources, setResources] = React.useState<AppCommandPaletteResourceSnapshot>(() => ({
     servers: [],
-    keychains: [],
     portForwardRules: [],
   }));
 
@@ -919,9 +811,8 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
 
     void (async () => {
       try {
-        const [serversResponse, keychainsResponse, portForwardRulesResponse] = await Promise.all([
+        const [serversResponse, portForwardRulesResponse] = await Promise.all([
           listSshServers(),
-          listSshKeychains(),
           listPortForwardRules(),
         ]);
 
@@ -931,7 +822,6 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
 
         setResources({
           servers: serversResponse.data.items,
-          keychains: filterSharedKeychains(keychainsResponse.data.items),
           portForwardRules: portForwardRulesResponse.data.items,
         });
       } catch (error: unknown) {
@@ -1007,8 +897,6 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
       createSettingsCommandPaletteProvider(),
       createSshResourceCommandPaletteProvider(),
       createSftpResourceCommandPaletteProvider(),
-      createServerResourceCommandPaletteProvider(),
-      createKeychainResourceCommandPaletteProvider(),
       createForwardResourceCommandPaletteProvider(),
       createDeveloperCommandPaletteProvider(),
     ],

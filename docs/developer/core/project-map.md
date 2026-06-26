@@ -32,7 +32,7 @@ flowchart TB
 
 - **Role**: React UI layer.
 - **Key folders**:
-  - `src/pages`: feature pages (`Home`, `SSH`, `SSHEditor`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH, keychain, and port-forwarding landing surfaces.
+  - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
   - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
@@ -167,9 +167,9 @@ flowchart TD
 - Bridge owner:
   - `packages/main/src/ipc/register-backend-ipc.ts` and `packages/main/src/preload.ts` for keychain IPC proxy channels.
 - Renderer owner:
-  - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
-  - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
-  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit. Each Home mode owns an independent sort/group view preference so mode switches do not rewrite another surface's organization state.
+  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH server / keychain / port-forwarding mode bodies. Home is the canonical management surface for servers and keychains.
+  - `packages/renderer/src/components/ssh/SSHServerEditorDialog.tsx` for per-server create/edit, including keychain selection and inline fallback editing.
+  - `packages/renderer/src/components/ssh/SSHKeychainEditorDialog.tsx` for shared keychain create/edit. Each Home mode owns an independent sort/group view preference so mode switches do not rewrite another surface's organization state.
 
 ## 9. SSH Port Forwarding Ownership Map (2026-05)
 

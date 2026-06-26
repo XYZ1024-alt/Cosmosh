@@ -32,7 +32,7 @@ flowchart TB
 
 - **角色**：React UI 层。
 - **关键目录**：
-  - `src/pages`：功能页面（`Home`、`SSH`、`SSHEditor`、`Settings`、`SettingsEditor`等）。Home 负责 SSH、钥匙链与端口转发入口界面。
+  - `src/pages`：功能页面（`Home`、`SSH`、`SFTP`、`Settings`、`SettingsEditor`等）。Home 负责 SSH 服务器、钥匙链与端口转发管理界面。
   - `src/pages/sftp`：SFTP 页面子模块，负责浏览器式 UI 编排、动作菜单、目录/树/详情面板与共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
   - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
@@ -167,9 +167,9 @@ flowchart TD
 - Bridge 归属：
   - `packages/main/src/ipc/register-backend-ipc.ts` 与 `packages/main/src/preload.ts` 负责钥匙链 IPC 代理通道。
 - Renderer 归属：
-  - `packages/renderer/src/pages/SSHEditor.tsx` 负责单服务器内的钥匙链选择与内联认证回退流程。
-  - `packages/renderer/src/pages/SSHKeychains.tsx` 负责独立钥匙链管理页面的增删改流程。
-  - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH / 钥匙链 / 端口转发模式正文；主页钥匙链模式复用共享 SSH 文件夹/标签与 `SSHKeychainEditorDialog` 完成创建和编辑。每个 Home 模式都拥有独立的排序/分组视图偏好，切换模式不会改写另一个界面的组织状态。
+  - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH 服务器 / 钥匙链 / 端口转发模式正文。Home 是服务器与钥匙链的标准管理界面。
+  - `packages/renderer/src/components/ssh/SSHServerEditorDialog.tsx` 负责单服务器创建/编辑，包括钥匙链选择与内联认证回退。
+  - `packages/renderer/src/components/ssh/SSHKeychainEditorDialog.tsx` 负责公用钥匙链创建/编辑。每个 Home 模式都拥有独立的排序/分组视图偏好，切换模式不会改写另一个界面的组织状态。
 
 ## 9. SSH 端口转发模块归属（2026-05）
 

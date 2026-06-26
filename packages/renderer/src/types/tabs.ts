@@ -36,15 +36,6 @@ export type SshConnectionIntent = {
   startupCommand?: string;
 };
 
-export type SshEditorState = {
-  preferredServerId?: string;
-  createMode?: boolean;
-};
-
-export type SshKeychainEditorState = {
-  preferredKeychainId?: string;
-};
-
 export type SftpConnectionIntent = {
   serverId: string;
   serverName: string;
@@ -70,8 +61,6 @@ export type TabItem = {
     settingsEditorSettingKey?: string;
     sshConnectionIntent?: SshConnectionIntent;
     sftpConnectionIntent?: SftpConnectionIntent;
-    sshEditor?: SshEditorState;
-    sshKeychainEditor?: SshKeychainEditorState;
     home?: HomeState;
   };
 };

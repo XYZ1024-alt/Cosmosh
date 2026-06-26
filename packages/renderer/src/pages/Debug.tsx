@@ -20,8 +20,6 @@ type DebugProps = {
   onOpenSettings: (openInNewTab: boolean) => void;
   onOpenSettingsEditor: (openInNewTab: boolean) => void;
   onOpenComponentsField: (openInNewTab: boolean) => void;
-  onOpenSshEditor: (openInNewTab: boolean) => void;
-  onOpenSshKeychains: (openInNewTab: boolean) => void;
   onRenameTab: (title: string) => void;
   onChangeIcon: (iconKey: TabIconKey) => void;
   showSystemMonitorOverlay: boolean;
@@ -49,8 +47,6 @@ const Debug: React.FC<DebugProps> = ({
   onOpenSettings,
   onOpenSettingsEditor,
   onOpenComponentsField,
-  onOpenSshEditor,
-  onOpenSshKeychains,
   onRenameTab,
   onChangeIcon,
   showSystemMonitorOverlay,
@@ -72,8 +68,6 @@ const Debug: React.FC<DebugProps> = ({
 
   const navigationEntries: NavigationEntry[] = [
     { id: 'ssh', pageName: 'SSH', onClick: onOpenSSH },
-    { id: 'ssh-editor', pageName: 'SSH Editor', onClick: onOpenSshEditor },
-    { id: 'ssh-keychains', pageName: 'SSH Keychains', onClick: onOpenSshKeychains },
     { id: 'settings', pageName: 'Settings', onClick: onOpenSettings },
     { id: 'settings-editor', pageName: 'Settings Editor', onClick: onOpenSettingsEditor },
     {
