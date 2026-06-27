@@ -36,7 +36,8 @@ Backend does not invent a key in production. It expects the resolved key from Ma
 
 - Main returns constant key `cosmosh_dev_key`.
 - Backend also uses deterministic dev key behavior.
-- DB location is workspace `.dev_data/cosmosh.db`.
+- Default DB location is workspace `.dev_data/cosmosh.db`.
+- When a development profile is active through `pnpm dev:profile` or `COSMOSH_DEV_PROFILE`, DB location becomes `.cosmosh/dev-profiles/<name>/database/cosmosh.db`, and Electron `userData` plus backend secret storage are isolated under the same profile root.
 
 This is intentionally convenience-oriented, not production security.
 
@@ -158,6 +159,22 @@ This error sequence usually indicates:
 5. Startup aborted by design to avoid using an unverified key.
 
 The DBus/systemd line shown after that is usually side-effect noise from process lifecycle and does not change the root cause above.
+
+## 5.7 Development Profile Isolation
+
+Development profiles are intentionally convenience-oriented and always use the deterministic development key `cosmosh_dev_key`. They are for local verification of onboarding, first-run storage, settings defaults, and database bootstrap behavior.
+
+Profile state lives under `.cosmosh/dev-profiles/` and is ignored by Git:
+
+- `.cosmosh/dev-profiles/state.json`: current profile pointer written by `pnpm dev:profile use <name>`.
+- `.cosmosh/dev-profiles/<name>/user-data`: Electron `userData` override.
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`: SQLite database file injected through `COSMOSH_DB_PATH`.
+- `.cosmosh/dev-profiles/<name>/backend-storage`: backend secret storage injected through `COSMOSH_BACKEND_STORAGE_PATH`.
+- `.cosmosh/dev-profiles/default/profile.json`: manifest for the automatic legacy default import.
+
+The first non-help `pnpm dev:profile` command imports the implicit legacy default identity into the managed `default` profile. The importer copies `.dev_data/cosmosh.db` plus SQLite `-wal` and `-shm` files when readable, copies the legacy Electron `userData` directory, and copies backend secret storage. Copy results are best-effort and are recorded in `profile.json`, so an unreadable legacy source creates an `import=partial` profile instead of deleting or mutating the original source.
+
+Deleting or resetting a regular profile only affects that profile directory. The managed `default` profile rejects regular reset/delete commands; use `pnpm dev:profile import-default --force` to rebuild it from legacy sources. None of these commands touch the legacy development DB at `.dev_data/cosmosh.db` unless that file is manually removed outside the profile tool.
 
 ## 6. `security.config.json` Current Schema
 

@@ -9,6 +9,8 @@
   "scripts": {
     "version:update": "node ./scripts/update-version.js",
     "dev:main": "pnpm --filter @cosmosh/main dev",
+    "dev:profile": "node ./scripts/dev-profile.mjs",
+    "dev:main:fresh": "node ./scripts/dev-profile.mjs run fresh --create --reset -- pnpm dev:main",
     "dev:renderer": "pnpm --filter @cosmosh/renderer dev",
     "dev:backend": "pnpm --filter @cosmosh/backend dev",
     "build": "pnpm -r build",

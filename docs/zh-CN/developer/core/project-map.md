@@ -16,6 +16,15 @@ flowchart TB
 
 ## 2. 目录职责
 
+### `scripts`
+
+- **角色**：仓库级开发与发布流程辅助脚本。
+- **关键文件**：
+  - `dev-profile.mjs`：`pnpm dev:profile` 与 `pnpm dev:main:fresh` 使用的开发身份管理器。它会自动把旧的隐式默认身份导入到受保护的 `default` 身份，然后在 `.cosmosh/dev-profiles/<name>/` 下创建、切换、重置、删除身份，并可用身份级运行路径执行命令。
+  - `update-version.js`：版本元数据更新辅助。
+  - `precommit-staged.mjs`：暂存文件 precommit 校验辅助。
+  - `setup-githooks.mjs`：本地 Git hook 初始化。
+
 ### `packages/main`
 
 - **角色**：Electron 宿主进程。
@@ -24,7 +33,8 @@ flowchart TB
   - `src/ipc/register-app-utility-ipc.ts`：特权应用工具 IPC，例如原生对话框、文件管理器集成、SFTP 临时文件创建，以及已校验的系统打开/打开方式流程。
   - `src/ipc/sftp-download-target-authorizations.ts`：面向 renderer 所有者的本地 SFTP 下载目标精确路径能力授权。
   - `src/preload.ts`：安全渲染层桥接。
-  - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助。
+  - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助，包含开发身份数据库路径覆盖。
+  - `src/dev/dev-profile.ts`：仅开发态使用的身份激活逻辑，在启动前将选中身份映射到 Electron `userData`、SQLite 与 backend secret 存储路径。
   - `resources/installer.nsh`：Windows NSIS 安装器扩展，包括辅助安装选项页、shell/terminal 注册钩子、卸载数据清理，以及安装器 DPI manifest 设置。
   - `resources/helpers`：打包的系统 helper，包括 macOS NSWorkspace SFTP 打开方式 helper 源码/二进制。
   - `scripts/compile-macos-open-with-helper.mjs`：仅 macOS 生效的构建钩子，在打包前编译 SFTP 打开方式 helper。

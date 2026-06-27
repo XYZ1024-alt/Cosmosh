@@ -29,6 +29,7 @@ flowchart LR
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
 - 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
+- 开发身份由 `pnpm dev:profile`（`scripts/dev-profile.mjs`）管理。当选中身份或通过 `COSMOSH_DEV_PROFILE` 指定身份时，Main 会在窗口/backend 启动前应用该身份，使 Electron `userData`、SQLite 文件和 backend 专用 secret 存储都落到 `.cosmosh/dev-profiles/<name>/` 下。
 - Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
@@ -232,6 +233,30 @@ flowchart LR
 - 保持内联凭据模式的服务器更新可以省略 password/private-key 字段；后端会沿用现有加密值，仅当已存储凭据无法满足所选认证类型时拒绝更新。
 - 公用钥匙链支持多服务器复用；隐藏钥匙链用于单服务器私有凭据。
 - SSH 会话创建时统一通过 server → keychain 关系解析凭据后再建立 `ssh2` 连接。
+
+## 7.1 开发身份运行时
+
+开发身份模式是仅面向开发者的隔离层，用于验证全新安装流程。它不会改变打包生产环境的存储路径或数据库密钥策略。
+
+第一次执行非帮助类 `pnpm dev:profile` 命令时，工具会自动把旧的隐式默认身份导入到 `.cosmosh/dev-profiles/default/`。导入会尽力复制旧工作区数据库、SQLite WAL/SHM 辅助文件、Electron `userData` 与 backend secret 存储。缺失或不可读的旧来源会写入身份 manifest，而不会中断命令。
+
+`default` 身份是受管理的恢复快照，不是一次性测试身份。它可以通过 `pnpm dev:profile use default` 选中，也可以用 `pnpm dev:profile import-default --force --use` 重新导入并切换；普通的 `create default`、`reset default` 与 `delete default` 会被拒绝，以避免丢失恢复路径。
+
+使用 `pnpm dev:profile` 创建、切换、重置、查看或删除本地测试身份：
+
+- `pnpm dev:profile create fresh --use` 创建 `.cosmosh/dev-profiles/fresh/`，并将其设为默认开发身份。
+- `pnpm dev:profile reset fresh` 仅清空该身份的运行数据，使下一次开发启动表现得像该身份的全新安装。
+- `pnpm dev:profile delete fresh --force` 删除该身份；若它是当前身份，也会清空当前指针。
+- `pnpm dev:profile run fresh --create --reset -- pnpm dev:main` 使用隔离且已重置的身份运行一次命令。根脚本 `pnpm dev:main:fresh` 是该流程的快捷方式。
+
+每个身份拥有这些路径：
+
+- `.cosmosh/dev-profiles/<name>/user-data`：在应用触碰存储前通过 `app.setPath('userData', ...)` 注入 Electron。
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`：作为 `COSMOSH_DB_PATH` 注入，并由 Main 与 Backend 的数据库路径解析器共同使用。
+- `.cosmosh/dev-profiles/<name>/backend-storage`：作为 `COSMOSH_BACKEND_STORAGE_PATH` 注入，用于 backend 专用 secret 材料，例如 `secret.key`。
+- `.cosmosh/dev-profiles/default/profile.json`：受管理 `default` 身份的导入 manifest，包含来源路径和每个来源的复制状态。
+
+如果没有启用开发身份，直接开发启动仍使用旧的工作区数据库路径 `.dev_data/cosmosh.db` 和默认 Electron 开发存储。这样可以保留既有本地数据，除非开发者显式选择身份隔离。
 
 ## 8. 架构决策动机
 

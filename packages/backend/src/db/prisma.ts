@@ -273,6 +273,11 @@ const ensureSecureFile = async (filePath: string): Promise<void> => {
  * @returns Absolute sqlite database file path.
  */
 export const getDatabasePath = (): string => {
+  const envDatabasePath = process.env.COSMOSH_DB_PATH?.trim();
+  if (envDatabasePath) {
+    return envDatabasePath;
+  }
+
   if (isDevelopmentRuntime()) {
     return path.join(workspaceRootDir, '.dev_data', DB_FILE_NAME);
   }

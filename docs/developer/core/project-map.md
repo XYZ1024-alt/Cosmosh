@@ -16,6 +16,15 @@ flowchart TB
 
 ## 2. Directory Responsibilities
 
+### `scripts`
+
+- **Role**: Repository-level developer and release workflow helpers.
+- **Key files**:
+  - `dev-profile.mjs`: development profile manager used by `pnpm dev:profile` and `pnpm dev:main:fresh`. It automatically imports the legacy implicit default identity into the protected `default` profile, then creates, switches, resets, deletes, and runs commands with profile-scoped runtime paths under `.cosmosh/dev-profiles/<name>/`.
+  - `update-version.js`: version metadata update helper.
+  - `precommit-staged.mjs`: staged-file precommit validation helper.
+  - `setup-githooks.mjs`: local Git hook bootstrap.
+
 ### `packages/main`
 
 - **Role**: Electron host process.
@@ -24,7 +33,8 @@ flowchart TB
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
   - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations.
   - `src/preload.ts`: secure renderer bridge.
-  - `src/security/database-encryption.ts`: DB path/key handling helpers.
+  - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
+  - `src/dev/dev-profile.ts`: development-only profile activation that maps selected profiles to Electron `userData`, SQLite, and backend secret storage paths before startup.
   - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
   - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.

@@ -29,6 +29,7 @@ flowchart LR
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
 - In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
+- Development profiles are managed by `pnpm dev:profile` (`scripts/dev-profile.mjs`). When a profile is selected or passed through `COSMOSH_DEV_PROFILE`, main applies it before window/backend startup so Electron `userData`, the SQLite file, and backend-only secret storage all resolve under `.cosmosh/dev-profiles/<name>/`.
 - Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
@@ -232,6 +233,30 @@ flowchart LR
 - Server updates that keep inline credential mode may omit password/private-key fields; the backend retains the existing encrypted values and only rejects the update when the stored credential material cannot satisfy the selected auth type.
 - Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.
 - SSH session creation resolves credentials through server → keychain relation before opening `ssh2` connections.
+
+## 7.1 Development Profile Runtime
+
+Development profile mode is a developer-only isolation layer for fresh-install verification. It does not change packaged production storage or database key policy.
+
+The first non-help `pnpm dev:profile` command automatically imports the legacy implicit default identity into `.cosmosh/dev-profiles/default/`. The import copies the legacy workspace database, SQLite WAL/SHM sidecars, Electron `userData`, and backend secret storage on a best-effort basis. Missing or unreadable legacy sources are recorded in the profile manifest instead of aborting the command.
+
+The `default` profile is a managed recovery snapshot, not a throwaway test profile. It can be selected with `pnpm dev:profile use default` or rebuilt with `pnpm dev:profile import-default --force --use`, but regular `create default`, `reset default`, and `delete default` commands are rejected to avoid losing the recovery path.
+
+Use `pnpm dev:profile` to create, switch, reset, inspect, or delete local test profiles:
+
+- `pnpm dev:profile create fresh --use` creates `.cosmosh/dev-profiles/fresh/` and makes it the default development profile.
+- `pnpm dev:profile reset fresh` clears only that profile's runtime data so the next development launch behaves like a new install for the same identity.
+- `pnpm dev:profile delete fresh --force` removes the profile and clears the current pointer if it was active.
+- `pnpm dev:profile run fresh --create --reset -- pnpm dev:main` runs one command with an isolated, freshly reset profile. The root script `pnpm dev:main:fresh` is the shorthand for this flow.
+
+A profile owns these paths:
+
+- `.cosmosh/dev-profiles/<name>/user-data`: injected into Electron via `app.setPath('userData', ...)` before app storage is touched.
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`: injected as `COSMOSH_DB_PATH` and used by both main and backend database path resolvers.
+- `.cosmosh/dev-profiles/<name>/backend-storage`: injected as `COSMOSH_BACKEND_STORAGE_PATH` for backend-only secret material such as `secret.key`.
+- `.cosmosh/dev-profiles/default/profile.json`: import manifest for the managed default profile, including source paths and per-source copy status.
+
+If no development profile is active, direct development launches keep the legacy workspace database path `.dev_data/cosmosh.db` and default Electron development storage. This preserves existing local data unless a developer explicitly opts into profile isolation.
 
 ## 8. Architecture Decision Rationale
 

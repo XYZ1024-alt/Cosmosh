@@ -24,6 +24,7 @@ import {
 } from 'electron';
 import path from 'path';
 
+import { applyDevelopmentProfileToElectronApp } from './dev/dev-profile';
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
 import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
 import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-target-authorizations';
@@ -674,6 +675,9 @@ const resolveWorkspaceRoot = (): string => {
   return path.resolve(__dirname, '../../..');
 };
 
+const mainWorkspaceRoot = resolveWorkspaceRoot();
+applyDevelopmentProfileToElectronApp(mainWorkspaceRoot);
+
 /**
  * Resolves platform-appropriate data root used for shared backend secrets.
  */
@@ -772,10 +776,24 @@ const hardenSecretKeyPermissions = async (secretFilePath: string): Promise<void>
 };
 
 /**
+ * Resolves the storage directory for backend-only runtime secrets.
+ *
+ * @returns Absolute directory path used for backend secret material.
+ */
+const resolveBackendSecretStorageDir = (): string => {
+  const profileStoragePath = process.env.COSMOSH_BACKEND_STORAGE_PATH?.trim();
+  if (profileStoragePath) {
+    return profileStoragePath;
+  }
+
+  return path.join(resolveDataRootDir(), 'Cosmosh', 'backend', 'storage');
+};
+
+/**
  * Loads or creates backend secret key used for internal cryptographic operations.
  */
 const resolveBackendSecretKey = async (): Promise<string> => {
-  const storageDirPath = path.join(resolveDataRootDir(), 'Cosmosh', 'backend', 'storage');
+  const storageDirPath = resolveBackendSecretStorageDir();
   const secretFilePath = path.join(storageDirPath, 'secret.key');
 
   try {
