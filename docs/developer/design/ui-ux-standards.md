@@ -94,8 +94,11 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 ## 7.3 Server-Backed Tab Visuals
 
+- In light mode, active server-backed tabs must deepen the server color through `color.header.tab.server-active-overlay`; do not change the generic `color.header.tab.active` token to solve server-color contrast.
 - SSH and SFTP tabs may apply the source server color background when the shared server-visual tab setting is enabled.
 - SFTP tabs must keep a folder icon even when they inherit server color, so users can distinguish file-system tabs from terminal tabs quickly.
+- Inactive server-backed tabs must dim through the theme-aware `color.header.tab.server-inactive-overlay` token family rather than hard-coded black overlays, so light mode preserves a clean inactive tint.
+- Colorized command-palette rows must use the matching `color.command.item.color-visual-active-overlay` and `color.command.item.color-visual-overlay` token families so active route switching visuals stay clearly distinguishable while remaining aligned with tab chrome across themes.
 
 ## 7.4 Page-State Tab Identity
 

@@ -388,11 +388,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 items.map((item, index) => {
                   const isActive = index === activeIndex;
                   const shouldUseRowColorVisual = Boolean(item.rowClassName);
-                  const rowOverlayClassName =
-                    shouldUseRowColorVisual && !isActive
-                      ? "relative overflow-hidden before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-black/50 before:content-[''] hover:before:bg-black/35"
-                      : '';
-                  const contentForegroundClassName = shouldUseRowColorVisual && !isActive ? 'relative z-[1]' : '';
+                  const rowOverlayClassName = shouldUseRowColorVisual
+                    ? isActive
+                      ? "relative overflow-hidden before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-command-item-color-visual-active-overlay before:content-['']"
+                      : "relative overflow-hidden before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-command-item-color-visual-overlay before:content-[''] hover:before:bg-command-item-color-visual-overlay-hover"
+                    : '';
+                  const contentForegroundClassName = shouldUseRowColorVisual ? 'relative z-[1]' : '';
                   const iconColorClassName = shouldUseRowColorVisual ? '' : 'text-command-text-muted';
                   const titleColorClassName = shouldUseRowColorVisual ? '' : 'text-command-text';
                   const subtitleColorClassName = shouldUseRowColorVisual ? 'opacity-80' : 'text-command-text-muted';

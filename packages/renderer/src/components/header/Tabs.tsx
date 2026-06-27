@@ -137,8 +137,8 @@ const SortableTab = React.forwardRef<
             shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : '',
             shouldApplySshTabVisual && !isDragging
               ? isActive
-                ? ''
-                : "relative before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-black/50 before:content-[''] hover:before:bg-black/35"
+                ? "relative before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-header-tab-server-active-overlay before:content-['']"
+                : "relative before:pointer-events-none before:absolute before:inset-0 before:rounded-[inherit] before:bg-header-tab-server-inactive-overlay before:content-[''] hover:before:bg-header-tab-server-inactive-overlay-hover"
               : '',
             !shouldApplySshTabVisual ? (isActive ? 'bg-header-tab-active' : 'hover:bg-header-tab-hover') : '',
             isDragging ? 'opacity-0' : '',
@@ -146,14 +146,14 @@ const SortableTab = React.forwardRef<
         >
           <span
             aria-hidden
-            className={classNames(shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '')}
+            className={classNames(shouldApplySshTabVisual && !isDragging ? 'relative z-[1]' : '')}
           >
             {renderTabIcon(tab, !shouldApplySshTabVisual && isServerBackedTab(tab) && applySshServerVisuals)}
           </span>
           <span
             className={classNames(
               'flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-start text-sm',
-              shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '',
+              shouldApplySshTabVisual && !isDragging ? 'relative z-[1]' : '',
             )}
           >
             {tab.title}
@@ -162,7 +162,7 @@ const SortableTab = React.forwardRef<
             <button
               type="button"
               aria-label={`Close ${tab.title}`}
-              className={classNames(shouldApplySshTabVisual && !isDragging && !isActive ? 'relative z-[1]' : '')}
+              className={classNames(shouldApplySshTabVisual && !isDragging ? 'relative z-[1]' : '')}
               tabIndex={isActive ? 0 : -1}
               onPointerDown={(e) => {
                 e.preventDefault();

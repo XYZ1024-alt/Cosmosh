@@ -32,6 +32,9 @@ const base = {
       tab: {
         hover: '#222222',
         active: '#2F2F2F',
+        'server-active-overlay': '#00000000',
+        'server-inactive-overlay': '#00000080',
+        'server-inactive-overlay-hover': '#00000059',
       },
       text: {
         DEFAULT: standardTextColorDefault,
@@ -139,6 +142,9 @@ const base = {
       item: {
         hover: '#242424e6',
         active: '#2e2e2ee6',
+        'color-visual-active-overlay': '#00000000',
+        'color-visual-overlay': '#00000080',
+        'color-visual-overlay-hover': '#00000059',
       },
       action: {
         hover: '#333333cc',
@@ -225,6 +231,9 @@ const light = {
       tab: {
         hover: '#ececf0',
         active: '#e4e4ea',
+        'server-active-overlay': '#00000014',
+        'server-inactive-overlay': '#f5f5f780',
+        'server-inactive-overlay-hover': '#f5f5f759',
       },
       text: {
         DEFAULT: '#111827',
@@ -344,6 +353,9 @@ const light = {
       item: {
         hover: '#eff1f6',
         active: '#e8ebf2',
+        'color-visual-active-overlay': '#00000014',
+        'color-visual-overlay': '#f5f5f780',
+        'color-visual-overlay-hover': '#f5f5f759',
       },
       action: {
         hover: '#dde2ec',
