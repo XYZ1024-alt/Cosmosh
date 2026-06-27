@@ -123,55 +123,88 @@ const createSettingsEditorTheme = (): Extension =>
         color: 'var(--color-header-text)',
         overflow: 'hidden',
       },
-      '.cm-tooltip:not(.cm-tooltip-autocomplete)': {
+      '.cm-tooltip:not(.cm-tooltip-autocomplete):not(.cm-completionInfo)': {
         backdropFilter: 'blur(4px)',
         padding: '4px 8px',
       },
-      '.cm-tooltip-autocomplete': {
+      '.cm-tooltip.cm-tooltip-autocomplete': {
+        backdropFilter: 'blur(4px)',
+        backgroundColor: 'var(--color-bg-subtle)',
+        border: '0',
         borderRadius: 'var(--radius-lg)',
         boxShadow: '0 8px 30px var(--shadow-menu-content)',
         boxSizing: 'border-box',
+        color: 'var(--color-header-text)',
+        fontFamily: 'var(--font-sans)',
         maxWidth: 'min(420px, calc(100vw - 16px))',
         minWidth: '180px',
-        padding: '0',
+        padding: '4px',
       },
-      '.cm-tooltip-autocomplete > ul': {
+      '.cm-tooltip.cm-tooltip-autocomplete > ul': {
         boxSizing: 'border-box',
         display: 'flex',
         flexDirection: 'column',
         gap: '0',
+        height: 'auto',
+        listStyle: 'none',
         margin: '0',
         maxHeight: 'min(320px, calc(100vh - 16px))',
-        padding: '4px 0',
+        maxWidth: 'none',
+        minWidth: '0',
+        overflowX: 'hidden',
+        overflowY: 'auto',
+        padding: '0',
+        whiteSpace: 'nowrap',
       },
-      '.cm-tooltip-autocomplete ul li': {
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
         alignItems: 'center',
         borderRadius: 'var(--radius-md)',
         boxSizing: 'border-box',
         color: 'var(--color-header-text)',
+        cursor: 'default',
         display: 'flex',
         fontFamily: 'var(--font-sans)',
         fontSize: '14px',
         gap: '10px',
         lineHeight: '20px',
-        margin: '0 4px',
+        margin: '0',
         minHeight: '32px',
+        overflow: 'hidden',
+        padding: '6px 10px',
+        textOverflow: 'ellipsis',
+      },
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > completion-section': {
+        borderBottom: '0',
+        color: 'var(--color-header-text-muted)',
+        display: 'list-item',
+        fontFamily: 'var(--font-sans)',
+        fontSize: '12px',
+        lineHeight: '18px',
+        opacity: '1',
         padding: '6px 10px',
       },
-      '.cm-tooltip-autocomplete ul li:hover, .cm-tooltip-autocomplete ul li[aria-selected]': {
-        backgroundColor: 'var(--color-menu-control-hover)',
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > li:hover': {
+        background: 'var(--color-menu-control-hover)',
         color: 'var(--color-header-text)',
       },
-      '.cm-tooltip-autocomplete .cm-completionIcon': {
+      '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+        background: 'var(--color-menu-control-hover)',
+        color: 'var(--color-header-text)',
+      },
+      '.cm-tooltip.cm-tooltip-autocomplete-disabled > ul > li[aria-selected]': {
+        background: 'var(--color-menu-control-hover)',
+        color: 'var(--color-header-text)',
+      },
+      '.cm-tooltip.cm-tooltip-autocomplete .cm-completionIcon': {
         display: 'none',
       },
-      '.cm-tooltip-autocomplete .cm-completionLabel': {
+      '.cm-tooltip.cm-tooltip-autocomplete .cm-completionLabel': {
         flex: '1 1 auto',
         minWidth: '0',
         overflow: 'hidden',
         textOverflow: 'ellipsis',
       },
-      '.cm-tooltip-autocomplete .cm-completionDetail': {
+      '.cm-tooltip.cm-tooltip-autocomplete .cm-completionDetail': {
         color: 'var(--color-header-text-muted)',
         flex: '0 1 auto',
         fontSize: '12px',
@@ -184,18 +217,21 @@ const createSettingsEditorTheme = (): Extension =>
         textAlign: 'right',
         textOverflow: 'ellipsis',
       },
-      '.cm-tooltip-autocomplete .cm-completionMatchedText': {
+      '.cm-tooltip.cm-tooltip-autocomplete .cm-completionMatchedText': {
         color: 'var(--color-header-text)',
         fontWeight: '600',
         textDecoration: 'none',
       },
-      '.cm-tooltip-autocomplete .cm-completionInfo': {
+      '.cm-tooltip.cm-completionInfo': {
+        backdropFilter: 'blur(4px)',
         backgroundColor: 'var(--color-bg-subtle)',
         border: '0',
         borderRadius: 'var(--radius-md)',
+        boxSizing: 'border-box',
         boxShadow: '0 8px 30px var(--shadow-soft)',
         color: 'var(--color-header-text)',
         padding: '4px 8px',
+        whiteSpace: 'normal',
       },
       '.cosmosh-settings-json-tooltip': {
         maxWidth: '360px',
@@ -305,12 +341,12 @@ const createEditorExtensions = (options: {
       },
     ]),
   ),
-  createSettingsEditorTheme(),
   EditorView.lineWrapping,
   EditorState.tabSize.of(2),
   editorReadOnlyCompartment.of(EditorState.readOnly.of(options.readOnly)),
   editorEditableCompartment.of(EditorView.editable.of(!options.readOnly)),
   editorSchemaCompartment.of(createSettingsJsonLanguageExtensions(options.schema)),
+  createSettingsEditorTheme(),
   EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       options.onChange(update.state.doc.toString());
