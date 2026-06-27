@@ -10,7 +10,7 @@ import {
   useMenuIconSlot,
   useMenuSeparatorInset,
 } from './menu-icon-slot';
-import { normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
+import { MENU_AVAILABLE_SIZE_VARIABLES, normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
 import { menuStyles } from './menu-styles';
 
 type MenuIconComponent = React.ComponentType<{ className?: string }>;
@@ -78,7 +78,7 @@ const MenubarSubContent = React.forwardRef<
   React.ElementRef<typeof MenubarPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof MenubarPrimitive.SubContent>
 >(({ className, sideOffset = 6, alignOffset = -4, collisionPadding = 8, style, ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.menubar);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
 
   return (
@@ -95,7 +95,7 @@ const MenubarSubContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(menuStyles.content, menuStyles.contentCloseMotion, className)}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
@@ -109,7 +109,7 @@ const MenubarContent = React.forwardRef<
   React.ElementRef<typeof MenubarPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof MenubarPrimitive.Content>
 >(({ className, align = 'start', alignOffset = -4, sideOffset = 6, collisionPadding = 8, style, ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.menubar);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
 
   return (
@@ -127,7 +127,7 @@ const MenubarContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(menuStyles.content, menuStyles.contentCloseMotion, className)}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>

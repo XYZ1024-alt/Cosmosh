@@ -9,7 +9,7 @@ import {
   useMenuIconSlot,
   useMenuSeparatorInset,
 } from './menu-icon-slot';
-import { normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
+import { MENU_AVAILABLE_SIZE_VARIABLES, normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
 import { menuStyles } from './menu-styles';
 
 type MenuIconComponent = React.ComponentType<{ className?: string }>;
@@ -66,7 +66,7 @@ const ContextMenuSubContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.SubContent>
 >(({ className, sideOffset = 6, alignOffset = -4, collisionPadding = 8, style, ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.contextMenu);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
 
   return (
@@ -83,12 +83,7 @@ const ContextMenuSubContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(
-          menuStyles.content,
-          menuStyles.contentCloseMotion,
-          'max-h-[min(560px,var(--radix-context-menu-content-available-height))] max-w-[min(420px,var(--radix-context-menu-content-available-width))]',
-          className,
-        )}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
@@ -102,7 +97,7 @@ const ContextMenuContent = React.forwardRef<
   React.ElementRef<typeof ContextMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof ContextMenuPrimitive.Content>
 >(({ className, collisionPadding = 8, style, ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.contextMenu);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
 
   return (
@@ -117,12 +112,7 @@ const ContextMenuContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(
-          menuStyles.content,
-          menuStyles.contentCloseMotion,
-          'max-h-[min(560px,var(--radix-context-menu-content-available-height))] max-w-[min(420px,var(--radix-context-menu-content-available-width))]',
-          className,
-        )}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
