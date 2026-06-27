@@ -1,15 +1,15 @@
 import type { Completion, CompletionContext, CompletionResult } from '@codemirror/autocomplete';
 import { autocompletion } from '@codemirror/autocomplete';
 import { json } from '@codemirror/lang-json';
-import { HighlightStyle, syntaxHighlighting, syntaxTree } from '@codemirror/language';
+import { syntaxTree } from '@codemirror/language';
 import type { Diagnostic } from '@codemirror/lint';
 import { linter, lintGutter } from '@codemirror/lint';
 import type { Extension } from '@codemirror/state';
 import type { EditorView, Tooltip } from '@codemirror/view';
 import { hoverTooltip, tooltips } from '@codemirror/view';
 import type { SyntaxNode } from '@lezer/common';
-import { tags } from '@lezer/highlight';
 
+import { cosmoshCodeMirrorSyntaxHighlighting } from '../../lib/codemirror-syntax-theme';
 import { t } from '../../lib/i18n';
 import type { SettingsJsonSchemaNode } from '../settings-registry';
 
@@ -53,17 +53,6 @@ type SettingsSchemaContext = {
 };
 
 const SETTINGS_JSON_LINT_SOURCE = 'Settings schema';
-
-/**
- * Low-saturation syntax colors matched to Cosmosh workbench tokens.
- */
-export const settingsJsonHighlightStyle = HighlightStyle.define([
-  { tag: [tags.propertyName, tags.attributeName], color: 'var(--color-home-icon-indigo-ink)' },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-home-icon-emerald-ink)' },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.literal], color: 'var(--color-home-icon-amber-ink)' },
-  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: 'var(--color-text-muted)' },
-  { tag: tags.invalid, color: 'var(--color-form-message-error)' },
-]);
 
 /**
  * Unquotes a JSON string token when it is syntactically valid.
@@ -1122,7 +1111,7 @@ export const createSettingsJsonHoverTooltip = (
  */
 export const createSettingsJsonLanguageExtensions = (schema: JsonSchemaDocument): Extension[] => [
   json(),
-  syntaxHighlighting(settingsJsonHighlightStyle),
+  cosmoshCodeMirrorSyntaxHighlighting,
   lintGutter(),
   linter((view) => lintSettingsJsonDocument(view, schema), { delay: 250 }),
   autocompletion({

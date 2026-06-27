@@ -1,12 +1,12 @@
 import { redo, undo } from '@codemirror/commands';
-import { HighlightStyle, StreamLanguage, syntaxHighlighting } from '@codemirror/language';
+import { StreamLanguage } from '@codemirror/language';
 import { Compartment, EditorState, type Extension, Prec } from '@codemirror/state';
 import { EditorView, keymap } from '@codemirror/view';
-import { tags } from '@lezer/highlight';
 import { basicSetup } from 'codemirror';
 import React from 'react';
 
 import { CodeMirrorTextContextMenu } from '../../components/ui/codemirror-text-context-menu';
+import { cosmoshCodeMirrorSyntaxHighlighting } from '../../lib/codemirror-syntax-theme';
 
 type SftpCodeMirrorLanguageLoader = () => Promise<Extension>;
 
@@ -25,26 +25,6 @@ const CODEMIRROR_LANGUAGE_LOADERS: Partial<Record<string, SftpCodeMirrorLanguage
 
 const editorEditableCompartment = new Compartment();
 const editorReadOnlyCompartment = new Compartment();
-
-/**
- * Low-saturation syntax colors matched to Cosmosh workbench tokens.
- */
-const cosmoshPreviewHighlightStyle = HighlightStyle.define([
-  { tag: tags.comment, color: 'var(--color-home-text-subtle)', fontStyle: 'italic' },
-  { tag: [tags.keyword, tags.operatorKeyword], color: 'var(--color-home-icon-blue-ink)' },
-  { tag: [tags.operator, tags.punctuation, tags.separator, tags.bracket], color: 'var(--color-text-muted)' },
-  { tag: [tags.string, tags.special(tags.string)], color: 'var(--color-home-icon-emerald-ink)' },
-  { tag: [tags.escape, tags.regexp], color: 'var(--color-home-icon-emerald-ink)' },
-  { tag: [tags.number, tags.bool, tags.null, tags.atom, tags.literal], color: 'var(--color-home-icon-amber-ink)' },
-  { tag: [tags.className, tags.typeName, tags.tagName], color: 'var(--color-home-icon-cyan-ink)' },
-  { tag: [tags.propertyName, tags.attributeName], color: 'var(--color-home-icon-indigo-ink)' },
-  { tag: [tags.variableName, tags.definition(tags.variableName)], color: 'var(--color-text)' },
-  { tag: tags.meta, color: 'var(--color-home-text-subtle)' },
-  { tag: [tags.heading, tags.strong], color: 'var(--color-text)', fontWeight: '600' },
-  { tag: tags.emphasis, color: 'var(--color-text)', fontStyle: 'italic' },
-  { tag: [tags.link, tags.url], color: 'var(--color-home-icon-blue-ink)', textDecoration: 'underline' },
-  { tag: tags.invalid, color: 'var(--color-form-message-error)' },
-]);
 
 /**
  * Small imperative surface exposed to SFTP toolbar controls.
@@ -217,7 +197,7 @@ const createEditorExtensions = (options: {
     ]),
   ),
   createSftpEditorTheme(),
-  syntaxHighlighting(cosmoshPreviewHighlightStyle),
+  cosmoshCodeMirrorSyntaxHighlighting,
   EditorView.lineWrapping,
   EditorState.tabSize.of(2),
   editorReadOnlyCompartment.of(EditorState.readOnly.of(options.readOnly)),

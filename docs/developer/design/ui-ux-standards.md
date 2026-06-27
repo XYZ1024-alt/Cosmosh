@@ -16,6 +16,7 @@ Rules:
 - Tailwind colors/radius/shadow map to CSS variables (no hard-coded ad-hoc palette in feature code).
 - UI primitives are wrapped in `packages/renderer/src/components/ui/*` and consumed by pages.
 - Windows title-bar system menu symbol color must come from token `color.windows.system-menu-symbol` and be synchronized to main-process overlay at runtime.
+- CodeMirror syntax highlighting must use the shared `color.syntax.*` token family and the shared renderer CodeMirror highlighter instead of page-local color maps.
 
 ## 2. Visual Consistency Principles
 
@@ -53,6 +54,7 @@ Implementation principles:
 - Scroll affordances inside menu wrappers must stay outside normal item flow; showing or hiding up/down indicators must not reserve blank rows, resize the active viewport, or shift the current scroll position. Overlay affordances must carry a tokenized surface background and backdrop blur so translucent menus do not reveal items underneath.
 - Menu single-choice/radio items must use the shared leading checkmark indicator, matching checkbox/menu selection affordances instead of dot markers.
 - Third-party editor overlays that cannot use Radix wrappers, such as CodeMirror autocomplete and info tooltips, must still use the shared menu/tooltip token rhythm: `bg-bg-subtle`, `shadow-menu-content` or `shadow-soft`, 4px panel gutters, 6px/10px item padding, `rounded-lg` panels, `rounded-md` items, and `bg-menu-control-hover` for hover/selection.
+- CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, and context menus still follow Cosmosh surface/menu tokens.
 
 ## 6. Interaction Density Rules
 
