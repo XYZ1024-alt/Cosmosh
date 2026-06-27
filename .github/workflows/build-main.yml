@@ -27,6 +27,9 @@ jobs:
             platform: mac-arm64
             buildArgs: --mac dmg zip --arm64
     runs-on: ${{ matrix.os }}
+    env:
+      ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
+      ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -37,6 +40,27 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.32.0 --activate
           pnpm --version
+      - name: Resolve pnpm store path
+        id: pnpm-store
+        shell: bash
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+      - name: Cache pnpm store
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - name: Cache Electron downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/electron
+            .cache/electron-builder
+          key: ${{ runner.os }}-${{ matrix.platform }}-electron-${{ hashFiles('pnpm-lock.yaml', 'packages/main/package.json', 'packages/main/electron-builder.json') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.platform }}-electron-
+            ${{ runner.os }}-electron-
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build main
