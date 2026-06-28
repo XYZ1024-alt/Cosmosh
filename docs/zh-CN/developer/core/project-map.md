@@ -31,6 +31,8 @@ flowchart TB
 - **关键文件**：
   - `src/index.ts`：应用启动、窗口配置、IPC 处理器、后端子进程管理。
   - `src/ipc/register-app-utility-ipc.ts`：特权应用工具 IPC，例如原生对话框、文件管理器集成、SFTP 临时文件创建，以及已校验的系统打开/打开方式流程。
+  - `src/ipc/register-debug-ipc.ts`：开发诊断 IPC，包括 backend 请求镜像的列表、清空与事件通道。
+  - `src/ipc/backend-request-trace-store.ts`：仅开发态使用的 backend proxy 请求镜像脱敏 ring buffer。
   - `src/ipc/sftp-download-target-authorizations.ts`：面向 renderer 所有者的本地 SFTP 下载目标精确路径能力授权。
   - `src/preload.ts`：安全渲染层桥接。
   - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助，包含开发身份数据库路径覆盖。
@@ -38,6 +40,7 @@ flowchart TB
   - `resources/installer.nsh`：Windows NSIS 安装器扩展，包括辅助安装选项页、shell/terminal 注册钩子、卸载数据清理，以及安装器 DPI manifest 设置。
   - `resources/helpers`：打包的系统 helper，包括 macOS NSWorkspace SFTP 打开方式 helper 源码/二进制。
   - `scripts/compile-macos-open-with-helper.mjs`：仅 macOS 生效的构建钩子，在打包前编译 SFTP 打开方式 helper。
+  - `devtools/request-trace-panel`：未打包的仅开发态 DevTools extension，由 Main 在开发运行中加载；它读取 renderer 镜像缓存，不改变 backend transport。
 
 ### `packages/renderer`
 
@@ -49,7 +52,7 @@ flowchart TB
   - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
   - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
-  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
+  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。
 
 ### `packages/backend`
@@ -73,7 +76,7 @@ flowchart TB
 共享协议常量、请求/响应类型、OpenAPI 源与生成产物。
 
 - `src/http.ts`：API path token 与 query string 解析 helper，供 main IPC 代理与 renderer browser transport 共享。
-- `src/ipc.ts`：共享未由 OpenAPI 生成的 IPC-only payload 枚举与结构，例如应用菜单动作与 SFTP 打开方式应用描述。
+- `src/ipc.ts`：共享未由 OpenAPI 生成的 IPC-only payload 枚举与结构，例如应用菜单动作、SFTP 打开方式应用描述与开发态 backend 请求 trace。
 - `src/settings-registry.ts`：所有设置定义的**唯一来源**——类型、默认值、约束、枚举集、UI 控件元数据、分类与辅助函数。增删设置项仅需编辑此文件。
 - `src/settings.ts`：基于注册表的通用校验与规范化辅助函数（`normalizeSettingsValuesStrict`、`normalizeSettingsValuesWithDefaults`），供 backend 与 renderer 共享。
 - `src/sftp.ts`：SFTP 条目/名称排序共享 helper，供后端会话列表与渲染层浏览器/树视图复用。
@@ -145,8 +148,9 @@ flowchart TD
 ### 新增应用设置项
 
 1. 在 `packages/api-contract/src/settings-registry.ts` 中：
-  - 在 `SettingsValues` 接口中添加 key 及其类型。
-  - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
+   - 在 `SettingsValues` 接口中添加 key 及其类型。
+   - 在 `SETTINGS_REGISTRY` 数组中添加一条 `SettingDefinition` 条目（默认值、约束、UI 控件、分类、i18n key 等）。
+
 2. 在 `packages/i18n/locales/en/*.json` 和 `zh-CN/*.json` 中添加 i18n key。
 3. 无需修改其他文件——校验、默认值与 UI 渲染均从注册表自动派生。
 

@@ -47,6 +47,9 @@ flowchart TB
 | `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; content?: string }>` | Opens native file picker and returns UTF-8 private key content when selected |
 | `app:get-process-performance-stats` | `invoke` | none | `Promise<{ sampledAt: number; cpuPercent: number \| null; mainProcessMemory: { rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number; arrayBuffersBytes: number }; rendererProcessMemory: { residentSetBytes: number; privateBytes: number; sharedBytes: number } \| null; backendProcess: { pid: number; cpuPercent: number \| null; memoryRssBytes: number \| null } \| null }>` | Samples main process CPU + memory, resolves renderer process memory from active window, and includes backend child-process CPU/RSS memory for debug monitoring overlay |
 | `app:export-main-heap-snapshot` | `invoke` | none | `Promise<{ ok: boolean; filePath?: string; message?: string }>` | Writes a V8 heap snapshot for the main process into app user-data debug snapshot directory |
+| `debug:backend-request-trace-list` | `invoke` | none | `Promise<BackendRequestTrace[]>` | Returns the retained sanitized backend request mirror list and subscribes the renderer webContents to future trace events; empty when request tracing is disabled |
+| `debug:backend-request-trace-clear` | `invoke` | none | `Promise<boolean>` | Clears the retained development request mirror ring buffer |
+| `debug:backend-request-trace-event` | `event (main -> renderer)` | `BackendRequestTrace` | none | Pushes one completed sanitized backend proxy request mirror to subscribed renderer webContents |
 | `backend:test-ping` | `invoke` | none | `Promise<ApiTestPingResponse \| ApiErrorResponse>` | Calls backend health test endpoint |
 | `backend:settings-get` | `invoke` | none | `Promise<ApiSettingsGetResponse \| ApiErrorResponse>` | GET persisted application settings |
 | `backend:settings-update` | `invoke` | `payload: ApiSettingsUpdateRequest` | `Promise<ApiSettingsUpdateResponse \| ApiErrorResponse>` | PUT application settings snapshot |
@@ -99,7 +102,8 @@ flowchart TB
 
 - API payload types come from `@cosmosh/api-contract`, generated from `packages/api-contract/openapi/cosmosh.openapi.yaml`.
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
-- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, and `SftpTemporaryFileWatchChange`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, `SftpTemporaryFileWatchChange`, and `BackendRequestTrace`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- `BackendRequestTrace` is development diagnostics only. It is populated by the main-process backend proxy in unpackaged development runs; production packages do not collect traces or load the DevTools extension.
 
 ### 3.1 SSH Visual Metadata Fields
 

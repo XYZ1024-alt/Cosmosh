@@ -1,0 +1,7 @@
+{
+  "manifest_version": 3,
+  "name": "Cosmosh Requests",
+  "version": "0.1.0",
+  "description": "Mirror-only backend request trace panel for Cosmosh development.",
+  "devtools_page": "devtools.html"
+}

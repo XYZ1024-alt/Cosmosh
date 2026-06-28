@@ -6,6 +6,7 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { SelectionContextMenuProvider } from './components/ui/selection-context-menu';
+import { initializeBackendRequestTraceMirror } from './lib/backend-request-trace-mirror';
 import { initializeLocale } from './lib/i18n';
 import { initializeSettingsStore } from './lib/settings-store';
 import { isSftpEntryPropertiesWindow } from './pages/sftp/sftp-entry-properties-window';
@@ -21,6 +22,7 @@ document.documentElement.dataset.theme = 'dark';
  * @returns Nothing.
  */
 const bootstrap = async (): Promise<void> => {
+  await initializeBackendRequestTraceMirror();
   await initializeLocale();
 
   const shouldRenderSftpPropertiesWindow = isSftpEntryPropertiesWindow();

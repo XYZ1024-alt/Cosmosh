@@ -31,6 +31,8 @@ flowchart TB
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
+  - `src/ipc/register-debug-ipc.ts`: development diagnostics IPC, including the backend request mirror list/clear/event channels.
+  - `src/ipc/backend-request-trace-store.ts`: development-only sanitized ring buffer for backend proxy request mirrors.
   - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations.
   - `src/preload.ts`: secure renderer bridge.
   - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
@@ -38,6 +40,7 @@ flowchart TB
   - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
   - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.
+  - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded by Main in development runs; it reads the renderer mirror cache and does not alter backend transport.
 
 ### `packages/renderer`
 
@@ -49,7 +52,7 @@ flowchart TB
   - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
-  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
+  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
   - `theme`: token source used to generate CSS variable system.
 
 ### `packages/backend`
@@ -73,7 +76,7 @@ flowchart TB
 Shared protocol constants, request/response types, OpenAPI source, generated contracts.
 
 - `src/http.ts`: API path-token and query-string resolution helpers shared by main IPC proxying and renderer browser transport.
-- `src/ipc.ts`: shared IPC-only payload enums and structs that are not generated from OpenAPI, such as app menu actions and SFTP Open With application descriptors.
+- `src/ipc.ts`: shared IPC-only payload enums and structs that are not generated from OpenAPI, such as app menu actions, SFTP Open With application descriptors, and development backend request traces.
 - `src/settings-registry.ts`: **single source of truth** for all settings definitions — types, defaults, constraints, enum sets, UI control metadata, categories, and helper functions. Adding/removing a setting only requires editing this file.
 - `src/settings.ts`: generic, registry-driven validation and normalization helpers (`normalizeSettingsValuesStrict`, `normalizeSettingsValuesWithDefaults`) shared by backend and renderer.
 - `src/sftp.ts`: shared SFTP entry/name ordering helpers consumed by backend session listings and renderer browser/tree views.
@@ -145,8 +148,9 @@ flowchart TD
 ### Add New Application Setting
 
 1. In `packages/api-contract/src/settings-registry.ts`:
-  - Add the key and its type to the `SettingsValues` interface.
-  - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+   - Add the key and its type to the `SettingsValues` interface.
+   - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+
 2. Add i18n keys in `packages/i18n/locales/en/*.json` and `zh-CN/*.json`.
 3. No other files need changes — validation, defaults, and UI rendering are derived from the registry automatically.
 

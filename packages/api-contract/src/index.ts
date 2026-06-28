@@ -5,6 +5,10 @@ export type { ApiPathParams, ApiQueryParams } from './http';
 export { APP_MENU_ACTIONS, isAppMenuAction } from './ipc';
 export type {
   AppMenuAction,
+  BackendRequestTrace,
+  BackendRequestTraceBody,
+  BackendRequestTraceBodyKind,
+  BackendRequestTraceMethod,
   SystemProxyResolveRequest,
   SystemProxyResolveResult,
   SftpOpenWithApplication,

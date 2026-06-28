@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cosmosh Requests</title>
+    <link rel="stylesheet" href="panel.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="identity">
+        <span class="title">Cosmosh Requests</span>
+        <span id="mirrorStatus" class="mirror-status">connecting</span>
+      </div>
+      <input id="filterInput" class="filter" type="search" placeholder="Filter method, path, status, request id" />
+      <label class="sort-control">
+        <span>Sort</span>
+        <select id="sortSelect" class="select">
+          <option value="startedAtDesc">Newest first</option>
+          <option value="startedAtAsc">Oldest first</option>
+          <option value="durationDesc">Slowest first</option>
+          <option value="durationAsc">Fastest first</option>
+          <option value="statusAsc">Status</option>
+          <option value="methodAsc">Method</option>
+          <option value="pathAsc">Path</option>
+        </select>
+      </label>
+      <button id="refreshButton" class="button" type="button">Refresh</button>
+      <button id="clearButton" class="button" type="button">Clear</button>
+    </header>
+    <main class="layout">
+      <section class="request-list" aria-label="Mirrored backend requests">
+        <div class="list-summary">
+          <span id="countText">0 requests</span>
+          <span class="source-badge">Mirrored from main process</span>
+        </div>
+        <div class="list-header">
+          <span>Method</span>
+          <span>Path</span>
+          <span>Status</span>
+          <span>Duration</span>
+          <span>Started</span>
+        </div>
+        <div id="requestRows" class="request-rows"></div>
+        <div id="emptyState" class="empty-state">No mirrored requests</div>
+      </section>
+      <section class="details" aria-label="Request details">
+        <div class="details-header">
+          <div class="detail-heading">
+            <div id="detailTitle" class="detail-title">Select a request</div>
+            <div id="detailSubtitle" class="detail-subtitle">Backend proxy mirror</div>
+          </div>
+          <div id="detailStatus" class="status-pill">idle</div>
+        </div>
+        <nav class="tabs" aria-label="Detail sections">
+          <button class="tab is-active" type="button" data-tab="headers">Headers</button>
+          <button class="tab" type="button" data-tab="payload">Payload</button>
+          <button class="tab" type="button" data-tab="response">Response</button>
+          <button class="tab" type="button" data-tab="timing">Timing</button>
+        </nav>
+        <pre id="detailBody" class="detail-body">No request selected.</pre>
+      </section>
+    </main>
+    <script src="panel.js"></script>
+  </body>
+</html>

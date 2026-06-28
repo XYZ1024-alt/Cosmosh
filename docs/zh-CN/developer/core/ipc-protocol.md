@@ -47,6 +47,9 @@ flowchart TB
 | `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; content?: string }>` | 调起系统文件选择器并在选择后返回 UTF-8 私钥内容 |
 | `app:get-process-performance-stats` | `invoke` | none | `Promise<{ sampledAt: number; cpuPercent: number \| null; mainProcessMemory: { rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number; arrayBuffersBytes: number }; rendererProcessMemory: { residentSetBytes: number; privateBytes: number; sharedBytes: number } \| null; backendProcess: { pid: number; cpuPercent: number \| null; memoryRssBytes: number \| null } \| null }>` | 为调试浮层采样主进程 CPU/内存，基于当前活动窗口获取渲染进程内存，并补充 backend 子进程 CPU/RSS 内存数据 |
 | `app:export-main-heap-snapshot` | `invoke` | none | `Promise<{ ok: boolean; filePath?: string; message?: string }>` | 将主进程 V8 堆快照写入应用 user-data 下的 debug 快照目录 |
+| `debug:backend-request-trace-list` | `invoke` | none | `Promise<BackendRequestTrace[]>` | 返回已保留的脱敏 backend 请求镜像列表，并让该 renderer webContents 订阅后续 trace event；未启用请求追踪时返回空列表 |
+| `debug:backend-request-trace-clear` | `invoke` | none | `Promise<boolean>` | 清空开发态请求镜像 ring buffer |
+| `debug:backend-request-trace-event` | `event (main -> renderer)` | `BackendRequestTrace` | none | 向已订阅的 renderer webContents 推送一条已完成且脱敏的 backend proxy 请求镜像 |
 | `backend:test-ping` | `invoke` | none | `Promise<ApiTestPingResponse \| ApiErrorResponse>` | Calls backend health test endpoint |
 | `backend:settings-get` | `invoke` | none | `Promise<ApiSettingsGetResponse \| ApiErrorResponse>` | GET 已持久化设置 |
 | `backend:settings-update` | `invoke` | `payload: ApiSettingsUpdateRequest` | `Promise<ApiSettingsUpdateResponse \| ApiErrorResponse>` | PUT 设置快照 |
@@ -99,7 +102,8 @@ flowchart TB
 
 - API payload 类型来自 `@cosmosh/api-contract`，并由 `packages/api-contract/openapi/cosmosh.openapi.yaml` 生成。
 - Backend、Main IPC 代理与 renderer HTTP 调用端必须通过 `@cosmosh/api-contract` 中生成的 `API_PATHS` 及相关合同导出访问 API，不允许硬编码路由字符串。
-- 未由 OpenAPI 生成的 IPC-only payload（包括 `AppMenuAction`、`SftpOpenWithApplication` 与 `SftpTemporaryFileWatchChange`）定义在 `packages/api-contract/src/ipc.ts`，供 main、preload 与 renderer 类型声明共同消费。
+- 未由 OpenAPI 生成的 IPC-only payload（包括 `AppMenuAction`、`SftpOpenWithApplication`、`SftpTemporaryFileWatchChange` 与 `BackendRequestTrace`）定义在 `packages/api-contract/src/ipc.ts`，供 main、preload 与 renderer 类型声明共同消费。
+- `BackendRequestTrace` 仅用于开发诊断。它会在未打包开发运行中由 main-process backend proxy 填充；生产包不会采集 trace，也不会加载 DevTools extension。
 
 ### 3.1 SSH 视觉元数据字段
 

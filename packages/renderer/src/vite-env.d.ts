@@ -69,6 +69,7 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
   AppMenuAction,
+  BackendRequestTrace,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
@@ -145,7 +146,10 @@ declare global {
       openExternalUrl: (targetUrl: string) => Promise<boolean>;
       setWindowsSystemMenuSymbolColor: (symbolColor: string) => Promise<boolean>;
       showSaveFileDialog: (defaultPath?: string) => Promise<{ canceled: boolean; filePath?: string }>;
-      importPrivateKeyFromFile: () => Promise<{ canceled: boolean; content?: string }>;
+      importPrivateKeyFromFile: () => Promise<{
+        canceled: boolean;
+        content?: string;
+      }>;
       getProcessPerformanceStats: () => Promise<{
         sampledAt: number;
         cpuPercent: number | null;
@@ -167,7 +171,14 @@ declare global {
           memoryRssBytes: number | null;
         } | null;
       }>;
-      exportMainHeapSnapshot: () => Promise<{ ok: boolean; filePath?: string; message?: string }>;
+      exportMainHeapSnapshot: () => Promise<{
+        ok: boolean;
+        filePath?: string;
+        message?: string;
+      }>;
+      getBackendRequestTraces: () => Promise<BackendRequestTrace[]>;
+      clearBackendRequestTraces: () => Promise<boolean>;
+      onBackendRequestTrace: (listener: (trace: BackendRequestTrace) => void) => () => void;
       backendTestPing: () => Promise<ApiTestPingResponse | ApiErrorResponse>;
       backendSettingsGet: () => Promise<ApiSettingsGetResponse | ApiErrorResponse>;
       backendSettingsUpdate: (
@@ -293,6 +304,13 @@ declare global {
       ) => Promise<LocalTerminalCreateSessionResponse | ApiErrorResponse>;
       backendLocalTerminalCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       platform: NodeJS.Platform;
+    };
+    __COSMOSH_BACKEND_REQUEST_TRACE__?: {
+      traces: BackendRequestTrace[];
+      enabled: boolean;
+      updatedAt: string | null;
+      refresh: () => Promise<BackendRequestTrace[]>;
+      clear: () => Promise<boolean>;
     };
   }
 }
