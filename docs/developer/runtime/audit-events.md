@@ -7,6 +7,7 @@ Cosmosh records security-core actions into a local-first audit stream so operato
 Current scope covers high-value operational events:
 
 - SSH connection lifecycle (`ssh-session`)
+- SFTP connection and file-operation lifecycle (`sftp-session`)
 - Host fingerprint trust actions (`ssh-host-trust`)
 - SSH server and keychain entity mutations (`ssh-server`, `ssh-keychain`)
 - SSH port forwarding rule and runtime actions (`port-forward`)
@@ -84,9 +85,9 @@ Renderer integration points:
 
 The page uses a dense split layout:
 
-- Left: filter controls
-- Center: paginated event list
-- Right: selected event details with formatted metadata
+- Left: filter controls for keyword, category, outcome, and time range.
+- Center: an SFTP-style, scroll-stable paginated event list. Selecting an event loads detail independently and does not refresh, remount, or clear the list; manual refresh keeps existing rows visible without overlaying the list.
+- Right: selected event inspector with outcome/severity summary, identity/scope/correlation field groups, and formatted metadata.
 
 ## 6. Security and Privacy Constraints
 

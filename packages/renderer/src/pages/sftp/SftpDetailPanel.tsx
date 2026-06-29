@@ -8,9 +8,9 @@ import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
 import type { SftpLargePreviewPrompt, SftpPreviewState } from './sftp-types';
 import { formatFileSize, formatModifiedAt, resolveEntryIcon } from './sftp-utils';
-import type { SftpMonacoPreviewEditorProps } from './SftpMonacoPreviewEditor';
+import type { SftpCodeMirrorPreviewEditorProps } from './SftpCodeMirrorPreviewEditor';
 
-const SftpMonacoPreviewEditor = React.lazy(() => import('./SftpMonacoPreviewEditor'));
+const SftpCodeMirrorPreviewEditor = React.lazy(() => import('./SftpCodeMirrorPreviewEditor'));
 
 type SftpPreviewEditorErrorBoundaryProps = React.PropsWithChildren<{
   fallback: React.ReactNode;
@@ -21,7 +21,7 @@ type SftpPreviewEditorErrorBoundaryState = {
 };
 
 /**
- * Keeps Monaco loading failures scoped to the preview panel instead of the full SFTP page.
+ * Keeps editor loading failures scoped to the preview panel instead of the full SFTP page.
  */
 class SftpPreviewEditorErrorBoundary extends React.Component<
   SftpPreviewEditorErrorBoundaryProps,
@@ -62,7 +62,8 @@ type SftpDetailPanelProps = {
   selectedEntry: ApiSftpEntry | null;
   onConfirmLargePreview: (prompt: SftpLargePreviewPrompt) => void;
   onPreviewContentChange: (content: string) => void;
-  onPreviewEditorMount: SftpMonacoPreviewEditorProps['onMount'];
+  onPreviewEditorMount: SftpCodeMirrorPreviewEditorProps['onMount'];
+  onPreviewSave: () => Promise<void>;
 };
 
 /**
@@ -76,6 +77,7 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
   onConfirmLargePreview,
   onPreviewContentChange,
   onPreviewEditorMount,
+  onPreviewSave,
   previewState,
   selectedCount,
   selectedEntry,
@@ -225,19 +227,20 @@ export const SftpDetailPanel: React.FC<SftpDetailPanelProps> = ({
         )}
         <div
           data-input-context-menu-ignore="true"
-          className="bg-home-card/70 -mx-2 -mb-2 min-h-0 flex-1 overflow-hidden rounded-lg"
+          className="-mx-2 -mb-2 min-h-0 flex-1 overflow-hidden"
         >
           <SftpPreviewEditorErrorBoundary
             key={previewState.entry.path}
             fallback={renderNoPreview(t('sftp.previewFailed'))}
           >
             <React.Suspense fallback={renderEditorLoading()}>
-              <SftpMonacoPreviewEditor
+              <SftpCodeMirrorPreviewEditor
                 language={previewState.language}
                 readOnly={previewState.isSaving}
                 value={previewState.content}
                 onChange={onPreviewContentChange}
                 onMount={onPreviewEditorMount}
+                onSave={onPreviewSave}
               />
             </React.Suspense>
           </SftpPreviewEditorErrorBoundary>

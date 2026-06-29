@@ -37,16 +37,16 @@ export type SshConnectionIntent = {
   startupCommand?: string;
 };
 
-export type SshEditorState = {
-  preferredServerId?: string;
-  createMode?: boolean;
-};
-
 export type SftpConnectionIntent = {
   serverId: string;
   serverName: string;
   initialPath?: string;
   createdAt: number;
+};
+
+export type HomeState = {
+  initialMode?: 'ssh' | 'keychains' | 'portForwarding';
+  initialPortForwardRuleId?: string;
 };
 
 export type TabItem = {
@@ -62,6 +62,6 @@ export type TabItem = {
     settingsEditorSettingKey?: string;
     sshConnectionIntent?: SshConnectionIntent;
     sftpConnectionIntent?: SftpConnectionIntent;
-    sshEditor?: SshEditorState;
+    home?: HomeState;
   };
 };

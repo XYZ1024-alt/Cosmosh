@@ -1,5 +1,6 @@
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import { SearchAddon } from '@xterm/addon-search';
+import type { SerializeAddon } from '@xterm/addon-serialize';
 import { type ITerminalOptions, type Terminal } from '@xterm/xterm';
 import React from 'react';
 
@@ -24,6 +25,7 @@ import {
   syncTerminalWebglAddon,
   type TerminalExternalLinkHandler,
   type TerminalHardwareAccelerationState,
+  type TerminalInlineImageSettings,
   type TerminalWebglAddonRuntime,
   type TerminalWebLinksSettings,
 } from './terminal-addons';
@@ -41,6 +43,7 @@ type UseSshPrimarySessionParams = {
   terminalRef: React.RefObject<Terminal | null>;
   primaryTerminalRef: React.RefObject<Terminal | null>;
   primarySearchAddonRef: React.RefObject<SearchAddon | null>;
+  primarySerializeAddonRef: React.RefObject<SerializeAddon | null>;
   primaryWebglAddonRuntimeRef: React.RefObject<TerminalWebglAddonRuntime>;
   primaryPaneIdRef: React.RefObject<string>;
   activePaneIdRef: React.RefObject<string>;
@@ -50,6 +53,7 @@ type UseSshPrimarySessionParams = {
   sshConnectionTimeoutSecRef: React.RefObject<number>;
   sshReconnectOnFocusRef: React.RefObject<boolean>;
   terminalClipboardProvider: TerminalClipboardProvider;
+  terminalInlineImageSettingsRef: React.RefObject<TerminalInlineImageSettings>;
   terminalWebLinksSettingsRef: React.RefObject<TerminalWebLinksSettings>;
   openExternalLinkRef: React.RefObject<TerminalExternalLinkHandler>;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
@@ -107,6 +111,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     terminalRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primarySerializeAddonRef,
     primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
@@ -116,6 +121,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     sshConnectionTimeoutSecRef,
     sshReconnectOnFocusRef,
     terminalClipboardProvider,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
@@ -174,10 +180,15 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       characterWidthCompatibilityModeEnabledRef.current,
     );
     const clipboardAddon = new ClipboardAddon(undefined, terminalClipboardProvider);
-    const addonRuntime = loadTerminalAddons(terminal, terminalWebLinksSettingsRef.current, (targetUrl) => {
-      openExternalLinkRef.current(targetUrl);
-    });
-    const { fitAddon, searchAddon } = addonRuntime;
+    const addonRuntime = loadTerminalAddons(
+      terminal,
+      terminalInlineImageSettingsRef.current,
+      terminalWebLinksSettingsRef.current,
+      (targetUrl) => {
+        openExternalLinkRef.current(targetUrl);
+      },
+    );
+    const { fitAddon, searchAddon, serializeAddon } = addonRuntime;
     primaryWebglAddonRuntimeRef.current = addonRuntime;
     terminal.loadAddon(clipboardAddon);
 
@@ -185,6 +196,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     if (!containerElement) {
       terminalRef.current = null;
       primarySearchAddonRef.current = null;
+      primarySerializeAddonRef.current = null;
       primaryWebglAddonRuntimeRef.current = { webglAddon: null };
       terminal.dispose();
       return;
@@ -199,6 +211,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     );
     primaryTerminalRef.current = terminal;
     primarySearchAddonRef.current = searchAddon;
+    primarySerializeAddonRef.current = serializeAddon;
     terminalRef.current = terminal;
     let disposed = false;
     let retryFitFrameId: number | null = null;
@@ -626,6 +639,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       scheduleFitAndResizeSyncRef.current = null;
       primaryTerminalRef.current = null;
       primarySearchAddonRef.current = null;
+      primarySerializeAddonRef.current = null;
       primaryWebglAddonRuntimeRef.current = { webglAddon: null };
       terminalRef.current = null;
       terminalClipboardProvider.setActiveTarget(null);
@@ -661,6 +675,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     primarySocketRef,
     primaryTerminalRef,
     primarySearchAddonRef,
+    primarySerializeAddonRef,
     primaryWebglAddonRuntimeRef,
     refreshSelectionAnchor,
     requestHostFingerprintTrust,
@@ -679,6 +694,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     terminalInitOptionsRef,
     terminalClipboardProvider,
     terminalRef,
+    terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
   ]);
 

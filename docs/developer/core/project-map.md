@@ -17,28 +17,43 @@ flowchart TB
 
 ## 2. Directory Responsibilities
 
+### `scripts`
+
+- **Role**: Repository-level developer and release workflow helpers.
+- **Key files**:
+  - `dev-profile.mjs`: development profile manager used by `pnpm dev:profile` and `pnpm dev:main:fresh`. It automatically imports the legacy implicit default identity into the protected `default` profile, then creates, switches, resets, deletes, and runs commands with profile-scoped runtime paths under `.cosmosh/dev-profiles/<name>/`.
+  - `update-version.js`: version metadata update helper.
+  - `precommit-staged.mjs`: staged-file precommit validation helper.
+  - `setup-githooks.mjs`: local Git hook bootstrap.
+
 ### `packages/main`
 
 - **Role**: Electron host process.
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
+  - `src/ipc/register-debug-ipc.ts`: development diagnostics IPC, including the backend request mirror list/clear/event channels.
+  - `src/ipc/backend-request-trace-store.ts`: development-only sanitized ring buffer for backend proxy request mirrors.
   - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations.
   - `src/preload.ts`: secure renderer bridge.
-  - `src/security/database-encryption.ts`: DB path/key handling helpers.
+  - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
+  - `src/dev/dev-profile.ts`: development-only profile activation that maps selected profiles to Electron `userData`, SQLite, and backend secret storage paths before startup.
+  - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
   - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.
+  - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded by Main in development runs; it reads the renderer mirror cache and does not alter backend transport.
 
 ### `packages/renderer`
 
 - **Role**: React UI layer.
 - **Key folders**:
-  - `src/pages`: feature pages (`Home`, `SSH`, `SSHEditor`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH, keychain, and port-forwarding landing surfaces.
+  - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
   - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
+  - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
-  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), shared date-time display formatting (`date-time-format.ts`), and utility abstractions (including shared entity visual helpers and folder-dialog hook).
+  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
   - `theme`: token source used to generate CSS variable system.
 
 ### `packages/backend`
@@ -62,7 +77,7 @@ flowchart TB
 Shared protocol constants, request/response types, OpenAPI source, generated contracts.
 
 - `src/http.ts`: API path-token and query-string resolution helpers shared by main IPC proxying and renderer browser transport.
-- `src/ipc.ts`: shared IPC-only payload enums and structs that are not generated from OpenAPI, such as app menu actions and SFTP Open With application descriptors.
+- `src/ipc.ts`: shared IPC-only payload enums and structs that are not generated from OpenAPI, such as app menu actions, SFTP Open With application descriptors, and development backend request traces.
 - `src/settings-registry.ts`: **single source of truth** for all settings definitions — types, defaults, constraints, enum sets, UI control metadata, categories, and helper functions. Adding/removing a setting only requires editing this file.
 - `src/settings.ts`: generic, registry-driven validation and normalization helpers (`normalizeSettingsValuesStrict`, `normalizeSettingsValuesWithDefaults`) shared by backend and renderer.
 - `src/sftp.ts`: shared SFTP entry/name ordering helpers consumed by backend session listings and renderer browser/tree views.
@@ -142,9 +157,8 @@ flowchart TD
 ### Add New Application Setting
 
 1. In `packages/api-contract/src/settings-registry.ts`:
-
-- Add the key and its type to the `SettingsValues` interface.
-- Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
+   - Add the key and its type to the `SettingsValues` interface.
+   - Add a `SettingDefinition` entry to the `SETTINGS_REGISTRY` array (default value, constraints, UI control, category, i18n keys, etc.).
 
 2. Add i18n keys in `packages/i18n/locales/en/*.json` and `zh-CN/*.json`.
 3. No other files need changes — validation, defaults, and UI rendering are derived from the registry automatically.
@@ -177,9 +191,9 @@ flowchart TD
 - Bridge owner:
   - `packages/main/src/ipc/register-backend-ipc.ts` and `packages/main/src/preload.ts` for keychain IPC proxy channels.
 - Renderer owner:
-  - `packages/renderer/src/pages/SSHEditor.tsx` for per-server keychain selection + inline fallback editing flow.
-  - `packages/renderer/src/pages/SSHKeychains.tsx` for dedicated keychain CRUD management workflow.
-  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH / keychain / port-forwarding mode bodies; the Home keychain mode reuses shared SSH folders/tags and `SSHKeychainEditorDialog` for create/edit. Each Home mode owns an independent sort/group view preference so mode switches do not rewrite another surface's organization state.
+  - `packages/renderer/src/pages/Home.tsx` for the shared Home sidebar and SSH server / keychain / port-forwarding mode bodies. Home is the canonical management surface for servers and keychains.
+  - `packages/renderer/src/components/ssh/SSHServerEditorDialog.tsx` for per-server create/edit, including keychain selection and inline fallback editing.
+  - `packages/renderer/src/components/ssh/SSHKeychainEditorDialog.tsx` for shared keychain create/edit. Each Home mode owns an independent sort/group view preference so mode switches do not rewrite another surface's organization state.
 
 ## 9. SSH Port Forwarding Ownership Map (2026-05)
 
@@ -201,3 +215,17 @@ flowchart TD
   - `packages/renderer/src/lib/api/*` and `packages/renderer/src/lib/backend.ts` for typed transport wrappers.
 - Documentation owner:
   - `docs/developer/runtime/port-forwarding.md` and `docs/zh-CN/developer/runtime/port-forwarding.md`.
+
+## 10. Server Proxy Ownership Map (2026-06)
+
+- Contract and validation:
+  - `packages/api-contract/src/proxy.ts` owns proxy modes, URL validation, protocols, and limits.
+  - `packages/api-contract/openapi/cosmosh.openapi.yaml` owns server proxy fields and transient system proxy request fields.
+- Persistent model:
+  - `packages/backend/prisma/schema.prisma` owns `SshServer.proxyMode` and `SshServer.proxyUrl`.
+- Privileged system resolution:
+  - `packages/main/src/ipc/register-app-utility-ipc.ts` owns `app:resolve-system-proxy` through Electron `Session.resolveProxy`.
+- Renderer orchestration:
+  - `packages/renderer/src/lib/server-proxy.ts` decides whether system resolution is needed before SSH, SFTP, or port-forward startup.
+- Backend runtime:
+  - `packages/backend/src/ssh/proxy.ts` owns precedence, PAC result parsing, tunnel construction, timeout sharing, and credential-safe errors.

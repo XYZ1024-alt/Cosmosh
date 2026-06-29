@@ -25,6 +25,7 @@ type SSHTerminalPaneLayoutProps = {
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
   onCopy: PaneActionHandler;
+  onCopyAsHtml: PaneActionHandler;
   onPaste: PaneActionHandler;
   onSearchOnline: PaneActionHandler;
   onOpenDirectoryInSftp: PaneActionHandler;
@@ -59,6 +60,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
  * @param props.onCopy Callback that copies selection from pane.
+ * @param props.onCopyAsHtml Callback that copies selection HTML from pane.
  * @param props.onPaste Callback that pastes text into pane.
  * @param props.onSearchOnline Callback that searches selected text.
  * @param props.onOpenDirectoryInSftp Callback that opens selected directory text in SFTP.
@@ -87,6 +89,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   setPrimaryPaneContainer,
   onPaneActivate,
   onCopy,
+  onCopyAsHtml,
   onPaste,
   onSearchOnline,
   onOpenDirectoryInSftp,
@@ -104,6 +107,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           isConnected={isConnected}
           copyLabel={t('ssh.contextMenuCopy')}
           copyShortcutLabel={copyShortcutLabel}
+          copyAsHtmlLabel={t('ssh.contextMenuCopyAsHtml')}
           pasteLabel={t('ssh.contextMenuPaste')}
           pasteShortcutLabel={pasteShortcutLabel}
           searchOnlineLabel={searchOnlineLabel}
@@ -120,6 +124,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
           rightClickAction={rightClickAction}
           onCopy={() => onCopy(paneId)}
+          onCopyAsHtml={() => onCopyAsHtml(paneId)}
           onPaste={() => onPaste(paneId)}
           onSearchOnline={() => onSearchOnline(paneId)}
           onOpenDirectoryInSftp={() => onOpenDirectoryInSftp(paneId)}

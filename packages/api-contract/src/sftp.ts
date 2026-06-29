@@ -21,7 +21,7 @@ export const DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES = 512 * 1024;
 /** Default byte threshold before image preview asks for confirmation. */
 export const DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES = 4 * 1024 * 1024;
 
-/** Maximum configurable byte threshold for Monaco-backed text/code preview. */
+/** Maximum configurable byte threshold for CodeMirror-backed text/code preview. */
 export const MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES = 16 * 1024 * 1024;
 
 /** Maximum configurable byte threshold for image preview downloads. */

@@ -1,6 +1,6 @@
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import classNames from 'classnames';
-import { Check, ChevronRight, Dot } from 'lucide-react';
+import { Check, ChevronRight } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -9,7 +9,7 @@ import {
   useMenuIconSlot,
   useMenuSeparatorInset,
 } from './menu-icon-slot';
-import { normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
+import { MENU_AVAILABLE_SIZE_VARIABLES, normalizeCollisionPadding, resolveViewportMenuBounds } from './menu-position';
 import { menuStyles } from './menu-styles';
 
 type MenuIconComponent = React.ComponentType<{ className?: string }>;
@@ -61,7 +61,7 @@ const DropdownMenuSubContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.SubContent>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.SubContent>
 >(({ className, sideOffset = 6, alignOffset = -4, collisionPadding = 8, style, ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.dropdownMenu);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
 
   return (
@@ -78,7 +78,7 @@ const DropdownMenuSubContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(menuStyles.content, menuStyles.contentCloseMotion, className)}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
@@ -94,7 +94,7 @@ const DropdownMenuContent = React.forwardRef<
     horizontalAlign?: DropdownMenuHorizontalAlign;
   }
 >(({ className, sideOffset = 6, collisionPadding = 8, style, align, horizontalAlign = 'center', ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds();
+  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.dropdownMenu);
   const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
   const resolvedAlign = align ?? DROPDOWN_MENU_HORIZONTAL_ALIGN_MAP[horizontalAlign];
 
@@ -112,7 +112,7 @@ const DropdownMenuContent = React.forwardRef<
           ...viewportBoundsStyle,
           ...style,
         }}
-        className={classNames(menuStyles.content, menuStyles.contentCloseMotion, className)}
+        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
         {...props}
       >
         <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
@@ -181,7 +181,7 @@ const DropdownMenuRadioItem = React.forwardRef<
   >
     <span className={menuStyles.itemIndicator}>
       <DropdownMenuPrimitive.ItemIndicator>
-        <Dot className="h-4 w-4" />
+        <Check className="h-4 w-4" />
       </DropdownMenuPrimitive.ItemIndicator>
     </span>
     <span className={menuStyles.leadingIconSlot} />

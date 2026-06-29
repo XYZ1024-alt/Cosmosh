@@ -1,6 +1,8 @@
-import { Bug, RefreshCcw, Settings2 } from 'lucide-react';
+import type { components } from '@cosmosh/api-contract';
+import { Bug, CornerUpRight, RefreshCcw, Settings2 } from 'lucide-react';
 import React from 'react';
 
+import { listPortForwardRules, listSshServers } from '../lib/backend';
 import {
   collectCommandPaletteCommands,
   type CommandPaletteCommand,
@@ -9,18 +11,36 @@ import {
   executeCommandPaletteCommand,
   filterCommandPaletteCommands,
 } from '../lib/command-palette';
+import { renderEntityIcon } from '../lib/entity-visuals';
 import { getLocale, onLocaleChange, t, tForLocale } from '../lib/i18n';
+import {
+  formatPortForwardBindEndpoint,
+  formatPortForwardCopyEndpoint,
+  formatPortForwardTargetEndpoint,
+} from '../lib/port-forward-display';
+import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { useSettingsValue } from '../lib/settings-store';
+import { createSshConnectionIntent } from '../lib/ssh-connection-intent';
 import { renderTabIconByKey } from '../lib/tab-icon';
 import { useToast } from '../lib/toast-context';
 import { resolveCategoryId, SETTINGS_REGISTRY } from '../pages/settings-registry';
 import type { TabItem } from '../types/tabs';
 import { CommandPalette, type CommandPaletteItem } from './ui/command-palette';
 
+type SshServerListItem = components['schemas']['SshServerListItem'];
+type PortForwardRuleListItem = components['schemas']['PortForwardRuleListItem'];
+
+type AppCommandPaletteResourceSnapshot = {
+  servers: ReadonlyArray<SshServerListItem>;
+  portForwardRules: ReadonlyArray<PortForwardRuleListItem>;
+};
+
 type AppCommandPaletteContext = {
   locale: string;
   activeTabId: string;
   tabs: ReadonlyArray<TabItem>;
+  resources: AppCommandPaletteResourceSnapshot;
+  showFullServerAddress: boolean;
   addTab: (page: string, overrides?: Partial<TabItem>) => string;
   closeTab: (tabId: string) => void;
   closeRightTabs: (tabId: string) => void;
@@ -38,7 +58,14 @@ type AppCommandPaletteContext = {
 
 type AppCommandPaletteHostProps = Omit<
   AppCommandPaletteContext,
-  'locale' | 'isDevBuild' | 'devToolsEnabled' | 'userMenuDebugEntryEnabled' | 'notifySuccess' | 'notifyWarning'
+  | 'locale'
+  | 'resources'
+  | 'showFullServerAddress'
+  | 'isDevBuild'
+  | 'devToolsEnabled'
+  | 'userMenuDebugEntryEnabled'
+  | 'notifySuccess'
+  | 'notifyWarning'
 >;
 
 type BilingualCommandLabel = {
@@ -47,7 +74,7 @@ type BilingualCommandLabel = {
   secondary?: string;
 };
 
-type CommandPaletteScopeId = 'tabs' | 'settings' | 'developer';
+type CommandPaletteScopeId = 'tabs' | 'settings' | 'developer' | 'ssh' | 'sftp' | 'forward';
 
 /**
  * Resolves localized and English labels for command rendering.
@@ -116,6 +143,18 @@ const resolveCommandPaletteScopeLabel = (domainId: string, locale: string): Bili
 
   if (scopedDomainId === 'developer') {
     return resolveBilingualCommandLabel('commandPalette.scopes.developer', locale);
+  }
+
+  if (scopedDomainId === 'ssh') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.ssh', locale);
+  }
+
+  if (scopedDomainId === 'sftp') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.sftp', locale);
+  }
+
+  if (scopedDomainId === 'forward') {
+    return resolveBilingualCommandLabel('commandPalette.scopes.forward', locale);
   }
 
   return undefined;
@@ -272,6 +311,192 @@ const createSettingsCommandPaletteProvider = (): CommandPaletteProvider<AppComma
             state: {
               settingsCategory: categoryId,
               settingsInitialSearch: item.key,
+            },
+          });
+        },
+      };
+    });
+  });
+};
+
+/**
+ * Formats a server-backed command title while preserving the address privacy setting.
+ *
+ * @param server Server list item used by the command.
+ * @param showFullServerAddress Whether the full address should be shown.
+ * @returns Command title without the scope prefix.
+ */
+const formatServerCommandTitle = (server: SshServerListItem, showFullServerAddress: boolean): string => {
+  return `${server.name} (${resolveServerAddressForDisplay(server.host, showFullServerAddress)})`;
+};
+
+/**
+ * Resolves the neutral icon node used by server-backed resource commands.
+ *
+ * @param server Server list item used by the command.
+ * @returns Uncolored entity icon node.
+ */
+const renderServerCommandIcon = (server: SshServerListItem): React.ReactNode => {
+  return renderEntityIcon(server.iconKey);
+};
+
+/**
+ * Creates an SSH server command provider.
+ *
+ * @returns Provider with SSH connection commands for every server.
+ */
+const createSshResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
+  return createCommandPaletteProvider('ssh', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.ssh', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+    const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.connectSsh', context.locale);
+
+    return context.resources.servers.map(
+      (server): CommandPaletteCommand => ({
+        kind: 'action',
+        id: server.id,
+        commandActionId: 'resources.ssh.connect',
+        title: formatServerCommandTitle(server, context.showFullServerAddress),
+        subtitle: actionLabel.primary,
+        icon: renderServerCommandIcon(server),
+        searchTerms: buildSearchTerms(
+          [
+            'ssh',
+            'connect ssh',
+            'resources.ssh.connect',
+            server.id,
+            server.name,
+            server.host,
+            String(server.port),
+            server.username,
+            server.note ?? '',
+            ...(server.tags ?? []).map((tag) => tag.name),
+          ],
+          scopeSearchTerms,
+          [actionLabel.english],
+        ),
+        run: () => {
+          context.addTab('ssh', {
+            title: server.name,
+            iconKey: 'ssh',
+            iconColorKey: server.colorKey,
+            state: {
+              sshConnectionIntent: createSshConnectionIntent(server.id),
+            },
+          });
+        },
+      }),
+    );
+  });
+};
+
+/**
+ * Creates an SFTP server command provider.
+ *
+ * @returns Provider with SFTP connection commands for every server.
+ */
+const createSftpResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
+  return createCommandPaletteProvider('sftp', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.sftp', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+    const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.connectSftp', context.locale);
+
+    return context.resources.servers.map(
+      (server): CommandPaletteCommand => ({
+        kind: 'action',
+        id: server.id,
+        commandActionId: 'resources.sftp.connect',
+        title: formatServerCommandTitle(server, context.showFullServerAddress),
+        subtitle: actionLabel.primary,
+        icon: renderTabIconByKey('sftp', undefined, false),
+        searchTerms: buildSearchTerms(
+          [
+            'sftp',
+            'connect sftp',
+            'resources.sftp.connect',
+            server.id,
+            server.name,
+            server.host,
+            String(server.port),
+            server.username,
+            server.note ?? '',
+            ...(server.tags ?? []).map((tag) => tag.name),
+          ],
+          scopeSearchTerms,
+          [actionLabel.english],
+        ),
+        run: () => {
+          context.addTab('sftp', {
+            title: server.name,
+            iconKey: 'sftp',
+            iconColorKey: server.colorKey,
+            state: {
+              sftpConnectionIntent: {
+                serverId: server.id,
+                serverName: server.name,
+                createdAt: Date.now(),
+              },
+            },
+          });
+        },
+      }),
+    );
+  });
+};
+
+/**
+ * Creates a port forwarding editor command provider.
+ *
+ * @returns Provider with port forwarding editor deep-link commands.
+ */
+const createForwardResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCommandPaletteContext> => {
+  return createCommandPaletteProvider('forward', (context) => {
+    const scopeLabel = resolveBilingualCommandLabel('commandPalette.scopes.forward', context.locale);
+    const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
+    const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.editForward', context.locale);
+    const serverById = new Map(context.resources.servers.map((server) => [server.id, server] as const));
+
+    return context.resources.portForwardRules.map((rule): CommandPaletteCommand => {
+      const server = serverById.get(rule.serverId);
+      const bindEndpoint = formatPortForwardBindEndpoint(rule);
+      const targetEndpoint = formatPortForwardTargetEndpoint(rule);
+      const copyEndpoint = formatPortForwardCopyEndpoint(rule);
+
+      return {
+        kind: 'action',
+        id: rule.id,
+        commandActionId: 'resources.forward.edit',
+        title: rule.name,
+        subtitle: actionLabel.primary,
+        icon: <CornerUpRight className="h-4 w-4" />,
+        searchTerms: buildSearchTerms(
+          [
+            'forward',
+            'port forward',
+            'edit forward',
+            'resources.forward.edit',
+            rule.id,
+            rule.name,
+            rule.type,
+            rule.note ?? '',
+            rule.serverName ?? '',
+            server?.name ?? '',
+            server?.host ?? '',
+            server?.username ?? '',
+            bindEndpoint,
+            targetEndpoint,
+            copyEndpoint,
+          ],
+          scopeSearchTerms,
+          [actionLabel.english],
+        ),
+        run: () => {
+          context.addTab('home', {
+            state: {
+              home: {
+                initialMode: 'portForwarding',
+                initialPortForwardRuleId: rule.id,
+              },
             },
           });
         },
@@ -558,6 +783,7 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
   onEnableMainHeapSnapshotExportChange,
 }) => {
   const { success: notifySuccess, warning: notifyWarning } = useToast();
+  const showFullServerAddress = useSettingsValue('showFullServerAddress');
   const devToolsEnabled = useSettingsValue('devToolsEnabled');
   const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
   const isDevBuild = import.meta.env.DEV;
@@ -565,12 +791,52 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
   const [isOpen, setIsOpen] = React.useState<boolean>(false);
   const [query, setQuery] = React.useState<string>('');
   const [locale, setLocale] = React.useState<string>(() => getLocale());
+  const [resources, setResources] = React.useState<AppCommandPaletteResourceSnapshot>(() => ({
+    servers: [],
+    portForwardRules: [],
+  }));
 
   React.useEffect(() => {
     return onLocaleChange((nextLocale) => {
       setLocale(nextLocale);
     });
   }, []);
+
+  React.useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    let isCurrent = true;
+
+    void (async () => {
+      try {
+        const [serversResponse, portForwardRulesResponse] = await Promise.all([
+          listSshServers(),
+          listPortForwardRules(),
+        ]);
+
+        if (!isCurrent) {
+          return;
+        }
+
+        setResources({
+          servers: serversResponse.data.items,
+          portForwardRules: portForwardRulesResponse.data.items,
+        });
+      } catch (error: unknown) {
+        if (!isCurrent) {
+          return;
+        }
+
+        notifyWarning(error instanceof Error ? error.message : t('commandPalette.feedback.resourceLoadFailed'));
+      }
+    })();
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [isOpen, notifyWarning]);
 
   const closeCommandPalette = React.useCallback((): void => {
     setIsOpen(false);
@@ -587,6 +853,8 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
       locale,
       activeTabId,
       tabs,
+      resources,
+      showFullServerAddress,
       addTab,
       closeTab,
       closeRightTabs,
@@ -611,10 +879,12 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
       isDevBuild,
       locale,
       notifySuccess,
+      resources,
       notifyWarning,
       onEnableMainHeapSnapshotExportChange,
       onShowSystemMonitorOverlayChange,
       setActiveTabId,
+      showFullServerAddress,
       showSystemMonitorOverlay,
       tabs,
       userMenuDebugEntryEnabled,
@@ -625,6 +895,9 @@ const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
     () => [
       createTabsCommandPaletteProvider(),
       createSettingsCommandPaletteProvider(),
+      createSshResourceCommandPaletteProvider(),
+      createSftpResourceCommandPaletteProvider(),
+      createForwardResourceCommandPaletteProvider(),
       createDeveloperCommandPaletteProvider(),
     ],
     [],

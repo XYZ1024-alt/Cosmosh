@@ -29,7 +29,9 @@ flowchart LR
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
 - In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
+- Development profiles are managed by `pnpm dev:profile` (`scripts/dev-profile.mjs`). When a profile is selected or passed through `COSMOSH_DEV_PROFILE`, main applies it before window/backend startup so Electron `userData`, the SQLite file, and backend-only secret storage all resolve under `.cosmosh/dev-profiles/<name>/`.
 - Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
+- Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
@@ -52,7 +54,7 @@ flowchart LR
 - Uses `window.electron` bridge only (no direct Node API usage).
 - Creates SSH/local terminal sessions and SFTP browser/download/file-operation sessions through backend APIs.
 - Connects terminal data channels through WebSocket and renders with `xterm.js`.
-- Non-home renderer pages (including SSH and settings editor/Monaco) are lazy-loaded to keep heavyweight assets out of the default startup path.
+- Non-home renderer pages, including SSH and the CodeMirror-backed settings editor, are lazy-loaded to keep heavyweight assets out of the default startup path.
 - Renderer bootstrap hydrates settings from local cache first, then refreshes canonical values from backend in background.
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 - SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
@@ -93,6 +95,7 @@ sequenceDiagram
 - `nodeIntegration: false`
 - `contextIsolation: true`
 - Renderer gets only explicit bridge APIs via `contextBridge.exposeInMainWorld`.
+- Renderer Content Security Policy keeps `script-src` restricted to `'self'` plus `'wasm-unsafe-eval'`. The WebAssembly allowance is required by renderer-bundled libraries such as `@xterm/addon-image` for inline image decoding, and does not enable general JavaScript `eval`.
 - The sandboxed preload script must not import workspace packages at runtime. It may use shared API contract types at compile time, but runtime validators used inside preload must stay local or be bundled so Electron does not need to resolve project modules before the bridge loads.
 - Internal privileged operations stay in Main/Backend process.
 - Renderer-requested app windows are denied by default. The current allow-list only permits same-renderer SFTP Properties popups, and those child windows reuse the secure preload with `nodeIntegration` disabled and `contextIsolation` enabled.
@@ -102,6 +105,7 @@ sequenceDiagram
 - Backend HTTP explicitly binds to the IPv4 loopback interface (`127.0.0.1`) in every runtime mode. The listener must never rely on the Node server default, which can expose standalone development APIs on non-loopback interfaces.
 - Electron-main mode additionally guards `/api/v1/*` with an internal runtime token (`COSMOSH_INTERNAL_TOKEN`). Standalone mode remains loopback-only even though it does not require that token.
 - Main process injects headers and never exposes internal token to renderer.
+- Development request mirror: in unpackaged development runs, Main records sanitized mirrors of backend proxy requests into an in-memory ring buffer and exposes them to the custom DevTools panel through debug IPC. This does not change the real request path (`renderer -> preload IPC -> main -> backend`), does not issue mirror fetches, and does not add fake rows to the native Network tab. The mirror redacts internal auth headers, secret-like payload keys, and local absolute paths before renderer/DevTools visibility. Production packages do not collect traces or load the extension. If the `Cosmosh Requests` panel is missing in development, check the main-process terminal for the `[debug]` extension load/skip log first.
 - Main also capability-gates local SFTP download destinations. App utility IPC authorizes an exact normalized path for the requesting renderer webContents, and the backend proxy rejects any download path without that owner-bound authorization. Temporary preview/open paths are reusable; Downloads and save-dialog paths are consumed after one request.
 - Credential encryption key is derived from `COSMOSH_SECRET_KEY`/internal token hash in backend bootstrap.
 - HTTP i18n is request-scoped: backend middleware resolves locale from `x-cosmosh-locale` (fallback `accept-language`), then injects a per-request translator used by all route response messages.
@@ -235,6 +239,30 @@ flowchart LR
 - Shared keychains can be reused by multiple servers; hidden keychains are intended for single-server private use.
 - SSH session creation resolves credentials through server → keychain relation before opening `ssh2` connections.
 
+## 7.1 Development Profile Runtime
+
+Development profile mode is a developer-only isolation layer for fresh-install verification. It does not change packaged production storage or database key policy.
+
+The first non-help `pnpm dev:profile` command automatically imports the legacy implicit default identity into `.cosmosh/dev-profiles/default/`. The import copies the legacy workspace database, SQLite WAL/SHM sidecars, Electron `userData`, and backend secret storage on a best-effort basis. Missing or unreadable legacy sources are recorded in the profile manifest instead of aborting the command.
+
+The `default` profile is a managed recovery snapshot, not a throwaway test profile. It can be selected with `pnpm dev:profile use default` or rebuilt with `pnpm dev:profile import-default --force --use`, but regular `create default`, `reset default`, and `delete default` commands are rejected to avoid losing the recovery path.
+
+Use `pnpm dev:profile` to create, switch, reset, inspect, or delete local test profiles:
+
+- `pnpm dev:profile create fresh --use` creates `.cosmosh/dev-profiles/fresh/` and makes it the default development profile.
+- `pnpm dev:profile reset fresh` clears only that profile's runtime data so the next development launch behaves like a new install for the same identity.
+- `pnpm dev:profile delete fresh --force` removes the profile and clears the current pointer if it was active.
+- `pnpm dev:profile run fresh --create --reset -- pnpm dev:main` runs one command with an isolated, freshly reset profile. The root script `pnpm dev:main:fresh` is the shorthand for this flow.
+
+A profile owns these paths:
+
+- `.cosmosh/dev-profiles/<name>/user-data`: injected into Electron via `app.setPath('userData', ...)` before app storage is touched.
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`: injected as `COSMOSH_DB_PATH` and used by both main and backend database path resolvers.
+- `.cosmosh/dev-profiles/<name>/backend-storage`: injected as `COSMOSH_BACKEND_STORAGE_PATH` for backend-only secret material such as `secret.key`.
+- `.cosmosh/dev-profiles/default/profile.json`: import manifest for the managed default profile, including source paths and per-source copy status.
+
+If no development profile is active, direct development launches keep the legacy workspace database path `.dev_data/cosmosh.db` and default Electron development storage. This preserves existing local data unless a developer explicitly opts into profile isolation.
+
 ## 8. Architecture Decision Rationale
 
 - Keep the backend as a separate runtime process to isolate protocol and credential handling from renderer attack surface.
@@ -340,3 +368,13 @@ Handling principle:
 
 - Runtime migration sync is idempotent and executes on every startup.
 - Existing user data must remain intact while structural drift is repaired incrementally.
+
+## 10. Server Proxy Runtime
+
+- Global settings define `serverProxyMode = off | system | custom` and `serverProxyUrl`; the default is `system`.
+- Each `SshServer` defines `proxyMode = default | off | custom` and an optional `proxyUrl`. `default` inherits the global policy.
+- Renderer resolves system/PAC proxy rules through the privileged `app:resolve-system-proxy` Main IPC only when the effective mode is `system`.
+- Backend remains the policy authority. `packages/backend/src/ssh/proxy.ts` reloads persisted global settings, applies the server override, parses ordered Chromium proxy rules, and creates HTTP, HTTPS CONNECT, SOCKS5, or explicit `DIRECT` sockets.
+- The prepared socket is injected through `ssh2` `ConnectConfig.sock`, so SSH shell, SFTP, and port-forwarding connections share one proxy implementation.
+- Proxy candidates share the configured SSH connection timeout. Proxy failure never silently falls back to direct transport; direct transport is allowed only for `off` mode or an explicit system `DIRECT` candidate.
+- Audit metadata records only proxy mode and protocol. Proxy URLs and embedded credentials are never written to audit metadata.

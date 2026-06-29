@@ -22,6 +22,7 @@ import { Button } from '../components/ui/button';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPrimaryButton,
@@ -632,12 +633,22 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         return formState.terminalSelectionSearchEngine === 'custom';
       }
 
+      if (item.key === 'serverProxyUrl') {
+        return formState.serverProxyMode === 'custom';
+      }
+
+      if (item.key === 'terminalInlineImageOptions') {
+        return formState.terminalInlineImagesEnabled === true;
+      }
+
       return true;
     });
   }, [
     categorySettings,
     formState.terminalAutoCompleteEnabled,
+    formState.terminalInlineImagesEnabled,
     formState.terminalSelectionSearchEngine,
+    formState.serverProxyMode,
     isSearchMode,
     visibleSettings,
   ]);
@@ -1119,7 +1130,9 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           </DialogHeader>
 
           <div className="grid gap-2 rounded-md border border-home-divider p-3 text-sm">
-            <p className="pb-1 text-home-text-subtle">{t('settings.databaseSecurity.description')}</p>
+            <DialogDescription className="pb-1 text-home-text-subtle">
+              {t('settings.databaseSecurity.description')}
+            </DialogDescription>
 
             <div className="grid grid-cols-[220px,1fr] items-start gap-3">
               <span className="text-home-text-subtle">{t('settings.databaseSecurity.fields.runtimeMode')}</span>

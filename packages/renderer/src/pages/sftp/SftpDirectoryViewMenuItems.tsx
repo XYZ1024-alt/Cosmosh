@@ -9,6 +9,8 @@ import React from 'react';
 import {
   ContextMenuCheckboxItem,
   ContextMenuLabel,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
   ContextMenuSeparator,
   ContextMenuSub,
   ContextMenuSubContent,
@@ -17,6 +19,8 @@ import {
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
@@ -52,6 +56,8 @@ export const SftpDirectoryViewMenuItems: React.FC<SftpDirectoryViewMenuItemsProp
   const MenuSubTrigger = menuSurface === 'context' ? ContextMenuSubTrigger : DropdownMenuSubTrigger;
   const MenuSubContent = menuSurface === 'context' ? ContextMenuSubContent : DropdownMenuSubContent;
   const MenuCheckboxItem = menuSurface === 'context' ? ContextMenuCheckboxItem : DropdownMenuCheckboxItem;
+  const MenuRadioGroup = menuSurface === 'context' ? ContextMenuRadioGroup : DropdownMenuRadioGroup;
+  const MenuRadioItem = menuSurface === 'context' ? ContextMenuRadioItem : DropdownMenuRadioItem;
   const MenuLabel = menuSurface === 'context' ? ContextMenuLabel : DropdownMenuLabel;
   const MenuSeparator = menuSurface === 'context' ? ContextMenuSeparator : DropdownMenuSeparator;
 
@@ -76,54 +82,42 @@ export const SftpDirectoryViewMenuItems: React.FC<SftpDirectoryViewMenuItemsProp
       <MenuSub>
         <MenuSubTrigger icon={ArrowDownUp}>{t('sftp.viewMenu.sortBy')}</MenuSubTrigger>
         <MenuSubContent>
-          {SFTP_DIRECTORY_COLUMN_DEFINITIONS.map((column) => (
-            <MenuCheckboxItem
-              key={column.id}
-              checked={directoryListView.sort.field === column.id}
-              onCheckedChange={(checked) => {
-                if (checked) {
-                  onSortChange({
-                    field: column.id,
-                    direction: directoryListView.sort.direction,
-                  });
-                }
-              }}
-            >
-              {t(column.labelI18nKey)}
-            </MenuCheckboxItem>
-          ))}
+          <MenuRadioGroup
+            value={directoryListView.sort.field}
+            onValueChange={(value) => {
+              onSortChange({
+                field: value as SftpDirectoryListColumnId,
+                direction: directoryListView.sort.direction,
+              });
+            }}
+          >
+            {SFTP_DIRECTORY_COLUMN_DEFINITIONS.map((column) => (
+              <MenuRadioItem
+                key={column.id}
+                value={column.id}
+              >
+                {t(column.labelI18nKey)}
+              </MenuRadioItem>
+            ))}
+          </MenuRadioGroup>
         </MenuSubContent>
       </MenuSub>
 
       <MenuSub>
         <MenuSubTrigger icon={ListFilter}>{t('sftp.viewMenu.sortDirection')}</MenuSubTrigger>
         <MenuSubContent>
-          <MenuCheckboxItem
-            checked={directoryListView.sort.direction === 'asc'}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                onSortChange({
-                  field: directoryListView.sort.field,
-                  direction: 'asc',
-                });
-              }
+          <MenuRadioGroup
+            value={directoryListView.sort.direction}
+            onValueChange={(value) => {
+              onSortChange({
+                field: directoryListView.sort.field,
+                direction: value as SftpDirectoryListSortDirection,
+              });
             }}
           >
-            {t('sftp.viewMenu.ascending')}
-          </MenuCheckboxItem>
-          <MenuCheckboxItem
-            checked={directoryListView.sort.direction === 'desc'}
-            onCheckedChange={(checked) => {
-              if (checked) {
-                onSortChange({
-                  field: directoryListView.sort.field,
-                  direction: 'desc',
-                });
-              }
-            }}
-          >
-            {t('sftp.viewMenu.descending')}
-          </MenuCheckboxItem>
+            <MenuRadioItem value="asc">{t('sftp.viewMenu.ascending')}</MenuRadioItem>
+            <MenuRadioItem value="desc">{t('sftp.viewMenu.descending')}</MenuRadioItem>
+          </MenuRadioGroup>
         </MenuSubContent>
       </MenuSub>
 

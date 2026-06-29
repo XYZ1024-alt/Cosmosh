@@ -22,7 +22,7 @@ import { renderTabIconByKey } from './lib/tab-icon';
 import { AppToastProvider } from './lib/toast';
 import { resolvePageDefaults, useTabs } from './lib/useTabs';
 import Home from './pages/Home';
-import type { TabItem } from './types/tabs';
+import type { TabIconKey, TabItem } from './types/tabs';
 
 const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
 const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
@@ -30,8 +30,6 @@ const Debug = React.lazy(() => import('./pages/Debug'));
 const Settings = React.lazy(() => import('./pages/Settings'));
 const SettingsEditor = React.lazy(() => import('./pages/SettingsEditor'));
 const SSH = React.lazy(() => import('./pages/SSH'));
-const SSHEditor = React.lazy(() => import('./pages/SSHEditor'));
-const SSHKeychains = React.lazy(() => import('./pages/SSHKeychains'));
 const SFTP = React.lazy(() => import('./pages/SFTP'));
 
 let hasCheckedInitialPendingLaunchWorkingDirectory = false;
@@ -358,6 +356,26 @@ const App: React.FC = () => {
     launchWorkingDirectoryHandlerRef.current = handleLaunchWorkingDirectory;
   }, [handleLaunchWorkingDirectory]);
 
+  const handleHomeTabVisualChange = React.useCallback(
+    (tabId: string, visual: { title: string; iconKey: TabIconKey }): void => {
+      const targetTab = tabsById.get(tabId);
+      if (!targetTab || targetTab.page !== 'home') {
+        return;
+      }
+
+      if (targetTab.title === visual.title && targetTab.iconKey === visual.iconKey && !targetTab.iconColorKey) {
+        return;
+      }
+
+      updateTab(tabId, {
+        title: visual.title,
+        iconKey: visual.iconKey,
+        iconColorKey: undefined,
+      });
+    },
+    [tabsById, updateTab],
+  );
+
   React.useEffect(() => {
     const electronBridge = window.electron;
     if (!electronBridge) {
@@ -453,7 +471,10 @@ const App: React.FC = () => {
             >
               {tab.page === 'home' && (
                 <Home
+                  tabId={tab.id}
                   isActive={tab.id === activeTabId}
+                  initialState={tab.state?.home}
+                  onTabVisualChange={handleHomeTabVisualChange}
                   onOpenSSH={(serverId, tabTitle, options) => {
                     if (options?.openInNewTab) {
                       const newTabId = addTab('ssh', undefined, {
@@ -643,19 +664,6 @@ const App: React.FC = () => {
                   />
                 </React.Suspense>
               )}
-              {tab.page === 'ssh-editor' && (
-                <React.Suspense fallback={pageLoadingFallback}>
-                  <SSHEditor
-                    preferredServerId={tab.state?.sshEditor?.preferredServerId}
-                    preferCreateMode={Boolean(tab.state?.sshEditor?.createMode)}
-                  />
-                </React.Suspense>
-              )}
-              {tab.page === 'ssh-keychains' && (
-                <React.Suspense fallback={pageLoadingFallback}>
-                  <SSHKeychains />
-                </React.Suspense>
-              )}
               {tab.page === 'settings' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <Settings
@@ -719,16 +727,6 @@ const App: React.FC = () => {
                         ? addTab('components-field', undefined, { insertAfterTabId: tab.id })
                         : openPageInTab(tab.id, 'components-field')
                     }
-                    onOpenSshEditor={(openInNewTab) =>
-                      openInNewTab
-                        ? addTab('ssh-editor', undefined, { insertAfterTabId: tab.id })
-                        : openPageInTab(tab.id, 'ssh-editor')
-                    }
-                    onOpenSshKeychains={(openInNewTab) =>
-                      openInNewTab
-                        ? addTab('ssh-keychains', undefined, { insertAfterTabId: tab.id })
-                        : openPageInTab(tab.id, 'ssh-keychains')
-                    }
                     onRenameTab={(title) => updateTab(tab.id, { title })}
                     onChangeIcon={(iconKey) => updateTab(tab.id, { iconKey })}
                   />
@@ -743,6 +741,7 @@ const App: React.FC = () => {
     activeTabId,
     addTab,
     contentTabOrder,
+    handleHomeTabVisualChange,
     handleShowSystemMonitorOverlayChange,
     openPageInTab,
     setActiveTabId,
@@ -772,8 +771,6 @@ const App: React.FC = () => {
             onCloseRightTabs={closeRightTabs}
             onCloseOtherTabs={closeOtherTabs}
             onReorderTabs={reorderTabs}
-            onOpenSSHEditorTab={() => addTab('ssh-editor')}
-            onOpenSSHKeychainsTab={() => addTab('ssh-keychains')}
             onOpenAuditLogsTab={() => addTab('audit-logs')}
             onOpenSettingsTab={(options) =>
               addTab('settings', {

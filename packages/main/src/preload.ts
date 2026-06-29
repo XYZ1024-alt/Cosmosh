@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -70,9 +71,12 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
   AppMenuAction,
+  BackendRequestTrace,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
+  SystemProxyResolveRequest,
+  SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
 import { contextBridge, ipcRenderer } from 'electron';
 
@@ -206,6 +210,24 @@ const onSftpTemporaryFileChanged = (listener: (change: SftpTemporaryFileWatchCha
 };
 
 /**
+ * Subscribes to backend request trace mirror events.
+ *
+ * @param listener Callback invoked for sanitized request traces.
+ * @returns Unsubscribe callback.
+ */
+const onBackendRequestTrace = (listener: (trace: BackendRequestTrace) => void): (() => void) => {
+  const handler = (_event: Electron.IpcRendererEvent, payload: BackendRequestTrace) => {
+    listener(payload);
+  };
+
+  ipcRenderer.on('debug:backend-request-trace-event', handler);
+
+  return () => {
+    ipcRenderer.removeListener('debug:backend-request-trace-event', handler);
+  };
+};
+
+/**
  * Exposes a minimal, allow-listed bridge API to renderer.
  * Security boundary: renderer never gets direct access to raw `ipcRenderer`.
  */
@@ -295,6 +317,9 @@ contextBridge.exposeInMainWorld('electron', {
       fallbackReady: boolean;
     }>('app:get-database-security-info');
   },
+  resolveSystemProxy: (request: SystemProxyResolveRequest) => {
+    return invokeIpc<SystemProxyResolveResult>('app:resolve-system-proxy', request);
+  },
   /**
    * Subscribes to launch cwd events emitted when a second instance forwards context.
    */
@@ -356,6 +381,15 @@ contextBridge.exposeInMainWorld('electron', {
   },
   exportMainHeapSnapshot: () => {
     return invokeIpc<{ ok: boolean; filePath?: string; message?: string }>('app:export-main-heap-snapshot');
+  },
+  getBackendRequestTraces: () => {
+    return invokeIpc<BackendRequestTrace[]>('debug:backend-request-trace-list');
+  },
+  clearBackendRequestTraces: () => {
+    return invokeIpc<boolean>('debug:backend-request-trace-clear');
+  },
+  onBackendRequestTrace: (listener: (trace: BackendRequestTrace) => void) => {
+    return onBackendRequestTrace(listener);
   },
 
   // ---------------------------------------------------------------------------
@@ -514,8 +548,12 @@ contextBridge.exposeInMainWorld('electron', {
       payload,
     );
   },
-  backendPortForwardStartRule: (ruleId: string) => {
-    return invokeIpc<ApiPortForwardStartRuleResponse | ApiErrorResponse>('backend:port-forward-start-rule', ruleId);
+  backendPortForwardStartRule: (ruleId: string, payload: ApiPortForwardStartRuleRequest) => {
+    return invokeIpc<ApiPortForwardStartRuleResponse | ApiErrorResponse>(
+      'backend:port-forward-start-rule',
+      ruleId,
+      payload,
+    );
   },
   backendPortForwardStopRule: (ruleId: string) => {
     return invokeIpc<ApiPortForwardStopRuleResponse | ApiErrorResponse>('backend:port-forward-stop-rule', ruleId);

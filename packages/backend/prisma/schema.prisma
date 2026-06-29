@@ -24,6 +24,12 @@ enum SshKeychainVisibility {
   shared
 }
 
+enum SshServerProxyMode {
+  default
+  off
+  custom
+}
+
 enum PortForwardRuleType {
   local
   remote
@@ -64,6 +70,8 @@ model SshServer {
   remoteEnhancementsEnabled Boolean @default(true)
   disableCharacterWidthCompatibilityMode Boolean @default(false)
   terminalClipboardAccess String    @default("off")
+  proxyMode        SshServerProxyMode @default(default)
+  proxyUrl         String?
   keychainId       String
   note             String?
   folderId         String?

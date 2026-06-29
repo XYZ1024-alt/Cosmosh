@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -70,7 +71,7 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
-import { API_HEADERS, API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
+import { API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
 import { ipcMain } from 'electron';
 
 import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
@@ -79,12 +80,6 @@ import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-ta
  * Runtime dependencies required by backend IPC registration.
  */
 export type RegisterBackendIpcHandlersOptions = {
-  /** Returns active app locale used for backend request headers. */
-  getLocale: () => string;
-  /** Ensures backend process startup is complete before making transport calls. */
-  ensureBackendReady: () => Promise<void>;
-  /** Returns backend connection config (port + internal token). */
-  requireBackendConfig: () => { port: number; token: string };
   /**
    * Generic backend request adapter used by most channels.
    * Keeps channel implementation focused on route/payload mapping.
@@ -96,6 +91,13 @@ export type RegisterBackendIpcHandlersOptions = {
       body?: unknown;
     },
   ) => Promise<TSuccess | ApiErrorResponse>;
+  /** Generic backend request adapter for status-sensitive calls such as DELETE. */
+  requestBackendRaw: (
+    path: string,
+    options: {
+      method: 'DELETE';
+    },
+  ) => Promise<{ status: number }>;
   /** Returns and clears one-shot launch working directory context. */
   consumePendingLaunchWorkingDirectory: () => string | null;
   /** Validates renderer-owned local paths before proxying SFTP downloads. */
@@ -110,14 +112,8 @@ const requestBackendDeleteSuccess = async (
   path: string,
 ): Promise<{ success: boolean }> => {
   try {
-    await options.ensureBackendReady();
-    const { port, token } = options.requireBackendConfig();
-    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+    const response = await options.requestBackendRaw(path, {
       method: 'DELETE',
-      headers: {
-        [API_HEADERS.internalToken]: token,
-        [API_HEADERS.locale]: options.getLocale(),
-      },
     });
 
     return {
@@ -165,7 +161,9 @@ export const registerBackendIpcHandlers = (options: RegisterBackendIpcHandlersOp
  */
 const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandlersOptions): void => {
   ipcMain.handle('backend:test-ping', async (): Promise<ApiTestPingResponse | ApiErrorResponse> => {
-    return options.requestBackend<ApiTestPingResponse>(API_PATHS.testPing, { method: 'GET' });
+    return options.requestBackend<ApiTestPingResponse>(API_PATHS.testPing, {
+      method: 'GET',
+    });
   });
 
   ipcMain.handle('backend:settings-get', async (): Promise<ApiSettingsGetResponse | ApiErrorResponse> => {
@@ -594,10 +592,15 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
 
   ipcMain.handle(
     'backend:port-forward-start-rule',
-    async (_event, ruleId: string): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
+    async (
+      _event,
+      ruleId: string,
+      payload: ApiPortForwardStartRuleRequest,
+    ): Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse> => {
       const path = replaceApiPathToken(API_PATHS.portForwardStartRule, 'ruleId', ruleId);
       return options.requestBackend<ApiPortForwardStartRuleResponse>(path, {
         method: 'POST',
+        body: payload,
       });
     },
   );

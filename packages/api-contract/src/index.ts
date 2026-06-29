@@ -5,11 +5,33 @@ export type { ApiPathParams, ApiQueryParams } from './http';
 export { APP_MENU_ACTIONS, isAppMenuAction } from './ipc';
 export type {
   AppMenuAction,
+  BackendRequestTrace,
+  BackendRequestTraceBody,
+  BackendRequestTraceBodyKind,
+  BackendRequestTraceMethod,
+  SystemProxyResolveRequest,
+  SystemProxyResolveResult,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
   SftpUploadLocalFile,
 } from './ipc';
+export {
+  GLOBAL_SERVER_PROXY_MODES,
+  MAX_PROXY_URL_LENGTH,
+  MAX_SYSTEM_PROXY_RULES_LENGTH,
+  SSH_SERVER_PROXY_MODES,
+  SUPPORTED_PROXY_PROTOCOLS,
+  isGlobalServerProxyMode,
+  isSshServerProxyMode,
+  validateProxyUrl,
+} from './proxy';
+export type {
+  GlobalServerProxyMode,
+  ProxyUrlValidationResult,
+  SshServerProxyMode,
+  SupportedProxyProtocol,
+} from './proxy';
 export { API_CAPABILITIES, API_CODES, API_HEADERS, API_PATHS } from './protocol';
 export {
   DEFAULT_SETTINGS_VALUES,
@@ -73,6 +95,17 @@ export {
   TERMINAL_RIGHT_CLICK_ACTION_OPTIONS,
 } from './terminal-interaction';
 export type { TerminalForceSelectionModifier, TerminalRightClickAction } from './terminal-interaction';
+export {
+  DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS,
+  MAX_TERMINAL_INLINE_IMAGE_PIXEL_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_SEQUENCE_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_SIXEL_PALETTE_LIMIT,
+  MAX_TERMINAL_INLINE_IMAGE_STORAGE_LIMIT_MB,
+  TERMINAL_INLINE_IMAGE_BOOLEAN_OPTION_KEYS,
+  TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS,
+  TERMINAL_INLINE_IMAGE_OPTION_KEYS,
+} from './terminal-inline-images';
+export type { TerminalInlineImageOptions } from './terminal-inline-images';
 
 import type { components, paths } from './generated';
 import type { SettingsValues } from './settings-registry';
@@ -182,6 +215,8 @@ export type ApiPortForwardUpdateRuleRequest =
   paths['/api/v1/port-forwards/rules/{ruleId}']['put']['requestBody']['content']['application/json'];
 export type ApiPortForwardUpdateRuleResponse =
   paths['/api/v1/port-forwards/rules/{ruleId}']['put']['responses']['200']['content']['application/json'];
+export type ApiPortForwardStartRuleRequest =
+  paths['/api/v1/port-forwards/rules/{ruleId}/start']['post']['requestBody']['content']['application/json'];
 export type ApiPortForwardStartRuleResponse =
   | paths['/api/v1/port-forwards/rules/{ruleId}/start']['post']['responses']['200']['content']['application/json']
   | paths['/api/v1/port-forwards/rules/{ruleId}/start']['post']['responses']['409']['content']['application/json'];

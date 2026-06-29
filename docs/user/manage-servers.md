@@ -51,3 +51,11 @@
 1. Server profile list with environment grouping.
 2. Edit server dialog with auth fields.
 3. Delete confirmation for a server entry.
+
+## Server Proxy
+
+- Settings > Connection > Proxy controls the global policy: Off, Use System Proxy (default), or Custom Proxy.
+- Custom proxy URLs support HTTP, HTTPS, and SOCKS5. Credentials may be embedded in the URL.
+- Each server profile can inherit Default, force Off, or use its own Custom Proxy.
+- The effective policy applies to new SSH, SFTP, and port-forwarding connections. Existing live connections are not restarted.
+- Proxy failures do not silently connect directly. System proxy mode connects directly only when the operating-system/PAC result explicitly returns `DIRECT`.

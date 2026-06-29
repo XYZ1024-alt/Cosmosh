@@ -33,6 +33,7 @@ flowchart TB
 | `app:open-sftp-file-with-application` | `invoke` | `localPath: string, applicationPath: string` | `Promise<boolean>` | macOS only: validates the temp file and selected app against the available application list, then opens the file with that app |
 | `app:sftp-temporary-file-changed` | `event (main -> renderer)` | `{ watchId: string; localPath: string; size: number; modifiedAt: string }` | none | Pushes one debounced change event for a watched SFTP temp file owned by the renderer webContents |
 | `app:get-database-security-info` | `invoke` | none | `Promise<{ runtimeMode: 'development' \| 'production'; resolverMode: 'development-fixed-key' \| 'safe-storage' \| 'master-password-fallback'; safeStorageAvailable: boolean; databasePath: string; securityConfigPath: string; hasEncryptedDbMasterKey: boolean; hasMasterPasswordHash: boolean; hasMasterPasswordSalt: boolean; hasMasterPasswordEnv: boolean; fallbackReady: boolean }>` | Returns non-sensitive database encryption bootstrap diagnostics for Settings → Advanced |
+| `app:resolve-system-proxy` | `invoke` | `{ host: string; port: number }` | `Promise<{ proxyRules: string }>` | Validates one SSH server destination and resolves Chromium system/PAC proxy rules for `https://host:port/` |
 | `app:launch-working-directory` | `event (main -> renderer)` | `cwd: string` | none | Pushes context-launch working directory when a second instance is invoked |
 | `app:menu-action` | `event (main -> renderer)` | `action: 'open-about' \| 'open-settings' \| 'new-tab' \| 'close-current-tab' \| 'close-right-tabs' \| 'show-tab-switcher'` | none | Dispatches validated app-menu commands from the macOS system menu to renderer tab/state handlers |
 | `app:open-devtools` | `invoke` | none | `Promise<boolean>` | Opens devtools for the current main window when available |
@@ -46,6 +47,9 @@ flowchart TB
 | `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; content?: string }>` | Opens native file picker and returns UTF-8 private key content when selected |
 | `app:get-process-performance-stats` | `invoke` | none | `Promise<{ sampledAt: number; cpuPercent: number \| null; mainProcessMemory: { rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number; arrayBuffersBytes: number }; rendererProcessMemory: { residentSetBytes: number; privateBytes: number; sharedBytes: number } \| null; backendProcess: { pid: number; cpuPercent: number \| null; memoryRssBytes: number \| null } \| null }>` | Samples main process CPU + memory, resolves renderer process memory from active window, and includes backend child-process CPU/RSS memory for debug monitoring overlay |
 | `app:export-main-heap-snapshot` | `invoke` | none | `Promise<{ ok: boolean; filePath?: string; message?: string }>` | Writes a V8 heap snapshot for the main process into app user-data debug snapshot directory |
+| `debug:backend-request-trace-list` | `invoke` | none | `Promise<BackendRequestTrace[]>` | Returns the retained sanitized backend request mirror list and subscribes the renderer webContents to future trace events; empty when request tracing is disabled |
+| `debug:backend-request-trace-clear` | `invoke` | none | `Promise<boolean>` | Clears the retained development request mirror ring buffer |
+| `debug:backend-request-trace-event` | `event (main -> renderer)` | `BackendRequestTrace` | none | Pushes one completed sanitized backend proxy request mirror to subscribed renderer webContents |
 | `backend:test-ping` | `invoke` | none | `Promise<ApiTestPingResponse \| ApiErrorResponse>` | Calls backend health test endpoint |
 | `backend:settings-get` | `invoke` | none | `Promise<ApiSettingsGetResponse \| ApiErrorResponse>` | GET persisted application settings |
 | `backend:settings-update` | `invoke` | `payload: ApiSettingsUpdateRequest` | `Promise<ApiSettingsUpdateResponse \| ApiErrorResponse>` | PUT application settings snapshot |
@@ -73,7 +77,7 @@ flowchart TB
 | `backend:port-forward-list-rules` | `invoke` | none | `Promise<ApiPortForwardListRulesResponse \| ApiErrorResponse>` | GET persisted SSH port-forwarding rules and merge in-memory runtime status |
 | `backend:port-forward-create-rule` | `invoke` | `payload: ApiPortForwardCreateRuleRequest` | `Promise<ApiPortForwardCreateRuleResponse \| ApiErrorResponse>` | POST create a stopped port-forwarding rule |
 | `backend:port-forward-update-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardUpdateRuleRequest` | `Promise<ApiPortForwardUpdateRuleResponse \| ApiErrorResponse>` | PUT update a stopped port-forwarding rule |
-| `backend:port-forward-start-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST start one rule; may return shared `SSH_HOST_UNTRUSTED` payload for fingerprint trust retry |
+| `backend:port-forward-start-rule` | `invoke` | `ruleId: string, payload: ApiPortForwardStartRuleRequest` | `Promise<ApiPortForwardStartRuleResponse \| ApiErrorResponse>` | POST start one rule with optional transient system proxy rules; may return shared `SSH_HOST_UNTRUSTED` payload for fingerprint trust retry |
 | `backend:port-forward-stop-rule` | `invoke` | `ruleId: string` | `Promise<ApiPortForwardStopRuleResponse \| ApiErrorResponse>` | POST stop one active rule; stopped rules are handled idempotently by backend |
 | `backend:port-forward-delete-rule` | `invoke` | `ruleId: string` | `Promise<{ success: boolean }>` | DELETE one stopped port-forwarding rule |
 | `backend:sftp-create-session` | `invoke` | `payload: ApiSftpCreateSessionRequest` | `Promise<ApiSftpCreateSessionResponse \| ApiSftpCreateSessionHostVerificationRequiredResponse \| ApiErrorResponse>` | POST create SFTP file-system session |
@@ -98,7 +102,8 @@ flowchart TB
 
 - API payload types come from `@cosmosh/api-contract`, generated from `packages/api-contract/openapi/cosmosh.openapi.yaml`.
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
-- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, and `SftpTemporaryFileWatchChange`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, `SftpTemporaryFileWatchChange`, and `BackendRequestTrace`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- `BackendRequestTrace` is development diagnostics only. It is populated by the main-process backend proxy in unpackaged development runs; production packages do not collect traces or load the DevTools extension.
 
 ### 3.1 SSH Visual Metadata Fields
 
@@ -180,3 +185,11 @@ Use this checklist when introducing a new channel:
 5. Main behavior: backend proxy or privileged local action
 6. Security notes: token/header handling, permission boundary, exposure limits
 7. Docs sync: update EN + ZH protocol pages in same change set
+
+## 6. Server Proxy Contract
+
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest` carry optional `proxyMode = default | off | custom` and optional `proxyUrl`.
+- `ApiSshListServersResponse` returns persisted proxy mode and URL for editing and connection planning.
+- `ApiSshCreateSessionRequest`, `ApiSftpCreateSessionRequest`, and `ApiPortForwardStartRuleRequest` carry optional transient `systemProxyRules`; this field is never persisted.
+- `SystemProxyResolveRequest` and `SystemProxyResolveResult` are IPC-only types in `packages/api-contract/src/ipc.ts`.
+- Main constructs the resolution URL from validated host/port fields. Renderer cannot submit an arbitrary URL to `Session.resolveProxy`.

@@ -1,6 +1,7 @@
 export const menuStyles = {
   content:
-    'z-50 min-w-[180px] max-h-[min(560px,calc(100vh-16px))] max-w-[calc(100vw-16px)] overflow-y-auto rounded-lg bg-bg-subtle p-[4px] text-sm text-header-text shadow-menu-content backdrop-blur-[4px] [-webkit-app-region:no-drag]',
+    'z-50 min-w-[180px] max-h-[min(560px,calc(100vh-16px))] max-w-[calc(100vw-16px)] rounded-lg bg-bg-subtle p-[4px] text-sm text-header-text shadow-menu-content backdrop-blur-[4px] [-webkit-app-region:no-drag]',
+  scrollContent: 'overflow-y-auto overflow-x-hidden',
   contentCloseMotion:
     'data-[state=closed]:animate-out data-[state=closed]:fade-out-10 data-[state=closed]:zoom-out-95 data-[state=closed]:duration-150 data-[state=closed]:ease-in',
   item: 'relative flex cursor-default select-none items-center gap-2.5 rounded-md px-2.5 py-1.5 outline-none hover:bg-menu-control-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[highlighted]:bg-menu-control-hover [-webkit-app-region:no-drag]',
@@ -14,6 +15,10 @@ export const menuStyles = {
   iconSlot: 'flex h-4 w-4 items-center justify-center',
   leadingIconSlot: 'inline-flex h-4 w-4 shrink-0 items-center justify-center',
   itemIndicator: 'absolute left-2 inline-flex h-4 w-4 items-center justify-center',
+  selectContent: 'relative flex flex-col overflow-hidden',
+  selectViewport: 'min-h-0 flex-1 overflow-y-auto',
+  selectScrollButton:
+    'absolute left-0 z-10 flex h-6 w-full items-center justify-center bg-bg-subtle text-header-text-muted backdrop-blur-[4px] transition-opacity duration-100 ease-in-out',
   iconOnlyControl: 'w-[34px] justify-center px-0',
   control:
     'menu-menubar-control inline-flex h-[34px] items-center gap-2 rounded-lg bg-menu-control px-2.5 text-sm text-header-text outline-none shadow-menu backdrop-blur-[4px] hover:bg-menu-control-hover data-[state=open]:bg-menu-control-hover data-[state=on]:bg-menu-control-hover [-webkit-app-region:no-drag]',

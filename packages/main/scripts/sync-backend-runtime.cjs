@@ -14,6 +14,7 @@ const thirdPartyEntryPackages = [
   'ssh2',
   'ws',
   'node-pty',
+  'socks',
   'intl-messageformat',
   'better-sqlite3-multiple-ciphers',
 ];
@@ -391,6 +392,37 @@ const syncThirdPartyDependencies = async () => {
 };
 
 /**
+ * Validates that backend package production dependencies resolve from packaged runtime assets.
+ */
+const validateBackendRuntimeDependencies = async () => {
+  const backendPackageJsonPath = path.join(workspaceRoot, 'packages', 'backend', 'package.json');
+  const rawPackageJson = await fs.readFile(backendPackageJsonPath, 'utf8');
+  const parsedPackageJson = JSON.parse(rawPackageJson);
+  const dependencyNames = Object.keys(parsedPackageJson.dependencies ?? {});
+  const missingDependencyNames = [];
+
+  for (const dependencyName of dependencyNames) {
+    if (dependencyName.startsWith('@cosmosh/')) {
+      continue;
+    }
+
+    try {
+      require.resolve(dependencyName, { paths: [runtimeNodeModulesRoot] });
+    } catch {
+      missingDependencyNames.push(dependencyName);
+    }
+  }
+
+  if (missingDependencyNames.length > 0) {
+    throw new Error(
+      `Packaged backend runtime is missing production dependencies: ${missingDependencyNames.join(', ')}`,
+    );
+  }
+
+  console.log('[main:prebuild] Validated packaged backend runtime dependencies.');
+};
+
+/**
  * Copies built dist artifacts from workspace packages required by packaged backend runtime.
  */
 const syncWorkspaceRuntimePackages = async () => {
@@ -466,6 +498,7 @@ const syncBackendRuntime = async () => {
   await fs.mkdir(runtimeNodeModulesRoot, { recursive: true });
   await syncThirdPartyDependencies();
   await syncWorkspaceRuntimePackages();
+  await validateBackendRuntimeDependencies();
 };
 
 syncBackendRuntime().catch((error) => {

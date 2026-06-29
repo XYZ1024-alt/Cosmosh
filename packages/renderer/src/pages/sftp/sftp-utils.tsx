@@ -77,34 +77,23 @@ const TEXT_PREVIEW_FILE_NAMES = new Set(['.env', '.gitignore', '.npmrc', 'docker
 
 const IMAGE_PREVIEW_EXTENSIONS = new Set(['apng', 'avif', 'bmp', 'gif', 'ico', 'jpg', 'jpeg', 'png', 'svg', 'webp']);
 
-const MONACO_LANGUAGE_BY_EXTENSION: Record<string, string> = {
-  c: 'c',
-  cpp: 'cpp',
-  cs: 'csharp',
+const CODEMIRROR_LANGUAGE_BY_EXTENSION: Record<string, string> = {
   css: 'css',
-  go: 'go',
-  h: 'c',
-  hpp: 'cpp',
   htm: 'html',
   html: 'html',
-  java: 'java',
   js: 'javascript',
   json: 'json',
   jsx: 'javascript',
   md: 'markdown',
   mjs: 'javascript',
-  php: 'php',
-  ps1: 'powershell',
   py: 'python',
-  rb: 'ruby',
-  rs: 'rust',
-  scss: 'scss',
+  scss: 'css',
   sh: 'shell',
   sql: 'sql',
   ts: 'typescript',
   tsx: 'typescript',
   vue: 'html',
-  xml: 'xml',
+  xml: 'html',
   yaml: 'yaml',
   yml: 'yaml',
 };
@@ -129,7 +118,7 @@ const resolvePreviewExtension = (entry: ApiSftpEntry): string => {
  * Checks whether an SFTP file is a supported text/code preview target.
  *
  * @param entry Remote SFTP entry.
- * @returns Whether the file should use Monaco preview.
+ * @returns Whether the file should use text/code preview.
  */
 export const isSftpTextPreviewEntry = (entry: ApiSftpEntry): boolean => {
   if (entry.type !== 'file') {
@@ -151,10 +140,10 @@ export const isSftpImagePreviewEntry = (entry: ApiSftpEntry): boolean => {
 };
 
 /**
- * Resolves the Monaco language id for one SFTP text/code preview.
+ * Resolves the CodeMirror language id for one SFTP text/code preview.
  *
  * @param entry Remote SFTP entry.
- * @returns Monaco language id.
+ * @returns CodeMirror language id.
  */
 export const resolveSftpPreviewLanguage = (entry: ApiSftpEntry): string => {
   const extension = resolvePreviewExtension(entry);
@@ -162,7 +151,7 @@ export const resolveSftpPreviewLanguage = (entry: ApiSftpEntry): string => {
     return 'shell';
   }
 
-  return MONACO_LANGUAGE_BY_EXTENSION[extension] ?? 'plaintext';
+  return CODEMIRROR_LANGUAGE_BY_EXTENSION[extension] ?? 'plaintext';
 };
 
 /**

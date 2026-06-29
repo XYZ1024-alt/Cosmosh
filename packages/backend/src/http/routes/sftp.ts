@@ -18,6 +18,7 @@ import {
   type ApiSftpUploadFileResponse,
   type ApiSftpWriteFileResponse,
   createApiSuccess,
+  MAX_SYSTEM_PROXY_RULES_LENGTH,
 } from '@cosmosh/api-contract';
 
 import type {
@@ -142,10 +143,24 @@ const parseCreateSftpSessionRequest = (payload: unknown): ValidationResult<Norma
   }
 
   const initialPath = normalizeOptionalString(payload.initialPath) ?? '.';
+  const systemProxyRules = normalizeOptionalString(payload.systemProxyRules);
+  if (
+    payload.systemProxyRules !== undefined &&
+    (!systemProxyRules || systemProxyRules.length > MAX_SYSTEM_PROXY_RULES_LENGTH)
+  ) {
+    return {
+      error: buildValidationError(
+        'errors.validation.systemProxyRulesLength',
+        `systemProxyRules must be ${MAX_SYSTEM_PROXY_RULES_LENGTH} characters or fewer.`,
+      ),
+    };
+  }
+
   const value: NormalizedSftpSessionCreateRequest = {
     serverId,
     connectTimeoutSec,
     initialPath,
+    systemProxyRules,
   };
 
   if (strictHostKey !== undefined) {

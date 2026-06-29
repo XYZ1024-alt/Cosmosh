@@ -1714,6 +1714,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortForwardRuleStartRequest'
       responses:
         '200':
           description: Port-forwarding rule started.
@@ -2194,6 +2200,11 @@ components:
           type: boolean
         terminalClipboardAccess:
           $ref: '#/components/schemas/TerminalClipboardAccess'
+        proxyMode:
+          $ref: '#/components/schemas/SshServerProxyMode'
+        proxyUrl:
+          type: string
+          maxLength: 2048
         hasPassword:
           type: boolean
         hasPrivateKey:
@@ -2263,6 +2274,11 @@ components:
           type: boolean
         terminalClipboardAccess:
           $ref: '#/components/schemas/TerminalClipboardAccess'
+        proxyMode:
+          $ref: '#/components/schemas/SshServerProxyMode'
+        proxyUrl:
+          type: string
+          maxLength: 2048
         iconKey:
           type: string
           minLength: 1
@@ -2326,6 +2342,9 @@ components:
     SshVisualColorKey:
       type: string
       enum: ['slate', 'blue', 'emerald', 'violet', 'amber', 'rose', 'cyan', 'indigo', 'teal', 'lime']
+    SshServerProxyMode:
+      type: string
+      enum: ['default', 'off', 'custom']
     SshTagCreateRequest:
       type: object
       required:
@@ -2368,6 +2387,9 @@ components:
           type: boolean
         remoteEnhancementsEnabled:
           type: boolean
+        systemProxyRules:
+          type: string
+          maxLength: 4096
     TerminalClipboardAccess:
       type: string
       enum: ['off', 'writeAskRead', 'readWrite', 'askAlways']
@@ -2775,6 +2797,12 @@ components:
       properties:
         item:
           $ref: '#/components/schemas/PortForwardRuleListItem'
+    PortForwardRuleStartRequest:
+      type: object
+      properties:
+        systemProxyRules:
+          type: string
+          maxLength: 4096
     SftpSessionCreateRequest:
       type: object
       required:
@@ -2790,6 +2818,9 @@ components:
           maximum: 180
         strictHostKey:
           type: boolean
+        systemProxyRules:
+          type: string
+          maxLength: 4096
     SftpPathRequest:
       type: object
       required:

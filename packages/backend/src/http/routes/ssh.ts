@@ -1008,6 +1008,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           remoteEnhancementsEnabled: parsed.value.remoteEnhancementsEnabled,
           disableCharacterWidthCompatibilityMode: parsed.value.disableCharacterWidthCompatibilityMode,
           terminalClipboardAccess: parsed.value.terminalClipboardAccess,
+          proxyMode: parsed.value.proxyMode,
+          proxyUrl: parsed.value.proxyUrl,
           keychainId,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
@@ -1053,6 +1055,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           remoteEnhancementsEnabled: server.remoteEnhancementsEnabled,
           disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode,
           terminalClipboardAccess: server.terminalClipboardAccess,
+          proxyMode: server.proxyMode,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
         },
@@ -1101,6 +1104,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
         remoteEnhancementsEnabled: true,
         disableCharacterWidthCompatibilityMode: true,
         terminalClipboardAccess: true,
+        proxyMode: true,
+        proxyUrl: true,
         keychainId: true,
         keychain: {
           select: {
@@ -1205,6 +1210,8 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
             parsed.value.disableCharacterWidthCompatibilityMode ??
             existingServer.disableCharacterWidthCompatibilityMode,
           terminalClipboardAccess: parsed.value.terminalClipboardAccess ?? existingServer.terminalClipboardAccess,
+          proxyMode: parsed.value.proxyMode ?? existingServer.proxyMode,
+          proxyUrl: parsed.value.proxyUrl !== undefined ? parsed.value.proxyUrl : existingServer.proxyUrl,
           note: parsed.value.note,
           folderId: parsed.value.folderId,
           ...(tagIds
@@ -1252,6 +1259,7 @@ export const registerSshRoutes = (app: BackendHttpApp, context: BackendAppContex
           remoteEnhancementsEnabled: server.remoteEnhancementsEnabled,
           disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode,
           terminalClipboardAccess: server.terminalClipboardAccess,
+          proxyMode: server.proxyMode,
           folderId: server.folder?.id,
           tagCount: server.tags.length,
           keychainReplaced: existingServer.keychainId !== keychainId,

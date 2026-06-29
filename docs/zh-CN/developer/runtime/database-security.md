@@ -36,7 +36,8 @@ Backend 在生产模式不会自行“猜”密钥，而是强依赖 Main 注入
 
 - Main 返回固定密钥 `cosmosh_dev_key`。
 - Backend 也使用对应开发模式固定行为。
-- 数据库路径为工作区 `.dev_data/cosmosh.db`。
+- 默认数据库路径为工作区 `.dev_data/cosmosh.db`。
+- 当通过 `pnpm dev:profile` 或 `COSMOSH_DEV_PROFILE` 启用开发身份时，数据库路径变为 `.cosmosh/dev-profiles/<name>/database/cosmosh.db`，Electron `userData` 与 backend secret 存储也会隔离到同一个身份根目录。
 
 该模式偏向开发便利，不代表生产级安全策略。
 
@@ -158,6 +159,22 @@ Main 会在以下任一场景进入回退解析器：
 5. 程序按设计中止启动，避免使用未验证密钥。
 
 后面那条 DBus/systemd 错误多数是进程生命周期副作用日志，不是主根因。
+
+## 5.7 开发身份隔离
+
+开发身份以便利性为目标，并始终使用确定性的开发密钥 `cosmosh_dev_key`。它用于本地验证引导、首次运行存储、设置默认值与数据库启动行为。
+
+身份状态存放在 `.cosmosh/dev-profiles/` 下，并被 Git 忽略：
+
+- `.cosmosh/dev-profiles/state.json`：由 `pnpm dev:profile use <name>` 写入的当前身份指针。
+- `.cosmosh/dev-profiles/<name>/user-data`：Electron `userData` 覆盖路径。
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`：通过 `COSMOSH_DB_PATH` 注入的 SQLite 数据库文件。
+- `.cosmosh/dev-profiles/<name>/backend-storage`：通过 `COSMOSH_BACKEND_STORAGE_PATH` 注入的 backend secret 存储。
+- `.cosmosh/dev-profiles/default/profile.json`：自动导入旧默认身份的 manifest。
+
+第一次执行非帮助类 `pnpm dev:profile` 命令时，工具会把旧的隐式默认身份导入到受管理的 `default` 身份。导入器会在可读取时复制 `.dev_data/cosmosh.db` 以及 SQLite `-wal`、`-shm` 文件，复制旧 Electron `userData` 目录，并复制 backend secret 存储。复制结果是尽力而为，并记录在 `profile.json` 中，因此不可读的旧来源只会生成 `import=partial` 身份，不会删除或修改原始来源。
+
+删除或重置普通身份只影响该身份目录。受管理的 `default` 身份会拒绝普通 reset/delete 命令；如需从旧来源重建，请使用 `pnpm dev:profile import-default --force`。除非在身份工具之外手动删除，否则这些命令不会触碰旧开发数据库 `.dev_data/cosmosh.db`。
 
 ## 6. `security.config.json` 当前字段
 

@@ -6,6 +6,7 @@ import { t } from '../../lib/i18n';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPrimaryButton,
@@ -186,6 +187,7 @@ const SettingsAboutSection: React.FC<SettingsAboutSectionProps> = ({ appVersionI
         <DialogContent className="max-w-[640px]">
           <DialogHeader>
             <DialogTitle>{t('settings.about.technicalInfo')}</DialogTitle>
+            <DialogDescription className="sr-only">{t('settings.about.technicalInfoDescription')}</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-2 rounded-md border border-home-divider p-3 text-sm">

@@ -19,13 +19,17 @@ import {
   type HandlerDetails,
   Menu,
   nativeTheme,
+  session,
   shell,
   type WindowOpenHandlerResponse,
 } from 'electron';
 import path from 'path';
 
+import { applyDevelopmentProfileToElectronApp } from './dev/dev-profile';
+import { BackendRequestTraceStore } from './ipc/backend-request-trace-store';
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
 import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
+import { registerDebugIpcHandlers } from './ipc/register-debug-ipc';
 import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-target-authorizations';
 import {
   getDatabaseEncryptionKey,
@@ -47,6 +51,7 @@ let backendShutdownPromise: Promise<void> | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
+const backendRequestTraceStore = new BackendRequestTraceStore(!app.isPackaged);
 
 let isAppShutdownInProgress = false;
 
@@ -336,7 +341,12 @@ const resolveRendererDevPort = (): number => {
  * Creates the i18n instance used by main-process UI surfaces.
  */
 const getMainI18n = () => {
-  return createI18n({ locale: appLocale, scope: 'main', fallbackLocale: 'en', resources: mainProcessMessages });
+  return createI18n({
+    locale: appLocale,
+    scope: 'main',
+    fallbackLocale: 'en',
+    resources: mainProcessMessages,
+  });
 };
 
 /**
@@ -674,6 +684,9 @@ const resolveWorkspaceRoot = (): string => {
   return path.resolve(__dirname, '../../..');
 };
 
+const mainWorkspaceRoot = resolveWorkspaceRoot();
+applyDevelopmentProfileToElectronApp(mainWorkspaceRoot);
+
 /**
  * Resolves platform-appropriate data root used for shared backend secrets.
  */
@@ -704,7 +717,10 @@ const writeMacOsCliLauncherScript = async (launcherPath: string, executablePath:
     '',
   ];
 
-  await fs.writeFile(launcherPath, scriptLines.join('\n'), { encoding: 'utf8', mode: 0o755 });
+  await fs.writeFile(launcherPath, scriptLines.join('\n'), {
+    encoding: 'utf8',
+    mode: 0o755,
+  });
   await fs.chmod(launcherPath, 0o755);
 };
 
@@ -772,10 +788,24 @@ const hardenSecretKeyPermissions = async (secretFilePath: string): Promise<void>
 };
 
 /**
+ * Resolves the storage directory for backend-only runtime secrets.
+ *
+ * @returns Absolute directory path used for backend secret material.
+ */
+const resolveBackendSecretStorageDir = (): string => {
+  const profileStoragePath = process.env.COSMOSH_BACKEND_STORAGE_PATH?.trim();
+  if (profileStoragePath) {
+    return profileStoragePath;
+  }
+
+  return path.join(resolveDataRootDir(), 'Cosmosh', 'backend', 'storage');
+};
+
+/**
  * Loads or creates backend secret key used for internal cryptographic operations.
  */
 const resolveBackendSecretKey = async (): Promise<string> => {
-  const storageDirPath = path.join(resolveDataRootDir(), 'Cosmosh', 'backend', 'storage');
+  const storageDirPath = resolveBackendSecretStorageDir();
   const secretFilePath = path.join(storageDirPath, 'secret.key');
 
   try {
@@ -790,7 +820,10 @@ const resolveBackendSecretKey = async (): Promise<string> => {
 
   const generated = randomBytes(32).toString('hex');
   await fs.mkdir(storageDirPath, { recursive: true });
-  await fs.writeFile(secretFilePath, generated, { encoding: 'utf8', mode: 0o600 });
+  await fs.writeFile(secretFilePath, generated, {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
   await hardenSecretKeyPermissions(secretFilePath);
   return generated;
 };
@@ -1035,25 +1068,29 @@ const requireBackendConfig = (): { port: number; token: string } => {
   };
 };
 
+type BackendRequestRawResult = {
+  status: number;
+  ok: boolean;
+  responseText: string;
+};
+
 /**
- * Sends typed backend requests through internal token-authenticated HTTP transport.
+ * Sends a backend request through the internal token-authenticated HTTP transport and records a dev-only mirror.
+ *
+ * @param path Backend API path including query string.
+ * @param options HTTP method and optional JSON body.
+ * @returns Raw status and response text used by higher-level adapters.
  */
-const requestBackend = async <TSuccess>(
+const requestBackendRaw = async (
   path: string,
   options: {
-    method: 'GET' | 'POST' | 'PUT';
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE';
     body?: unknown;
   },
-): Promise<TSuccess | ApiErrorResponse> => {
+): Promise<BackendRequestRawResult> => {
   await startBackendService();
 
-  const createBackendTransportError = (message: string): ApiErrorResponse => {
-    return createApiError({
-      code: API_CODES.commonInternalServerError,
-      message,
-    });
-  };
-
+  const startedAtMs = Date.now();
   const { port, token } = requireBackendConfig();
   const headers: Record<string, string> = {
     [API_HEADERS.internalToken]: token,
@@ -1064,15 +1101,64 @@ const requestBackend = async <TSuccess>(
     headers['Content-Type'] = 'application/json';
   }
 
-  const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-    method: options.method,
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+      method: options.method,
+      headers,
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    });
+    const responseText = await response.text();
 
-  const responseText = await response.text();
+    backendRequestTraceStore.record({
+      method: options.method,
+      path,
+      startedAtMs,
+      requestBody: options.body,
+      responseText,
+      status: response.status,
+      ok: response.ok,
+    });
 
-  if (!responseText) {
+    return {
+      status: response.status,
+      ok: response.ok,
+      responseText,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown backend transport error.';
+    backendRequestTraceStore.record({
+      method: options.method,
+      path,
+      startedAtMs,
+      requestBody: options.body,
+      status: null,
+      ok: null,
+      error: message,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Sends typed backend requests through internal token-authenticated HTTP transport.
+ */
+const requestBackend = async <TSuccess>(
+  path: string,
+  options: {
+    method: 'GET' | 'POST' | 'PUT';
+    body?: unknown;
+  },
+): Promise<TSuccess | ApiErrorResponse> => {
+  const createBackendTransportError = (message: string): ApiErrorResponse => {
+    return createApiError({
+      code: API_CODES.commonInternalServerError,
+      message,
+    });
+  };
+
+  const response = await requestBackendRaw(path, options);
+
+  if (!response.responseText) {
     if (response.ok) {
       return createBackendTransportError(`Backend returned empty response for ${options.method} ${path}.`);
     }
@@ -1081,10 +1167,10 @@ const requestBackend = async <TSuccess>(
   }
 
   try {
-    return JSON.parse(responseText) as TSuccess | ApiErrorResponse;
+    return JSON.parse(response.responseText) as TSuccess | ApiErrorResponse;
   } catch {
     return createBackendTransportError(
-      `Backend returned non-JSON response (${response.status}): ${responseText.slice(0, 180)}`,
+      `Backend returned non-JSON response (${response.status}): ${response.responseText.slice(0, 180)}`,
     );
   }
 };
@@ -1187,6 +1273,31 @@ const registerRendererWindowOpenPolicy = (
 };
 
 /**
+ * Loads the unpacked request mirror DevTools panel in development builds.
+ *
+ * @returns Promise resolved after the extension is loaded or skipped.
+ */
+const loadBackendRequestTraceDevToolsExtension = async (): Promise<void> => {
+  if (!backendRequestTraceStore.enabled) {
+    console.log('[debug] Backend request trace DevTools extension skipped because the app is packaged.');
+
+    return;
+  }
+
+  const extensionPath = path.join(mainWorkspaceRoot, 'packages', 'main', 'devtools', 'request-trace-panel');
+  try {
+    await fs.access(path.join(extensionPath, 'manifest.json'));
+    console.log(`[debug] Loading backend request trace DevTools extension from ${extensionPath}`);
+    const extension = await session.defaultSession.extensions.loadExtension(extensionPath, {
+      allowFileAccess: false,
+    });
+    console.log(`[debug] Loaded DevTools extension: ${extension.name} (${extension.id})`);
+  } catch (error) {
+    console.warn('[debug] Failed to load request trace DevTools extension.', error);
+  }
+};
+
+/**
  * Creates the primary desktop window and loads renderer entry according to runtime mode.
  */
 const createWindow = async (): Promise<void> => {
@@ -1273,6 +1384,7 @@ if (!hasSingleInstanceLock) {
       setPendingLaunchWorkingDirectory(await resolveWorkingDirectoryFromArgv(process.argv));
 
       if (!app.isPackaged) {
+        await loadBackendRequestTraceDevToolsExtension();
         disableI18nHotReload = await enableI18nDevHotReload({
           localeRootDir: path.join(resolveWorkspaceRoot(), 'packages', 'i18n', 'locales'),
           resources: mainProcessMessages,
@@ -1327,12 +1439,17 @@ registerAppUtilityIpcHandlers({
 });
 
 registerBackendIpcHandlers({
-  getLocale: () => appLocale,
-  ensureBackendReady: startBackendService,
-  requireBackendConfig,
   requestBackend,
+  requestBackendRaw: async (requestPath, options) => {
+    const response = await requestBackendRaw(requestPath, options);
+    return { status: response.status };
+  },
   consumePendingLaunchWorkingDirectory,
   sftpDownloadTargetAuthorizations,
+});
+
+registerDebugIpcHandlers({
+  backendRequestTraceStore,
 });
 
 // -----------------------------------------------------------------------------

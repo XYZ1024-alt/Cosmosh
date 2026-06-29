@@ -37,7 +37,9 @@
 
 - Press Ctrl+Shift+P on Windows/Linux, or Cmd+Shift+P on macOS, to open the command palette globally.
 - The shortcut works even when terminal focus or input focus is active.
-- Use it to create tabs, switch tabs, close current tab, close right tabs, and jump into Settings search.
+- Use it to create tabs, switch tabs, close current tab, close right tabs, jump into Settings search, and open saved resources.
+- Resource commands include `SSH: <server name> (<host>)`, `SFTP: <server name> (<host>)`, `Server: <server name> (<host>)`, `Keychain: <keychain name>`, and `Forward: <forward name>`.
+- Server host text follows the Show Full Server Address setting, so masked addresses stay masked in command titles.
 - Settings commands can be searched by localized label, English label, setting key, path, search terms, and command action id.
 
 ## Trust and Verification

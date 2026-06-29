@@ -118,6 +118,8 @@
       "portRange": "端口必须是 1-65535 范围内的整数。",
       "privateKeyRequiredForAuthType": "所选认证类型必须提供私钥。",
       "profileIdRequired": "profileId 为必填项。",
+      "proxyModeEnum": "proxyMode 必须是 default、off 或 custom 之一。",
+      "proxyUrlInvalid": "proxyUrl 必须是有效的 http、https 或 socks5 代理 URL，且不能包含路径、查询参数或片段。",
       "remoteEnhancementsEnabledType": "remoteEnhancementsEnabled 必须是 boolean 值。",
       "requestBodyMustBeObject": "请求体必须是 JSON 对象。",
       "rowsRange": "rows 必须是 10 到 200 之间的整数。",
@@ -125,6 +127,7 @@
       "scopeDeviceIdLength": "scope.deviceId 长度不能超过 120 个字符。",
       "serverIdRequired": "serverId 为必填项。",
       "serverNameLength": "服务器名称为必填，长度需在 1-120 个字符之间。",
+      "systemProxyRulesLength": "systemProxyRules 长度不能超过 4096 个字符。",
       "tagNameLength": "标签名称为必填，长度需在 1-64 个字符之间。",
       "termLength": "term 必须是长度 2 到 64 的字符串。",
       "usernameLength": "用户名为必填，长度需在 1-120 个字符之间。"

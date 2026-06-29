@@ -1,4 +1,5 @@
 import '@xterm/xterm/css/xterm.css';
+import './ssh/terminal-image-layer.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
@@ -39,7 +40,7 @@ import {
 } from './ssh/ssh-utils';
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
-import type { TerminalWebLinksPlatform } from './ssh/terminal-addons';
+import type { TerminalInlineImageSettings, TerminalWebLinksPlatform } from './ssh/terminal-addons';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
@@ -178,6 +179,8 @@ const SSH: React.FC<SSHProps> = ({
   }, [connectionIntent.lastResolvedSnapshot, terminalCharacterWidthCompatibilityModeEnabled]);
   const localTerminalClipboardAccess = settingsValues.localTerminalClipboardAccess;
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
+  const terminalInlineImagesEnabled = settingsValues.terminalInlineImagesEnabled;
+  const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
   const terminalWebLinksSettings = React.useMemo(
@@ -187,6 +190,13 @@ const SSH: React.FC<SSHProps> = ({
       platform: resolveTerminalWebLinksPlatform(window.electron?.platform),
     }),
     [terminalWebLinksEnabled, terminalWebLinksRequireModifierKey],
+  );
+  const terminalInlineImageSettings = React.useMemo<TerminalInlineImageSettings>(
+    () => ({
+      enabled: terminalInlineImagesEnabled,
+      options: terminalInlineImageOptions,
+    }),
+    [terminalInlineImageOptions, terminalInlineImagesEnabled],
   );
   const terminalInitOptions = React.useMemo<ITerminalOptions>(() => {
     const terminalTextColor =
@@ -371,6 +381,7 @@ const SSH: React.FC<SSHProps> = ({
     characterWidthCompatibilityModeEnabled,
     terminalClipboardProvider,
     terminalHardwareAccelerationEnabled,
+    terminalInlineImageSettings,
     terminalWebLinksSettings,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
@@ -406,6 +417,7 @@ const SSH: React.FC<SSHProps> = ({
       deleteHistoryCommand,
       selectAll,
       getSelectionText,
+      getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
       findActiveTerminalText,
@@ -542,6 +554,40 @@ const SSH: React.FC<SSHProps> = ({
         notifySuccess(t('ssh.selectionBarCopySuccess'));
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('ssh.selectionBarCopyFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
+  /**
+   * Copies selected terminal HTML with a plain-text fallback payload in the same clipboard item.
+   *
+   * @param html Serialized HTML from xterm's SerializeAddon.
+   * @param plainText Plain selection text included for non-rich paste targets.
+   * @returns Nothing.
+   */
+  const copyHtmlToClipboard = React.useCallback(
+    async (html: string, plainText: string): Promise<void> => {
+      if (
+        !html ||
+        !plainText ||
+        typeof ClipboardItem === 'undefined' ||
+        typeof navigator.clipboard.write !== 'function'
+      ) {
+        notifyError(t('ssh.selectionBarCopyHtmlUnsupported'));
+        return;
+      }
+
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([plainText], { type: 'text/plain' }),
+          }),
+        ]);
+        notifySuccess(t('ssh.selectionBarCopyHtmlSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('ssh.selectionBarCopyHtmlFailed'));
       }
     },
     [notifyError, notifySuccess],
@@ -718,6 +764,15 @@ const SSH: React.FC<SSHProps> = ({
 
     void copyTextToClipboard(selectionText);
   }, [copyTextToClipboard, getSelectionText]);
+
+  const handleContextMenuCopyAsHtml = React.useCallback(() => {
+    const selectionText = getSelectionText();
+    if (!selectionText) {
+      return;
+    }
+
+    void copyHtmlToClipboard(getSelectionHtml(), selectionText);
+  }, [copyHtmlToClipboard, getSelectionHtml, getSelectionText]);
 
   const handleContextMenuPaste = React.useCallback(() => {
     void navigator.clipboard
@@ -1321,6 +1376,10 @@ const SSH: React.FC<SSHProps> = ({
           onCopy={(paneId) => {
             activatePane(paneId);
             handleContextMenuCopy();
+          }}
+          onCopyAsHtml={(paneId) => {
+            activatePane(paneId);
+            handleContextMenuCopyAsHtml();
           }}
           onPaste={(paneId) => {
             activatePane(paneId);

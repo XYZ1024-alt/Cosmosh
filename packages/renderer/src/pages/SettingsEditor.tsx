@@ -1,7 +1,5 @@
 import { normalizeSettingsValuesStrict, type SettingsValues, type SettingValidationError } from '@cosmosh/api-contract';
-import MonacoEditor from '@monaco-editor/react';
 import { Save } from 'lucide-react';
-import { jsonDefaults } from 'monaco-editor/esm/vs/language/json/monaco.contribution';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -9,26 +7,14 @@ import { Menubar } from '../components/ui/menubar';
 import { type AppSettingsScope } from '../lib/app-settings';
 import { getAppSettings, updateAppSettings } from '../lib/backend';
 import { onLocaleChange, t } from '../lib/i18n';
-import { configureMonacoEnvironment, monacoEditor } from '../lib/monaco';
-import { updateSettingsStoreValues } from '../lib/settings-store';
+import { updateSettingsStoreValues, useSettingsValue } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
-import { type SettingDefinition, SETTINGS_REGISTRY, type SettingsJsonSchemaNode } from './settings-registry';
-
-type JsonSchemaNode = SettingsJsonSchemaNode;
-
-type JsonSchemaDocument = {
-  $schema: string;
-  title: string;
-  type: 'object';
-  additionalProperties: boolean;
-  properties: Record<string, JsonSchemaNode>;
-  required: string[];
-};
-
-const MODEL_URI = 'inmemory://cosmosh/settings.json';
-const SCHEMA_URI = 'inmemory://cosmosh/settings.schema.json';
-
-configureMonacoEnvironment();
+import {
+  SettingsJsonCodeMirrorEditor,
+  type SettingsJsonCodeMirrorEditorHandle,
+} from './settings-editor/SettingsJsonCodeMirrorEditor';
+import { type JsonSchemaDocument, type JsonSchemaNode } from './settings-editor/settingsJsonLanguage';
+import { type SettingDefinition, SETTINGS_REGISTRY } from './settings-registry';
 
 const stringifySettings = (values: SettingsValues): string => {
   return `${JSON.stringify(values, null, 2)}\n`;
@@ -52,6 +38,7 @@ const buildSettingPropertySchema = (item: SettingDefinition): JsonSchemaNode => 
   const settingDescription = t(item.descriptionI18nKey);
 
   const base: JsonSchemaNode = {
+    title: `${settingName} (${item.key})`,
     description: settingDescription,
     markdownDescription: `**${settingName}**\n\n${settingDescription}`,
     default: item.defaultValue,
@@ -128,8 +115,10 @@ const parseSettingsJson = (rawJson: string): { value?: SettingsValues; error?: s
 
 const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSettingKey }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
-  const [, setLocaleTick] = React.useState<number>(0);
-  const editorRef = React.useRef<monacoEditor.editor.IStandaloneCodeEditor | null>(null);
+  const [schema, setSchema] = React.useState<JsonSchemaDocument>(() => buildSettingsSchema());
+  const terminalFontFamily = useSettingsValue('terminalFontFamily');
+  const revealedInitialSettingKeyRef = React.useRef<string | null>(null);
+  const editorRef = React.useRef<SettingsJsonCodeMirrorEditorHandle | null>(null);
 
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [isSaving, setIsSaving] = React.useState<boolean>(false);
@@ -139,31 +128,9 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
 
   React.useEffect(() => {
     return onLocaleChange(() => {
-      setLocaleTick((value) => value + 1);
+      setSchema(buildSettingsSchema());
     });
   }, []);
-
-  const schema = buildSettingsSchema();
-
-  const configureJsonLanguage = React.useCallback((activeSchema: JsonSchemaDocument): void => {
-    jsonDefaults.setDiagnosticsOptions({
-      validate: true,
-      allowComments: false,
-      enableSchemaRequest: false,
-      trailingCommas: 'error',
-      schemas: [
-        {
-          uri: SCHEMA_URI,
-          fileMatch: [MODEL_URI],
-          schema: activeSchema,
-        },
-      ],
-    });
-  }, []);
-
-  React.useEffect(() => {
-    configureJsonLanguage(schema);
-  }, [configureJsonLanguage, schema]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -201,48 +168,36 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
 
   const hasChanges = rawJson !== savedJson;
 
-  const revealSettingKey = React.useCallback((settingKey: string): void => {
-    const editor = editorRef.current;
-    if (!editor) {
-      return;
-    }
-
-    const model = editor.getModel();
-    if (!model) {
-      return;
-    }
-
-    const keyToken = `"${settingKey}"`;
-    const offset = model.getValue().indexOf(keyToken);
-    if (offset < 0) {
-      return;
-    }
-
-    const start = model.getPositionAt(offset + 1);
-    const end = model.getPositionAt(offset + 1 + settingKey.length);
-    editor.setSelection({
-      startLineNumber: start.lineNumber,
-      startColumn: start.column,
-      endLineNumber: end.lineNumber,
-      endColumn: end.column,
-    });
-    editor.revealLineInCenter(start.lineNumber);
-    editor.focus();
+  const revealSettingKey = React.useCallback((settingKey: string): boolean => {
+    return editorRef.current?.revealSettingKey(settingKey) ?? false;
   }, []);
 
   React.useEffect(() => {
-    if (!initialSettingKey || isLoading) {
+    if (!initialSettingKey || isLoading || revealedInitialSettingKeyRef.current === initialSettingKey) {
       return;
     }
 
-    const frameId = window.requestAnimationFrame(() => {
-      revealSettingKey(initialSettingKey);
-    });
+    let attempt = 0;
+    let frameId = 0;
+
+    const revealWhenReady = (): void => {
+      attempt += 1;
+      if (revealSettingKey(initialSettingKey)) {
+        revealedInitialSettingKeyRef.current = initialSettingKey;
+        return;
+      }
+
+      if (attempt < 3) {
+        frameId = window.requestAnimationFrame(revealWhenReady);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(revealWhenReady);
 
     return () => {
       window.cancelAnimationFrame(frameId);
     };
-  }, [initialSettingKey, isLoading, rawJson, revealSettingKey]);
+  }, [initialSettingKey, isLoading, revealSettingKey]);
 
   const handleSave = React.useCallback(async (): Promise<void> => {
     if (isSaving) {
@@ -302,30 +257,16 @@ const SettingsEditor: React.FC<{ initialSettingKey?: string }> = ({ initialSetti
           </div>
         ) : (
           <div className="h-full w-full overflow-hidden">
-            <MonacoEditor
-              path={MODEL_URI}
-              language="json"
+            <SettingsJsonCodeMirrorEditor
+              fontFamily={terminalFontFamily}
+              readOnly={isSaving}
+              schema={schema}
               value={rawJson}
-              options={{
-                automaticLayout: true,
-                minimap: { enabled: false },
-                fontSize: 13,
-                tabSize: 2,
-                wordWrap: 'on',
-                scrollBeyondLastLine: false,
-                formatOnPaste: true,
-                formatOnType: true,
-              }}
-              theme="vs-dark"
-              beforeMount={() => {
-                configureJsonLanguage(schema);
-              }}
+              onChange={setRawJson}
               onMount={(editor) => {
                 editorRef.current = editor;
               }}
-              onChange={(value: string | undefined) => {
-                setRawJson(value ?? '');
-              }}
+              onSave={handleSave}
             />
           </div>
         )}

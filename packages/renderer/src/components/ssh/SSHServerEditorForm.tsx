@@ -2,6 +2,7 @@ import type { components } from '@cosmosh/api-contract';
 import {
   DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
   isTerminalClipboardAccess,
+  type SshServerProxyMode,
   TERMINAL_CLIPBOARD_ACCESS_OPTIONS,
   type TerminalClipboardAccess,
 } from '@cosmosh/api-contract';
@@ -52,6 +53,8 @@ type ServerEditorFormState = {
   remoteEnhancementsEnabled: boolean;
   disableCharacterWidthCompatibilityMode: boolean;
   terminalClipboardAccess: TerminalClipboardAccess;
+  proxyMode: SshServerProxyMode;
+  proxyUrl: string;
 };
 
 type SSHServerEditorFormProps = {
@@ -449,6 +452,52 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
             </Select>
           </FormControl>
         </FormField>
+        <FormField>
+          <FormLabelWithTooltip
+            htmlFor="ssh-editor-proxy-mode"
+            tooltip={t('ssh.proxyModeHint')}
+          >
+            {t('ssh.proxyModeLabel')}
+          </FormLabelWithTooltip>
+          <FormControl>
+            <Select
+              value={formState.proxyMode}
+              onValueChange={(value) => {
+                if (value === 'default' || value === 'off' || value === 'custom') {
+                  onChangeForm('proxyMode', value);
+                }
+              }}
+            >
+              <SelectTrigger id="ssh-editor-proxy-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="default">{t('ssh.proxyModeOptions.default')}</SelectItem>
+                <SelectItem value="off">{t('ssh.proxyModeOptions.off')}</SelectItem>
+                <SelectItem value="custom">{t('ssh.proxyModeOptions.custom')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </FormControl>
+        </FormField>
+        {formState.proxyMode === 'custom' ? (
+          <FormField>
+            <FormLabelWithTooltip
+              htmlFor="ssh-editor-proxy-url"
+              tooltip={t('ssh.proxyUrlHint')}
+            >
+              {t('ssh.proxyUrlLabel')}
+            </FormLabelWithTooltip>
+            <FormControl>
+              <Input
+                id="ssh-editor-proxy-url"
+                value={formState.proxyUrl}
+                placeholder={t('ssh.proxyUrlPlaceholder')}
+                inputMode="url"
+                onChange={(event) => onChangeForm('proxyUrl', event.target.value)}
+              />
+            </FormControl>
+          </FormField>
+        ) : null}
       </section>
 
       <section className="grid gap-3">

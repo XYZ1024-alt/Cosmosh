@@ -1,6 +1,6 @@
 import * as RadixAvatar from '@radix-ui/react-avatar';
 import classNames from 'classnames';
-import { Bug, Info, KeyRound, RefreshCcw, ScrollText, Server, Settings } from 'lucide-react';
+import { Bug, Info, RefreshCcw, ScrollText, Settings } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -27,8 +27,6 @@ const Header: React.FC<{
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
   onReorderTabs?: (nextTabs: TabItem[]) => void;
-  onOpenSSHEditorTab?: () => void;
-  onOpenSSHKeychainsTab?: () => void;
   onOpenAuditLogsTab?: () => void;
   onOpenSettingsTab?: (options?: { categoryId?: 'about' }) => void;
   onOpenSettingsEditorTab?: () => void;
@@ -44,8 +42,6 @@ const Header: React.FC<{
   onCloseRightTabs,
   onCloseOtherTabs,
   onReorderTabs,
-  onOpenSSHEditorTab,
-  onOpenSSHKeychainsTab,
   onOpenAuditLogsTab,
   onOpenSettingsTab,
   onOpenSettingsEditorTab,
@@ -246,22 +242,6 @@ const Header: React.FC<{
             </div>
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem
-            icon={Server}
-            onSelect={() => {
-              void onOpenSSHEditorTab?.();
-            }}
-          >
-            {t('tabs.page.sshEditor')}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            icon={KeyRound}
-            onSelect={() => {
-              void onOpenSSHKeychainsTab?.();
-            }}
-          >
-            {t('tabs.page.sshKeychains')}
-          </DropdownMenuItem>
           <DropdownMenuItem
             icon={ScrollText}
             onSelect={() => {

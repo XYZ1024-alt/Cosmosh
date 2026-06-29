@@ -72,10 +72,11 @@ import {
 } from '../components/ui/dialog';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { formStyles } from '../components/ui/form-styles';
@@ -107,7 +108,13 @@ import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } fr
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
+import {
+  formatPortForwardBindEndpoint,
+  formatPortForwardCopyEndpoint,
+  formatPortForwardTargetEndpoint,
+} from '../lib/port-forward-display';
 import { resolveServerAddressForDisplay } from '../lib/server-address';
+import { resolveSystemProxyRulesForServer } from '../lib/server-proxy';
 import { useSettingsValue } from '../lib/settings-store';
 import {
   filterSharedKeychains,
@@ -120,6 +127,7 @@ import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
 import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
+import type { HomeState, TabIconKey } from '../types/tabs';
 
 type HomeProps = {
   onOpenSSH: (serverId: string, tabTitle?: string, options?: { openInNewTab?: boolean }) => void;
@@ -128,7 +136,10 @@ type HomeProps = {
     tabTitle?: string,
     options?: { openInNewTab?: boolean; iconColorKey?: EntityColorKey },
   ) => void;
+  tabId: string;
+  onTabVisualChange?: (tabId: string, visual: { title: string; iconKey: TabIconKey }) => void;
   isActive: boolean;
+  initialState?: HomeState;
 };
 
 type SshServerListItem = components['schemas']['SshServerListItem'];
@@ -241,6 +252,35 @@ const homeModeItems: Array<{ value: HomeMode; icon: React.ComponentType<{ classN
   },
 ];
 
+const homeModeTabVisuals: Record<HomeMode, { titleKey: string; iconKey: TabIconKey }> = {
+  ssh: {
+    titleKey: 'tabs.page.home',
+    iconKey: 'home',
+  },
+  keychains: {
+    titleKey: 'home.modeKeychains',
+    iconKey: 'keychain',
+  },
+  portForwarding: {
+    titleKey: 'home.modePortForwarding',
+    iconKey: 'portForwarding',
+  },
+};
+
+/**
+ * Resolves the tab-strip title and icon for the active Home category.
+ *
+ * @param mode Active Home category.
+ * @returns Localized tab title and icon key.
+ */
+const resolveHomeModeTabVisual = (mode: HomeMode): { title: string; iconKey: TabIconKey } => {
+  const visual = homeModeTabVisuals[mode];
+  return {
+    title: t(visual.titleKey),
+    iconKey: visual.iconKey,
+  };
+};
+
 /**
  * Checks whether a tag is the internal "favorite" tag.
  * This tag is used behind the scenes to power the favorites feature
@@ -344,48 +384,6 @@ const resolveGroupModeLabel = (homeMode: HomeMode, mode: GroupMode): string => {
   }
 
   return mode === 'lastUsed' ? t('home.groupModeLastUsed') : t('home.groupModeTag');
-};
-
-/**
- * Builds the listen endpoint shown for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Human-readable bind endpoint.
- */
-const formatPortForwardBindEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'remote') {
-    return `${rule.remoteBindHost ?? '127.0.0.1'}:${rule.remoteBindPort ?? '-'}`;
-  }
-
-  return `${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? '-'}`;
-};
-
-/**
- * Builds the target endpoint shown for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Human-readable target endpoint.
- */
-const formatPortForwardTargetEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'dynamic') {
-    return t('home.portForwardingSocksTarget');
-  }
-
-  return `${rule.targetHost ?? '-'}:${rule.targetPort ?? '-'}`;
-};
-
-/**
- * Builds a clipboard-friendly endpoint for a forwarding rule.
- *
- * @param rule Persisted rule plus runtime state.
- * @returns Endpoint text copied by the row action.
- */
-const formatPortForwardCopyEndpoint = (rule: PortForwardRuleListItem): string => {
-  if (rule.type === 'dynamic') {
-    return `socks5://${rule.localBindHost ?? '127.0.0.1'}:${rule.localBindPort ?? ''}`;
-  }
-
-  return `${formatPortForwardBindEndpoint(rule)} -> ${formatPortForwardTargetEndpoint(rule)}`;
 };
 
 /**
@@ -1252,11 +1250,11 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   );
 };
 
-const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
+const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualChange, isActive, initialState }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const defaultServerNoteTemplate = useSettingsValue('defaultServerNoteTemplate');
   const showFullServerAddress = useSettingsValue('showFullServerAddress');
-  const [activeHomeMode, setActiveHomeMode] = React.useState<HomeMode>('ssh');
+  const [activeHomeMode, setActiveHomeMode] = React.useState<HomeMode>(initialState?.initialMode ?? 'ssh');
   const [servers, setServers] = React.useState<SshServerListItem[]>([]);
   const [keychains, setKeychains] = React.useState<SshKeychainListItem[]>([]);
   const [folders, setFolders] = React.useState<SshFolder[]>([]);
@@ -1300,6 +1298,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
+  const pendingInitialPortForwardRuleIdRef = React.useRef<string | null>(
+    initialState?.initialPortForwardRuleId ?? null,
+  );
   const sshViewPreference = viewPreferences.ssh;
   const keychainViewPreference = viewPreferences.keychains;
   const portForwardingViewPreference = viewPreferences.portForwarding;
@@ -1391,6 +1392,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   React.useEffect(() => {
     void reloadHomeData();
   }, [reloadHomeData]);
+
+  React.useEffect(() => {
+    onTabVisualChange?.(tabId, resolveHomeModeTabVisual(activeHomeMode));
+  }, [activeHomeMode, onTabVisualChange, tabId]);
 
   React.useEffect(() => {
     if (activeHomeMode !== 'ssh' && activeFolderId === LOCAL_TERMINAL_FOLDER_ID) {
@@ -2423,6 +2428,27 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
     [notifyWarning],
   );
 
+  React.useEffect(() => {
+    const pendingRuleId = pendingInitialPortForwardRuleIdRef.current;
+    if (isLoading || errorMessage || !pendingRuleId) {
+      return;
+    }
+
+    setActiveHomeMode('portForwarding');
+    setActiveFolderId('all');
+    setActiveTag('all');
+    setQuickFilter('none');
+    setSearch('');
+    pendingInitialPortForwardRuleIdRef.current = null;
+
+    const targetRule = portForwardRules.find((rule) => rule.id === pendingRuleId);
+    if (!targetRule) {
+      notifyWarning(t('home.portForwardingRuleNotFound'));
+      return;
+    }
+
+    openEditPortForwardRuleDialog(targetRule);
+  }, [errorMessage, isLoading, notifyWarning, openEditPortForwardRuleDialog, portForwardRules]);
   const openDeletePortForwardRuleDialog = React.useCallback(
     (rule: PortForwardRuleListItem) => {
       if (rule.runtime.status === 'running') {
@@ -2515,7 +2541,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
   const handleStartPortForwardRule = React.useCallback(
     async (ruleId: string) => {
       try {
-        const response = await startPortForwardRule(ruleId);
+        const rule = portForwardRules.find((item) => item.id === ruleId);
+        const server = rule ? servers.find((item) => item.id === rule.serverId) : undefined;
+        if (!server) {
+          throw new Error(t('home.portForwardingUnknownServer'));
+        }
+
+        const systemProxyRules = await resolveSystemProxyRulesForServer(server);
+        const response = await startPortForwardRule(ruleId, { systemProxyRules });
 
         if (!response.success && response.code === 'SSH_HOST_UNTRUSTED' && 'data' in response) {
           setPortForwardHostFingerprintPrompt({
@@ -2541,7 +2574,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
         notifyError(error instanceof Error ? error.message : t('home.portForwardingStartFailed'));
       }
     },
-    [notifyError, notifySuccess],
+    [notifyError, notifySuccess, portForwardRules, servers],
   );
 
   const handleStopPortForwardRule = React.useCallback(
@@ -3016,15 +3049,19 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                       </Tooltip>
                       <DropdownMenuContent>
                         <DropdownMenuLabel>{t('home.groupModeAction')}</DropdownMenuLabel>
-                        {groupModeOptions.map((option) => (
-                          <DropdownMenuCheckboxItem
-                            key={option.value}
-                            checked={groupMode === option.value}
-                            onSelect={() => setActiveGroupMode(option.value)}
-                          >
-                            {option.label}
-                          </DropdownMenuCheckboxItem>
-                        ))}
+                        <DropdownMenuRadioGroup
+                          value={groupMode}
+                          onValueChange={(value) => setActiveGroupMode(value as GroupMode)}
+                        >
+                          {groupModeOptions.map((option) => (
+                            <DropdownMenuRadioItem
+                              key={option.value}
+                              value={option.value}
+                            >
+                              {option.label}
+                            </DropdownMenuRadioItem>
+                          ))}
+                        </DropdownMenuRadioGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
 
@@ -3045,30 +3082,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, isActive }) => {
                       </Tooltip>
                       <DropdownMenuContent>
                         <DropdownMenuLabel>{t('home.sortAction')}</DropdownMenuLabel>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameAsc'}
-                          onSelect={() => setActiveSortMode('nameAsc')}
+                        <DropdownMenuRadioGroup
+                          value={sortMode}
+                          onValueChange={(value) => setActiveSortMode(value as SortMode)}
                         >
-                          {t('home.sortByNameAsc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'nameDesc'}
-                          onSelect={() => setActiveSortMode('nameDesc')}
-                        >
-                          {t('home.sortByNameDesc')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'lastUsed'}
-                          onSelect={() => setActiveSortMode('lastUsed')}
-                        >
-                          {t('home.sortByLastUsed')}
-                        </DropdownMenuCheckboxItem>
-                        <DropdownMenuCheckboxItem
-                          checked={sortMode === 'createdAt'}
-                          onSelect={() => setActiveSortMode('createdAt')}
-                        >
-                          {t('home.sortByCreatedAt')}
-                        </DropdownMenuCheckboxItem>
+                          <DropdownMenuRadioItem value="nameAsc">{t('home.sortByNameAsc')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="nameDesc">{t('home.sortByNameDesc')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="lastUsed">{t('home.sortByLastUsed')}</DropdownMenuRadioItem>
+                          <DropdownMenuRadioItem value="createdAt">{t('home.sortByCreatedAt')}</DropdownMenuRadioItem>
+                        </DropdownMenuRadioGroup>
                       </DropdownMenuContent>
                     </DropdownMenu>
 

@@ -32,6 +32,9 @@ const base = {
       tab: {
         hover: '#222222',
         active: '#2F2F2F',
+        'server-active-overlay': '#00000000',
+        'server-inactive-overlay': '#00000080',
+        'server-inactive-overlay-hover': '#00000059',
       },
       text: {
         DEFAULT: standardTextColorDefault,
@@ -102,6 +105,23 @@ const base = {
         },
       },
     },
+    syntax: {
+      attribute: '#9cdcfe',
+      comment: '#6a9955',
+      definition: '#dcdcaa',
+      invalid: '#f44747',
+      keyword: '#569cd6',
+      link: '#569cd6',
+      literal: '#b5cea8',
+      meta: '#c586c0',
+      operator: '#d4d4d4',
+      property: '#9cdcfe',
+      punctuation: '#808080',
+      string: '#ce9178',
+      tag: '#4ec9b0',
+      text: '#d4d4d4',
+      type: '#4ec9b0',
+    },
     menu: {
       control: {
         DEFAULT: '#191919d9',
@@ -122,6 +142,9 @@ const base = {
       item: {
         hover: '#242424e6',
         active: '#2e2e2ee6',
+        'color-visual-active-overlay': '#00000000',
+        'color-visual-overlay': '#00000080',
+        'color-visual-overlay-hover': '#00000059',
       },
       action: {
         hover: '#333333cc',
@@ -208,6 +231,9 @@ const light = {
       tab: {
         hover: '#ececf0',
         active: '#e4e4ea',
+        'server-active-overlay': '#00000014',
+        'server-inactive-overlay': '#f5f5f780',
+        'server-inactive-overlay-hover': '#f5f5f759',
       },
       text: {
         DEFAULT: '#111827',
@@ -285,6 +311,23 @@ const light = {
         },
       },
     },
+    syntax: {
+      attribute: '#0451a5',
+      comment: '#008000',
+      definition: '#795e26',
+      invalid: '#cd3131',
+      keyword: '#0000ff',
+      link: '#0000ff',
+      literal: '#098658',
+      meta: '#af00db',
+      operator: '#383a42',
+      property: '#0451a5',
+      punctuation: '#5f6a7d',
+      string: '#a31515',
+      tag: '#267f99',
+      text: '#383a42',
+      type: '#267f99',
+    },
     accent: {
       DEFAULT: '#0ea5e9',
       hover: '#0284c7',
@@ -310,6 +353,9 @@ const light = {
       item: {
         hover: '#eff1f6',
         active: '#e8ebf2',
+        'color-visual-active-overlay': '#00000014',
+        'color-visual-overlay': '#f5f5f780',
+        'color-visual-overlay-hover': '#f5f5f759',
       },
       action: {
         hover: '#dde2ec',

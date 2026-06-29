@@ -29,7 +29,9 @@ flowchart LR
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
 - 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
+- 开发身份由 `pnpm dev:profile`（`scripts/dev-profile.mjs`）管理。当选中身份或通过 `COSMOSH_DEV_PROFILE` 指定身份时，Main 会在窗口/backend 启动前应用该身份，使 Electron `userData`、SQLite 文件和 backend 专用 secret 存储都落到 `.cosmosh/dev-profiles/<name>/` 下。
 - Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
+- 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
@@ -52,7 +54,7 @@ flowchart LR
 - 仅通过 `window.electron` bridge 访问能力（不直接使用 Node API）。
 - 通过后端 API 创建 SSH/本地终端会话与 SFTP 浏览、下载、文件操作会话。
 - 通过 WebSocket 建立终端数据通道，并由 `xterm.js` 渲染。
-- 非 Home 的渲染页（含 SSH 与设置编辑器/Monaco）采用懒加载，避免重型资源进入默认启动路径。
+- 非 Home 的渲染页（包括 SSH 与基于 CodeMirror 的设置编辑器）采用懒加载，避免重型资源进入默认启动路径。
 - Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 - SSH 页面使用 tab 作用域的连接意图快照模型（不再依赖全局可变目标单例），重试与分屏互不串扰。
@@ -93,6 +95,7 @@ sequenceDiagram
 - `nodeIntegration: false`
 - `contextIsolation: true`
 - Renderer 仅获得显式 bridge API（`contextBridge.exposeInMainWorld`）。
+- Renderer 的 Content Security Policy 将 `script-src` 限制为 `'self'` 加 `'wasm-unsafe-eval'`。WebAssembly 许可用于 `@xterm/addon-image` 等 renderer 打包库执行内联图片解码，不会开启通用 JavaScript `eval`。
 - sandboxed preload 脚本不得在运行时导入 workspace package。它可以在编译期使用共享 API contract 类型，但 preload 内部使用的运行时校验器必须保持本地实现或被打包进 preload，避免 Electron 在 bridge 加载前解析项目模块。
 - 特权操作保留在 Main/Backend 进程。
 - Renderer 发起的应用窗口默认被拒绝。当前白名单仅允许同 renderer 的 SFTP 属性弹窗，这些子窗口复用安全 preload，并保持 `nodeIntegration` 关闭、`contextIsolation` 开启。
@@ -102,6 +105,7 @@ sequenceDiagram
 - 后端 HTTP 在所有运行模式下都显式绑定 IPv4 loopback 接口（`127.0.0.1`）。监听器不得依赖 Node server 默认值，因为默认值可能将 standalone 开发 API 暴露到非 loopback 网卡。
 - electron-main 模式还会使用内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护 `/api/v1/*`。standalone 模式即使不要求该 token，也必须保持仅 loopback 可访问。
 - Main 进程注入头信息，不向 renderer 暴露内部 token。
+- 开发态请求镜像：在未打包的开发运行中，Main 会把已经发生的 backend proxy 请求记录为脱敏后的内存 ring buffer，并通过 debug IPC 暴露给自定义 DevTools 面板。它不改变真实请求链路（`renderer -> preload IPC -> main -> backend`），不发送 mirror fetch，也不会在原生 Network tab 里增加伪造请求行。镜像数据在进入 renderer/DevTools 前会移除内部鉴权头、secret-like payload key 与本地绝对路径。生产包不会采集 trace，也不会加载 extension。如果开发态没有看到 `Cosmosh Requests` 面板，先查看 main 进程终端里的 `[debug]` extension load/skip 日志。
 - Main 还会对本地 SFTP 下载目标实施能力授权。应用工具 IPC 为发起请求的 renderer webContents 授权一个精确的规范化路径；backend 代理会拒绝没有该所有者授权的下载路径。临时预览/打开路径可复用，Downloads 与保存对话框路径在一次请求后即被消费。
 - 凭据加密 key 由 `COSMOSH_SECRET_KEY` / 内部 token 哈希在后端启动时推导。
 - HTTP i18n 采用请求级作用域：后端中间件优先从 `x-cosmosh-locale`（回退 `accept-language`）解析语言，并为每个请求注入翻译函数供路由统一生成响应消息。
@@ -235,6 +239,30 @@ flowchart LR
 - 公用钥匙链支持多服务器复用；隐藏钥匙链用于单服务器私有凭据。
 - SSH 会话创建时统一通过 server → keychain 关系解析凭据后再建立 `ssh2` 连接。
 
+## 7.1 开发身份运行时
+
+开发身份模式是仅面向开发者的隔离层，用于验证全新安装流程。它不会改变打包生产环境的存储路径或数据库密钥策略。
+
+第一次执行非帮助类 `pnpm dev:profile` 命令时，工具会自动把旧的隐式默认身份导入到 `.cosmosh/dev-profiles/default/`。导入会尽力复制旧工作区数据库、SQLite WAL/SHM 辅助文件、Electron `userData` 与 backend secret 存储。缺失或不可读的旧来源会写入身份 manifest，而不会中断命令。
+
+`default` 身份是受管理的恢复快照，不是一次性测试身份。它可以通过 `pnpm dev:profile use default` 选中，也可以用 `pnpm dev:profile import-default --force --use` 重新导入并切换；普通的 `create default`、`reset default` 与 `delete default` 会被拒绝，以避免丢失恢复路径。
+
+使用 `pnpm dev:profile` 创建、切换、重置、查看或删除本地测试身份：
+
+- `pnpm dev:profile create fresh --use` 创建 `.cosmosh/dev-profiles/fresh/`，并将其设为默认开发身份。
+- `pnpm dev:profile reset fresh` 仅清空该身份的运行数据，使下一次开发启动表现得像该身份的全新安装。
+- `pnpm dev:profile delete fresh --force` 删除该身份；若它是当前身份，也会清空当前指针。
+- `pnpm dev:profile run fresh --create --reset -- pnpm dev:main` 使用隔离且已重置的身份运行一次命令。根脚本 `pnpm dev:main:fresh` 是该流程的快捷方式。
+
+每个身份拥有这些路径：
+
+- `.cosmosh/dev-profiles/<name>/user-data`：在应用触碰存储前通过 `app.setPath('userData', ...)` 注入 Electron。
+- `.cosmosh/dev-profiles/<name>/database/cosmosh.db`：作为 `COSMOSH_DB_PATH` 注入，并由 Main 与 Backend 的数据库路径解析器共同使用。
+- `.cosmosh/dev-profiles/<name>/backend-storage`：作为 `COSMOSH_BACKEND_STORAGE_PATH` 注入，用于 backend 专用 secret 材料，例如 `secret.key`。
+- `.cosmosh/dev-profiles/default/profile.json`：受管理 `default` 身份的导入 manifest，包含来源路径和每个来源的复制状态。
+
+如果没有启用开发身份，直接开发启动仍使用旧的工作区数据库路径 `.dev_data/cosmosh.db` 和默认 Electron 开发存储。这样可以保留既有本地数据，除非开发者显式选择身份隔离。
+
 ## 8. 架构决策动机
 
 - 保持 backend 为独立运行时进程，将协议与凭据处理与 renderer 攻击面隔离。
@@ -340,3 +368,13 @@ sequenceDiagram
 
 - 运行时 migration 同步是幂等操作，并在每次启动执行。
 - 在修复结构漂移时必须保持现有用户数据不被破坏。
+
+## 10. 服务器代理运行时
+
+- 全局设置定义 `serverProxyMode = off | system | custom` 与 `serverProxyUrl`，默认值为 `system`。
+- 每个 `SshServer` 定义 `proxyMode = default | off | custom` 与可选 `proxyUrl`；`default` 继承全局策略。
+- 仅当有效模式为 `system` 时，Renderer 才通过特权 Main IPC `app:resolve-system-proxy` 解析系统/PAC 代理规则。
+- Backend 是策略最终裁决者。`packages/backend/src/ssh/proxy.ts` 会重新读取持久化全局设置、应用服务器覆盖、解析 Chromium 有序代理规则，并建立 HTTP、HTTPS CONNECT、SOCKS5 或显式 `DIRECT` socket。
+- 预连接 socket 通过 `ssh2` 的 `ConnectConfig.sock` 注入，因此 SSH Shell、SFTP 与端口转发共用同一套代理实现。
+- 代理候选共享 SSH 连接超时预算。代理失败不会静默回退直连；只有 `off` 模式或系统规则显式返回 `DIRECT` 时才允许直连。
+- 审计 metadata 只记录代理模式和协议，不得记录代理 URL 或其中的凭据。

@@ -25,6 +25,7 @@ import CreateFolderDialog from '../home/CreateFolderDialog';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogPrimaryButton,
@@ -331,6 +332,7 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
         >
           <DialogHeader className="px-2.5">
             <DialogTitle>{displayKeychainId ? t('home.contextEdit') : t('sshKeychain.newKeychain')}</DialogTitle>
+            <DialogDescription className="sr-only">{t('sshKeychain.editorDialogDescription')}</DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[calc(92vh-136px)] overflow-auto">

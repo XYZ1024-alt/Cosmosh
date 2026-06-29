@@ -1,5 +1,9 @@
 import type { components } from '@cosmosh/api-contract';
-import { DEFAULT_TERMINAL_CLIPBOARD_ACCESS, type TerminalClipboardAccess } from '@cosmosh/api-contract';
+import {
+  DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+  type SshServerProxyMode,
+  type TerminalClipboardAccess,
+} from '@cosmosh/api-contract';
 
 import { pickRandomEntityVisual } from './entity-visuals';
 
@@ -27,6 +31,8 @@ export type ServerEditorFormState = {
   remoteEnhancementsEnabled: boolean;
   disableCharacterWidthCompatibilityMode: boolean;
   terminalClipboardAccess: TerminalClipboardAccess;
+  proxyMode: SshServerProxyMode;
+  proxyUrl: string;
 };
 
 export type ServerCredentialCache = {
@@ -118,6 +124,8 @@ export const createInitialServerFormState = (defaultServerNoteTemplate = ''): Se
     remoteEnhancementsEnabled: true,
     disableCharacterWidthCompatibilityMode: false,
     terminalClipboardAccess: DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+    proxyMode: 'default',
+    proxyUrl: '',
   };
 };
 
@@ -151,6 +159,8 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
     remoteEnhancementsEnabled: server.remoteEnhancementsEnabled ?? true,
     disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode ?? false,
     terminalClipboardAccess: server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
+    proxyMode: server.proxyMode ?? 'default',
+    proxyUrl: server.proxyUrl ?? '',
   };
 };
 

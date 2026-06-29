@@ -14,7 +14,6 @@ import {
   type SftpDirectoryListViewSetting,
   type SftpUploadLocalFile,
 } from '@cosmosh/api-contract';
-import type { editor as MonacoEditor } from 'monaco-editor';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
@@ -38,6 +37,7 @@ import {
   writeSftpFile,
 } from '../lib/backend';
 import { t } from '../lib/i18n';
+import { resolveSystemProxyRulesForServerId } from '../lib/server-proxy';
 import { updateSettingsStoreValues, useSettingsValue, useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import type { SftpConnectionIntent } from '../types/tabs';
@@ -111,6 +111,7 @@ import {
   sortSftpEntries,
 } from './sftp/sftp-utils';
 import { SftpActionMenuItems } from './sftp/SftpActionMenuItems';
+import type { SftpPreviewEditorHandle } from './sftp/SftpCodeMirrorPreviewEditor';
 import { SftpDetailPanel } from './sftp/SftpDetailPanel';
 import {
   SftpDeleteConfirmationDialog,
@@ -157,13 +158,45 @@ const resolvePreviewStatePath = (state: SftpPreviewState | null): string => {
 const measureUtf8ByteLength = (value: string): number => new TextEncoder().encode(value).byteLength;
 
 /**
- * Checks whether preview replacement would discard local Monaco edits.
+ * Checks whether preview replacement would discard local editor edits.
  *
  * @param state Current preview lifecycle state.
  * @returns Whether the preview has unsaved editable content.
  */
 const isDirtySftpTextPreviewState = (state: SftpPreviewState | null): boolean => {
   return state?.status === 'text' && state.content !== state.savedContent && !state.isSaving;
+};
+
+/**
+ * Identifies editor and text-entry surfaces that own keyboard shortcuts.
+ */
+const EDITABLE_KEYBOARD_TARGET_SELECTOR = '[contenteditable="true"], [role="textbox"], .cm-editor';
+
+/**
+ * Checks whether an SFTP page keyboard event started inside editable content.
+ *
+ * @param target Original keyboard event target.
+ * @returns Whether the target should keep text/editor shortcuts local.
+ */
+const isEditableKeyboardEventTarget = (target: EventTarget | null): boolean => {
+  const element = target instanceof Element ? target : target instanceof Node ? target.parentElement : null;
+  if (!element) {
+    return false;
+  }
+
+  if (
+    element instanceof HTMLInputElement ||
+    element instanceof HTMLTextAreaElement ||
+    element instanceof HTMLSelectElement
+  ) {
+    return true;
+  }
+
+  if (element instanceof HTMLElement && element.isContentEditable) {
+    return true;
+  }
+
+  return element.closest(EDITABLE_KEYBOARD_TARGET_SELECTOR) !== null;
 };
 
 /**
@@ -289,7 +322,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const taskRetentionTimersRef = React.useRef<Record<string, number>>({});
   const reconnectPromiseRef = React.useRef<Promise<string> | null>(null);
   const previewLoadGenerationRef = React.useRef(0);
-  const previewEditorRef = React.useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
+  const previewEditorRef = React.useRef<SftpPreviewEditorHandle | null>(null);
   const previewStateRef = React.useRef<SftpPreviewState | null>(null);
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
@@ -737,7 +770,7 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [notifyError]);
 
   /**
-   * Clears preview state unless doing so would discard local Monaco edits.
+   * Clears preview state unless doing so would discard local editor edits.
    *
    * @param options Clear behavior options.
    * @returns Whether the preview state was cleared.
@@ -1070,6 +1103,7 @@ const SFTP: React.FC<SFTPProps> = ({
       const fallbackPath = connectionIntent.initialPath ?? '.';
       const candidatePaths = Array.from(new Set([preferredPath.trim() || fallbackPath, fallbackPath]));
       const trustRejectedMessage = t('ssh.hostFingerprintNotTrusted');
+      const systemProxyRules = await resolveSystemProxyRulesForServerId(connectionIntent.serverId);
 
       for (const initialPath of candidatePaths) {
         try {
@@ -1080,6 +1114,7 @@ const SFTP: React.FC<SFTPProps> = ({
               serverId: connectionIntent.serverId,
               initialPath,
               connectTimeoutSec: 45,
+              systemProxyRules,
             });
 
             if (!response.success && response.code === 'SSH_HOST_UNTRUSTED') {
@@ -1601,6 +1636,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
       setStatus('connecting');
       setErrorMessage('');
+      const systemProxyRules = await resolveSystemProxyRulesForServerId(connectionIntent.serverId);
 
       let shouldRetry = true;
       while (shouldRetry) {
@@ -1609,6 +1645,7 @@ const SFTP: React.FC<SFTPProps> = ({
           serverId: connectionIntent.serverId,
           initialPath: connectionIntent.initialPath ?? '.',
           connectTimeoutSec: 45,
+          systemProxyRules,
         });
 
         if (!response.success && response.code === 'SSH_HOST_UNTRUSTED') {
@@ -2547,26 +2584,26 @@ const SFTP: React.FC<SFTPProps> = ({
     setPreviewState((previous) => (previous?.status === 'text' ? { ...previous, content } : previous));
   }, []);
 
-  const handlePreviewEditorMount = React.useCallback((editorInstance: MonacoEditor.IStandaloneCodeEditor): void => {
-    previewEditorRef.current = editorInstance;
+  const handlePreviewEditorMount = React.useCallback((editorHandle: SftpPreviewEditorHandle): void => {
+    previewEditorRef.current = editorHandle;
   }, []);
 
   const handlePreviewUndo = React.useCallback((): void => {
-    previewEditorRef.current?.trigger('sftp-preview', 'undo', null);
+    previewEditorRef.current?.undo();
   }, []);
 
   const handlePreviewRedo = React.useCallback((): void => {
-    previewEditorRef.current?.trigger('sftp-preview', 'redo', null);
+    previewEditorRef.current?.redo();
   }, []);
 
   /**
-   * Saves Monaco text preview changes through the shared SFTP operation queue.
+   * Saves editor text preview changes through the shared SFTP operation queue.
    *
    * @returns Promise resolved after the save is queued.
    */
   const handlePreviewSave = React.useCallback(async (): Promise<void> => {
     const preview = activeTextPreview;
-    if (!preview || preview.content === preview.savedContent) {
+    if (!preview || preview.isSaving || preview.content === preview.savedContent) {
       return;
     }
 
@@ -3736,12 +3773,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   React.useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent): void => {
-      const target = event.target;
-      const isEditingText =
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement;
-      if (isEditingText || !canUseFileActions) {
+      if (isEditableKeyboardEventTarget(event.target) || !canUseFileActions) {
         return;
       }
 
@@ -4089,6 +4121,7 @@ const SFTP: React.FC<SFTPProps> = ({
               onConfirmLargePreview={handleConfirmLargePreview}
               onPreviewContentChange={handlePreviewContentChange}
               onPreviewEditorMount={handlePreviewEditorMount}
+              onPreviewSave={handlePreviewSave}
             />
           ) : null}
         </div>

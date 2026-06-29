@@ -404,6 +404,11 @@ export const getDatabasePath = (): string => {
   const isDev = !app.isPackaged;
 
   if (isDev) {
+    const profileDatabasePath = process.env.COSMOSH_DB_PATH?.trim();
+    if (profileDatabasePath) {
+      return profileDatabasePath;
+    }
+
     return path.join(getProjectRootFromAppPath(), '.dev_data', DATABASE_FILE_NAME);
   }
 

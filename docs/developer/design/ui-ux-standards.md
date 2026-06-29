@@ -16,6 +16,7 @@ Rules:
 - Tailwind colors/radius/shadow map to CSS variables (no hard-coded ad-hoc palette in feature code).
 - UI primitives are wrapped in `packages/renderer/src/components/ui/*` and consumed by pages.
 - Windows title-bar system menu symbol color must come from token `color.windows.system-menu-symbol` and be synchronized to main-process overlay at runtime.
+- CodeMirror syntax highlighting must use the shared `color.syntax.*` token family and the shared renderer CodeMirror highlighter instead of page-local color maps.
 
 ## 2. Visual Consistency Principles
 
@@ -49,6 +50,11 @@ Implementation principles:
 - Use Radix primitives only via internal wrappers (`dialog.tsx`, `menubar.tsx`, `toast.tsx`, etc.).
 - Store style contracts in dedicated style maps (`menu-styles.ts`, `form-styles.ts`, `dialog-styles.ts`, `toast-styles.ts`).
 - Keep accessibility/state selectors (`data-state`, collision handling, keyboard semantics) inside wrappers.
+- Floating menu wrappers must cap their size with Radix available-size custom properties plus the shared viewport gutter so dropdowns, context menus, menubars, and selects never render outside the visible app viewport.
+- Scroll affordances inside menu wrappers must stay outside normal item flow; showing or hiding up/down indicators must not reserve blank rows, resize the active viewport, or shift the current scroll position. Overlay affordances must carry a tokenized surface background and backdrop blur so translucent menus do not reveal items underneath.
+- Menu single-choice/radio items must use the shared leading checkmark indicator, matching checkbox/menu selection affordances instead of dot markers.
+- Third-party editor overlays that cannot use Radix wrappers, such as CodeMirror autocomplete and info tooltips, must still use the shared menu/tooltip token rhythm: `bg-bg-subtle`, `shadow-menu-content` or `shadow-soft`, 4px panel gutters, 6px/10px item padding, `rounded-lg` panels, `rounded-md` items, and `bg-menu-control-hover` for hover/selection.
+- CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, and context menus still follow Cosmosh surface/menu tokens.
 
 ## 6. Interaction Density Rules
 
@@ -88,16 +94,30 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 ## 7.3 Server-Backed Tab Visuals
 
+- In light mode, active server-backed tabs must deepen the server color through `color.header.tab.server-active-overlay`; do not change the generic `color.header.tab.active` token to solve server-color contrast.
 - SSH and SFTP tabs may apply the source server color background when the shared server-visual tab setting is enabled.
 - SFTP tabs must keep a folder icon even when they inherit server color, so users can distinguish file-system tabs from terminal tabs quickly.
+- Inactive server-backed tabs must dim through the theme-aware `color.header.tab.server-inactive-overlay` token family rather than hard-coded black overlays, so light mode preserves a clean inactive tint.
+- Colorized command-palette rows must use the matching `color.command.item.color-visual-active-overlay` and `color.command.item.color-visual-overlay` token families so active route switching visuals stay clearly distinguishable while remaining aligned with tab chrome across themes.
 
-## 7.4 Plain Text Selection Context Menu
+## 7.4 Page-State Tab Identity
+
+- Pages with major internal categories should keep the tab strip aligned with the active category when that category changes the user's task context.
+- Home tabs in Keychains or Port Forwarding mode must show that category's localized title and matching icon; returning to SSH mode restores the standard Home title and icon.
+
+## 7.5 Plain Text Selection Context Menu
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.
 - The fallback menu must open only when the pointer is inside the selected text rectangle, not merely because the page has an active selection.
-- Existing specialized menus keep priority: inputs, textareas, contenteditable regions, Monaco, xterm/terminal surfaces, SFTP rows, tabs, and any component-level context menu trigger must not be replaced by the fallback menu.
+- Existing specialized menus keep priority: inputs, textareas, contenteditable regions, CodeMirror editor surfaces, xterm/terminal surfaces, SFTP rows, tabs, and any component-level context menu trigger must not be replaced by the fallback menu. CodeMirror editor surfaces that need text editing commands should expose those commands through the shared internal `ContextMenu` styling and localized text-editing labels instead of falling back to the browser menu.
 - The fallback menu must reuse the internal `ContextMenu` wrapper, tokenized menu styles, localized renderer copy, and platform shortcut hint.
 - Standalone renderer documents, including SFTP entry properties popup windows, must mount the same fallback provider at the renderer root.
+
+## 7.6 Command Palette Keyboard Focus
+
+- When a command palette displays its search input, the input owns navigation keys even if a mouse click or nested control focus temporarily moves DOM focus to a list action or footer control.
+- Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.
+- Nested buttons must keep their normal activation semantics; focus handoff should not convert every descendant key into a command selection.
 
 ## 8. Compliance Checklist
 

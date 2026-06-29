@@ -6,6 +6,7 @@
  * adding a setting to the registry automatically enables its validation.
  */
 
+import { validateProxyUrl } from './proxy';
 import type { SettingKey, SettingsValues } from './settings-registry';
 import { DEFAULT_SETTINGS_VALUES, SETTINGS_DEFINITION_MAP, SETTINGS_REGISTRY } from './settings-registry';
 import {
@@ -17,6 +18,12 @@ import {
   type SftpDirectoryListSortDirection,
   type SftpDirectoryListViewSetting,
 } from './sftp';
+import {
+  TERMINAL_INLINE_IMAGE_BOOLEAN_OPTION_KEYS,
+  TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS,
+  TERMINAL_INLINE_IMAGE_OPTION_KEYS,
+  type TerminalInlineImageOptions,
+} from './terminal-inline-images';
 
 export { DEFAULT_SETTINGS_VALUES };
 
@@ -45,6 +52,9 @@ const validationError = (
 
 const SETTINGS_KEYS: ReadonlyArray<SettingKey> = SETTINGS_REGISTRY.map((item) => item.key);
 const SETTINGS_KEY_SET = new Set<string>(SETTINGS_KEYS as ReadonlyArray<string>);
+const TERMINAL_INLINE_IMAGE_OPTION_KEY_SET = new Set<string>(
+  TERMINAL_INLINE_IMAGE_OPTION_KEYS as ReadonlyArray<string>,
+);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -69,6 +79,25 @@ const cloneSftpDirectoryListViewSetting = (value: SftpDirectoryListViewSetting):
 });
 
 /**
+ * Clones terminal inline image options before storing or exposing them.
+ *
+ * @param value Valid terminal inline image options.
+ * @returns Detached options object safe for caller-side mutation.
+ */
+const cloneTerminalInlineImageOptions = (value: TerminalInlineImageOptions): TerminalInlineImageOptions => ({
+  enableSizeReports: value.enableSizeReports,
+  pixelLimit: value.pixelLimit,
+  sixelSupport: value.sixelSupport,
+  sixelScrolling: value.sixelScrolling,
+  sixelPaletteLimit: value.sixelPaletteLimit,
+  sixelSizeLimit: value.sixelSizeLimit,
+  storageLimit: value.storageLimit,
+  showPlaceholder: value.showPlaceholder,
+  iipSupport: value.iipSupport,
+  iipSizeLimit: value.iipSizeLimit,
+});
+
+/**
  * Clones default settings that carry structured JSON values.
  *
  * @param key Setting key.
@@ -78,6 +107,10 @@ const cloneSftpDirectoryListViewSetting = (value: SftpDirectoryListViewSetting):
 const cloneSettingValue = (key: SettingKey, value: SettingsValues[SettingKey]): unknown => {
   if (key === 'sftpDirectoryListView') {
     return cloneSftpDirectoryListViewSetting(value as SftpDirectoryListViewSetting);
+  }
+
+  if (key === 'terminalInlineImageOptions') {
+    return cloneTerminalInlineImageOptions(value as TerminalInlineImageOptions);
   }
 
   return value;
@@ -118,6 +151,75 @@ const isSupportedTimeZoneSetting = (value: string): boolean => {
   }
 };
 
+/**
+ * Validates and normalizes the terminal inline image JSON setting.
+ *
+ * @param key Setting key used in error messages.
+ * @param nameKey Setting title i18n key.
+ * @param input Raw JSON value.
+ * @returns Parsed options or a validation error.
+ */
+const parseTerminalInlineImageOptionsSetting = (
+  key: SettingKey,
+  nameKey: string,
+  input: unknown,
+): { value?: TerminalInlineImageOptions; error?: SettingValidationError } => {
+  const invalid = (fallbackDetail: string): { error: SettingValidationError } => ({
+    error: validationError(
+      'settings.validation.invalid',
+      { nameI18nKey: nameKey, key },
+      `${key} must be valid terminal inline image options. ${fallbackDetail}`,
+    ),
+  });
+
+  if (!isRecord(input)) {
+    return invalid('Expected a JSON object.');
+  }
+
+  const unknownKeys = Object.keys(input).filter((optionKey) => !TERMINAL_INLINE_IMAGE_OPTION_KEY_SET.has(optionKey));
+  if (unknownKeys.length > 0) {
+    return invalid(`Unknown option keys: ${unknownKeys.join(', ')}.`);
+  }
+
+  for (const optionKey of TERMINAL_INLINE_IMAGE_OPTION_KEYS) {
+    if (!(optionKey in input)) {
+      return invalid(`Missing required option: ${optionKey}.`);
+    }
+  }
+
+  for (const optionKey of TERMINAL_INLINE_IMAGE_BOOLEAN_OPTION_KEYS) {
+    if (typeof input[optionKey] !== 'boolean') {
+      return invalid(`${optionKey} must be a boolean.`);
+    }
+  }
+
+  for (const [optionKey, limits] of Object.entries(TERMINAL_INLINE_IMAGE_INTEGER_OPTION_LIMITS)) {
+    const rawValue = input[optionKey];
+    if (
+      typeof rawValue !== 'number' ||
+      !Number.isInteger(rawValue) ||
+      rawValue < limits.minimum ||
+      rawValue > limits.maximum
+    ) {
+      return invalid(`${optionKey} must be an integer between ${limits.minimum} and ${limits.maximum}.`);
+    }
+  }
+
+  const parsed: TerminalInlineImageOptions = {
+    enableSizeReports: input.enableSizeReports as boolean,
+    pixelLimit: input.pixelLimit as number,
+    sixelSupport: input.sixelSupport as boolean,
+    sixelScrolling: input.sixelScrolling as boolean,
+    sixelPaletteLimit: input.sixelPaletteLimit as number,
+    sixelSizeLimit: input.sixelSizeLimit as number,
+    storageLimit: input.storageLimit as number,
+    showPlaceholder: input.showPlaceholder as boolean,
+    iipSupport: input.iipSupport as boolean,
+    iipSizeLimit: input.iipSizeLimit as number,
+  };
+
+  return { value: parsed };
+};
 /**
  * Validates and normalizes the SFTP directory-list JSON setting.
  *
@@ -337,6 +439,10 @@ const parseSettingValue = (key: SettingKey, input: unknown): { value?: unknown; 
         return parseSftpDirectoryListViewSetting(key, nameKey, input);
       }
 
+      if (key === 'terminalInlineImageOptions') {
+        return parseTerminalInlineImageOptionsSetting(key, nameKey, input);
+      }
+
       return {
         error: validationError(
           'settings.validation.unsupportedType',
@@ -399,6 +505,21 @@ export const normalizeSettingsValuesStrict = (
     }
 
     result[key] = parsed.value;
+  }
+
+  if (result.serverProxyMode === 'custom') {
+    const proxyUrlResult = validateProxyUrl(result.serverProxyUrl);
+    if (!proxyUrlResult.valid) {
+      return {
+        error: validationError(
+          'settings.validation.proxyUrlInvalid',
+          { key: 'serverProxyUrl' },
+          'serverProxyUrl must be a valid http, https, or socks5 proxy URL when custom proxy mode is selected.',
+        ),
+      };
+    }
+
+    result.serverProxyUrl = proxyUrlResult.normalizedUrl;
   }
 
   return { value: result as SettingsValues };

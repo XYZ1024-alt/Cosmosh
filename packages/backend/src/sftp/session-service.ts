@@ -14,6 +14,7 @@ import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
+import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from '../ssh/proxy.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -32,6 +33,7 @@ export type CreateSftpSessionInput = {
   initialPath?: string;
   connectTimeoutSec: number;
   strictHostKey?: boolean;
+  systemProxyRules?: string;
 };
 
 export type SftpEntryType = 'directory' | 'file' | 'symlink' | 'other';
@@ -297,15 +299,18 @@ type OpenSftpResult =
       type: 'ready';
       client: Client;
       sftp: SFTPWrapper;
+      proxyMetadata: SshProxyMetadata;
     }
   | {
       type: 'host-untrusted';
       fingerprint: string;
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     }
   | {
       type: 'failed';
       message: string;
+      proxyMetadata?: SshProxyMetadata;
     };
 
 type SftpLiveSession = {
@@ -680,6 +685,7 @@ export class SftpSessionService {
       connectTimeoutSec: input.connectTimeoutSec,
       strictHostKey,
       enableSshCompression,
+      systemProxyRules: input.systemProxyRules,
       trustedFingerprintSet,
       t: i18n.t,
     });
@@ -700,6 +706,8 @@ export class SftpSessionService {
           enableSshCompression,
           fingerprint: openResult.fingerprint,
           reason: openResult.message || 'Host fingerprint is not trusted.',
+          proxyMode: openResult.proxyMetadata?.mode,
+          proxyProtocol: openResult.proxyMetadata?.protocol,
         },
       });
 
@@ -728,6 +736,8 @@ export class SftpSessionService {
           strictHostKey,
           enableSshCompression,
           reason: openResult.message,
+          proxyMode: openResult.proxyMetadata?.mode,
+          proxyProtocol: openResult.proxyMetadata?.protocol,
         },
       });
 
@@ -775,6 +785,8 @@ export class SftpSessionService {
         strictHostKey,
         enableSshCompression,
         initialPath: resolvedInitialPath,
+        proxyMode: openResult.proxyMetadata.mode,
+        proxyProtocol: openResult.proxyMetadata.protocol,
       },
     });
 
@@ -2561,6 +2573,7 @@ export class SftpSessionService {
       connectTimeoutSec: number;
       strictHostKey: boolean;
       enableSshCompression: boolean;
+      systemProxyRules?: string;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
     },
@@ -2624,6 +2637,27 @@ export class SftpSessionService {
       };
     }
 
+    let proxyTransport;
+    try {
+      proxyTransport = await prepareSshProxyTransport(
+        this.getDbClient(),
+        server,
+        options.systemProxyRules,
+        options.connectTimeoutSec * 1000,
+      );
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: error instanceof Error ? error.message : 'Proxy connection failed.',
+        proxyMetadata: error instanceof SshProxyConnectionError ? error.metadata : undefined,
+      };
+    }
+
+    connectConfig.readyTimeout = proxyTransport.readyTimeoutMs;
+    if (proxyTransport.socket) {
+      connectConfig.sock = proxyTransport.socket;
+    }
+
     return await new Promise<OpenSftpResult>((resolve) => {
       let settled = false;
 
@@ -2651,6 +2685,7 @@ export class SftpSessionService {
             type: 'ready',
             client,
             sftp,
+            proxyMetadata: proxyTransport.metadata,
           });
         });
       });
@@ -2663,6 +2698,7 @@ export class SftpSessionService {
             type: 'host-untrusted',
             fingerprint: presentedFingerprint,
             message: error.message,
+            proxyMetadata: proxyTransport.metadata,
           });
           return;
         }
@@ -2670,6 +2706,7 @@ export class SftpSessionService {
         settle({
           type: 'failed',
           message: error.message,
+          proxyMetadata: proxyTransport.metadata,
         });
       });
 

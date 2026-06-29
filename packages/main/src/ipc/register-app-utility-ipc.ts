@@ -2,6 +2,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { type FSWatcher, watch } from 'node:fs';
 import fs from 'node:fs/promises';
+import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -10,6 +11,7 @@ import type {
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
   SftpUploadLocalFile,
+  SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
 import {
   app,
@@ -18,6 +20,7 @@ import {
   ipcMain,
   type OpenDialogOptions,
   type SaveDialogOptions,
+  session,
   shell,
   type WebContents,
 } from 'electron';
@@ -82,6 +85,44 @@ if ([string]::IsNullOrWhiteSpace($targetPath)) {
 
 Start-Process -FilePath $targetPath -Verb OpenAs
 `;
+
+/**
+ * Builds the HTTPS target URL used by Chromium's system proxy resolver.
+ *
+ * @param request Untrusted renderer payload.
+ * @returns Target URL.
+ */
+const buildSystemProxyTargetUrl = (request: unknown): string => {
+  if (typeof request !== 'object' || request === null || Array.isArray(request)) {
+    throw new Error('Invalid system proxy resolution target.');
+  }
+
+  const payload = request as Record<string, unknown>;
+  const host = typeof payload.host === 'string' ? payload.host.trim() : '';
+  const port = payload.port;
+  if (!host || host.length > 255 || typeof port !== 'number' || !Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error('Invalid system proxy resolution target.');
+  }
+
+  const normalizedHost = net.isIP(host) === 6 ? `[${host}]` : host;
+  try {
+    const targetUrl = new URL(`https://${normalizedHost}:${String(port)}/`);
+    if (
+      targetUrl.port !== String(port) ||
+      targetUrl.pathname !== '/' ||
+      targetUrl.username ||
+      targetUrl.password ||
+      targetUrl.search ||
+      targetUrl.hash
+    ) {
+      throw new Error('Invalid system proxy resolution target.');
+    }
+
+    return targetUrl.toString();
+  } catch {
+    throw new Error('Invalid system proxy resolution target.');
+  }
+};
 
 /**
  * Runs a Windows child process and converts a non-zero exit into a useful error.
@@ -920,6 +961,12 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
 
   ipcMain.handle('app:get-database-security-info', async (): Promise<DatabaseSecurityInfo> => {
     return options.getDatabaseSecurityInfo();
+  });
+
+  ipcMain.handle('app:resolve-system-proxy', async (_event, request: unknown): Promise<SystemProxyResolveResult> => {
+    const targetUrl = buildSystemProxyTargetUrl(request);
+    const proxyRules = await session.defaultSession.resolveProxy(targetUrl);
+    return { proxyRules };
   });
 
   ipcMain.handle('app:open-devtools', () => {

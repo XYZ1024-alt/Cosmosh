@@ -9,6 +9,7 @@ import type {
   ApiPortForwardCreateRuleRequest,
   ApiPortForwardCreateRuleResponse,
   ApiPortForwardListRulesResponse,
+  ApiPortForwardStartRuleRequest,
   ApiPortForwardStartRuleResponse,
   ApiPortForwardStopRuleResponse,
   ApiPortForwardUpdateRuleRequest,
@@ -68,9 +69,12 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
   AppMenuAction,
+  BackendRequestTrace,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
+  SystemProxyResolveRequest,
+  SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
 
 type LocalTerminalListResponse = ApiLocalTerminalListProfilesResponse;
@@ -131,6 +135,7 @@ declare global {
         hasMasterPasswordEnv: boolean;
         fallbackReady: boolean;
       }>;
+      resolveSystemProxy: (request: SystemProxyResolveRequest) => Promise<SystemProxyResolveResult>;
       onLaunchWorkingDirectory: (listener: (cwd: string) => void) => () => void;
       onAppMenuAction: (listener: (action: AppMenuAction) => void) => () => void;
       openDevTools: () => Promise<boolean>;
@@ -141,7 +146,10 @@ declare global {
       openExternalUrl: (targetUrl: string) => Promise<boolean>;
       setWindowsSystemMenuSymbolColor: (symbolColor: string) => Promise<boolean>;
       showSaveFileDialog: (defaultPath?: string) => Promise<{ canceled: boolean; filePath?: string }>;
-      importPrivateKeyFromFile: () => Promise<{ canceled: boolean; content?: string }>;
+      importPrivateKeyFromFile: () => Promise<{
+        canceled: boolean;
+        content?: string;
+      }>;
       getProcessPerformanceStats: () => Promise<{
         sampledAt: number;
         cpuPercent: number | null;
@@ -163,7 +171,14 @@ declare global {
           memoryRssBytes: number | null;
         } | null;
       }>;
-      exportMainHeapSnapshot: () => Promise<{ ok: boolean; filePath?: string; message?: string }>;
+      exportMainHeapSnapshot: () => Promise<{
+        ok: boolean;
+        filePath?: string;
+        message?: string;
+      }>;
+      getBackendRequestTraces: () => Promise<BackendRequestTrace[]>;
+      clearBackendRequestTraces: () => Promise<boolean>;
+      onBackendRequestTrace: (listener: (trace: BackendRequestTrace) => void) => () => void;
       backendTestPing: () => Promise<ApiTestPingResponse | ApiErrorResponse>;
       backendSettingsGet: () => Promise<ApiSettingsGetResponse | ApiErrorResponse>;
       backendSettingsUpdate: (
@@ -277,7 +292,10 @@ declare global {
         ruleId: string,
         payload: ApiPortForwardUpdateRuleRequest,
       ) => Promise<ApiPortForwardUpdateRuleResponse | ApiErrorResponse>;
-      backendPortForwardStartRule: (ruleId: string) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
+      backendPortForwardStartRule: (
+        ruleId: string,
+        payload: ApiPortForwardStartRuleRequest,
+      ) => Promise<ApiPortForwardStartRuleResponse | ApiErrorResponse>;
       backendPortForwardStopRule: (ruleId: string) => Promise<ApiPortForwardStopRuleResponse | ApiErrorResponse>;
       backendPortForwardDeleteRule: (ruleId: string) => Promise<{ success: boolean }>;
       backendLocalTerminalListProfiles: () => Promise<LocalTerminalListResponse | ApiErrorResponse>;
@@ -287,47 +305,19 @@ declare global {
       backendLocalTerminalCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       platform: NodeJS.Platform;
     };
+    __COSMOSH_BACKEND_REQUEST_TRACE__?: {
+      traces: BackendRequestTrace[];
+      enabled: boolean;
+      updatedAt: string | null;
+      refresh: () => Promise<BackendRequestTrace[]>;
+      clear: () => Promise<boolean>;
+    };
   }
 }
 
 export {};
 
 declare module '*.worker?worker' {
-  const WorkerFactory: {
-    new (): Worker;
-  };
-  export default WorkerFactory;
-}
-
-declare module 'monaco-editor/esm/vs/language/css/css.worker?worker' {
-  const WorkerFactory: {
-    new (): Worker;
-  };
-  export default WorkerFactory;
-}
-
-declare module 'monaco-editor/esm/vs/language/html/html.worker?worker' {
-  const WorkerFactory: {
-    new (): Worker;
-  };
-  export default WorkerFactory;
-}
-
-declare module 'monaco-editor/esm/vs/language/json/json.worker?worker' {
-  const WorkerFactory: {
-    new (): Worker;
-  };
-  export default WorkerFactory;
-}
-
-declare module 'monaco-editor/esm/vs/language/typescript/ts.worker?worker' {
-  const WorkerFactory: {
-    new (): Worker;
-  };
-  export default WorkerFactory;
-}
-
-declare module 'monaco-editor/esm/vs/editor/editor.worker?worker' {
   const WorkerFactory: {
     new (): Worker;
   };
