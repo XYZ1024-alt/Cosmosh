@@ -1092,7 +1092,6 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
           <DialogTitle>
             {mode === 'create' ? t('home.portForwardingDialogCreateTitle') : t('home.portForwardingDialogEditTitle')}
           </DialogTitle>
-          <DialogDescription>{t('home.portForwardingDialogDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">

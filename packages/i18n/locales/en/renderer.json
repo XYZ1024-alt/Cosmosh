@@ -249,7 +249,6 @@
     "portForwardingDeleteSuccess": "Port forwarding rule deleted.",
     "portForwardingDeleteTitle": "Delete Port Forwarding Rule",
     "portForwardingDialogCreateTitle": "New Port Forwarding Rule",
-    "portForwardingDialogDescription": "Rules are saved, but running state is kept only until the backend stops.",
     "portForwardingDialogEditTitle": "Edit Port Forwarding Rule",
     "portForwardingEmpty": "No matching port forwarding rules found.",
     "portForwardingFieldName": "Name",

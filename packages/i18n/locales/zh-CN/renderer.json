@@ -249,7 +249,6 @@
     "portForwardingDeleteSuccess": "端口转发规则已删除。",
     "portForwardingDeleteTitle": "删除端口转发规则",
     "portForwardingDialogCreateTitle": "新建端口转发规则",
-    "portForwardingDialogDescription": "规则会保存，但运行状态只保留到后端停止为止。",
     "portForwardingDialogEditTitle": "编辑端口转发规则",
     "portForwardingEmpty": "未找到符合条件的端口转发规则。",
     "portForwardingFieldName": "名称",
