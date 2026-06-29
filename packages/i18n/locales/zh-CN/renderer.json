@@ -574,6 +574,7 @@
       },
       "terminalCursorWidth": {
         "description": "当光标样式为 Bar 时，设置其 CSS 像素宽度。留空则使用默认行为。",
+        "placeholder": "(空值)",
         "title": "光标宽度"
       },
       "terminalCustomGlyphs": {

@@ -841,6 +841,7 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     defaultValue: '',
     nameI18nKey: 'settings.items.terminalCursorWidth.title',
     descriptionI18nKey: 'settings.items.terminalCursorWidth.description',
+    placeholderI18nKey: 'settings.items.terminalCursorWidth.placeholder',
     category: SETTINGS_CATEGORIES.theme,
     section: SETTINGS_CATEGORIES.theme.sections.advancedStyle,
     control: 'input',

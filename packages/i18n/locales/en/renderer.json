@@ -574,6 +574,7 @@
       },
       "terminalCursorWidth": {
         "description": "Cursor width in CSS pixels when cursor style is Bar. Leave empty to use default behavior.",
+        "placeholder": "(empty)",
         "title": "Cursor Width"
       },
       "terminalCustomGlyphs": {
