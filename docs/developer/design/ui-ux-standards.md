@@ -119,6 +119,13 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.
 - Nested buttons must keep their normal activation semantics; focus handoff should not convert every descendant key into a command selection.
 
+## 7.7 Composite Control Accessibility
+
+- Custom command/search controls that render option lists must expose a labeled `combobox` tied to a labeled `listbox` with stable `aria-controls`, `aria-expanded`, `aria-activedescendant`, and per-option `aria-selected`.
+- Icon-only controls must carry a localized accessible name through `aria-label`; tooltips remain visual help and must not be the only name.
+- Registry-driven settings controls must connect visible labels to the rendered control with stable `htmlFor`/`id` pairs, including switches, selects, text fields, textareas, and JSON edit buttons.
+- SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
+
 ## 8. Compliance Checklist
 
 Before merging UI changes:

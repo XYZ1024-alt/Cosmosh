@@ -232,11 +232,13 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
             <FormLabel htmlFor="ssh-keychain-tags">{t('sshKeychain.tagsLabel')}</FormLabel>
             <FormControl>
               <TagInput
+                inputId="ssh-keychain-tags"
                 tags={tags}
                 selectedTagIds={formState.tagIds}
                 menuTitle={t('sshKeychain.tagsLabel')}
                 inputPlaceholder={t('sshKeychain.tagPlaceholder')}
                 emptyText={t('ssh.emptyTags')}
+                removeTagLabel={(tagName) => t('sshKeychain.removeTagLabel', { tagName })}
                 disabled={isSubmitting}
                 onCreateTag={onCreateTag}
                 onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}

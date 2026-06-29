@@ -338,6 +338,9 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                   </SortableContext>
                 </DndContext>
                 <div
+                  role="listbox"
+                  aria-label={t('sftp.directoryListLabel')}
+                  aria-multiselectable="true"
                   className="min-h-0 flex-1"
                   onClick={(event) => {
                     if (event.button === 0 && event.currentTarget === event.target) {
@@ -368,8 +371,9 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                       ref={(element) => {
                         fileRowRefs.current[PARENT_DIRECTORY_ROW_KEY] = element;
                       }}
-                      role="button"
+                      role="option"
                       aria-label={t('sftp.parentDirectoryEntryLabel')}
+                      aria-selected={resolvedActiveFileRowKey === PARENT_DIRECTORY_ROW_KEY}
                       aria-disabled={!canActivateParentDirectoryListEntry}
                       tabIndex={
                         canActivateParentDirectoryListEntry && resolvedActiveFileRowKey === PARENT_DIRECTORY_ROW_KEY
@@ -486,8 +490,9 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                 ref={(element) => {
                                   fileRowRefs.current[entry.path] = element;
                                 }}
-                                role="button"
+                                role="option"
                                 aria-selected={isSelected}
+                                aria-label={entry.name}
                                 tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
                                 className={classNames(
                                   'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',

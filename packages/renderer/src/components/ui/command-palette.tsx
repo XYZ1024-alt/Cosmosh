@@ -10,6 +10,7 @@ const textEntryTargetSelector = 'input, textarea, select, [contenteditable]:not(
 type CommandPaletteAction = {
   key: string;
   icon: React.ReactNode;
+  label?: string;
   tooltip?: string;
   onSelect: () => void;
 };
@@ -88,6 +89,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
 }) => {
   const [internalActiveIndex, setInternalActiveIndex] = React.useState<number>(0);
   const [rendered, setRendered] = React.useState<boolean>(open);
+  const generatedListId = React.useId();
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   const inputRef = React.useRef<HTMLInputElement | null>(null);
   const itemRefs = React.useRef<Map<number, HTMLDivElement>>(new Map());
@@ -339,6 +341,8 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   }
 
   const resolvedLeadingIcon = inputLeadingIcon ?? <Search className="h-4 w-4 shrink-0 text-command-text-muted" />;
+  const listboxId = `command-palette-listbox-${generatedListId.replace(/:/g, '')}`;
+  const activeOptionId = items.length > 0 ? `${listboxId}-option-${activeIndex}` : undefined;
 
   return (
     <div
@@ -363,6 +367,12 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
               <Input
                 ref={inputRef}
                 value={query}
+                role="combobox"
+                aria-label={placeholder}
+                aria-autocomplete="list"
+                aria-controls={!hideItemList ? listboxId : undefined}
+                aria-expanded={!hideItemList && items.length > 0}
+                aria-activedescendant={!hideItemList ? activeOptionId : undefined}
                 placeholder={placeholder}
                 className="placeholder:!text-command-text-muted/80 h-[34px] !rounded-none !bg-transparent !px-0 !text-command-text hover:!bg-transparent focus-visible:!outline-none"
                 onChange={(event) => onQueryChange(event.target.value)}
@@ -375,6 +385,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
         {!hideItemList ? (
           <TooltipProvider delayDuration={180}>
             <div
+              id={listboxId}
+              role="listbox"
+              aria-label={placeholder}
               tabIndex={-1}
               className={classNames(
                 'overflow-y-auto p-1',
@@ -411,6 +424,9 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                           itemRefs.current.delete(index);
                         }
                       }}
+                      id={`${listboxId}-option-${index}`}
+                      role="option"
+                      aria-selected={isActive}
                       className={classNames(
                         'group flex min-h-[34px] w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left outline-none',
                         shouldUseRowColorVisual ? item.rowClassName : '',
@@ -482,6 +498,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                               <TooltipTrigger asChild>
                                 <button
                                   type="button"
+                                  aria-label={action.label ?? action.tooltip}
                                   data-command-action="true"
                                   data-command-active={isActive ? 'true' : 'false'}
                                   tabIndex={isActive ? 0 : -1}

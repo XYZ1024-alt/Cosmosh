@@ -530,14 +530,16 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
           </FormField>
 
           <FormField>
-            <FormLabel>{t('ssh.tagsLegend')}</FormLabel>
+            <FormLabel htmlFor="ssh-editor-tags">{t('ssh.tagsLegend')}</FormLabel>
             <FormControl>
               <TagInput
+                inputId="ssh-editor-tags"
                 tags={tags}
                 selectedTagIds={formState.tagIds}
                 menuTitle={t('ssh.tagsLegend')}
                 inputPlaceholder={t('ssh.tagNamePlaceholder')}
                 emptyText={t('ssh.emptyTags')}
+                removeTagLabel={(tagName) => t('ssh.removeTagLabel', { tagName })}
                 disabled={isSubmitting}
                 onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
                 onCreateTag={onCreateTag}

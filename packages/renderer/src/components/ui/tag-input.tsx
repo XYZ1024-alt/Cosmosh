@@ -23,6 +23,8 @@ export type TagInputProps = {
   menuTitle: string;
   inputPlaceholder: string;
   emptyText: string;
+  inputId?: string;
+  removeTagLabel: (tagName: string) => string;
   disabled?: boolean;
   onSelectedTagIdsChange: (nextTagIds: string[]) => void;
   onCreateTag: (name: string) => Promise<SshTag | null>;
@@ -37,17 +39,23 @@ export const TagInput: React.FC<TagInputProps> = ({
   menuTitle,
   inputPlaceholder,
   emptyText,
+  inputId,
+  removeTagLabel,
   disabled = false,
   onSelectedTagIdsChange,
   onCreateTag,
 }) => {
   const rootRef = React.useRef<HTMLDivElement | null>(null);
+  const generatedInputId = React.useId();
+  const generatedMenuId = React.useId();
   const [draftName, setDraftName] = React.useState<string>('');
   const [isCommitting, setIsCommitting] = React.useState<boolean>(false);
   const [isMenuOpen, setIsMenuOpen] = React.useState<boolean>(false);
   const [activeMenuIndex, setActiveMenuIndex] = React.useState<number>(0);
 
   const normalizedDraftName = draftName.trim();
+  const resolvedInputId = inputId ?? `tag-input-${generatedInputId.replace(/:/g, '')}`;
+  const menuId = `tag-input-listbox-${generatedMenuId.replace(/:/g, '')}`;
   const availableTags = React.useMemo(() => {
     return tags.filter((tag) => !isReservedTagName(tag.name));
   }, [tags]);
@@ -64,6 +72,7 @@ export const TagInput: React.FC<TagInputProps> = ({
     const keyword = normalizedDraftName.toLowerCase();
     return availableTags.filter((tag) => tag.name.toLowerCase().includes(keyword));
   }, [availableTags, normalizedDraftName]);
+  const activeOptionId = isMenuOpen && filteredTags.length > 0 ? `${menuId}-option-${activeMenuIndex}` : undefined;
 
   const toggleTag = React.useCallback(
     (tagId: string, checked: boolean) => {
@@ -208,7 +217,7 @@ export const TagInput: React.FC<TagInputProps> = ({
               type="button"
               disabled={disabled}
               className="inline-flex h-4 w-4 items-center justify-center rounded-[7px] outline-none hover:bg-form-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-1px] focus-visible:outline-outline disabled:opacity-50"
-              aria-label={`Remove ${tag.name}`}
+              aria-label={removeTagLabel(tag.name)}
               onClick={() => toggleTag(tag.id, false)}
             >
               ×
@@ -217,7 +226,14 @@ export const TagInput: React.FC<TagInputProps> = ({
         ))}
 
         <input
+          id={resolvedInputId}
           value={draftName}
+          role="combobox"
+          aria-label={inputPlaceholder}
+          aria-autocomplete="list"
+          aria-controls={menuId}
+          aria-expanded={isMenuOpen}
+          aria-activedescendant={activeOptionId}
           placeholder={inputPlaceholder}
           disabled={disabled || isCommitting}
           className="placeholder:text-form-text-muted/80 -ms-1 min-w-[120px] flex-1 bg-transparent ps-1 text-sm text-form-text outline-none focus:outline-none focus:ring-0"
@@ -296,14 +312,23 @@ export const TagInput: React.FC<TagInputProps> = ({
       {isMenuOpen ? (
         <div className={classNames('absolute left-0 right-0 top-[calc(100%+6px)] z-20', menuStyles.content)}>
           <div className={menuStyles.label}>{menuTitle}</div>
-          <div className="max-h-40 space-y-0.5 overflow-auto">
+          <div
+            id={menuId}
+            role="listbox"
+            aria-label={menuTitle}
+            aria-multiselectable="true"
+            className="max-h-40 space-y-0.5 overflow-auto"
+          >
             {filteredTags.length > 0 ? (
-              filteredTags.map((tag) => {
+              filteredTags.map((tag, index) => {
                 const checked = selectedTagIds.includes(tag.id);
                 return (
                   <button
                     key={tag.id}
+                    id={`${menuId}-option-${index}`}
                     type="button"
+                    role="option"
+                    aria-selected={checked}
                     tabIndex={-1}
                     className={classNames(
                       menuStyles.item,

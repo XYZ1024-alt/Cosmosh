@@ -760,11 +760,12 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
   }, [formState, hasChanges, isAutoSaveEnabled, isLoading, isSaving, persistSettings]);
 
   const renderControl = React.useCallback(
-    (item: SettingDefinition): React.ReactNode => {
+    (item: SettingDefinition, controlId: string): React.ReactNode => {
       if (item.key === 'autoSaveEnabled') {
         return (
           <div className="flex items-center gap-2.5 px-2.5">
             <Switch
+              id={controlId}
               checked={formState.autoSaveEnabled === 'true'}
               onCheckedChange={(checkedState) => {
                 const nextFormState: SettingsFormState = {
@@ -786,6 +787,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         return (
           <div className="px-2.5">
             <button
+              id={controlId}
               type="button"
               className="text-home-text inline-flex text-sm underline underline-offset-2 hover:text-home-text-subtle focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-outline disabled:pointer-events-none disabled:opacity-55"
               disabled={!onOpenSettingInEditor}
@@ -833,7 +835,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                 updateField(item.key, nextValue);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger id={controlId}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -874,7 +876,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                 updateField(item.key, nextValue);
               }}
             >
-              <SelectTrigger>
+              <SelectTrigger id={controlId}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -898,7 +900,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               updateField(item.key, nextValue);
             }}
           >
-            <SelectTrigger>
+            <SelectTrigger id={controlId}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -920,6 +922,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
         return (
           <div className="flex items-center gap-2.5 px-2.5">
             <Switch
+              id={controlId}
               checked={value}
               onCheckedChange={(checkedState) => {
                 updateField(item.key, checkedState as SettingsFormState[SettingKey]);
@@ -935,6 +938,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
       if (item.control === 'textarea') {
         return (
           <Textarea
+            id={controlId}
             rows={4}
             value={String(formState[item.key])}
             placeholder={item.placeholderI18nKey ? t(item.placeholderI18nKey) : undefined}
@@ -947,6 +951,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
 
       return (
         <Input
+          id={controlId}
           value={String(formState[item.key])}
           inputMode={item.inputMode}
           placeholder={item.placeholderI18nKey ? t(item.placeholderI18nKey) : undefined}
@@ -968,6 +973,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               <div className="relative w-full">
                 <Input
                   value={search}
+                  aria-label={t('settings.searchPlaceholder')}
                   placeholder={t('settings.searchPlaceholder')}
                   className="pr-9"
                   onChange={(event) => setSearch(event.target.value)}
@@ -1057,45 +1063,49 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                       className="grid gap-3"
                     >
                       <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
-                      {section.items.map((item) => (
-                        <FormField
-                          key={item.path}
-                          className="group/setting"
-                        >
-                          <div className="flex items-center">
-                            <Label>{t(item.nameI18nKey)}</Label>
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <button
-                                  type="button"
-                                  aria-label={t('settings.itemActions.openMenu')}
-                                  className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
-                                >
-                                  <SettingsIcon className="h-3.5 w-3.5" />
-                                </button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent>
-                                <DropdownMenuItem
-                                  icon={RotateCcw}
-                                  onSelect={() => resetSettingToDefault(item)}
-                                >
-                                  {t('settings.itemActions.resetToDefault')}
-                                </DropdownMenuItem>
-                                {item.control !== 'json' ? (
-                                  <DropdownMenuItem
-                                    icon={Settings2}
-                                    onSelect={() => onOpenSettingInEditor?.(item.key)}
+                      {section.items.map((item) => {
+                        const controlId = `settings-control-${item.key}`;
+
+                        return (
+                          <FormField
+                            key={item.path}
+                            className="group/setting"
+                          >
+                            <div className="flex items-center">
+                              <Label htmlFor={controlId}>{t(item.nameI18nKey)}</Label>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label={t('settings.itemActions.openMenu')}
+                                    className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
                                   >
-                                    {t('settings.itemActions.editInSettingsEditor')}
+                                    <SettingsIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                  <DropdownMenuItem
+                                    icon={RotateCcw}
+                                    onSelect={() => resetSettingToDefault(item)}
+                                  >
+                                    {t('settings.itemActions.resetToDefault')}
                                   </DropdownMenuItem>
-                                ) : null}
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </div>
-                          {renderControl(item)}
-                          <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
-                        </FormField>
-                      ))}
+                                  {item.control !== 'json' ? (
+                                    <DropdownMenuItem
+                                      icon={Settings2}
+                                      onSelect={() => onOpenSettingInEditor?.(item.key)}
+                                    >
+                                      {t('settings.itemActions.editInSettingsEditor')}
+                                    </DropdownMenuItem>
+                                  ) : null}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                            {renderControl(item, controlId)}
+                            <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
+                          </FormField>
+                        );
+                      })}
                     </section>
                   ))}
                 </div>
