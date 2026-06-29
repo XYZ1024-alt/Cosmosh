@@ -4,7 +4,7 @@ import React from 'react';
 
 import { listSshKeychains, listSshTags } from '../../lib/backend';
 import { t } from '../../lib/i18n';
-import { upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
+import { mergeKeychainListItems, upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
 import {
   buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
@@ -79,6 +79,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   const initializedEditorTargetRef = React.useRef<string | null | undefined>(undefined);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
+  const savedKeychainsRef = React.useRef<SshKeychainListItem[]>([]);
   const displayServerId = open ? serverId : stableServerIdRef.current;
 
   React.useEffect(() => {
@@ -104,6 +105,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   React.useEffect(() => {
     if (!open) {
       initializedEditorTargetRef.current = undefined;
+      savedKeychainsRef.current = [];
       return;
     }
 
@@ -156,7 +158,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
         }
 
         setTags(tagsResponse.data.items);
-        setKeychains(keychainsResponse.data.items);
+        setKeychains(mergeKeychainListItems(keychainsResponse.data.items, savedKeychainsRef.current));
       } catch (error: unknown) {
         if (!cancelled) {
           notifyError(error instanceof Error ? error.message : t('ssh.editorLoadFailed'));
@@ -490,6 +492,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           }
         }}
         onSaved={(savedKeychain) => {
+          savedKeychainsRef.current = upsertKeychainListItem(savedKeychainsRef.current, savedKeychain);
           setKeychains((previous) => upsertKeychainListItem(previous, savedKeychain));
           onChangeForm('keychainId', savedKeychain.id);
         }}
