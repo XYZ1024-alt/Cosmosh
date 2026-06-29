@@ -333,7 +333,7 @@ flowchart LR
 - 任一开关关闭时，backend 不会执行任何远端命令，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
 - 两个开关均启用时，backend 会在 SSH 会话首次 WebSocket attach 后通过 `RemoteBootstrapService` 使用独立且有界的 `ssh2 exec` 通道执行 bootstrap。安装器输出按 JSON lines 解析，永远不会写入交互式 shell 输出流。
 - v1 目标为 Linux `amd64` 与 `arm64` 远端，shell 覆盖 `bash`、`zsh`、`fish`、`ash`、`sh`。不支持的 OS、架构或 shell 会返回失败的 `bootstrap-status` 消息。
-- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。远端增强启用但缺少配置时，仍会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
+- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布清单。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 - 开发环境下，在启动 Cosmosh 的同一个终端里设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，确保 backend 进程可以继承该环境变量。文档示例只保留占位符，真实 HTTPS manifest URL 只写在本地 shell 环境中：
 
   ```powershell

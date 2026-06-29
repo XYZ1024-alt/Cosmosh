@@ -86,15 +86,15 @@ export class RemoteBootstrapService {
       this.logStatus(options, status);
     };
 
+    const manifest = await this.loadManifest(emit);
+    if (!manifest) {
+      return;
+    }
+
     emit({ type: 'bootstrap-status', phase: 'probe', state: 'started', message: 'probing remote host' });
     const probe = await this.probeRemote(options.executeCommand);
     if (!probe) {
       emit(this.failed('probe', 'PROBE_FAILED', 'remote platform or shell is unsupported'));
-      return;
-    }
-
-    const manifest = await this.loadManifest(emit);
-    if (!manifest) {
       return;
     }
 

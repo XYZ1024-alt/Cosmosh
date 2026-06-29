@@ -83,6 +83,27 @@ const renderWrapper = async (options: { assetUrl: string; shell: 'bash' | 'fish'
   };
 };
 
+test('RemoteBootstrapService does not probe remotes when the manifest URL is missing', async () => {
+  const statuses: RemoteBootstrapStatus[] = [];
+  const executedCommands: string[] = [];
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+  });
+
+  await service.runForSession({
+    serverId: 'server-1',
+    sessionId: 'session-1',
+    executeCommand: async (command) => {
+      executedCommands.push(command);
+      return null;
+    },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  assert.equal(executedCommands.length, 0);
+  assert.equal(statuses.at(-1)?.code, 'MANIFEST_URL_NOT_CONFIGURED');
+});
+
 test('RemoteBootstrapService accepts bash remotes and installs through bash profile support', async () => {
   const statuses: RemoteBootstrapStatus[] = [];
   const executedCommands: string[] = [];
@@ -160,7 +181,7 @@ test('RemoteBootstrapService rejects manifests that include invalid assets', asy
     sendStatus: (status) => statuses.push(status),
   });
 
-  assert.equal(executedCommands.length, 1);
+  assert.equal(executedCommands.length, 0);
   assert.equal(statuses.at(-1)?.code, 'MANIFEST_INVALID');
 });
 

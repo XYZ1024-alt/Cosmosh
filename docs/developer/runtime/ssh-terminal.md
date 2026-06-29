@@ -334,7 +334,7 @@ When SSH session behavior is wrong, verify in order:
 - When either gate is disabled, backend does not run any remote command and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
 - When both gates are enabled, backend starts bootstrap after the first WebSocket attach of an SSH session through `RemoteBootstrapService` on a separate bounded `ssh2 exec` channel. Installer output is parsed as JSON lines and never written into the interactive shell stream.
 - v1 targets Linux `amd64` and `arm64` remotes with `bash`, `zsh`, `fish`, `ash`, or `sh`. Unsupported OS, architecture, or shell returns a failed `bootstrap-status` message.
-- Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration remains an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
+- Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
 - During development, set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh so the backend process inherits it. Keep examples placeholder-only in documentation and use a real HTTPS manifest URL only in the local shell environment:
 
   ```powershell
