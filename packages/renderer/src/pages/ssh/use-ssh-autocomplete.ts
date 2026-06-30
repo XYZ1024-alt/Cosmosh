@@ -13,6 +13,7 @@ import {
 } from './ssh-types';
 import {
   compilePromptPrefixRegex,
+  resolveAutocompleteCommandPrefix,
   resolvePromptWorkingDirectoryHint,
   resolveTerminalCurrentLinePrefix,
   sendClientMessage,
@@ -107,6 +108,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
   const latestAutocompleteCursorRowRef = React.useRef<number>(0);
   const autocompleteMenuRef = React.useRef<TerminalAutocompleteMenuHandle | null>(null);
   const localAutocompleteCommandPrefixByPaneRef = React.useRef<Map<string, string>>(new Map());
+  const localAutocompletePrefixNeedsRenderedContextByPaneRef = React.useRef<Set<string>>(new Set());
   const pendingTypingRequestPaneSetRef = React.useRef<Set<string>>(new Set());
   const compiledPromptPrefixRegex = React.useMemo<RegExp | null>(() => {
     return compilePromptPrefixRegex(terminalAutoCompletePromptRegex);
@@ -152,6 +154,9 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       autocompleteReplacePrefixLengthRef.current = 0;
       latestAutocompleteRequestIdRef.current = '';
       latestAutocompleteRequestKeyRef.current = '';
+      localAutocompleteCommandPrefixByPaneRef.current.clear();
+      localAutocompletePrefixNeedsRenderedContextByPaneRef.current.clear();
+      pendingTypingRequestPaneSetRef.current.clear();
     }
   }, [connectionState, terminalAutoCompleteEnabled]);
 
@@ -317,7 +322,9 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       }
 
       const shadowCommandPrefix = localAutocompleteCommandPrefixByPaneRef.current.get(activePaneId);
-      const commandPrefix = shadowCommandPrefix ?? lineContext.commandPrefix;
+      const commandPrefix = resolveAutocompleteCommandPrefix(lineContext.commandPrefix, shadowCommandPrefix, {
+        localPrefixNeedsRenderedContext: localAutocompletePrefixNeedsRenderedContextByPaneRef.current.has(activePaneId),
+      });
       const trimmedCommandPrefix = commandPrefix.trim();
       if (trimmedCommandPrefix.length === 0 && trigger !== 'secretPrompt') {
         closeAutocomplete();
@@ -421,6 +428,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
       const previousLinePrefix = latestAutocompleteLinePrefixRef.current;
       const nextLinePrefix = `${previousLinePrefix.slice(0, Math.max(0, previousLinePrefix.length - deleteCount))}${targetItem.insertText}`;
       localAutocompleteCommandPrefixByPaneRef.current.set(activePaneIdRef.current, nextLinePrefix);
+      localAutocompletePrefixNeedsRenderedContextByPaneRef.current.delete(activePaneIdRef.current);
 
       const shouldTriggerPathChain = targetItem.kind === 'path' && targetItem.insertText.endsWith('/');
       if (shouldTriggerPathChain) {
@@ -465,6 +473,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
           // Escape sequences are frequently cursor movement/edit commands; stop shadow tracking.
           canTrackCommandPrefix = false;
           localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
+          localAutocompletePrefixNeedsRenderedContextByPaneRef.current.add(paneId);
           pendingTypingRequestPaneSetRef.current.delete(paneId);
           return {
             shouldRequest: false,
@@ -476,6 +485,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
           shouldRequest = false;
           shouldClose = true;
           nextLocalCommandPrefix = '';
+          localAutocompletePrefixNeedsRenderedContextByPaneRef.current.delete(paneId);
           continue;
         }
 
@@ -496,12 +506,14 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
         }
 
         canTrackCommandPrefix = false;
+        shouldClose = true;
       }
 
       if (canTrackCommandPrefix) {
         localAutocompleteCommandPrefixByPaneRef.current.set(paneId, nextLocalCommandPrefix);
       } else {
         localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
+        localAutocompletePrefixNeedsRenderedContextByPaneRef.current.add(paneId);
       }
 
       const shouldQueueTypingRequest = shouldRequest && !shouldClose;
