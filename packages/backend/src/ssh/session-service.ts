@@ -17,6 +17,7 @@ import { localizeTerminalCompletionItems, resolveTerminalCompletions } from '../
 import { createRemotePathProvider } from '../terminal/completion/path-providers.js';
 import {
   type CompletionPromptState,
+  replayRemoteCompletionCwdCommands,
   resolveRemotePromptCwd,
   updatePromptStateFromInput,
   updatePromptStateFromOutput,
@@ -184,6 +185,8 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionRecentCommands: string[];
   completionWorkingDirectory: string | null;
   completionHomeDirectory: string | null;
+  completionCwdInitializationPromise: Promise<string | null> | null;
+  completionPendingCwdCommands: string[];
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
 };
@@ -201,6 +204,9 @@ const TELEMETRY_COMMAND =
   ' sh -lc \'cpu=$(top -bn1 | awk -F"[, ]+" "/Cpu\\(s\\)|%Cpu\\(s\\)/ {for(i=1;i<=NF;i++){if($i==\\"id\\"){print 100-$(i-1); exit}}}"); if [ -z "$cpu" ]; then cpu=$(awk "/^cpu /{idle=$5;total=0;for(i=2;i<=NF;i++){total+=$i} if(total>0){print (total-idle)*100/total}else{print 0}}" /proc/stat); fi; mem=$(free -b | awk "/^Mem:/ {print \\$3 \\" \\" \\$2}"); net=$(awk "NR>2 {rx+=\\$2;tx+=\\$10} END {print rx \\" \\" tx}" /proc/net/dev); printf "%s\\n%s\\n%s\\n" "${cpu:-0}" "${mem:-0 0}" "${net:-0 0}"\'';
 const REMOTE_HISTORY_FETCH_COMMAND =
   ' sh -lc \'set +e; if command -v history >/dev/null 2>&1; then history 2>/dev/null; fi; for file in "$HISTFILE" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.ash_history" "$HOME/.sh_history" "$HOME/.mksh_history" "$HOME/.ksh_history" "$HOME/.local/share/fish/fish_history" "$HOME/.python_history" "$HOME/.sqlite_history" "$HOME/.mysql_history" "$HOME/.lesshst"; do if [ -n "$file" ] && [ -f "$file" ]; then cat "$file" 2>/dev/null; fi; done; if command -v pwsh >/dev/null 2>&1; then pwsh -NoLogo -NoProfile -Command "if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) { $path=(Get-PSReadLineOption).HistorySavePath; if ($path -and (Test-Path $path)) { Get-Content -Path $path -ErrorAction SilentlyContinue } }" 2>/dev/null; fi; if command -v powershell >/dev/null 2>&1; then powershell -NoLogo -NoProfile -Command "if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) { $path=(Get-PSReadLineOption).HistorySavePath; if ($path -and (Test-Path $path)) { Get-Content -Path $path -ErrorAction SilentlyContinue } }" 2>/dev/null; fi\'';
+const REMOTE_COMPLETION_CWD_PROBE_COMMAND = 'sh -lc \'printf "%s\\n%s\\n" "$PWD" "$HOME"\'';
+const SSH_COMPLETION_EXEC_TIMEOUT_MS = 3_000;
+const SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS = 1_200;
 
 /**
  * SSH session orchestrator:
@@ -310,9 +316,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           const promptCwd = resolveRemotePromptCwd(
             liveSession.completionPromptState.outputTail,
             liveSession.completionWorkingDirectory,
+            liveSession.completionHomeDirectory,
           );
           if (promptCwd) {
-            liveSession.completionWorkingDirectory = promptCwd;
+            this.applyResolvedRemoteCompletionCwd(liveSession, promptCwd);
           }
           this.sendServerMessage(liveSession, {
             type: 'output',
@@ -453,6 +460,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       completionRecentCommands: [],
       completionWorkingDirectory: null,
       completionHomeDirectory: null,
+      completionCwdInitializationPromise: null,
+      completionPendingCwdCommands: [],
       completionPromptState: {
         outputTail: '',
         promptDetectedAtMs: 0,
@@ -473,9 +482,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       const promptCwd = resolveRemotePromptCwd(
         liveSession.completionPromptState.outputTail,
         liveSession.completionWorkingDirectory,
+        liveSession.completionHomeDirectory,
       );
       if (promptCwd) {
-        liveSession.completionWorkingDirectory = promptCwd;
+        this.applyResolvedRemoteCompletionCwd(liveSession, promptCwd);
       }
     });
 
@@ -496,6 +506,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     });
 
     this.registerSession(liveSession);
+    void this.ensureRemoteCompletionCwdInitialized(liveSession);
     this.startSessionTelemetry(sessionId);
     this.scheduleHistorySync(sessionId, { immediate: true });
 
@@ -627,7 +638,14 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       updateInteractiveCompletionState(interactiveState, message.data, {
         maxEntries: TERMINAL_HISTORY_MAX_ENTRIES,
         onCommandSubmitted: (command) => {
-          session.completionWorkingDirectory = updateRemoteCompletionCwd(session.completionWorkingDirectory, command);
+          if (!session.completionWorkingDirectory) {
+            session.completionPendingCwdCommands.push(command);
+            return;
+          }
+
+          session.completionWorkingDirectory = updateRemoteCompletionCwd(session.completionWorkingDirectory, command, {
+            homeDirectory: session.completionHomeDirectory,
+          });
         },
       });
       session.completionLineBuffer = interactiveState.lineBuffer;
@@ -675,8 +693,6 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     session: SshLiveSession,
     message: Extract<TerminalClientInboundMessage, { type: 'completion-request' }>,
   ): Promise<void> {
-    session.completionWorkingDirectory = this.resolveHintedWorkingDirectory(session, message.workingDirectoryHint);
-
     const completionResult = await resolveTerminalCompletions(
       {
         linePrefix: message.linePrefix,
@@ -692,15 +708,33 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       {
         recentCommands: session.completionRecentCommands,
         tokenizerMode: 'posix',
+        typingPathProviderTimeoutMs: SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS,
         pathProvider: createRemotePathProvider({
           resolveCwd: async () => {
+            const hintedCwd = await this.resolveRequestCompletionWorkingDirectory(
+              session,
+              message.workingDirectoryHint,
+            );
+            if (hintedCwd) {
+              this.applyResolvedRemoteCompletionCwd(session, hintedCwd);
+              return session.completionWorkingDirectory;
+            }
+
             if (!session.completionWorkingDirectory) {
-              session.completionWorkingDirectory = await this.resolveRemoteWorkingDirectoryFallback(session);
+              await this.ensureRemoteCompletionCwdInitialized(session);
             }
 
             return session.completionWorkingDirectory;
           },
-          executeCommand: async (command) => (await this.executeRemoteCommand(session, command)) ?? '',
+          resolveHomeDirectory: async () => {
+            if (!session.completionHomeDirectory) {
+              await this.ensureRemoteCompletionCwdInitialized(session);
+            }
+
+            return session.completionHomeDirectory;
+          },
+          executeCommand: async (command) =>
+            (await this.executeRemoteCommand(session, command, { timeoutMs: SSH_COMPLETION_EXEC_TIMEOUT_MS })) ?? '',
         }),
         promptState: {
           shouldSuggestSecret: session.completionPromptState.shouldSuggestSecret,
@@ -720,14 +754,21 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   /**
    * Resolves per-request cwd hint into effective SSH completion working directory.
    */
-  private resolveHintedWorkingDirectory(session: SshLiveSession, hintValue: string | undefined): string | null {
+  private async resolveRequestCompletionWorkingDirectory(
+    session: SshLiveSession,
+    hintValue: string | undefined,
+  ): Promise<string | null> {
     const hintedCwd = hintValue?.trim() ?? '';
     if (!hintedCwd) {
-      return session.completionWorkingDirectory;
+      return null;
     }
 
     if (hintedCwd.startsWith('/')) {
       return hintedCwd;
+    }
+
+    if ((hintedCwd === '~' || hintedCwd.startsWith('~/')) && !session.completionHomeDirectory) {
+      await this.ensureRemoteCompletionCwdInitialized(session);
     }
 
     if (hintedCwd === '~' && session.completionHomeDirectory) {
@@ -738,7 +779,74 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       return `${session.completionHomeDirectory}${hintedCwd.slice(1)}`;
     }
 
-    return session.completionWorkingDirectory;
+    return null;
+  }
+
+  /**
+   * Applies a cwd resolved from the live prompt or renderer hint.
+   * @param session live SSH terminal session.
+   * @param cwd resolved cwd from the active shell context.
+   * @returns Nothing.
+   */
+  private applyResolvedRemoteCompletionCwd(session: SshLiveSession, cwd: string | null): void {
+    if (!cwd) {
+      return;
+    }
+
+    session.completionWorkingDirectory = cwd;
+    session.completionPendingCwdCommands = [];
+  }
+
+  /**
+   * Applies a fallback cwd and replays commands captured before cwd was known.
+   * @param session live SSH terminal session.
+   * @param baseCwd initial cwd from a background probe.
+   * @returns Nothing.
+   */
+  private applyRemoteCompletionBaseCwd(session: SshLiveSession, baseCwd: string | null): void {
+    if (!baseCwd) {
+      return;
+    }
+
+    session.completionWorkingDirectory = replayRemoteCompletionCwdCommands(
+      baseCwd,
+      session.completionPendingCwdCommands,
+      {
+        homeDirectory: session.completionHomeDirectory,
+      },
+    );
+    session.completionPendingCwdCommands = [];
+  }
+
+  /**
+   * Initializes SSH completion cwd/home once and shares the in-flight probe.
+   * @param session live SSH terminal session.
+   * @returns resolved working directory, or null when unavailable.
+   */
+  private async ensureRemoteCompletionCwdInitialized(session: SshLiveSession): Promise<string | null> {
+    if (session.completionWorkingDirectory && session.completionHomeDirectory) {
+      return session.completionWorkingDirectory;
+    }
+
+    if (!session.completionCwdInitializationPromise) {
+      session.completionCwdInitializationPromise = this.resolveRemoteCompletionDirectories(session)
+        .then((directories) => {
+          if (directories.homeDirectory) {
+            session.completionHomeDirectory = directories.homeDirectory;
+          }
+
+          if (!session.completionWorkingDirectory || session.completionPendingCwdCommands.length > 0) {
+            this.applyRemoteCompletionBaseCwd(session, directories.workingDirectory);
+          }
+
+          return session.completionWorkingDirectory;
+        })
+        .finally(() => {
+          session.completionCwdInitializationPromise = null;
+        });
+    }
+
+    return await session.completionCwdInitializationPromise;
   }
 
   protected disposeSession(
@@ -933,18 +1041,22 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     return parseTerminalHistoryOutput(output);
   }
 
-  private async resolveRemoteWorkingDirectoryFallback(session: SshLiveSession): Promise<string | null> {
-    const stdout = await this.executeRemoteCommand(session, "sh -lc 'pwd'");
-    const resolved =
+  private async resolveRemoteCompletionDirectories(
+    session: SshLiveSession,
+  ): Promise<{ workingDirectory: string | null; homeDirectory: string | null }> {
+    const stdout = await this.executeRemoteCommand(session, REMOTE_COMPLETION_CWD_PROBE_COMMAND, {
+      timeoutMs: SSH_COMPLETION_EXEC_TIMEOUT_MS,
+      maxOutputBytes: 8 * 1024,
+    });
+    const lines =
       stdout
         ?.split(/\r?\n/)
         .map((line) => line.trim())
-        .find((line) => line.length > 0) ?? null;
-    if (resolved && !session.completionHomeDirectory) {
-      session.completionHomeDirectory = resolved;
-    }
+        .filter((line) => line.length > 0) ?? [];
+    const workingDirectory = lines[0] ?? null;
+    const homeDirectory = lines[1] ?? null;
 
-    return resolved;
+    return { workingDirectory, homeDirectory };
   }
 
   private async deleteRemoteHistoryEntry(session: SshLiveSession, command: string): Promise<void> {
@@ -977,8 +1089,15 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     return value.replace(/'/g, "'\"'\"'");
   }
 
-  private async executeRemoteCommand(session: SshLiveSession, command: string): Promise<string | null> {
-    return await executeBoundedSshCommand(session.client, command);
+  private async executeRemoteCommand(
+    session: SshLiveSession,
+    command: string,
+    options?: {
+      timeoutMs?: number;
+      maxOutputBytes?: number;
+    },
+  ): Promise<string | null> {
+    return await executeBoundedSshCommand(session.client, command, options);
   }
 
   private parseTelemetryOutput(output: string): ParsedRemoteTelemetry | null {

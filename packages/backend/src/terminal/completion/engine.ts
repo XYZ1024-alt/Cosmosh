@@ -19,6 +19,7 @@ const MAX_HISTORY_ITEMS_MANUAL = 1_200;
 type CompletionRuntimeOptions = {
   recentCommands: string[];
   pathProvider?: (context: TerminalPathCompletionContext) => Promise<TerminalPathEntry[]>;
+  typingPathProviderTimeoutMs?: number;
   promptState?: TerminalRuntimePromptState;
   tokenizerMode?: TerminalTokenizerMode;
 };
@@ -571,13 +572,15 @@ const resolvePathItemsWithTriggerBudget = async (
   pathProvider: NonNullable<CompletionRuntimeOptions['pathProvider']>,
   pathContext: TerminalPathCompletionContext,
   trigger: TerminalCompletionRequest['trigger'],
+  timeoutMs = TYPING_PATH_PROVIDER_TIMEOUT_MS,
 ): Promise<TerminalCompletionItem[]> => {
   if (trigger !== 'typing') {
     return collectPathItems(await pathProvider(pathContext), pathContext);
   }
 
+  const normalizedTimeoutMs = Math.max(1, Math.floor(timeoutMs));
   const timeoutPromise = new Promise<TerminalPathEntry[]>((resolve) => {
-    setTimeout(() => resolve([]), TYPING_PATH_PROVIDER_TIMEOUT_MS);
+    setTimeout(() => resolve([]), normalizedTimeoutMs);
   });
 
   const pathEntries = await Promise.race([pathProvider(pathContext), timeoutPromise]);
@@ -966,7 +969,12 @@ const resolveTerminalCompletionsAsync = async (
       completionLimit,
     );
     if (pathContext && options.pathProvider) {
-      const pathItems = await resolvePathItemsWithTriggerBudget(options.pathProvider, pathContext, request.trigger);
+      const pathItems = await resolvePathItemsWithTriggerBudget(
+        options.pathProvider,
+        pathContext,
+        request.trigger,
+        options.typingPathProviderTimeoutMs,
+      );
       pathItems.forEach((item) => addItemWithBestScore(itemMap, item));
     }
   }

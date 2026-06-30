@@ -148,7 +148,10 @@ sequenceDiagram
 - Path completion is provider-based and command-context-aware:
   - built-in path rules currently cover directory-first navigation (`cd`, `pushd`) and common file/path consumers (`cat`, `vim`, `vi`, `nvim`, `nano`, `less`, `more`, `head`, `tail`, `grep`, `rg`, `sed`, `awk`, `find`, `ls`, `touch`, `rm`, `cp`, `mv`, `chmod`, `chown`, `chgrp`, `ln`, `tar`, `unzip`, `zip`, `scp`, `sftp`, `rsync`), plus direct executable-style path prefixes (`./`, `../`, `/`, `~`) at command position,
   - relative-path partial input (for example, `cd ../../c`) is resolved against tracked session working directory and ranked with "prefix first, contains fallback" matching,
+  - SSH home-relative partial input (`~` / `~/...`) expands against the probed remote `$HOME` for directory scanning while preserving the typed `~/` prefix in returned candidates,
+  - SSH sessions initialize completion cwd/home in the background and share that in-flight probe with path requests; `cd` commands submitted before cwd is known are replayed after the first cwd probe so early relative-path completion does not fall back to the login directory,
   - typing-trigger requests apply a short path-provider timeout budget so command/history/spec candidates are not blocked by slow filesystem probes; manual `Tab` trigger still uses full provider results,
+  - SSH path completion uses a larger typing budget than local terminals because remote exec latency is network-bound; this keeps overseas/high-latency servers from returning empty runtime path suggestions merely because the first directory scan exceeded a local-filesystem budget,
   - remote SSH path scans use POSIX parameter expansion (`${p##*/}`) instead of GNU-specific `basename --`, so path completion remains portable across GNU/Linux, BSD/macOS, and BusyBox environments,
   - typing-trigger history scoring is bounded to a recent history window to keep completion latency stable when shell history snapshots are large,
   - when current token starts with `-`, option/value suggestions keep priority and path provider is gated off for that token.

@@ -122,15 +122,21 @@ const preparePathLookup = (
   partialPath: string,
   baseDirectory: string,
   flavor: PathFlavor,
+  homeDirectory?: string | null,
 ): PreparedPathLookup | null => {
   const normalizedPartialPath = stripWrappingQuotes(partialPath);
   const modulePath = flavor === 'remote' ? pathPosix : path;
   const separatorPattern = flavor === 'remote' ? /\// : /[\\/]/;
+  const normalizedHomeDirectory = (homeDirectory ?? (flavor === 'local' ? os.homedir() : '')).trim();
+  const isHomeRelativePath = normalizedPartialPath === '~' || normalizedPartialPath.startsWith('~/');
 
-  const expandedPartialPath =
-    flavor === 'local' && normalizedPartialPath.startsWith('~')
-      ? `${os.homedir()}${normalizedPartialPath.slice(1)}`
-      : normalizedPartialPath;
+  const expandedPartialPath = isHomeRelativePath
+    ? `${flavor === 'local' ? os.homedir() : normalizedHomeDirectory}${normalizedPartialPath.slice(1)}`
+    : normalizedPartialPath;
+
+  if (isHomeRelativePath && !normalizedHomeDirectory) {
+    return null;
+  }
 
   if (!expandedPartialPath) {
     return {
@@ -213,6 +219,7 @@ const escapeSingleQuotedForSh = (value: string): string => {
  */
 export const createRemotePathProvider = (options: {
   resolveCwd: () => Promise<string | null>;
+  resolveHomeDirectory?: () => Promise<string | null>;
   executeCommand: (command: string) => Promise<string>;
 }) => {
   return async (context: TerminalPathCompletionContext): Promise<TerminalPathEntry[]> => {
@@ -221,7 +228,12 @@ export const createRemotePathProvider = (options: {
       return [];
     }
 
-    const lookup = preparePathLookup(context.partialPath, cwd, 'remote');
+    const normalizedPartialPath = stripWrappingQuotes(context.partialPath);
+    const homeDirectory =
+      normalizedPartialPath === '~' || normalizedPartialPath.startsWith('~/')
+        ? await options.resolveHomeDirectory?.()
+        : null;
+    const lookup = preparePathLookup(context.partialPath, cwd, 'remote', homeDirectory);
     if (!lookup) {
       return [];
     }

@@ -220,14 +220,20 @@ export const updateLocalCompletionCwd = (currentCwd: string, command: string): s
  * @param command submitted command line.
  * @returns next tracked remote cwd.
  */
-export const updateRemoteCompletionCwd = (currentCwd: string | null, command: string): string | null => {
+export const updateRemoteCompletionCwd = (
+  currentCwd: string | null,
+  command: string,
+  options?: { homeDirectory?: string | null },
+): string | null => {
   const cdTarget = resolveCdTarget(splitCommandTokens(command));
-  if (cdTarget === null || !currentCwd) {
+  if (cdTarget === null) {
     return currentCwd;
   }
 
+  const homeDirectory = options?.homeDirectory?.trim() || null;
+
   if (cdTarget === '~') {
-    return currentCwd;
+    return homeDirectory ? pathPosix.normalize(homeDirectory) : currentCwd;
   }
 
   if (cdTarget.startsWith('/')) {
@@ -235,6 +241,10 @@ export const updateRemoteCompletionCwd = (currentCwd: string | null, command: st
   }
 
   if (cdTarget.startsWith('~/')) {
+    return homeDirectory ? pathPosix.normalize(pathPosix.join(homeDirectory, cdTarget.slice(2))) : currentCwd;
+  }
+
+  if (!currentCwd) {
     return currentCwd;
   }
 
@@ -242,12 +252,35 @@ export const updateRemoteCompletionCwd = (currentCwd: string | null, command: st
 };
 
 /**
+ * Replays submitted commands once the initial remote cwd becomes available.
+ * @param baseCwd initial remote cwd resolved from prompt or fallback probe.
+ * @param commands submitted commands captured before cwd was known.
+ * @param options optional home directory used for `cd` and `cd ~/...` targets.
+ * @returns cwd after applying replayable directory transitions.
+ */
+export const replayRemoteCompletionCwdCommands = (
+  baseCwd: string | null,
+  commands: readonly string[],
+  options?: { homeDirectory?: string | null },
+): string | null => {
+  return commands.reduce<string | null>(
+    (currentCwd, command) => updateRemoteCompletionCwd(currentCwd, command, options),
+    baseCwd,
+  );
+};
+
+/**
  * Extracts remote cwd from common shell prompt tails.
  * @param outputTail normalized prompt/output tail.
  * @param currentCwd current tracked cwd used as fallback.
+ * @param homeDirectory remote home directory used for `~` prompt fragments.
  * @returns parsed cwd or null when prompt does not expose cwd.
  */
-export const resolveRemotePromptCwd = (outputTail: string, currentCwd: string | null): string | null => {
+export const resolveRemotePromptCwd = (
+  outputTail: string,
+  currentCwd: string | null,
+  homeDirectory?: string | null,
+): string | null => {
   const lines = outputTail
     .split(/\n/)
     .map((line) => line.trim())
@@ -265,8 +298,15 @@ export const resolveRemotePromptCwd = (outputTail: string, currentCwd: string | 
       continue;
     }
 
-    if (candidate === '~' || candidate.startsWith('~/')) {
-      return currentCwd;
+    const normalizedHomeDirectory = homeDirectory?.trim() || null;
+    if (candidate === '~') {
+      return normalizedHomeDirectory ? pathPosix.normalize(normalizedHomeDirectory) : currentCwd;
+    }
+
+    if (candidate.startsWith('~/')) {
+      return normalizedHomeDirectory
+        ? pathPosix.normalize(pathPosix.join(normalizedHomeDirectory, candidate.slice(2)))
+        : currentCwd;
     }
 
     if (!candidate.startsWith('/')) {
