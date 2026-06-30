@@ -20,7 +20,7 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import * as RadixTabs from '@radix-ui/react-tabs';
 import classNames from 'classnames';
-import { ChevronLeft, ChevronRight, PlusIcon, XIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Command, CornerUpRight, KeyRound, PlusIcon, Server, XIcon } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName } from '../../lib/entity-visuals';
@@ -35,6 +35,14 @@ import {
   ContextMenuShortcut,
   ContextMenuTrigger,
 } from '../ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 const DragOverlayTab: React.FC<{ tab: TabItem; width: number; applySshServerVisuals: boolean }> = ({
   tab,
@@ -205,6 +213,10 @@ type TabsProps = {
   onActiveTabChange?: (id: string) => void;
   onAddTab?: () => void;
   onAddTabToRight?: AddTabToRightHandler;
+  onOpenCommandPalette?: () => void;
+  onAddServerTab?: () => void;
+  onAddKeychainTab?: () => void;
+  onAddPortForwardTab?: () => void;
   onCloseTab?: (id: string) => void;
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
@@ -226,6 +238,10 @@ export const Tabs: React.FC<TabsProps> = ({
   onActiveTabChange,
   onAddTab,
   onAddTabToRight,
+  onOpenCommandPalette,
+  onAddServerTab,
+  onAddKeychainTab,
+  onAddPortForwardTab,
   onCloseTab,
   onCloseRightTabs,
   onCloseOtherTabs,
@@ -234,18 +250,30 @@ export const Tabs: React.FC<TabsProps> = ({
   const minTabWidth = 120;
   const maxTabWidth = 180;
   const topHitAreaHeight = 8;
+  const addMenuOpenDelayMs = 500;
+  const addMenuCloseDelayMs = 120;
   const [tabWidth, setTabWidth] = React.useState<number>(maxTabWidth);
   const [canScrollLeft, setCanScrollLeft] = React.useState<boolean>(false);
   const [canScrollRight, setCanScrollRight] = React.useState<boolean>(false);
   const [contextTabId, setContextTabId] = React.useState<string | null>(null);
   const [activeDragTabId, setActiveDragTabId] = React.useState<string | null>(null);
   const [dragPreviewTabs, setDragPreviewTabs] = React.useState<TabItem[] | null>(null);
+  const [isAddMenuOpen, setIsAddMenuOpen] = React.useState<boolean>(false);
   const dragPreviewTabsRef = React.useRef<TabItem[] | null>(null);
   const shouldPreventContextMenuCloseAutoFocusRef = React.useRef<boolean>(false);
   const pendingContextMenuFocusTabIdRef = React.useRef<string | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const addMenuTriggerRef = React.useRef<HTMLButtonElement | null>(null);
+  const addMenuContentRef = React.useRef<HTMLDivElement | null>(null);
+  const addMenuOpenTimerRef = React.useRef<number | null>(null);
+  const addMenuCloseTimerRef = React.useRef<number | null>(null);
+  const isPointerInsideAddMenuTriggerRef = React.useRef<boolean>(false);
+  const isPointerInsideAddMenuContentRef = React.useRef<boolean>(false);
+  const addMenuContentId = React.useId();
   const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
   const closeCurrentTabShortcutLabel = React.useMemo(() => (isMacPlatform ? '⌘W' : 'Ctrl+W'), [isMacPlatform]);
+  const commandPaletteShortcutLabel = React.useMemo(() => (isMacPlatform ? '⌘⇧P' : 'Ctrl+Shift+P'), [isMacPlatform]);
+  const newServerTabShortcutLabel = React.useMemo(() => (isMacPlatform ? '⌘T' : 'Ctrl+T'), [isMacPlatform]);
 
   const sensors = useSensors(
     useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
@@ -258,6 +286,98 @@ export const Tabs: React.FC<TabsProps> = ({
     },
     [onActiveTabChange],
   );
+
+  /**
+   * Cancels any pending delayed add-menu open request.
+   *
+   * @returns Nothing.
+   */
+  const clearAddMenuOpenTimer = React.useCallback((): void => {
+    if (addMenuOpenTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(addMenuOpenTimerRef.current);
+    addMenuOpenTimerRef.current = null;
+  }, []);
+
+  /**
+   * Cancels any pending delayed add-menu close request.
+   *
+   * @returns Nothing.
+   */
+  const clearAddMenuCloseTimer = React.useCallback((): void => {
+    if (addMenuCloseTimerRef.current === null) {
+      return;
+    }
+
+    window.clearTimeout(addMenuCloseTimerRef.current);
+    addMenuCloseTimerRef.current = null;
+  }, []);
+
+  /**
+   * Opens the add-tab menu and clears competing timers.
+   *
+   * @returns Nothing.
+   */
+  const openAddMenu = React.useCallback((): void => {
+    clearAddMenuOpenTimer();
+    clearAddMenuCloseTimer();
+    setIsAddMenuOpen(true);
+  }, [clearAddMenuCloseTimer, clearAddMenuOpenTimer]);
+
+  /**
+   * Closes the add-tab menu and cancels any delayed open/close request.
+   *
+   * @returns Nothing.
+   */
+  const closeAddMenu = React.useCallback((): void => {
+    clearAddMenuOpenTimer();
+    clearAddMenuCloseTimer();
+    setIsAddMenuOpen(false);
+  }, [clearAddMenuCloseTimer, clearAddMenuOpenTimer]);
+
+  /**
+   * Opens the add-tab menu after the required hover/focus dwell period.
+   *
+   * @returns Nothing.
+   */
+  const scheduleAddMenuOpen = React.useCallback((): void => {
+    clearAddMenuCloseTimer();
+    if (isAddMenuOpen || addMenuOpenTimerRef.current !== null) {
+      return;
+    }
+
+    addMenuOpenTimerRef.current = window.setTimeout(() => {
+      addMenuOpenTimerRef.current = null;
+      setIsAddMenuOpen(true);
+    }, addMenuOpenDelayMs);
+  }, [clearAddMenuCloseTimer, isAddMenuOpen]);
+
+  /**
+   * Closes the add-tab menu only after the pointer has left both interactive regions.
+   *
+   * @returns Nothing.
+   */
+  const scheduleAddMenuCloseWhenPointerLeaves = React.useCallback((): void => {
+    clearAddMenuOpenTimer();
+    clearAddMenuCloseTimer();
+    addMenuCloseTimerRef.current = window.setTimeout(() => {
+      addMenuCloseTimerRef.current = null;
+      if (isPointerInsideAddMenuTriggerRef.current || isPointerInsideAddMenuContentRef.current) {
+        return;
+      }
+
+      setIsAddMenuOpen(false);
+    }, addMenuCloseDelayMs);
+  }, [clearAddMenuCloseTimer, clearAddMenuOpenTimer]);
+
+  React.useEffect(() => {
+    return () => {
+      clearAddMenuOpenTimer();
+      clearAddMenuCloseTimer();
+    };
+  }, [clearAddMenuCloseTimer, clearAddMenuOpenTimer]);
 
   const updateScrollState = React.useCallback(() => {
     const el = scrollContainerRef.current;
@@ -398,6 +518,34 @@ export const Tabs: React.FC<TabsProps> = ({
   );
 
   const orderedTabs = dragPreviewTabs ?? tabs;
+
+  /**
+   * Returns whether a focus target belongs to the add-tab trigger or menu content.
+   *
+   * @param target Potential next focused element.
+   * @returns True when focus is still inside the add-tab menu interaction area.
+   */
+  const isAddMenuFocusTarget = React.useCallback((target: EventTarget | null): boolean => {
+    if (!(target instanceof Node)) {
+      return false;
+    }
+
+    return Boolean(addMenuTriggerRef.current?.contains(target) || addMenuContentRef.current?.contains(target));
+  }, []);
+
+  /**
+   * Closes the add-tab menu after a menu item action runs.
+   *
+   * @param action Optional action triggered by the selected item.
+   * @returns Nothing.
+   */
+  const selectAddMenuAction = React.useCallback(
+    (action?: () => void): void => {
+      action?.();
+      closeAddMenu();
+    },
+    [closeAddMenu],
+  );
 
   /**
    * Moves keyboard focus to a tab trigger after menu-driven tab creation.
@@ -740,16 +888,123 @@ export const Tabs: React.FC<TabsProps> = ({
             isLastTabActive ? 'opacity-0' : 'opacity-100',
           )}
         />
-        <button
-          type="button"
-          className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-lg hover:bg-header-tab-hover"
-          aria-label="Add tab"
-          // @ts-expect-error React.CSSProperties
-          style={{ WebkitAppRegion: 'no-drag' }}
-          onClick={onAddTab}
+        <DropdownMenu
+          modal={false}
+          open={isAddMenuOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              openAddMenu();
+              return;
+            }
+
+            closeAddMenu();
+          }}
         >
-          <PlusIcon className="h-4 w-4" />
-        </button>
+          <DropdownMenuTrigger asChild>
+            <button
+              ref={addMenuTriggerRef}
+              type="button"
+              className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-lg hover:bg-header-tab-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-outline"
+              aria-label={t('commandPalette.commands.tabs.newTab')}
+              aria-haspopup="menu"
+              aria-expanded={isAddMenuOpen}
+              aria-controls={isAddMenuOpen ? addMenuContentId : undefined}
+              // @ts-expect-error React.CSSProperties
+              style={{ WebkitAppRegion: 'no-drag' }}
+              onPointerDown={(event) => {
+                if (event.button === 0) {
+                  event.preventDefault();
+                }
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  onAddTab?.();
+                }
+              }}
+              onClick={onAddTab}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                openAddMenu();
+              }}
+              onFocus={() => {
+                scheduleAddMenuOpen();
+              }}
+              onBlur={(event) => {
+                if (isAddMenuFocusTarget(event.relatedTarget)) {
+                  return;
+                }
+
+                if (isAddMenuOpen) {
+                  closeAddMenu();
+                  return;
+                }
+
+                clearAddMenuOpenTimer();
+              }}
+              onPointerEnter={() => {
+                isPointerInsideAddMenuTriggerRef.current = true;
+                scheduleAddMenuOpen();
+              }}
+              onPointerLeave={() => {
+                isPointerInsideAddMenuTriggerRef.current = false;
+                scheduleAddMenuCloseWhenPointerLeaves();
+              }}
+            >
+              <PlusIcon className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            ref={addMenuContentRef}
+            id={addMenuContentId}
+            side="bottom"
+            align="center"
+            sideOffset={6}
+            className="w-[220px]"
+            onPointerEnter={() => {
+              isPointerInsideAddMenuContentRef.current = true;
+              clearAddMenuCloseTimer();
+            }}
+            onPointerLeave={() => {
+              isPointerInsideAddMenuContentRef.current = false;
+              scheduleAddMenuCloseWhenPointerLeaves();
+            }}
+            onCloseAutoFocus={(event) => {
+              if (!addMenuTriggerRef.current?.contains(document.activeElement)) {
+                event.preventDefault();
+              }
+            }}
+          >
+            <DropdownMenuItem
+              icon={Command}
+              onSelect={() => selectAddMenuAction(onOpenCommandPalette)}
+            >
+              {t('tabs.addMenu.commandPalette')}
+              <DropdownMenuShortcut>{commandPaletteShortcutLabel}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              icon={Server}
+              onSelect={() => selectAddMenuAction(onAddServerTab ?? onAddTab)}
+            >
+              {t('tabs.addMenu.server')}
+              <DropdownMenuShortcut>{newServerTabShortcutLabel}</DropdownMenuShortcut>
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={KeyRound}
+              onSelect={() => selectAddMenuAction(onAddKeychainTab)}
+            >
+              {t('tabs.addMenu.keychain')}
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              icon={CornerUpRight}
+              onSelect={() => selectAddMenuAction(onAddPortForwardTab)}
+            >
+              {t('tabs.addMenu.portForwarding')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </RadixTabs.Root>
   );

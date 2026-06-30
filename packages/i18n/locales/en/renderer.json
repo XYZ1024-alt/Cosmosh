@@ -1396,6 +1396,12 @@
     "visibilityShared": "Shared"
   },
   "tabs": {
+    "addMenu": {
+      "commandPalette": "Command Palette",
+      "keychain": "Keychains",
+      "portForwarding": "Port Forwarding",
+      "server": "Servers"
+    },
     "closeCurrent": "Close Current Tab",
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Right Tabs",

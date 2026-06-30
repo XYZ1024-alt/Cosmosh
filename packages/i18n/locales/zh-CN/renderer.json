@@ -1396,6 +1396,12 @@
     "visibilityShared": "公用"
   },
   "tabs": {
+    "addMenu": {
+      "commandPalette": "命令面板",
+      "keychain": "钥匙链",
+      "portForwarding": "端口转发",
+      "server": "服务器"
+    },
     "closeCurrent": "关闭当前标签页",
     "closeOthers": "关闭其他标签页",
     "closeRight": "关闭右侧标签页",

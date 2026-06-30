@@ -2,7 +2,7 @@ import classNames from 'classnames';
 import { X } from 'lucide-react';
 import React from 'react';
 
-import AppCommandPaletteHost from './components/AppCommandPaletteHost';
+import AppCommandPaletteHost, { type AppCommandPaletteHostHandle } from './components/AppCommandPaletteHost';
 import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
 import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
@@ -247,6 +247,9 @@ const App: React.FC = () => {
     return readEnableHeapSnapshotPreference();
   });
   const [tabSwitcherOpenSignal, setTabSwitcherOpenSignal] = React.useState<number>(0);
+  const commandPaletteHostRef = React.useRef<AppCommandPaletteHostHandle | null>(null);
+  const lastRendererNewTabShortcutAtRef = React.useRef<number>(0);
+  const lastAppMenuNewTabAtRef = React.useRef<number>(0);
 
   const handleShowSystemMonitorOverlayChange = React.useCallback((nextVisible: boolean): void => {
     setShowSystemMonitorOverlay(nextVisible);
@@ -306,6 +309,40 @@ const App: React.FC = () => {
     requestOpenLocalTerminalList();
     addTab('home');
   }, [addTab]);
+
+  const handleAddServerTab = React.useCallback((): void => {
+    addTab('home', {
+      state: {
+        home: {
+          initialMode: 'ssh',
+        },
+      },
+    });
+  }, [addTab]);
+
+  const handleAddKeychainTab = React.useCallback((): void => {
+    addTab('home', {
+      state: {
+        home: {
+          initialMode: 'keychains',
+        },
+      },
+    });
+  }, [addTab]);
+
+  const handleAddPortForwardTab = React.useCallback((): void => {
+    addTab('home', {
+      state: {
+        home: {
+          initialMode: 'portForwarding',
+        },
+      },
+    });
+  }, [addTab]);
+
+  const handleOpenCommandPalette = React.useCallback((): void => {
+    commandPaletteHostRef.current?.open();
+  }, []);
 
   const handleOpenDefaultLocalTerminal = React.useCallback(async () => {
     try {
@@ -429,7 +466,13 @@ const App: React.FC = () => {
           break;
         }
         case 'new-tab': {
-          addTab('home');
+          const now = Date.now();
+          lastAppMenuNewTabAtRef.current = now;
+          if (now - lastRendererNewTabShortcutAtRef.current < 150) {
+            break;
+          }
+
+          handleAddServerTab();
           break;
         }
         case 'close-current-tab': {
@@ -453,7 +496,51 @@ const App: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, [activeTabId, addTab, closeRightTabs, closeTab]);
+  }, [activeTabId, addTab, closeRightTabs, closeTab, handleAddServerTab]);
+
+  React.useEffect(() => {
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) {
+        return false;
+      }
+
+      return (
+        target.isContentEditable ||
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement
+      );
+    };
+
+    const handleNewTabShortcut = (event: KeyboardEvent): void => {
+      if (event.defaultPrevented || event.repeat || isEditableTarget(event.target)) {
+        return;
+      }
+
+      const isNewTabShortcut =
+        window.electron?.platform === 'darwin'
+          ? event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey
+          : event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+      if (!isNewTabShortcut || event.key.toLowerCase() !== 't') {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const now = Date.now();
+      lastRendererNewTabShortcutAtRef.current = now;
+      if (now - lastAppMenuNewTabAtRef.current < 150) {
+        return;
+      }
+
+      handleAddServerTab();
+    };
+
+    window.addEventListener('keydown', handleNewTabShortcut, true);
+    return () => {
+      window.removeEventListener('keydown', handleNewTabShortcut, true);
+    };
+  }, [handleAddServerTab]);
 
   const tabContent = React.useMemo(() => {
     return (
@@ -765,8 +852,12 @@ const App: React.FC = () => {
             tabs={tabs}
             activeTab={activeTabId}
             onActiveTabChange={setActiveTabId}
-            onAddTab={() => addTab('home')}
+            onAddTab={handleAddServerTab}
             onAddTabToRight={(tabId) => addTab('home', undefined, { insertAfterTabId: tabId })}
+            onOpenCommandPalette={handleOpenCommandPalette}
+            onAddServerTab={handleAddServerTab}
+            onAddKeychainTab={handleAddKeychainTab}
+            onAddPortForwardTab={handleAddPortForwardTab}
             onCloseTab={closeTab}
             onCloseRightTabs={closeRightTabs}
             onCloseOtherTabs={closeOtherTabs}
@@ -787,6 +878,7 @@ const App: React.FC = () => {
         {tabContent}
 
         <AppCommandPaletteHost
+          ref={commandPaletteHostRef}
           activeTabId={activeTabId}
           tabs={tabs}
           addTab={addTab}

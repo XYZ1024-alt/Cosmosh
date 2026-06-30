@@ -68,6 +68,10 @@ type AppCommandPaletteHostProps = Omit<
   | 'notifyWarning'
 >;
 
+export type AppCommandPaletteHostHandle = {
+  open: () => void;
+};
+
 type BilingualCommandLabel = {
   primary: string;
   english: string;
@@ -770,212 +774,226 @@ const hasSupportedShortcutModifier = (event: KeyboardEvent, isMacPlatform: boole
  * @param props Command context from App runtime.
  * @returns Command palette overlay element.
  */
-const AppCommandPaletteHost: React.FC<AppCommandPaletteHostProps> = ({
-  activeTabId,
-  tabs,
-  addTab,
-  closeTab,
-  closeRightTabs,
-  setActiveTabId,
-  showSystemMonitorOverlay,
-  onShowSystemMonitorOverlayChange,
-  enableMainHeapSnapshotExport,
-  onEnableMainHeapSnapshotExportChange,
-}) => {
-  const { success: notifySuccess, warning: notifyWarning } = useToast();
-  const showFullServerAddress = useSettingsValue('showFullServerAddress');
-  const devToolsEnabled = useSettingsValue('devToolsEnabled');
-  const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
-  const isDevBuild = import.meta.env.DEV;
-  const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
-  const [isOpen, setIsOpen] = React.useState<boolean>(false);
-  const [query, setQuery] = React.useState<string>('');
-  const [locale, setLocale] = React.useState<string>(() => getLocale());
-  const [resources, setResources] = React.useState<AppCommandPaletteResourceSnapshot>(() => ({
-    servers: [],
-    portForwardRules: [],
-  }));
+const AppCommandPaletteHost = React.forwardRef<AppCommandPaletteHostHandle, AppCommandPaletteHostProps>(
+  (
+    {
+      activeTabId,
+      tabs,
+      addTab,
+      closeTab,
+      closeRightTabs,
+      setActiveTabId,
+      showSystemMonitorOverlay,
+      onShowSystemMonitorOverlayChange,
+      enableMainHeapSnapshotExport,
+      onEnableMainHeapSnapshotExportChange,
+    },
+    ref,
+  ) => {
+    const { success: notifySuccess, warning: notifyWarning } = useToast();
+    const showFullServerAddress = useSettingsValue('showFullServerAddress');
+    const devToolsEnabled = useSettingsValue('devToolsEnabled');
+    const userMenuDebugEntryEnabled = useSettingsValue('userMenuDebugEntryEnabled');
+    const isDevBuild = import.meta.env.DEV;
+    const isMacPlatform = React.useMemo(() => window.electron?.platform === 'darwin', []);
+    const [isOpen, setIsOpen] = React.useState<boolean>(false);
+    const [query, setQuery] = React.useState<string>('');
+    const [locale, setLocale] = React.useState<string>(() => getLocale());
+    const [resources, setResources] = React.useState<AppCommandPaletteResourceSnapshot>(() => ({
+      servers: [],
+      portForwardRules: [],
+    }));
 
-  React.useEffect(() => {
-    return onLocaleChange((nextLocale) => {
-      setLocale(nextLocale);
-    });
-  }, []);
+    React.useEffect(() => {
+      return onLocaleChange((nextLocale) => {
+        setLocale(nextLocale);
+      });
+    }, []);
 
-  React.useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    let isCurrent = true;
-
-    void (async () => {
-      try {
-        const [serversResponse, portForwardRulesResponse] = await Promise.all([
-          listSshServers(),
-          listPortForwardRules(),
-        ]);
-
-        if (!isCurrent) {
-          return;
-        }
-
-        setResources({
-          servers: serversResponse.data.items,
-          portForwardRules: portForwardRulesResponse.data.items,
-        });
-      } catch (error: unknown) {
-        if (!isCurrent) {
-          return;
-        }
-
-        notifyWarning(error instanceof Error ? error.message : t('commandPalette.feedback.resourceLoadFailed'));
+    React.useEffect(() => {
+      if (!isOpen) {
+        return;
       }
-    })();
 
-    return () => {
-      isCurrent = false;
-    };
-  }, [isOpen, notifyWarning]);
+      let isCurrent = true;
 
-  const closeCommandPalette = React.useCallback((): void => {
-    setIsOpen(false);
-    setQuery('');
-  }, []);
+      void (async () => {
+        try {
+          const [serversResponse, portForwardRulesResponse] = await Promise.all([
+            listSshServers(),
+            listPortForwardRules(),
+          ]);
 
-  const openCommandPalette = React.useCallback((): void => {
-    setQuery('');
-    setIsOpen(true);
-  }, []);
+          if (!isCurrent) {
+            return;
+          }
 
-  const commandPaletteContext = React.useMemo<AppCommandPaletteContext>(
-    () => ({
-      locale,
-      activeTabId,
-      tabs,
-      resources,
-      showFullServerAddress,
-      addTab,
-      closeTab,
-      closeRightTabs,
-      setActiveTabId,
-      showSystemMonitorOverlay,
-      onShowSystemMonitorOverlayChange,
-      enableMainHeapSnapshotExport,
-      onEnableMainHeapSnapshotExportChange,
-      isDevBuild,
-      devToolsEnabled,
-      userMenuDebugEntryEnabled,
-      notifySuccess,
-      notifyWarning,
-    }),
-    [
-      activeTabId,
-      addTab,
-      closeRightTabs,
-      closeTab,
-      devToolsEnabled,
-      enableMainHeapSnapshotExport,
-      isDevBuild,
-      locale,
-      notifySuccess,
-      resources,
-      notifyWarning,
-      onEnableMainHeapSnapshotExportChange,
-      onShowSystemMonitorOverlayChange,
-      setActiveTabId,
-      showFullServerAddress,
-      showSystemMonitorOverlay,
-      tabs,
-      userMenuDebugEntryEnabled,
-    ],
-  );
+          setResources({
+            servers: serversResponse.data.items,
+            portForwardRules: portForwardRulesResponse.data.items,
+          });
+        } catch (error: unknown) {
+          if (!isCurrent) {
+            return;
+          }
 
-  const commandPaletteProviders = React.useMemo<ReadonlyArray<CommandPaletteProvider<AppCommandPaletteContext>>>(
-    () => [
-      createTabsCommandPaletteProvider(),
-      createSettingsCommandPaletteProvider(),
-      createSshResourceCommandPaletteProvider(),
-      createSftpResourceCommandPaletteProvider(),
-      createForwardResourceCommandPaletteProvider(),
-      createDeveloperCommandPaletteProvider(),
-    ],
-    [],
-  );
+          notifyWarning(error instanceof Error ? error.message : t('commandPalette.feedback.resourceLoadFailed'));
+        }
+      })();
 
-  const commandPaletteCommands = React.useMemo(() => {
-    return collectCommandPaletteCommands(commandPaletteProviders, commandPaletteContext);
-  }, [commandPaletteContext, commandPaletteProviders]);
-
-  const filteredCommandPaletteCommands = React.useMemo(() => {
-    return filterCommandPaletteCommands(commandPaletteCommands, query);
-  }, [commandPaletteCommands, query]);
-
-  const commandPaletteItems = React.useMemo<CommandPaletteItem[]>(() => {
-    return filteredCommandPaletteCommands.map((command) => {
-      const scopeLabel = resolveCommandPaletteScopeLabel(command.domainId, locale);
-
-      return {
-        key: command.key,
-        title: scopeLabel ? formatScopedCommandTitle(scopeLabel.primary, command.title) : command.title,
-        subtitle:
-          scopeLabel && command.subtitle
-            ? formatScopedCommandTitle(scopeLabel.english, command.subtitle)
-            : command.subtitle,
-        icon: command.icon,
-        onSelect: () => {
-          executeCommandPaletteCommand(command);
-          closeCommandPalette();
-        },
+      return () => {
+        isCurrent = false;
       };
-    });
-  }, [closeCommandPalette, filteredCommandPaletteCommands, locale]);
+    }, [isOpen, notifyWarning]);
 
-  React.useEffect(() => {
-    const handleGlobalCommandPaletteShortcut = (event: KeyboardEvent): void => {
-      if (event.repeat) {
-        return;
-      }
+    const closeCommandPalette = React.useCallback((): void => {
+      setIsOpen(false);
+      setQuery('');
+    }, []);
 
-      if (event.altKey || !event.shiftKey || event.key.toLowerCase() !== 'p') {
-        return;
-      }
+    const openCommandPalette = React.useCallback((): void => {
+      setQuery('');
+      setIsOpen(true);
+    }, []);
 
-      if (!hasSupportedShortcutModifier(event, isMacPlatform)) {
-        return;
-      }
+    React.useImperativeHandle(
+      ref,
+      () => ({
+        open: openCommandPalette,
+      }),
+      [openCommandPalette],
+    );
 
-      event.preventDefault();
-      event.stopPropagation();
-      openCommandPalette();
-    };
+    const commandPaletteContext = React.useMemo<AppCommandPaletteContext>(
+      () => ({
+        locale,
+        activeTabId,
+        tabs,
+        resources,
+        showFullServerAddress,
+        addTab,
+        closeTab,
+        closeRightTabs,
+        setActiveTabId,
+        showSystemMonitorOverlay,
+        onShowSystemMonitorOverlayChange,
+        enableMainHeapSnapshotExport,
+        onEnableMainHeapSnapshotExportChange,
+        isDevBuild,
+        devToolsEnabled,
+        userMenuDebugEntryEnabled,
+        notifySuccess,
+        notifyWarning,
+      }),
+      [
+        activeTabId,
+        addTab,
+        closeRightTabs,
+        closeTab,
+        devToolsEnabled,
+        enableMainHeapSnapshotExport,
+        isDevBuild,
+        locale,
+        notifySuccess,
+        resources,
+        notifyWarning,
+        onEnableMainHeapSnapshotExportChange,
+        onShowSystemMonitorOverlayChange,
+        setActiveTabId,
+        showFullServerAddress,
+        showSystemMonitorOverlay,
+        tabs,
+        userMenuDebugEntryEnabled,
+      ],
+    );
 
-    window.addEventListener('keydown', handleGlobalCommandPaletteShortcut, true);
+    const commandPaletteProviders = React.useMemo<ReadonlyArray<CommandPaletteProvider<AppCommandPaletteContext>>>(
+      () => [
+        createTabsCommandPaletteProvider(),
+        createSettingsCommandPaletteProvider(),
+        createSshResourceCommandPaletteProvider(),
+        createSftpResourceCommandPaletteProvider(),
+        createForwardResourceCommandPaletteProvider(),
+        createDeveloperCommandPaletteProvider(),
+      ],
+      [],
+    );
 
-    return () => {
-      window.removeEventListener('keydown', handleGlobalCommandPaletteShortcut, true);
-    };
-  }, [isMacPlatform, openCommandPalette]);
+    const commandPaletteCommands = React.useMemo(() => {
+      return collectCommandPaletteCommands(commandPaletteProviders, commandPaletteContext);
+    }, [commandPaletteContext, commandPaletteProviders]);
 
-  return (
-    <CommandPalette
-      closeOnEsc
-      open={isOpen}
-      query={query}
-      placeholder={t('commandPalette.placeholder')}
-      emptyText={t('commandPalette.empty')}
-      items={commandPaletteItems}
-      onOpenChange={(open) => {
-        if (!open) {
-          closeCommandPalette();
+    const filteredCommandPaletteCommands = React.useMemo(() => {
+      return filterCommandPaletteCommands(commandPaletteCommands, query);
+    }, [commandPaletteCommands, query]);
+
+    const commandPaletteItems = React.useMemo<CommandPaletteItem[]>(() => {
+      return filteredCommandPaletteCommands.map((command) => {
+        const scopeLabel = resolveCommandPaletteScopeLabel(command.domainId, locale);
+
+        return {
+          key: command.key,
+          title: scopeLabel ? formatScopedCommandTitle(scopeLabel.primary, command.title) : command.title,
+          subtitle:
+            scopeLabel && command.subtitle
+              ? formatScopedCommandTitle(scopeLabel.english, command.subtitle)
+              : command.subtitle,
+          icon: command.icon,
+          onSelect: () => {
+            executeCommandPaletteCommand(command);
+            closeCommandPalette();
+          },
+        };
+      });
+    }, [closeCommandPalette, filteredCommandPaletteCommands, locale]);
+
+    React.useEffect(() => {
+      const handleGlobalCommandPaletteShortcut = (event: KeyboardEvent): void => {
+        if (event.repeat) {
           return;
         }
 
-        setIsOpen(true);
-      }}
-      onQueryChange={setQuery}
-    />
-  );
-};
+        if (event.altKey || !event.shiftKey || event.key.toLowerCase() !== 'p') {
+          return;
+        }
+
+        if (!hasSupportedShortcutModifier(event, isMacPlatform)) {
+          return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        openCommandPalette();
+      };
+
+      window.addEventListener('keydown', handleGlobalCommandPaletteShortcut, true);
+
+      return () => {
+        window.removeEventListener('keydown', handleGlobalCommandPaletteShortcut, true);
+      };
+    }, [isMacPlatform, openCommandPalette]);
+
+    return (
+      <CommandPalette
+        closeOnEsc
+        open={isOpen}
+        query={query}
+        placeholder={t('commandPalette.placeholder')}
+        emptyText={t('commandPalette.empty')}
+        items={commandPaletteItems}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeCommandPalette();
+            return;
+          }
+
+          setIsOpen(true);
+        }}
+        onQueryChange={setQuery}
+      />
+    );
+  },
+);
+AppCommandPaletteHost.displayName = 'AppCommandPaletteHost';
 
 export default AppCommandPaletteHost;

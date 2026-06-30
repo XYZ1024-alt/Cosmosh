@@ -89,6 +89,8 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Runtime-heavy pages (for example SSH/xterm sessions) must preserve in-memory session state when tab order changes.
 - Reorder state updates should be id-based and must preserve the latest tab objects from state instead of writing stale drag snapshots back.
 - Global tab creation entry points, including the tab-strip plus button, Header user menu, app menu, and command palette, append new tabs to the end of the strip.
+- The tab-strip plus button keeps single-click creation as the fastest path, while hover or keyboard focus held for 500 ms and right-click open its add menu below the button.
+- The plus-button add menu must expose Command Palette, Servers, Keychains, and Port Forwarding using the shared menu wrapper; arrow keys navigate items, `Esc` closes the menu, and moving the pointer away from the button/menu closes it.
 - Contextual tab creation from inside an existing tab must pass an explicit anchor id and insert the new tab immediately to the right of that source tab.
 - The tab context menu exposes `New Tab to the Right` as the explicit user-facing affordance for anchored tab creation.
 
