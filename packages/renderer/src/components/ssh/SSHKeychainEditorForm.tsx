@@ -1,5 +1,6 @@
 import type { components } from '@cosmosh/api-contract';
 import classNames from 'classnames';
+import { FolderPlus } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
@@ -13,6 +14,7 @@ import { PasswordField } from '../ui/password-field';
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '../ui/select';
 import { TagInput } from '../ui/tag-input';
 import { Textarea } from '../ui/textarea';
+import SSHFolderSelectItem from './SSHFolderSelectItem';
 
 type SshFolder = components['schemas']['SshFolder'];
 type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
@@ -214,15 +216,18 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
                 <SelectContent>
                   <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('sshKeychain.noFolder')}</SelectItem>
                   {folders.map((folder) => (
-                    <SelectItem
+                    <SSHFolderSelectItem
                       key={folder.id}
-                      value={folder.id}
-                    >
-                      {folder.name}
-                    </SelectItem>
+                      folder={folder}
+                    />
                   ))}
                   <SelectSeparator />
-                  <SelectItem value={CREATE_FOLDER_SELECT_VALUE}>{t('sshKeychain.createFolderAction')}</SelectItem>
+                  <SelectItem
+                    value={CREATE_FOLDER_SELECT_VALUE}
+                    icon={FolderPlus}
+                  >
+                    {t('sshKeychain.createFolderAction')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </FormControl>

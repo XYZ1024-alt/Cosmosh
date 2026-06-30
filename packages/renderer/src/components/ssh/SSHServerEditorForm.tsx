@@ -7,7 +7,7 @@ import {
   type TerminalClipboardAccess,
 } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { Edit, Folder, FolderPlus, Save } from 'lucide-react';
+import { Edit, FolderPlus, Save } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Switch } from '../ui/switch';
 import { TagInput } from '../ui/tag-input';
 import { Textarea } from '../ui/textarea';
+import SSHFolderSelectItem from './SSHFolderSelectItem';
 
 type SshAuthType = components['schemas']['SshAuthType'];
 type SshFolder = components['schemas']['SshFolder'];
@@ -509,13 +510,10 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
                 <SelectContent>
                   <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('ssh.noFolder')}</SelectItem>
                   {folders.map((folder) => (
-                    <SelectItem
+                    <SSHFolderSelectItem
                       key={folder.id}
-                      value={folder.id}
-                      icon={Folder}
-                    >
-                      {folder.name}
-                    </SelectItem>
+                      folder={folder}
+                    />
                   ))}
                   <SelectSeparator />
                   <SelectItem
