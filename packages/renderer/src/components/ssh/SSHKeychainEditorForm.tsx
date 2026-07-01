@@ -10,6 +10,7 @@ import EntityIcon from '../home/EntityIcon';
 import EntityVisualPicker from '../home/EntityVisualPicker';
 import { Form, FormControl, FormField, FormLabel, FormMessage } from '../ui/form';
 import { Input } from '../ui/input';
+import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import { PasswordField } from '../ui/password-field';
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '../ui/select';
 import { TagInput } from '../ui/tag-input';
@@ -29,6 +30,7 @@ type SSHKeychainEditorFormProps = {
   requiresPrivateKey: boolean;
   folders: SshFolder[];
   tags: SshTag[];
+  privateKeyContextMenuItems: InputContextMenuItem[];
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCreateFolder: (options?: { selectOnCreate?: boolean }) => void;
   onCreateTag: (name: string) => Promise<SshTag | null>;
@@ -53,6 +55,7 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
   requiresPrivateKey,
   folders,
   tags,
+  privateKeyContextMenuItems,
   onSubmit,
   onCreateFolder,
   onCreateTag,
@@ -171,11 +174,17 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
                   rows={6}
                   value={formState.privateKey}
                   placeholder={
-                    activeKeychain?.hasPrivateKey ? t('ssh.privateKeySavedPlaceholder') : t('ssh.privateKeyPlaceholder')
+                    activeKeychain?.hasPrivateKey
+                      ? t('ssh.privateKeySavedPlaceholder')
+                      : t('ssh.privateKeyImportPlaceholder')
                   }
+                  contextMenuItems={privateKeyContextMenuItems}
                   onChange={(event) => onChangeForm('privateKey', event.target.value)}
                 />
               </FormControl>
+              <FormMessage>
+                {formState.privateKey.length > 0 && formState.privateKey.length < 32 ? t('ssh.privateKeyTooShort') : ''}
+              </FormMessage>
             </FormField>
 
             <FormField>

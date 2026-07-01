@@ -354,7 +354,7 @@ contextBridge.exposeInMainWorld('electron', {
     return invokeIpc<{ canceled: boolean; filePath?: string }>('app:show-save-file-dialog', defaultPath);
   },
   importPrivateKeyFromFile: () => {
-    return invokeIpc<{ canceled: boolean; content?: string }>('app:import-private-key');
+    return invokeIpc<{ canceled: boolean; fileName?: string; content?: string }>('app:import-private-key');
   },
   getProcessPerformanceStats: () => {
     return invokeIpc<{

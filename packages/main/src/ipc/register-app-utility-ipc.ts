@@ -13,6 +13,7 @@ import type {
   SftpUploadLocalFile,
   SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
+import type { TranslationParams } from '@cosmosh/i18n';
 import {
   app,
   BrowserWindow,
@@ -164,6 +165,8 @@ export type RegisterAppUtilityIpcHandlersOptions = {
   getMainWindow: () => BrowserWindow | null;
   /** Returns active locale used by main process. */
   getLocale: () => string;
+  /** Translates main-process UI text using the active locale. */
+  translateMain: (key: string, params?: TranslationParams) => string;
   /**
    * Applies locale update and returns normalized locale.
    * Implementation is responsible for side effects such as updating window title.
@@ -1093,44 +1096,48 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
     },
   );
 
-  ipcMain.handle('app:import-private-key', async (): Promise<{ canceled: boolean; content?: string }> => {
-    const targetWindow = resolveTargetWindow(options);
+  ipcMain.handle(
+    'app:import-private-key',
+    async (): Promise<{ canceled: boolean; fileName?: string; content?: string }> => {
+      const targetWindow = resolveTargetWindow(options);
 
-    const dialogOptions: OpenDialogOptions = {
-      title: 'Import Private Key',
-      buttonLabel: 'Import',
-      properties: ['openFile'],
-      filters: [
-        {
-          name: 'Private Key Files',
-          extensions: ['pem', 'key', 'ppk', 'txt'],
-        },
-        {
-          name: 'All Files',
-          extensions: ['*'],
-        },
-      ],
-    };
+      const dialogOptions: OpenDialogOptions = {
+        title: options.translateMain('dialog.importPrivateKey.title'),
+        buttonLabel: options.translateMain('dialog.importPrivateKey.buttonLabel'),
+        properties: ['openFile'],
+        filters: [
+          {
+            name: options.translateMain('dialog.importPrivateKey.privateKeyFilesFilter'),
+            extensions: ['pem', 'key', 'ppk', 'txt'],
+          },
+          {
+            name: options.translateMain('dialog.importPrivateKey.allFilesFilter'),
+            extensions: ['*'],
+          },
+        ],
+      };
 
-    try {
-      const selection = targetWindow
-        ? await dialog.showOpenDialog(targetWindow, dialogOptions)
-        : await dialog.showOpenDialog(dialogOptions);
+      try {
+        const selection = targetWindow
+          ? await dialog.showOpenDialog(targetWindow, dialogOptions)
+          : await dialog.showOpenDialog(dialogOptions);
 
-      if (selection.canceled || selection.filePaths.length === 0) {
+        if (selection.canceled || selection.filePaths.length === 0) {
+          return { canceled: true };
+        }
+
+        const selectedPath = selection.filePaths[0];
+        const content = await fs.readFile(selectedPath, 'utf8');
+        return {
+          canceled: false,
+          fileName: path.basename(selectedPath),
+          content,
+        };
+      } catch {
         return { canceled: true };
       }
-
-      const selectedPath = selection.filePaths[0];
-      const content = await fs.readFile(selectedPath, 'utf8');
-      return {
-        canceled: false,
-        content,
-      };
-    } catch {
-      return { canceled: true };
-    }
-  });
+    },
+  );
 
   ipcMain.handle('app:get-process-performance-stats', async (): Promise<ProcessPerformanceStatsPayload> => {
     return collectProcessPerformanceStats(

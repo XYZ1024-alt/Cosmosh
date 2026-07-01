@@ -5,10 +5,10 @@ import React from 'react';
 import { listSshKeychains, listSshTags } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { mergeKeychainListItems, upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
+import { createPrivateKeyImportContextMenuItems, importPrivateKeyFromFile } from '../../lib/ssh-private-key-import';
 import {
   buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
-  importServerEditorPrivateKeyFromFile,
   saveServerFromEditor,
 } from '../../lib/ssh-server-editor-actions';
 import {
@@ -285,30 +285,26 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     [notifyError, tags],
   );
 
-  const importPrivateKeyFromFile = React.useCallback(async () => {
-    await importServerEditorPrivateKeyFromFile({
-      onPrivateKeyImported: (privateKey) => {
-        onChangeForm('privateKey', privateKey);
-      },
+  const importServerPrivateKeyFromFile = React.useCallback(async () => {
+    const importedKey = await importPrivateKeyFromFile({
       onSuccess: notifySuccess,
       onError: notifyError,
       importSuccessMessage: t('ssh.privateKeyImportSuccess'),
       importFailedMessage: t('ssh.privateKeyImportFailed'),
     });
+
+    if (importedKey) {
+      onChangeForm('privateKey', importedKey.content);
+    }
   }, [notifyError, notifySuccess, onChangeForm]);
 
   const privateKeyContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
-    return [
-      {
-        key: 'import-private-key',
-        label: t('ssh.privateKeyImportAction'),
-        icon: FileUp,
-        onSelect: () => {
-          void importPrivateKeyFromFile();
-        },
-      },
-    ];
-  }, [importPrivateKeyFromFile]);
+    return createPrivateKeyImportContextMenuItems({
+      icon: FileUp,
+      label: t('ssh.privateKeyImportAction'),
+      onImport: importServerPrivateKeyFromFile,
+    });
+  }, [importServerPrivateKeyFromFile]);
 
   const openSelectedKeychainEditor = React.useCallback(() => {
     if (!formState.keychainId) {

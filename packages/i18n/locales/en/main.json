@@ -2,6 +2,14 @@
   "app": {
     "title": "Cosmosh"
   },
+  "dialog": {
+    "importPrivateKey": {
+      "allFilesFilter": "All Files",
+      "buttonLabel": "Import",
+      "privateKeyFilesFilter": "Private Key Files",
+      "title": "Import Private Key"
+    }
+  },
   "installer": {
     "shortcutPage": {
       "desktop": "Create a &Desktop shortcut",

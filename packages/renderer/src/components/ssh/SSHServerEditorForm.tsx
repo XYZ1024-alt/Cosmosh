@@ -334,7 +334,9 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
                   id="ssh-editor-private-key"
                   value={formState.privateKey}
                   placeholder={
-                    activeServer?.hasPrivateKey ? t('ssh.privateKeySavedPlaceholder') : t('ssh.privateKeyPlaceholder')
+                    activeServer?.hasPrivateKey
+                      ? t('ssh.privateKeySavedPlaceholder')
+                      : t('ssh.privateKeyImportPlaceholder')
                   }
                   rows={5}
                   contextMenuItems={privateKeyContextMenuItems}

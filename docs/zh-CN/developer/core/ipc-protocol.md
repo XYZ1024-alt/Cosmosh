@@ -44,7 +44,7 @@ flowchart TB
 | `app:open-external-url` | `invoke` | `targetUrl: string` | `Promise<boolean>` | 使用系统默认浏览器打开受信任的 HTTP(S) 链接 |
 | `app:set-windows-system-menu-symbol-color` | `invoke` | `symbolColor: string` | `Promise<boolean>` | 将 token 驱动的 Windows 标题栏系统菜单符号色应用到当前主窗口 overlay |
 | `app:show-save-file-dialog` | `invoke` | `defaultPath?: string` | `Promise<{ canceled: boolean; filePath?: string }>` | 打开原生保存对话框，并为发起请求的 renderer 授权所选路径执行一次 SFTP 下载 |
-| `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; content?: string }>` | 调起系统文件选择器并在选择后返回 UTF-8 私钥内容 |
+| `app:import-private-key` | `invoke` | none | `Promise<{ canceled: boolean; fileName?: string; content?: string }>` | 调起系统文件选择器并在选择后返回文件名与 UTF-8 私钥内容 |
 | `app:get-process-performance-stats` | `invoke` | none | `Promise<{ sampledAt: number; cpuPercent: number \| null; mainProcessMemory: { rssBytes: number; heapTotalBytes: number; heapUsedBytes: number; externalBytes: number; arrayBuffersBytes: number }; rendererProcessMemory: { residentSetBytes: number; privateBytes: number; sharedBytes: number } \| null; backendProcess: { pid: number; cpuPercent: number \| null; memoryRssBytes: number \| null } \| null }>` | 为调试浮层采样主进程 CPU/内存，基于当前活动窗口获取渲染进程内存，并补充 backend 子进程 CPU/RSS 内存数据 |
 | `app:export-main-heap-snapshot` | `invoke` | none | `Promise<{ ok: boolean; filePath?: string; message?: string }>` | 将主进程 V8 堆快照写入应用 user-data 下的 debug 快照目录 |
 | `debug:backend-request-trace-list` | `invoke` | none | `Promise<BackendRequestTrace[]>` | 返回已保留的脱敏 backend 请求镜像列表，并让该 renderer webContents 订阅后续 trace event；未启用请求追踪时返回空列表 |
