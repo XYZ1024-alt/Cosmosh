@@ -63,6 +63,7 @@ flowchart TB
   - `src/http/routes`：设置、SSH 实体、端口转发规则与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测），以及非 shell SSH 连接共享 helper。
+  - `src/remote-bootstrap`：面向活跃 SSH 会话的远端增强 bootstrap 编排。它负责加载部署 manifest、通过有界侧通道 `ssh2 exec` 探测远端平台、注入 shell wrapper、转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
   - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值、请求校验解析，以及供 HTTP 路由和运行时服务复用的 AppSettings 读取器。
@@ -91,11 +92,13 @@ main/backend/renderer 作用域共用的语言 JSON 源与运行时 i18n 包。
 
 ### `packages/remote-bootstrap`
 
-远端服务器 bootstrap 工具的 Go 源码。
+远端增强使用的用户级远端安装器 Go 源码。该 package 不负责打开 SSH 连接；backend 的 `RemoteBootstrapService` 决定何时运行它，以及如何转发状态。
 
-- `cmd/cosmosh-wrappergen`：为 `zsh`、`fish`、`ash`、`sh` 生成 shell 专属 bootstrap wrapper。
+- `README.md`：模块指南，覆盖目的、运行时归属、manifest 契约、安装路径、状态码、安全边界以及测试/构建命令。
+- `cmd/cosmosh-wrappergen`：为 `bash`、`zsh`、`fish`、`ash`、`sh` 生成 shell 专属 bootstrap wrapper。
 - `cmd/cosmosh-bootstrap`：将下载得到的 bootstrap binary 与薄 shell helper 安装到远端用户级目录。
-- `internal/wrapper` 与 `internal/install`：封装 wrapper 渲染和幂等用户级安装逻辑，并配套单元测试。
+- `internal/wrapper`：校验来自 manifest 的 wrapper 输入，并用 shell-safe quoting 渲染 POSIX/fish shell source。
+- `internal/install`：执行幂等用户级安装、shell profile hook 修复、version marker 写入，以及 line-delimited `bootstrap-status` 输出。
 
 ## 3. 功能落位规则
 
