@@ -423,6 +423,10 @@
         "description": "Controls clipboard requests from local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "remoteEnhancementsEnabled": {
+        "description": "Allows SSH sessions to install Cosmosh's remote helper for OS detection, SFTP enhancement, and command completion support when a manifest URL is configured.",
+        "title": "Remote Enhancements"
+      },
       "serverProxyMode": {
         "description": "Controls the default proxy policy for new SSH, SFTP, and port-forwarding connections. Individual servers can override this setting.",
         "title": "Server Proxy"
@@ -1200,6 +1204,19 @@
     "authTypeKey": "Private Key",
     "authTypePassword": "Password",
     "authTypePlaceholder": "Select auth type",
+    "bootstrapPhases": {
+      "download": "Download",
+      "install": "Install",
+      "manifest": "Manifest",
+      "probe": "Probe",
+      "verify": "Verify"
+    },
+    "bootstrapStates": {
+      "failed": "Failed",
+      "ok": "Ready",
+      "skipped": "Current",
+      "started": "Running"
+    },
     "columnAuth": "Auth",
     "columnFolder": "Folder",
     "columnHost": "Host",
@@ -1293,6 +1310,8 @@
     "proxyUrlHint": "Supports HTTP, HTTPS CONNECT, and SOCKS5 proxy URLs, including URL credentials.",
     "proxyUrlLabel": "Custom Proxy URL",
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
+    "remoteEnhancements": "Remote Enhancements",
+    "remoteEnhancementsTooltip": "When enabled, this server can run Cosmosh's remote helper installer after connection if the global Remote Enhancements setting and manifest URL are configured.",
     "removeTagLabel": "Remove {tagName}",
     "retry": "Retry",
     "saveChanges": "Save Changes",

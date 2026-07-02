@@ -40,12 +40,18 @@ sequenceDiagram
 - 步骤：
   1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
-  3. 使用服务器作用域的压缩协商配置，通过 `ssh2.Client.shell` 打开 SSH shell。
+  3. 使用服务器作用域的压缩协商配置，并携带 UTF-8 locale 请求，通过 `ssh2.Client.shell` 打开 SSH shell。
   4. 写入 `SshLoginAudit` 记录：
      - 会话创建成功时写入 `result = success`，并记录 `sessionId` 与 `sessionStartedAt`。
      - 主机信任/认证/连接失败时写入 `result = failed`，并记录 `failureReason`。
   5. 在内存中注册会话状态（`Map<sessionId, SshLiveSession>`）。
   6. 返回短期 attach token 与 WS 端点。
+
+Locale 行为：
+
+- SSH shell 创建时会通过 `ssh2` shell 环境选项请求 `LANG=C.UTF-8` 与 `LC_CTYPE=C.UTF-8`，让支持 UTF-8 的终端程序默认继承 Unicode 字符类型 locale。
+- 不设置 `LC_ALL`，以保留远端用户对时间、排序、数字格式等 locale 类别的偏好。
+- Cosmosh 不会向交互式 shell 输入流注入 locale 命令。如果 SSH 服务器的 `sshd_config` 未接受这些环境变量请求，服务器可能会忽略它们。
 
 ### 附加 WebSocket
 
@@ -99,6 +105,7 @@ sequenceDiagram
 - `telemetry`：CPU/内存/网络 + 命令历史快照。
 - `history`：仅历史快照推送，用于即时 UI 同步。
 - `completion-response`：当前命令 token 的排序补全候选。
+- `bootstrap-status`：backend 侧通道安装器返回的远端 bootstrap 探测、下载、安装与失败状态。
 - `pong`：ping 响应。
 - `error`：协议/运行时错误。
 - `exit`：会话关闭与原因。
@@ -323,7 +330,148 @@ flowchart LR
 4. 数据流方向是否完整（`input` 写入与 `output` 回放）。
 5. 会话释放路径是否正确（API close、传输关闭或 SSH 错误触发）。
 
-## 8. Windows 右键启动与本地终端工作目录
+## 8. 远端增强运行时
+
+远端增强是用于主机感知 SSH 能力的可选运行时层，例如 OS/发行版检测、未来 SFTP helper、命令快捷嗅探与补全支持。v1 只验证并维护远端 bootstrap 安装路径；后续能力应继续挂在相同 gate 之后，并复用同一用户级远端 helper 边界。
+
+### 8.1 归属与开关
+
+- `packages/backend/src/remote-bootstrap/service.ts` 负责运行时编排。它会获取 manifest、探测远端主机、注入 shell wrapper、解析 JSON-line 状态并写入审计事件。
+- `packages/remote-bootstrap` 负责 Go 安装器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
+- 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此在用户未关闭任一开关前，部署级启用条件由 manifest URL 控制。
+- 任一开关关闭时，backend 不会执行任何远端命令，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
+- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布 manifest。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
+
+开发环境下，在启动 Cosmosh 的同一个终端里设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，确保 backend 进程可以继承该环境变量。文档示例只保留占位符，真实 HTTPS manifest URL 只写在本地 shell 环境中：
+
+  ```powershell
+  $env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
+  pnpm dev:main
+  ```
+
+  ```sh
+  COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
+  ```
+
+### 8.2 会话流程
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer SSH Page
+  participant SSH as SshSessionService
+  participant BOOT as RemoteBootstrapService
+  participant REM as Remote SSH Host
+  participant REL as HTTPS Manifest/Asset Host
+
+  UI->>SSH: Attach /ws/ssh/{sessionId}
+  SSH-->>UI: ready + buffered terminal output
+  SSH->>BOOT: startRemoteBootstrap(session)
+  BOOT->>REL: Fetch manifest URL
+  BOOT->>REM: Probe uname, arch, and shell by bounded exec
+  BOOT->>REM: Run injected launcher/wrapper by bounded exec
+  REM->>REL: Download matching bootstrap binary
+  REM->>REM: Verify checksum and install user-scoped files
+  REM-->>BOOT: bootstrap-status JSON lines
+  BOOT-->>UI: bootstrap-status WS events
+```
+
+- Bootstrap 会在首次 WebSocket attach 后启动，并且每个 SSH session 只启动一次。
+- 侧通道使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
+- Renderer 会保存最新 `bootstrap-status`，保证消息流可观测，但 v1 不在 SSH 侧栏渲染专用的远端增强状态卡。该状态仅用于观测，不阻塞终端 I/O。
+- Terminal `ready`、`output`、telemetry、history 与 completion 消息都与 bootstrap 进度彼此独立。
+
+### 8.3 Manifest 与资产契约
+
+```json
+{
+  "version": "1.2.3",
+  "assets": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-amd64",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-arm64",
+      "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  ]
+}
+```
+
+- `version` 只能包含字母、数字、`.`、`_`、`+` 或 `-`。
+- `assets` 必须非空。
+- 每个 manifest asset 都必须包含 HTTPS `url` 与 64 位小写 `sha256`；任一 asset 格式错误都会让整个 manifest 无效，确保被污染的发布元数据明确失败。
+- v1 只为 Linux `amd64` 与 `arm64` 远端选择 asset。
+- 注入的 wrapper 会把所有 manifest 字段作为已引用的数据处理，永远不把它们当作可执行 shell source，然后使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
+- `cosmosh-wrappergen` 会在渲染 shell source 之前独立校验 asset URL 必须为 HTTPS，且 SHA-256 必须为小写 hex。
+
+### 8.4 远端要求与安装文件
+
+支持的远端主机：
+
+| 维度 | 支持值 |
+| --- | --- |
+| OS | `linux` |
+| 架构 | `amd64`、`arm64` |
+| Shell | `bash`、`zsh`、`fish`、`ash`、`sh` |
+
+远端需要具备的常见工具：
+
+- `mktemp`：创建临时 wrapper 与下载目录。
+- `base64`：解码 backend 注入的 wrapper payload。
+- `curl` 或 `wget`：下载 HTTPS asset。
+- `sha256sum` 或 `shasum`：校验下载文件。
+- probe 识别出的目标 shell。
+
+安装文件只落在远端用户作用域：
+
+| 用途 | 默认路径 |
+| --- | --- |
+| Bootstrap binary | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/cosmosh-bootstrap` 或 `~/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap` |
+| Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` 或 `~/.local/share/cosmosh/bootstrap/bin/.version` |
+| POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` 或 `~/.config/cosmosh/bootstrap/helper.sh` |
+| Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` 或 `~/.config/cosmosh/bootstrap/helper.fish` |
+| Bash hook | `~/.bashrc` 内的 Cosmosh marker block |
+| Zsh hook | `~/.zshrc` 内的 Cosmosh marker block |
+| Sh/Ash hook | `~/.profile` 内的 Cosmosh marker block |
+| Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` 或 `~/.config/fish/conf.d/cosmosh.fish` |
+
+安装器具备幂等性。当已安装 version、binary、helper 与 shell hook 均为最新时会发送 `skipped`。如果 version 与文件已存在但 profile hook 缺失，则会修复 hook 而不是跳过。Version marker 只会在文件安装与 profile 更新均成功后写入。
+
+### 8.5 安全与失败模型
+
+- Wrapper 文件与 bootstrap 工作目录通过 `mktemp` 在 `${TMPDIR:-/tmp}` 下创建，使用受限权限并在退出时清理。
+- 远端 wrapper 使用 `umask 077`；安装器目录/binary 使用 `0700`，helper/profile 写入在适用处使用 `0600`。
+- 缺少 `mktemp`、`base64`、下载器、hash 工具或目标 shell 时，会明确上报 `bootstrap-status` 失败，而不是静默降级。
+- Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh marker block 内更新内容。不要求 root，也不写全局路径。
+- Bootstrap 审计 metadata 只记录状态，不得包含 secret。SSH 凭据、私钥与终端输入都不属于该契约。
+
+常见状态码：
+
+| Code | 含义 |
+| --- | --- |
+| `REMOTE_ENHANCEMENTS_DISABLED` | 全局 Settings 或服务器级开关在执行任何远端命令前禁用了 bootstrap。 |
+| `MANIFEST_URL_NOT_CONFIGURED` | 远端增强已启用，但 backend 没有 manifest URL。 |
+| `MANIFEST_FETCH_FAILED` | Backend 无法获取 manifest URL。 |
+| `MANIFEST_INVALID` | Manifest 结构、asset URL 或 SHA-256 校验失败。 |
+| `ASSET_NOT_FOUND` | Manifest 中没有匹配 probe 到的 OS/架构的 asset。 |
+| `PROBE_FAILED` | 远端 OS、架构或 shell 不支持，或解析失败。 |
+| `BASE64_NOT_FOUND` | 远端无法解码注入的 wrapper payload。 |
+| `MKTEMP_NOT_FOUND` | 远端缺少 `mktemp`。 |
+| `DOWNLOADER_NOT_FOUND` | 远端既没有 `curl` 也没有 `wget`。 |
+| `HASH_TOOL_NOT_FOUND` | 远端既没有 `sha256sum` 也没有 `shasum`。 |
+| `CHECKSUM_MISMATCH` | 下载得到的 binary 与 manifest SHA-256 不匹配。 |
+| `FILE_INSTALL_FAILED` | 安装器无法创建或复制用户级文件。 |
+| `PROFILE_UPDATE_FAILED` | 安装器无法更新目标 shell profile hook。 |
+| `VERSION_WRITE_FAILED` | 安装器无法写入最终 version marker。 |
+
+排查 bootstrap 行为时，先确认是哪一层 gate 停止了执行，再检查 manifest 有效性、远端 probe 支持、远端工具可用性，最后检查用户 profile 写入权限。缺少 manifest URL 时不应出现任何远端 probe 命令。
+
+## 9. Windows 右键启动与本地终端工作目录
 
 - 安装器集成选项可在资源管理器右键菜单注册“在 Cosmosh 中打开终端”。
 - 安装器会写入 shell verb 元数据（`MUIVerb`、图标）以兼容资源管理器右键菜单解析路径。
@@ -338,7 +486,7 @@ flowchart LR
 - 若 Cosmosh 已在运行，`second-instance` 会通过 IPC 事件把启动上下文推送到渲染层。
 - `second-instance` 在解析上下文时会同时使用 CLI 参数与 Electron 提供的 `workingDirectory` 兜底，降低仅聚焦不触发新终端的情况。
 
-## 9. 钥匙链凭据运行时说明（2026-03）
+## 10. 钥匙链凭据运行时说明（2026-03）
 
 - SSH 连接阶段的认证材料统一从 `SshServer.keychainId` 解析。
 - 当前钥匙链认证类型仍为 `password`、`key`、`both`，运行时行为与旧版保持一致，并为后续扩展认证方式预留入口。
@@ -346,7 +494,7 @@ flowchart LR
 - 在下一次创建本地终端会话（`POST /api/v1/local-terminals/sessions`）时，Main 会透传一次 `cwd`。
 - Backend 会校验 `cwd`，若路径不可用则回退到 `os.homedir()`。
 
-## 9. macOS CLI 启动与本地终端工作目录
+## 11. macOS CLI 启动与本地终端工作目录
 
 - 在 macOS 打包版本中，Main 会准备用户级启动脚本：`~/Library/Application Support/Cosmosh/bin/cosmosh`。
 - 该脚本以 `--working-directory "$PWD"` 启动应用，因此会继承当前终端目录作为启动上下文。
@@ -354,7 +502,7 @@ flowchart LR
 - 若因权限限制无法创建符号链接，应用会继续启动并在日志给出提示，用户可手动将脚本目录加入 PATH 或自行创建符号链接。
 - 启动后上下文处理链路与 Windows 一致：Main 解析待消费 cwd，并在下一次本地终端会话创建时透传。
 
-## 10. 服务器代理解析
+## 12. 服务器代理解析
 
 - 全局代理模式为 `off`、`system` 或 `custom`，默认是 `system`。
 - 单服务器代理模式为 `default`、`off` 或 `custom`；`default` 继承全局设置。

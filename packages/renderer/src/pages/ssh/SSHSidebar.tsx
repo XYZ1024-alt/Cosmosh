@@ -286,10 +286,6 @@ export const SSHSidebar: React.FC<SSHSidebarProps> = ({
         <span>1</span>
       </div>
 
-      <div className={sidebarCardStyle}>
-        <span>1</span>
-      </div>
-
       <div className={classNames(sidebarCardStyle, 'flex-grow-0')}>
         <div className="flex h-full w-full items-center justify-center">
           <Button

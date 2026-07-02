@@ -423,6 +423,10 @@
         "description": "仅控制本地终端程序访问本地剪贴板的权限。",
         "title": "允许本地终端访问本地剪贴板"
       },
+      "remoteEnhancementsEnabled": {
+        "description": "配置 manifest URL 后，允许 SSH 会话安装 Cosmosh 远端 helper，用于 OS 检测、SFTP 增强与命令补全支持。",
+        "title": "远端增强"
+      },
       "serverProxyMode": {
         "description": "控制新建 SSH、SFTP 和端口转发连接默认使用的代理策略。单个服务器可以单独设置代理。",
         "title": "服务器代理"
@@ -1200,6 +1204,19 @@
     "authTypeKey": "私钥",
     "authTypePassword": "密码",
     "authTypePlaceholder": "选择认证方式",
+    "bootstrapPhases": {
+      "download": "下载",
+      "install": "安装",
+      "manifest": "清单",
+      "probe": "探测",
+      "verify": "校验"
+    },
+    "bootstrapStates": {
+      "failed": "失败",
+      "ok": "就绪",
+      "skipped": "已是最新",
+      "started": "运行中"
+    },
     "columnAuth": "认证",
     "columnFolder": "文件夹",
     "columnHost": "主机",
@@ -1293,6 +1310,8 @@
     "proxyUrlHint": "支持 HTTP、HTTPS CONNECT 和 SOCKS5 代理 URL，也支持在 URL 中携带凭据。",
     "proxyUrlLabel": "自定义代理 URL",
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
+    "remoteEnhancements": "远端增强",
+    "remoteEnhancementsTooltip": "启用后，如果全局远端增强设置和 manifest URL 已配置，该服务器连接后可运行 Cosmosh 远端 helper 安装器。",
     "removeTagLabel": "移除 {tagName}",
     "retry": "重试",
     "saveChanges": "保存修改",

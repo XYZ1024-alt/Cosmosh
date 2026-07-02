@@ -40,12 +40,18 @@ sequenceDiagram
 - Steps:
   1. Load server record + linked keychain encrypted credentials.
   2. Resolve trusted host fingerprints.
-  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation.
+  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation and a UTF-8 locale request.
   4. Write `SshLoginAudit` record:
      - `result = success` on successful session creation, with `sessionId` and `sessionStartedAt`.
      - `result = failed` on host-trust/auth/connect failures, with `failureReason`.
   5. Register live session state in memory (`Map<sessionId, SshLiveSession>`).
   6. Return short-lived attach token + WS endpoint.
+
+Locale behavior:
+
+- SSH shell creation requests `LANG=C.UTF-8` and `LC_CTYPE=C.UTF-8` through `ssh2` shell environment options, so UTF-8-aware terminal programs inherit a Unicode character type locale by default.
+- `LC_ALL` is not set, leaving remote user preferences for time, collation, and numeric formatting intact.
+- Cosmosh does not inject locale commands into the interactive shell stream. SSH servers may ignore these environment requests when their `sshd_config` does not accept them.
 
 ### Attach WebSocket
 
@@ -99,6 +105,7 @@ sequenceDiagram
 - `telemetry`: CPU/memory/network + command history snapshot.
 - `history`: history-only snapshot push for immediate UI sync.
 - `completion-response`: ranked completion candidates for the active command token.
+- `bootstrap-status`: remote bootstrap probe/download/install status from the backend side-channel installer.
 - `pong`: ping response.
 - `error`: protocol/runtime error.
 - `exit`: terminal session closed with reason.
@@ -324,7 +331,148 @@ When SSH session behavior is wrong, verify in order:
 4. Stream direction integrity (`input` write and `output` flush).
 5. Session disposal path (API close vs transport close vs SSH error).
 
-## 8. Windows Context-Launch to Local Terminal CWD
+## 8. Remote Enhancements Runtime
+
+Remote Enhancements are the optional runtime layer for host-aware SSH features such as OS/distribution detection, future SFTP helpers, and command shortcut/completion support. v1 only proves and maintains the remote bootstrap installation path; later capabilities should attach behind the same gates and reuse the same user-scoped remote helper boundary.
+
+### 8.1 Ownership and Gates
+
+- `packages/backend/src/remote-bootstrap/service.ts` owns runtime orchestration. It fetches the manifest, probes the remote host, injects a shell wrapper, parses JSON-line statuses, and writes audit events.
+- `packages/remote-bootstrap` owns the Go installer and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
+- The feature is enabled only when Settings `remoteEnhancementsEnabled` is true and the SSH server record `remoteEnhancementsEnabled` is true. Both defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
+- When either gate is disabled, backend does not run any remote command and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
+- Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
+
+During development, set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh so the backend process inherits it. Keep examples placeholder-only in documentation and use a real HTTPS manifest URL only in the local shell environment:
+
+  ```powershell
+  $env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
+  pnpm dev:main
+  ```
+
+  ```sh
+  COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
+  ```
+
+### 8.2 Session Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer SSH Page
+  participant SSH as SshSessionService
+  participant BOOT as RemoteBootstrapService
+  participant REM as Remote SSH Host
+  participant REL as HTTPS Manifest/Asset Host
+
+  UI->>SSH: Attach /ws/ssh/{sessionId}
+  SSH-->>UI: ready + buffered terminal output
+  SSH->>BOOT: startRemoteBootstrap(session)
+  BOOT->>REL: Fetch manifest URL
+  BOOT->>REM: Probe uname, arch, and shell by bounded exec
+  BOOT->>REM: Run injected launcher/wrapper by bounded exec
+  REM->>REL: Download matching bootstrap binary
+  REM->>REM: Verify checksum and install user-scoped files
+  REM-->>BOOT: bootstrap-status JSON lines
+  BOOT-->>UI: bootstrap-status WS events
+```
+
+- Bootstrap starts after the first WebSocket attach and only once per SSH session.
+- The side-channel uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
+- Renderer stores the latest `bootstrap-status` so the message stream stays observable, but v1 does not render a dedicated Remote Enhancements status card in the SSH sidebar. The status is informational and does not block terminal I/O.
+- Terminal `ready`, `output`, telemetry, history, and completion messages remain independent from bootstrap progress.
+
+### 8.3 Manifest and Asset Contract
+
+```json
+{
+  "version": "1.2.3",
+  "assets": [
+    {
+      "os": "linux",
+      "arch": "amd64",
+      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-amd64",
+      "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+    },
+    {
+      "os": "linux",
+      "arch": "arm64",
+      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-arm64",
+      "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
+    }
+  ]
+}
+```
+
+- `version` must contain only letters, digits, `.`, `_`, `+`, or `-`.
+- `assets` must be non-empty.
+- Every manifest asset must include an HTTPS `url` and lowercase 64-character `sha256`; one malformed asset invalidates the whole manifest so polluted release metadata fails visibly.
+- v1 selects assets only for Linux `amd64` and `arm64` remotes.
+- The injected wrapper treats all manifest fields as quoted data, never as executable shell source, then downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, and runs `cosmosh-bootstrap install`.
+- `cosmosh-wrappergen` independently enforces HTTPS asset URLs and lowercase SHA-256 input validation before rendering shell source.
+
+### 8.4 Remote Requirements and Installed Files
+
+Supported remote hosts:
+
+| Dimension | Supported values |
+| --- | --- |
+| OS | `linux` |
+| Architecture | `amd64`, `arm64` |
+| Shell | `bash`, `zsh`, `fish`, `ash`, `sh` |
+
+Required remote tools:
+
+- `mktemp` for temporary wrapper and download directories.
+- `base64` for decoding the backend-injected wrapper payload.
+- `curl` or `wget` for HTTPS asset download.
+- `sha256sum` or `shasum` for checksum verification.
+- The target shell selected by the probe.
+
+Installed files stay under the remote user's scope:
+
+| Purpose | Default path |
+| --- | --- |
+| Bootstrap binary | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/cosmosh-bootstrap` or `~/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap` |
+| Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` or `~/.local/share/cosmosh/bootstrap/bin/.version` |
+| POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` or `~/.config/cosmosh/bootstrap/helper.sh` |
+| Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` or `~/.config/cosmosh/bootstrap/helper.fish` |
+| Bash hook | `~/.bashrc` inside a Cosmosh marker block |
+| Zsh hook | `~/.zshrc` inside a Cosmosh marker block |
+| Sh/Ash hook | `~/.profile` inside a Cosmosh marker block |
+| Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` or `~/.config/fish/conf.d/cosmosh.fish` |
+
+The installer is idempotent. It emits `skipped` when the installed version, binary, helper, and shell hook are current. If the version and files are current but the profile hook is missing, it repairs the hook instead of skipping. The version marker is written only after file installation and profile updates succeed.
+
+### 8.5 Security and Failure Model
+
+- Wrapper files and bootstrap working directories are created with `mktemp` under `${TMPDIR:-/tmp}` using restrictive permissions and exit cleanup.
+- The remote wrapper uses `umask 077`; installer files use `0700` for directories/binaries and `0600` for helpers/profile writes where applicable.
+- Missing `mktemp`, `base64`, downloader, hash tool, or target shell remains an explicit `bootstrap-status` failure rather than a silent fallback.
+- The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
+- Bootstrap audit metadata is status-only and must stay secret-free. SSH credentials, private keys, and terminal input are not part of this contract.
+
+Common status codes:
+
+| Code | Meaning |
+| --- | --- |
+| `REMOTE_ENHANCEMENTS_DISABLED` | Global Settings or server-level gate disabled bootstrap before any remote command. |
+| `MANIFEST_URL_NOT_CONFIGURED` | Remote Enhancements are enabled, but backend has no manifest URL. |
+| `MANIFEST_FETCH_FAILED` | Backend could not fetch the manifest URL. |
+| `MANIFEST_INVALID` | Manifest shape, asset URL, or SHA-256 failed validation. |
+| `ASSET_NOT_FOUND` | Manifest has no asset for the probed OS/architecture. |
+| `PROBE_FAILED` | Remote OS, architecture, or shell is unsupported or could not be parsed. |
+| `BASE64_NOT_FOUND` | Remote host cannot decode the injected wrapper payload. |
+| `MKTEMP_NOT_FOUND` | Remote host lacks `mktemp`. |
+| `DOWNLOADER_NOT_FOUND` | Remote host has neither `curl` nor `wget`. |
+| `HASH_TOOL_NOT_FOUND` | Remote host has neither `sha256sum` nor `shasum`. |
+| `CHECKSUM_MISMATCH` | Downloaded binary did not match the manifest SHA-256. |
+| `FILE_INSTALL_FAILED` | Installer could not create or copy user-scoped files. |
+| `PROFILE_UPDATE_FAILED` | Installer could not update the target shell profile hook. |
+| `VERSION_WRITE_FAILED` | Installer could not write the final version marker. |
+
+When debugging bootstrap behavior, first check which gate stopped the run, then verify manifest validity, remote probe support, remote tool availability, and finally user profile write permissions. A missing manifest URL should produce no remote probe command at all.
+
+## 9. Windows Context-Launch to Local Terminal CWD
 
 - Installer integration can register `Open terminal in Cosmosh` in Explorer context menus.
 - Installer writes shell verb metadata (`MUIVerb`, icon) for Explorer context menu compatibility.
@@ -338,7 +486,7 @@ When SSH session behavior is wrong, verify in order:
 - When `openDefaultLocalTerminal` is enabled, profile selection honors Settings `defaultLocalTerminalProfile` (`auto` or a concrete profile id loaded from current local terminal profiles) and falls back to first available profile.
 - If Cosmosh is already running, `second-instance` pushes launch context to renderer via IPC event.
 
-## 9. Keychain Credential Runtime Notes (2026-03)
+## 10. Keychain Credential Runtime Notes (2026-03)
 
 - Session connect flow now resolves auth material from `SshServer.keychainId`.
 - Supported keychain auth variants remain `password`, `key`, `both`; this keeps SSH runtime behavior stable while allowing future auth variant expansion in one place.
@@ -347,7 +495,7 @@ When SSH session behavior is wrong, verify in order:
 - On local terminal session creation (`POST /api/v1/local-terminals/sessions`), Main forwards `cwd` once.
 - Backend validates `cwd` and falls back to `os.homedir()` when path is invalid or inaccessible.
 
-## 9. macOS CLI Context-Launch to Local Terminal CWD
+## 11. macOS CLI Context-Launch to Local Terminal CWD
 
 - On packaged macOS builds, Main prepares a user-level launcher script at `~/Library/Application Support/Cosmosh/bin/cosmosh`.
 - The launcher invokes the app executable with `--working-directory "$PWD"`, so terminal launch context is inherited from the current shell directory.
@@ -355,7 +503,7 @@ When SSH session behavior is wrong, verify in order:
 - If symlink creation fails due to permission restrictions, app startup continues and warns in logs; users can add the launcher directory to PATH or create a symlink manually.
 - Once launched, context handling path is identical to Windows: Main resolves pending launch cwd and forwards it into the next local terminal session creation.
 
-## 10. Server Proxy Resolution
+## 12. Server Proxy Resolution
 
 - Global proxy mode is `off`, `system`, or `custom`; default is `system`.
 - Server proxy mode is `default`, `off`, or `custom`; `default` inherits global settings.

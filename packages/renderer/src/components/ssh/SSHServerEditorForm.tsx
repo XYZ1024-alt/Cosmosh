@@ -51,6 +51,7 @@ type ServerEditorFormState = {
   tagIds: string[];
   strictHostKey: boolean;
   enableSshCompression: boolean;
+  remoteEnhancementsEnabled: boolean;
   disableCharacterWidthCompatibilityMode: boolean;
   terminalClipboardAccess: TerminalClipboardAccess;
   proxyMode: SshServerProxyMode;
@@ -391,6 +392,20 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
             labelClassName={formStyles.inlineLabel}
           >
             {t('ssh.enableSshCompression')}
+          </LabelWithTooltip>
+        </div>
+        <div className="flex items-center gap-2.5 px-2.5">
+          <Switch
+            id="ssh-editor-remote-enhancements"
+            checked={formState.remoteEnhancementsEnabled}
+            onCheckedChange={(checkedState) => onChangeForm('remoteEnhancementsEnabled', checkedState)}
+          />
+          <LabelWithTooltip
+            htmlFor="ssh-editor-remote-enhancements"
+            tooltip={t('ssh.remoteEnhancementsTooltip')}
+            labelClassName={formStyles.inlineLabel}
+          >
+            {t('ssh.remoteEnhancements')}
           </LabelWithTooltip>
         </div>
         <div className="flex items-center gap-2.5 px-2.5">

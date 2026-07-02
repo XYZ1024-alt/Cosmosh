@@ -10,6 +10,7 @@ flowchart TB
   ROOT --> BACKEND[packages/backend]
   ROOT --> API[packages/api-contract]
   ROOT --> I18N[packages/i18n]
+  ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
 ```
@@ -62,9 +63,10 @@ flowchart TB
   - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
+  - `src/remote-bootstrap`: Remote Enhancements bootstrap orchestration for live SSH sessions. It loads the deployment manifest, probes the remote platform through bounded side-channel `ssh2 exec`, injects the shell wrapper, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
-  - `src/settings`: settings payload defaults and validation parsers.
+  - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
   - `src/validation-utils.ts`: shared backend HTTP-boundary validation primitives used by route and domain payload parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
@@ -87,6 +89,16 @@ Locale JSON source files and i18n runtime package for main/backend/renderer scop
 
 - Runtime core is payload-agnostic. Consumers import only required locale JSON files and register them through `createMessages(...)` + `createI18n(...)`.
 - Backend scope can merge generated completion locale data (for example `backend-inshellisense.json`) via `mergeTranslationTrees(...)` before registration.
+
+### `packages/remote-bootstrap`
+
+Go source for the user-scoped remote installer used by Remote Enhancements. This package does not open SSH connections; backend `RemoteBootstrapService` decides when to run it and how to forward statuses.
+
+- `README.md`: module guide covering purpose, runtime ownership, manifest contract, installed paths, status codes, security boundaries, and test/build commands.
+- `cmd/cosmosh-wrappergen`: generates shell-specific bootstrap wrappers for `bash`, `zsh`, `fish`, `ash`, and `sh`.
+- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and thin shell helper into user-scoped remote directories.
+- `internal/wrapper`: validates manifest-derived wrapper inputs and renders POSIX/fish shell source with shell-safe quoting.
+- `internal/install`: performs idempotent user-level installation, shell profile hook repair, version marker writes, and line-delimited `bootstrap-status` output.
 
 ## 3. Feature Placement Rules
 

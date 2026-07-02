@@ -83,6 +83,7 @@ export interface SettingsValues {
   terminalScrollOnUserInput: boolean;
   terminalSmoothScrollDuration: number;
   terminalTabStopWidth: number;
+  remoteEnhancementsEnabled: boolean;
   devToolsEnabled: boolean;
   userMenuDebugEntryEnabled: boolean;
   autoSaveEnabled: boolean;
@@ -941,6 +942,26 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.advanced.editor.autoSave.toggle',
     searchTerms: ['auto save', 'autosave', 'save automatically'],
     options: [{ value: 'true' }, { value: 'false' }],
+  },
+  {
+    key: 'remoteEnhancementsEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.remoteEnhancementsEnabled.title',
+    descriptionI18nKey: 'settings.items.remoteEnhancementsEnabled.description',
+    category: SETTINGS_CATEGORIES.advanced,
+    section: SETTINGS_CATEGORIES.advanced.sections.runtime,
+    control: 'switch',
+    path: 'advanced.runtime.remoteEnhancements.enabled',
+    commandActionId: 'settings.advanced.runtime.remoteEnhancements.enabled.toggle',
+    searchTerms: [
+      'remote enhancements',
+      'remote bootstrap',
+      'bootstrap',
+      'os detection',
+      'sftp enhancement',
+      'command completion',
+    ],
   },
   {
     key: 'devToolsEnabled',

@@ -8,6 +8,12 @@ import type { AuditEventService } from '../audit/service.js';
 import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import {
+  REMOTE_BOOTSTRAP_EXEC_OPTIONS,
+  RemoteBootstrapService,
+  type RemoteBootstrapStatus,
+} from '../remote-bootstrap/service.js';
+import { readDefaultSettingsValues } from '../settings/read.js';
+import {
   BaseTerminalSessionService,
   TERMINAL_PENDING_OUTPUT_MAX_BYTES,
   TERMINAL_PENDING_OUTPUT_MAX_CHUNKS,
@@ -57,6 +63,7 @@ type CreateSshSessionInput = {
   connectTimeoutSec: number;
   strictHostKey?: boolean;
   enableSshCompression?: boolean;
+  remoteEnhancementsEnabled?: boolean;
   systemProxyRules?: string;
 };
 
@@ -162,10 +169,12 @@ type ServerOutboundMessage =
         kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
         score: number;
       }>;
-    };
+    }
+  | RemoteBootstrapStatus;
 
 type SshLiveSession = TerminalManagedSessionBase & {
   serverId: string;
+  requestId?: string;
   loginAuditId: string | null;
   client: Client;
   stream: ClientChannel;
@@ -189,6 +198,8 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionPendingCwdCommands: string[];
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
+  remoteBootstrapStarted: boolean;
+  remoteEnhancementsEnabled: boolean;
 };
 
 type ParsedRemoteTelemetry = {
@@ -204,6 +215,11 @@ const TELEMETRY_COMMAND =
   ' sh -lc \'cpu=$(top -bn1 | awk -F"[, ]+" "/Cpu\\(s\\)|%Cpu\\(s\\)/ {for(i=1;i<=NF;i++){if($i==\\"id\\"){print 100-$(i-1); exit}}}"); if [ -z "$cpu" ]; then cpu=$(awk "/^cpu /{idle=$5;total=0;for(i=2;i<=NF;i++){total+=$i} if(total>0){print (total-idle)*100/total}else{print 0}}" /proc/stat); fi; mem=$(free -b | awk "/^Mem:/ {print \\$3 \\" \\" \\$2}"); net=$(awk "NR>2 {rx+=\\$2;tx+=\\$10} END {print rx \\" \\" tx}" /proc/net/dev); printf "%s\\n%s\\n%s\\n" "${cpu:-0}" "${mem:-0 0}" "${net:-0 0}"\'';
 const REMOTE_HISTORY_FETCH_COMMAND =
   ' sh -lc \'set +e; if command -v history >/dev/null 2>&1; then history 2>/dev/null; fi; for file in "$HISTFILE" "$HOME/.bash_history" "$HOME/.zsh_history" "$HOME/.ash_history" "$HOME/.sh_history" "$HOME/.mksh_history" "$HOME/.ksh_history" "$HOME/.local/share/fish/fish_history" "$HOME/.python_history" "$HOME/.sqlite_history" "$HOME/.mysql_history" "$HOME/.lesshst"; do if [ -n "$file" ] && [ -f "$file" ]; then cat "$file" 2>/dev/null; fi; done; if command -v pwsh >/dev/null 2>&1; then pwsh -NoLogo -NoProfile -Command "if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) { $path=(Get-PSReadLineOption).HistorySavePath; if ($path -and (Test-Path $path)) { Get-Content -Path $path -ErrorAction SilentlyContinue } }" 2>/dev/null; fi; if command -v powershell >/dev/null 2>&1; then powershell -NoLogo -NoProfile -Command "if (Get-Command Get-PSReadLineOption -ErrorAction SilentlyContinue) { $path=(Get-PSReadLineOption).HistorySavePath; if ($path -and (Test-Path $path)) { Get-Content -Path $path -ErrorAction SilentlyContinue } }" 2>/dev/null; fi\'';
+// LC_ALL is intentionally omitted so remote time, sorting, and numeric locale categories remain user-controlled.
+const REMOTE_SHELL_UTF8_ENV = {
+  LANG: 'C.UTF-8',
+  LC_CTYPE: 'C.UTF-8',
+} as const satisfies Readonly<NodeJS.ProcessEnv>;
 const REMOTE_COMPLETION_CWD_PROBE_COMMAND = 'sh -lc \'printf "%s\\n%s\\n" "$PWD" "$HOME"\'';
 const SSH_COMPLETION_EXEC_TIMEOUT_MS = 3_000;
 const SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS = 1_200;
@@ -225,6 +241,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
   private readonly credentialEncryptionKey: Buffer;
 
+  private readonly remoteBootstrapService: RemoteBootstrapService;
+
   constructor(options: {
     host: string;
     port: number;
@@ -241,6 +259,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
     this.credentialEncryptionKey = options.credentialEncryptionKey;
+    this.remoteBootstrapService = new RemoteBootstrapService({
+      auditEventService: options.auditEventService,
+      manifestUrl: process.env.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL?.trim() || undefined,
+    });
   }
 
   public async createSession(input: CreateSshSessionInput): Promise<CreateSshSessionResult> {
@@ -274,6 +296,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
     const enableSshCompression = input.enableSshCompression ?? server.enableSshCompression;
+    const remoteEnhancementsEnabled = input.remoteEnhancementsEnabled ?? server.remoteEnhancementsEnabled;
     const pendingOutput: string[] = [];
     let pendingOutputBytes = 0;
     let pendingOutputDropCount = 0;
@@ -353,6 +376,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           port: server.port,
           strictHostKey,
           enableSshCompression,
+          remoteEnhancementsEnabled,
           fingerprint: shellResult.fingerprint,
           reason: shellResult.message || 'Host fingerprint is not trusted.',
           proxyMode: shellResult.proxyMetadata?.mode,
@@ -391,6 +415,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           port: server.port,
           strictHostKey,
           enableSshCompression,
+          remoteEnhancementsEnabled,
           reason: shellResult.message,
           proxyMode: shellResult.proxyMetadata?.mode,
           proxyProtocol: shellResult.proxyMetadata?.protocol,
@@ -432,6 +457,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         port: server.port,
         strictHostKey,
         enableSshCompression,
+        remoteEnhancementsEnabled,
         proxyMode: shellResult.proxyMetadata.mode,
         proxyProtocol: shellResult.proxyMetadata.protocol,
       },
@@ -440,6 +466,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     liveSession = {
       sessionId,
       serverId: server.id,
+      requestId: input.requestId,
       loginAuditId,
       websocketToken,
       client: shellResult.client,
@@ -468,6 +495,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         shouldSuggestSecret: false,
       },
       completionSecretValue: shellResult.completionSecretValue,
+      remoteBootstrapStarted: false,
+      remoteEnhancementsEnabled,
       t: i18n.t,
       socket: null,
       disposed: false,
@@ -617,6 +646,83 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       type: 'output',
       data,
     }));
+    this.startRemoteBootstrap(session);
+  }
+
+  /**
+   * Starts the remote bootstrap flow once per SSH session using a side-channel exec command.
+   *
+   * @param session Live SSH session that owns the client transport.
+   * @returns Nothing.
+   */
+  private startRemoteBootstrap(session: SshLiveSession): void {
+    if (session.remoteBootstrapStarted) {
+      return;
+    }
+
+    session.remoteBootstrapStarted = true;
+    void this.runRemoteBootstrapWhenEnabled(session);
+  }
+
+  /**
+   * Checks global/server Remote Enhancements gates before running side-channel bootstrap.
+   *
+   * @param session Live SSH session that owns the client transport.
+   * @returns Nothing.
+   */
+  private async runRemoteBootstrapWhenEnabled(session: SshLiveSession): Promise<void> {
+    if (!session.remoteEnhancementsEnabled) {
+      this.sendRemoteBootstrapSkipped(session);
+      return;
+    }
+
+    let remoteEnhancementsEnabled: boolean;
+    try {
+      const settings = await readDefaultSettingsValues(this.getDbClient());
+      remoteEnhancementsEnabled = settings.remoteEnhancementsEnabled;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'failed to read settings';
+      this.sendServerMessage(session, {
+        type: 'bootstrap-status',
+        phase: 'probe',
+        state: 'failed',
+        code: 'SETTINGS_READ_FAILED',
+        message,
+      });
+      return;
+    }
+
+    if (!remoteEnhancementsEnabled) {
+      this.sendRemoteBootstrapSkipped(session);
+      return;
+    }
+
+    void this.remoteBootstrapService.runForSession({
+      serverId: session.serverId,
+      sessionId: session.sessionId,
+      requestId: session.requestId,
+      executeCommand: async (command) =>
+        await executeBoundedSshCommand(session.client, command, REMOTE_BOOTSTRAP_EXEC_OPTIONS),
+      sendStatus: (status) => {
+        this.sendServerMessage(session, status);
+      },
+    });
+  }
+
+  /**
+   * Emits an explicit skipped status when Remote Enhancements are disabled.
+   *
+   * @param session Live SSH session receiving the status.
+   * @returns Nothing.
+   */
+  private sendRemoteBootstrapSkipped(session: SshLiveSession): void {
+    this.sendServerMessage(session, {
+      type: 'bootstrap-status',
+      phase: 'probe',
+      state: 'skipped',
+      code: 'REMOTE_ENHANCEMENTS_DISABLED',
+      message: 'remote enhancements are disabled',
+    });
   }
 
   protected handleClientMessage(session: SshLiveSession, rawPayload: RawData): void {
@@ -1331,7 +1437,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         const rows = clampTerminalSize(options.rows, 32, 10, 200);
         const term = options.term.trim() || 'xterm-256color';
 
-        client.shell({ term, cols, rows }, (error, stream) => {
+        client.shell({ term, cols, rows }, { env: { ...REMOTE_SHELL_UTF8_ENV } }, (error, stream) => {
           if (error) {
             client.end();
             settle({
