@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   containsTerminalControlContent,
   createTerminalPasteWarningRequest,
+  resolveAutocompleteCommandPrefix,
   resolveSftpDirectoryPathFromSelection,
 } from './ssh-utils';
 
@@ -62,5 +63,27 @@ test('paste warning request returns null when no enabled reason matches', () => 
       warnOnLargePaste: false,
     }),
     null,
+  );
+});
+
+test('autocomplete command prefix uses local shadow for normal typing', () => {
+  assert.equal(resolveAutocompleteCommandPrefix('ec', 'echo'), 'echo');
+});
+
+test('autocomplete command prefix preserves recalled history command context', () => {
+  assert.equal(
+    resolveAutocompleteCommandPrefix('echo 1ec', 'ec', {
+      localPrefixNeedsRenderedContext: true,
+    }),
+    'echo 1ec',
+  );
+});
+
+test('autocomplete command prefix merges local suffix before terminal echo catches up', () => {
+  assert.equal(
+    resolveAutocompleteCommandPrefix('echo 1e', 'ec', {
+      localPrefixNeedsRenderedContext: true,
+    }),
+    'echo 1ec',
   );
 });

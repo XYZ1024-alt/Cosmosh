@@ -249,7 +249,6 @@
     "portForwardingDeleteSuccess": "端口转发规则已删除。",
     "portForwardingDeleteTitle": "删除端口转发规则",
     "portForwardingDialogCreateTitle": "新建端口转发规则",
-    "portForwardingDialogDescription": "规则会保存，但运行状态只保留到后端停止为止。",
     "portForwardingDialogEditTitle": "编辑端口转发规则",
     "portForwardingEmpty": "未找到符合条件的端口转发规则。",
     "portForwardingFieldName": "名称",
@@ -578,6 +577,7 @@
       },
       "terminalCursorWidth": {
         "description": "当光标样式为 Bar 时，设置其 CSS 像素宽度。留空则使用默认行为。",
+        "placeholder": "(空值)",
         "title": "光标宽度"
       },
       "terminalCustomGlyphs": {
@@ -1022,6 +1022,7 @@
     "detailEmpty": "选择文件或目录以查看元数据。",
     "detailSelectedMany": "已选择 {count} 个条目。",
     "detailTitle": "详情",
+    "directoryListLabel": "SFTP 目录条目",
     "downloadPathUnavailable": "无法获取本地下载路径。",
     "downloadUnsupported": "仅普通文件可以保存到本地。",
     "empty": "该目录为空。",
@@ -1291,12 +1292,12 @@
       "title": "粘贴到终端？"
     },
     "portPlaceholder": "端口",
-    "privateKeyImportAction": "导入密钥...",
+    "privateKeyImportAction": "导入私钥...",
     "privateKeyImportFailed": "导入私钥失败。",
+    "privateKeyImportPlaceholder": "右键可从私钥文件导入",
     "privateKeyImportSuccess": "私钥导入成功。",
     "privateKeyLabel": "私钥",
     "privateKeyPassphraseLabel": "私钥口令",
-    "privateKeyPlaceholder": "私钥内容",
     "privateKeySavedPlaceholder": "已保存私钥（仅在需要替换时粘贴新私钥）",
     "privateKeyTooShort": "私钥内容可能过短。",
     "proxyModeHint": "“默认”会继承全局服务器代理设置；“关闭”始终直接连接。",
@@ -1311,6 +1312,7 @@
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
     "remoteEnhancements": "远端增强",
     "remoteEnhancementsTooltip": "启用后，如果全局远端增强设置和 manifest URL 已配置，该服务器连接后可运行 Cosmosh 远端 helper 安装器。",
+    "removeTagLabel": "移除 {tagName}",
     "retry": "重试",
     "saveChanges": "保存修改",
     "saveInlineCredentialsToKeychain": "保存为钥匙链",
@@ -1400,10 +1402,12 @@
     "empty": "暂无可用钥匙链。",
     "folderLabel": "文件夹",
     "folderPlaceholder": "选择文件夹",
+    "importKeyAction": "导入私钥",
     "loadCredentialsFailed": "加载钥匙链凭据失败。",
     "loadFailed": "加载钥匙链失败。",
     "newKeychain": "新建钥匙链",
     "noFolder": "无文件夹",
+    "removeTagLabel": "移除 {tagName}",
     "saveAction": "保存钥匙链",
     "saveFailed": "保存钥匙链失败。",
     "saveSuccess": "钥匙链保存成功。",
@@ -1412,6 +1416,12 @@
     "visibilityShared": "公用"
   },
   "tabs": {
+    "addMenu": {
+      "commandPalette": "命令面板",
+      "keychain": "钥匙链",
+      "portForwarding": "端口转发",
+      "server": "服务器"
+    },
     "closeCurrent": "关闭当前标签页",
     "closeOthers": "关闭其他标签页",
     "closeRight": "关闭右侧标签页",

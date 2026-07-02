@@ -2,6 +2,7 @@ import React from 'react';
 
 type NodeWithProps = {
   icon?: unknown;
+  iconNode?: unknown;
   withIconSlot?: boolean;
   children?: React.ReactNode;
 };
@@ -43,7 +44,7 @@ export const resolveMenuHasLeadingVisual = (node: React.ReactNode): boolean =>
     const props = child.props;
     const displayName = resolveMenuElementDisplayName(child.type);
 
-    if (props.withIconSlot === true || Boolean(props.icon)) {
+    if (props.withIconSlot === true || Boolean(props.icon) || Boolean(props.iconNode)) {
       return true;
     }
 

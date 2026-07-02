@@ -153,6 +153,24 @@ export const upsertKeychainListItem = (
   return nextKeychains;
 };
 
+/**
+ * Merges a backend keychain snapshot with locally saved keychains that may not be visible
+ * in an older in-flight list response yet.
+ *
+ * @param keychains Backend keychain snapshot used as the base list.
+ * @param localKeychains Keychains saved by the current renderer flow.
+ * @returns Keychain list with local saves applied after the backend snapshot.
+ */
+export const mergeKeychainListItems = (
+  keychains: SshKeychainListItem[],
+  localKeychains: SshKeychainListItem[],
+): SshKeychainListItem[] => {
+  return localKeychains.reduce<SshKeychainListItem[]>(
+    (nextKeychains, keychain) => upsertKeychainListItem(nextKeychains, keychain),
+    keychains,
+  );
+};
+
 export const getKeychainSortTimestamp = (keychain: SshKeychainListItem): number => {
   return new Date(keychain.createdAt).getTime();
 };

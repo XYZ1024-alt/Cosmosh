@@ -249,7 +249,6 @@
     "portForwardingDeleteSuccess": "Port forwarding rule deleted.",
     "portForwardingDeleteTitle": "Delete Port Forwarding Rule",
     "portForwardingDialogCreateTitle": "New Port Forwarding Rule",
-    "portForwardingDialogDescription": "Rules are saved, but running state is kept only until the backend stops.",
     "portForwardingDialogEditTitle": "Edit Port Forwarding Rule",
     "portForwardingEmpty": "No matching port forwarding rules found.",
     "portForwardingFieldName": "Name",
@@ -578,6 +577,7 @@
       },
       "terminalCursorWidth": {
         "description": "Cursor width in CSS pixels when cursor style is Bar. Leave empty to use default behavior.",
+        "placeholder": "(empty)",
         "title": "Cursor Width"
       },
       "terminalCustomGlyphs": {
@@ -1022,6 +1022,7 @@
     "detailEmpty": "Select a file or directory to inspect metadata.",
     "detailSelectedMany": "{count} entries selected.",
     "detailTitle": "Details",
+    "directoryListLabel": "SFTP directory entries",
     "downloadPathUnavailable": "The local download path is unavailable.",
     "downloadUnsupported": "Only regular files can be saved locally.",
     "empty": "This directory is empty.",
@@ -1291,12 +1292,12 @@
       "title": "Paste Into Terminal?"
     },
     "portPlaceholder": "Port",
-    "privateKeyImportAction": "Import Key...",
+    "privateKeyImportAction": "Import Private Key...",
     "privateKeyImportFailed": "Failed to import private key.",
+    "privateKeyImportPlaceholder": "Right-click to import from a private key file",
     "privateKeyImportSuccess": "Private key imported.",
     "privateKeyLabel": "Private Key",
     "privateKeyPassphraseLabel": "Private Key Passphrase",
-    "privateKeyPlaceholder": "Private key content",
     "privateKeySavedPlaceholder": "Saved private key (paste a new one only if you want to replace it)",
     "privateKeyTooShort": "Key seems too short.",
     "proxyModeHint": "Default inherits the global server proxy setting. Off always connects directly.",
@@ -1311,6 +1312,7 @@
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
     "remoteEnhancements": "Remote Enhancements",
     "remoteEnhancementsTooltip": "When enabled, this server can run Cosmosh's remote helper installer after connection if the global Remote Enhancements setting and manifest URL are configured.",
+    "removeTagLabel": "Remove {tagName}",
     "retry": "Retry",
     "saveChanges": "Save Changes",
     "saveInlineCredentialsToKeychain": "Save as Keychain",
@@ -1400,10 +1402,12 @@
     "empty": "No keychains available.",
     "folderLabel": "Folder",
     "folderPlaceholder": "Select folder",
+    "importKeyAction": "Import Private Key",
     "loadCredentialsFailed": "Failed to load keychain credentials.",
     "loadFailed": "Failed to load keychains.",
     "newKeychain": "New Keychain",
     "noFolder": "No folder",
+    "removeTagLabel": "Remove {tagName}",
     "saveAction": "Save Keychain",
     "saveFailed": "Failed to save keychain.",
     "saveSuccess": "Keychain saved successfully.",
@@ -1412,6 +1416,12 @@
     "visibilityShared": "Shared"
   },
   "tabs": {
+    "addMenu": {
+      "commandPalette": "Command Palette",
+      "keychain": "Keychains",
+      "portForwarding": "Port Forwarding",
+      "server": "Servers"
+    },
     "closeCurrent": "Close Current Tab",
     "closeOthers": "Close Other Tabs",
     "closeRight": "Close Right Tabs",

@@ -89,6 +89,8 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Runtime-heavy pages (for example SSH/xterm sessions) must preserve in-memory session state when tab order changes.
 - Reorder state updates should be id-based and must preserve the latest tab objects from state instead of writing stale drag snapshots back.
 - Global tab creation entry points, including the tab-strip plus button, Header user menu, app menu, and command palette, append new tabs to the end of the strip.
+- The tab-strip plus button keeps single-click creation as the fastest path, while hover or keyboard focus held for 500 ms and right-click open its add menu below the button.
+- The plus-button add menu must expose Command Palette, Servers, Keychains, and Port Forwarding using the shared menu wrapper; arrow keys navigate items, `Esc` closes the menu, and moving the pointer away from the button/menu closes it.
 - Contextual tab creation from inside an existing tab must pass an explicit anchor id and insert the new tab immediately to the right of that source tab.
 - The tab context menu exposes `New Tab to the Right` as the explicit user-facing affordance for anchored tab creation.
 
@@ -118,6 +120,13 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - When a command palette displays its search input, the input owns navigation keys even if a mouse click or nested control focus temporarily moves DOM focus to a list action or footer control.
 - Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.
 - Nested buttons must keep their normal activation semantics; focus handoff should not convert every descendant key into a command selection.
+
+## 7.7 Composite Control Accessibility
+
+- Custom command/search controls that render option lists must expose a labeled `combobox` tied to a labeled `listbox` with stable `aria-controls`, `aria-expanded`, `aria-activedescendant`, and per-option `aria-selected`.
+- Icon-only controls must carry a localized accessible name through `aria-label`; tooltips remain visual help and must not be the only name.
+- Registry-driven settings controls must connect visible labels to the rendered control with stable `htmlFor`/`id` pairs, including switches, selects, text fields, textareas, and JSON edit buttons.
+- SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
 
 ## 8. Compliance Checklist
 

@@ -1,5 +1,6 @@
 import type { components } from '@cosmosh/api-contract';
 import classNames from 'classnames';
+import { FolderPlus } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
@@ -9,10 +10,12 @@ import EntityIcon from '../home/EntityIcon';
 import EntityVisualPicker from '../home/EntityVisualPicker';
 import { Form, FormControl, FormField, FormLabel, FormMessage } from '../ui/form';
 import { Input } from '../ui/input';
+import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import { PasswordField } from '../ui/password-field';
 import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '../ui/select';
 import { TagInput } from '../ui/tag-input';
 import { Textarea } from '../ui/textarea';
+import SSHFolderSelectItem from './SSHFolderSelectItem';
 
 type SshFolder = components['schemas']['SshFolder'];
 type SshKeychainListItem = components['schemas']['SshKeychainListItem'];
@@ -27,6 +30,7 @@ type SSHKeychainEditorFormProps = {
   requiresPrivateKey: boolean;
   folders: SshFolder[];
   tags: SshTag[];
+  privateKeyContextMenuItems: InputContextMenuItem[];
   onSubmit: (event: React.FormEvent<HTMLFormElement>) => void;
   onCreateFolder: (options?: { selectOnCreate?: boolean }) => void;
   onCreateTag: (name: string) => Promise<SshTag | null>;
@@ -51,6 +55,7 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
   requiresPrivateKey,
   folders,
   tags,
+  privateKeyContextMenuItems,
   onSubmit,
   onCreateFolder,
   onCreateTag,
@@ -169,11 +174,17 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
                   rows={6}
                   value={formState.privateKey}
                   placeholder={
-                    activeKeychain?.hasPrivateKey ? t('ssh.privateKeySavedPlaceholder') : t('ssh.privateKeyPlaceholder')
+                    activeKeychain?.hasPrivateKey
+                      ? t('ssh.privateKeySavedPlaceholder')
+                      : t('ssh.privateKeyImportPlaceholder')
                   }
+                  contextMenuItems={privateKeyContextMenuItems}
                   onChange={(event) => onChangeForm('privateKey', event.target.value)}
                 />
               </FormControl>
+              <FormMessage>
+                {formState.privateKey.length > 0 && formState.privateKey.length < 32 ? t('ssh.privateKeyTooShort') : ''}
+              </FormMessage>
             </FormField>
 
             <FormField>
@@ -214,15 +225,18 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
                 <SelectContent>
                   <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('sshKeychain.noFolder')}</SelectItem>
                   {folders.map((folder) => (
-                    <SelectItem
+                    <SSHFolderSelectItem
                       key={folder.id}
-                      value={folder.id}
-                    >
-                      {folder.name}
-                    </SelectItem>
+                      folder={folder}
+                    />
                   ))}
                   <SelectSeparator />
-                  <SelectItem value={CREATE_FOLDER_SELECT_VALUE}>{t('sshKeychain.createFolderAction')}</SelectItem>
+                  <SelectItem
+                    value={CREATE_FOLDER_SELECT_VALUE}
+                    icon={FolderPlus}
+                  >
+                    {t('sshKeychain.createFolderAction')}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </FormControl>
@@ -232,11 +246,13 @@ const SSHKeychainEditorForm: React.FC<SSHKeychainEditorFormProps> = ({
             <FormLabel htmlFor="ssh-keychain-tags">{t('sshKeychain.tagsLabel')}</FormLabel>
             <FormControl>
               <TagInput
+                inputId="ssh-keychain-tags"
                 tags={tags}
                 selectedTagIds={formState.tagIds}
                 menuTitle={t('sshKeychain.tagsLabel')}
                 inputPlaceholder={t('sshKeychain.tagPlaceholder')}
                 emptyText={t('ssh.emptyTags')}
+                removeTagLabel={(tagName) => t('sshKeychain.removeTagLabel', { tagName })}
                 disabled={isSubmitting}
                 onCreateTag={onCreateTag}
                 onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}

@@ -23,6 +23,10 @@ const Header: React.FC<{
   onActiveTabChange?: (id: string) => void;
   onAddTab?: () => void;
   onAddTabToRight?: (id: string) => string | void;
+  onOpenCommandPalette?: () => void;
+  onAddServerTab?: () => void;
+  onAddKeychainTab?: () => void;
+  onAddPortForwardTab?: () => void;
   onCloseTab?: (id: string) => void;
   onCloseRightTabs?: (id: string) => void;
   onCloseOtherTabs?: (id: string) => void;
@@ -38,6 +42,10 @@ const Header: React.FC<{
   onActiveTabChange,
   onAddTab,
   onAddTabToRight,
+  onOpenCommandPalette,
+  onAddServerTab,
+  onAddKeychainTab,
+  onAddPortForwardTab,
   onCloseTab,
   onCloseRightTabs,
   onCloseOtherTabs,
@@ -167,6 +175,10 @@ const Header: React.FC<{
           onActiveTabChange={onActiveTabChange}
           onAddTab={onAddTab}
           onAddTabToRight={onAddTabToRight}
+          onOpenCommandPalette={onOpenCommandPalette}
+          onAddServerTab={onAddServerTab}
+          onAddKeychainTab={onAddKeychainTab}
+          onAddPortForwardTab={onAddPortForwardTab}
           onCloseTab={onCloseTab}
           onCloseRightTabs={onCloseRightTabs}
           onCloseOtherTabs={onCloseOtherTabs}

@@ -1423,6 +1423,7 @@ if (!hasSingleInstanceLock) {
 registerAppUtilityIpcHandlers({
   getMainWindow: () => mainWindow,
   getLocale: () => appLocale,
+  translateMain: (key, params) => getMainI18n().t(key, params),
   setLocale: (nextLocale: string) => {
     appLocale = resolveLocale(nextLocale, 'en');
     mainWindow?.setTitle(`${!app.isPackaged ? '[D] ' : ''}${getMainI18n().t('app.title')}`);

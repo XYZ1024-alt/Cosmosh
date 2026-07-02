@@ -8,6 +8,7 @@ import {
   Clock3,
   Copy,
   CornerUpRight,
+  FileUp,
   FolderOpen,
   FolderPlus,
   Hash,
@@ -77,6 +78,7 @@ import {
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
 import { formStyles } from '../components/ui/form-styles';
@@ -121,6 +123,11 @@ import {
   type KeychainEditorInitialFormState,
   type SshKeychainListItem,
 } from '../lib/ssh-keychain-editor-shared';
+import {
+  derivePrivateKeyNameFromFileName,
+  type ImportedPrivateKeyFile,
+  importPrivateKeyFromFile,
+} from '../lib/ssh-private-key-import';
 import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
@@ -226,6 +233,40 @@ const DEFAULT_HOME_VIEW_PREFERENCES: Record<HomeMode, HomeViewPreference> = {
     groupMode: 'none',
     sortMode: 'lastUsed',
   },
+};
+
+type BuildHomeKeychainInitialFormStateParams = {
+  activeFolderId: string;
+  quickFilter: QuickFilter;
+  importedKey?: ImportedPrivateKeyFile;
+};
+
+/**
+ * Builds a keychain create draft that preserves the current Home scope.
+ *
+ * @param params Draft source parameters.
+ * @param params.activeFolderId Current Home folder selection.
+ * @param params.quickFilter Current quick filter selection.
+ * @param params.importedKey Optional imported private-key file.
+ * @returns Initial keychain editor state, or undefined when no prefill is needed.
+ */
+const buildHomeKeychainInitialFormState = ({
+  activeFolderId,
+  quickFilter,
+  importedKey,
+}: BuildHomeKeychainInitialFormStateParams): KeychainEditorInitialFormState | undefined => {
+  const initialFormState: KeychainEditorInitialFormState = {};
+  if (activeFolderId !== 'all' && activeFolderId !== LOCAL_TERMINAL_FOLDER_ID && quickFilter === 'none') {
+    initialFormState.folderId = activeFolderId;
+  }
+
+  if (importedKey) {
+    initialFormState.name = derivePrivateKeyNameFromFileName(importedKey.fileName);
+    initialFormState.authType = 'key';
+    initialFormState.privateKey = importedKey.content;
+  }
+
+  return Object.keys(initialFormState).length > 0 ? initialFormState : undefined;
 };
 
 const homeModeEntityKindMap: Record<HomeMode, HomeEntityKind> = {
@@ -1092,7 +1133,6 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
           <DialogTitle>
             {mode === 'create' ? t('home.portForwardingDialogCreateTitle') : t('home.portForwardingDialogEditTitle')}
           </DialogTitle>
-          <DialogDescription>{t('home.portForwardingDialogDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
@@ -2398,13 +2438,34 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   });
 
   const openCreateKeychainFromHome = React.useCallback(() => {
-    const initialFormState: KeychainEditorInitialFormState | undefined =
-      activeFolderId !== 'all' && activeFolderId !== LOCAL_TERMINAL_FOLDER_ID && quickFilter === 'none'
-        ? { folderId: activeFolderId }
-        : undefined;
-
-    openCreateKeychainDialog(initialFormState);
+    openCreateKeychainDialog(
+      buildHomeKeychainInitialFormState({
+        activeFolderId,
+        quickFilter,
+      }),
+    );
   }, [activeFolderId, openCreateKeychainDialog, quickFilter]);
+
+  const importPrivateKeyToNewKeychain = React.useCallback(async () => {
+    const importedKey = await importPrivateKeyFromFile({
+      onSuccess: notifySuccess,
+      onError: notifyError,
+      importSuccessMessage: t('ssh.privateKeyImportSuccess'),
+      importFailedMessage: t('ssh.privateKeyImportFailed'),
+    });
+
+    if (!importedKey) {
+      return;
+    }
+
+    openCreateKeychainDialog(
+      buildHomeKeychainInitialFormState({
+        activeFolderId,
+        quickFilter,
+        importedKey,
+      }),
+    );
+  }, [activeFolderId, notifyError, notifySuccess, openCreateKeychainDialog, quickFilter]);
 
   const openCreatePortForwardRuleDialog = React.useCallback(() => {
     setActivePortForwardRuleDraft(null);
@@ -3133,6 +3194,19 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
                           >
                             {activeHomeMode === 'keychains' ? t('sshKeychain.newKeychain') : t('home.quickAddServer')}
                           </DropdownMenuItem>
+                          {activeHomeMode === 'keychains' ? (
+                            <>
+                              <DropdownMenuItem
+                                icon={FileUp}
+                                onSelect={() => {
+                                  void importPrivateKeyToNewKeychain();
+                                }}
+                              >
+                                {t('sshKeychain.importKeyAction')}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                            </>
+                          ) : null}
                           <DropdownMenuItem
                             icon={FolderPlus}
                             onSelect={() => createFolderDialog.openCreateFolderDialog()}

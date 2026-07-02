@@ -14,6 +14,8 @@ const runPathCompletion = async (
   input: {
     linePrefix: string;
     cursorIndex: number;
+    trigger?: 'typing' | 'manual';
+    typingPathProviderTimeoutMs?: number;
   },
   pathProvider: (context: TerminalPathCompletionContext) => Promise<TerminalPathEntry[]>,
 ) => {
@@ -21,7 +23,7 @@ const runPathCompletion = async (
     {
       linePrefix: input.linePrefix,
       cursorIndex: input.cursorIndex,
-      trigger: 'manual',
+      trigger: input.trigger ?? 'manual',
       includeHistory: false,
       includeBuiltInCommands: false,
       includePathSuggestions: true,
@@ -31,6 +33,7 @@ const runPathCompletion = async (
       recentCommands: [],
       tokenizerMode: 'posix',
       pathProvider,
+      typingPathProviderTimeoutMs: input.typingPathProviderTimeoutMs,
     },
   );
 };
@@ -101,4 +104,27 @@ test('commands without path rules do not invoke path provider', async () => {
 
   assert.equal(invokeCount, 0);
   assert.equal(result.items.length, 0);
+});
+
+test('typing path completion can use a remote-specific provider budget', async () => {
+  const result = await runPathCompletion(
+    {
+      linePrefix: 'cat con',
+      cursorIndex: 'cat con'.length,
+      trigger: 'typing',
+      typingPathProviderTimeoutMs: 120,
+    },
+    async () => {
+      await new Promise((resolve) => {
+        setTimeout(resolve, 80);
+      });
+
+      return [{ name: 'config.json', kind: 'file' }];
+    },
+  );
+
+  assert.deepEqual(
+    result.items.map((item) => item.label),
+    ['config.json'],
+  );
 });

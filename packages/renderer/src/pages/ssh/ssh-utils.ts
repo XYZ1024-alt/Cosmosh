@@ -50,6 +50,10 @@ type CommandStartResolveOptions = {
   promptPrefixRegex?: RegExp | null;
 };
 
+type AutocompleteCommandPrefixResolveOptions = {
+  localPrefixNeedsRenderedContext?: boolean;
+};
+
 /**
  * Detects common password/passphrase prompt endings in terminal output.
  */
@@ -534,6 +538,69 @@ const resolveHeuristicPromptOffset = (linePrefix: string): number => {
   }
 
   return Math.max(0, nextCommandToken.start);
+};
+
+/**
+ * Finds the largest overlap where the rendered prefix suffix already contains
+ * the beginning of the local suffix. This keeps readline-recalled commands from
+ * duplicating text while the terminal echo is still catching up.
+ *
+ * @param renderedCommandPrefix Command prefix reconstructed from xterm.
+ * @param localCommandPrefix Local input suffix tracked from xterm input events.
+ * @returns Number of local-prefix characters already present at the rendered suffix.
+ */
+const resolveRenderedLocalPrefixOverlap = (renderedCommandPrefix: string, localCommandPrefix: string): number => {
+  const maxOverlapLength = Math.min(renderedCommandPrefix.length, localCommandPrefix.length);
+
+  for (let overlapLength = maxOverlapLength; overlapLength > 0; overlapLength -= 1) {
+    if (renderedCommandPrefix.endsWith(localCommandPrefix.slice(0, overlapLength))) {
+      return overlapLength;
+    }
+  }
+
+  return 0;
+};
+
+/**
+ * Resolves the command prefix used for completion requests from rendered xterm
+ * state and local input shadow state.
+ *
+ * @param renderedCommandPrefix Command prefix reconstructed from the visible xterm row.
+ * @param localCommandPrefix Command prefix or suffix tracked from local input events.
+ * @param options Reconciliation mode for local shadow state.
+ * @returns Effective command prefix to send to the completion backend.
+ */
+export const resolveAutocompleteCommandPrefix = (
+  renderedCommandPrefix: string,
+  localCommandPrefix: string | undefined,
+  options?: AutocompleteCommandPrefixResolveOptions,
+): string => {
+  if (localCommandPrefix === undefined) {
+    return renderedCommandPrefix;
+  }
+
+  if (!options?.localPrefixNeedsRenderedContext) {
+    return localCommandPrefix;
+  }
+
+  if (renderedCommandPrefix.length === 0) {
+    return localCommandPrefix;
+  }
+
+  if (localCommandPrefix.length === 0) {
+    return renderedCommandPrefix;
+  }
+
+  if (renderedCommandPrefix.endsWith(localCommandPrefix)) {
+    return renderedCommandPrefix;
+  }
+
+  if (localCommandPrefix.startsWith(renderedCommandPrefix)) {
+    return localCommandPrefix;
+  }
+
+  const overlapLength = resolveRenderedLocalPrefixOverlap(renderedCommandPrefix, localCommandPrefix);
+  return `${renderedCommandPrefix}${localCommandPrefix.slice(overlapLength)}`;
 };
 
 /**

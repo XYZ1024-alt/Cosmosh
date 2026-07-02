@@ -1,5 +1,5 @@
 import type { components } from '@cosmosh/api-contract';
-import { RefreshCcw } from 'lucide-react';
+import { FileUp, RefreshCcw } from 'lucide-react';
 import React from 'react';
 
 import { listSshFolders, listSshKeychains, listSshTags } from '../../lib/backend';
@@ -18,6 +18,7 @@ import {
   type SshKeychainListItem,
   upsertKeychainListItem,
 } from '../../lib/ssh-keychain-editor-shared';
+import { createPrivateKeyImportContextMenuItems, importPrivateKeyFromFile } from '../../lib/ssh-private-key-import';
 import { useToast } from '../../lib/toast-context';
 import { useCreateFolderDialog } from '../../lib/use-create-folder-dialog';
 import { useKeychainCredentialsRefresh } from '../../lib/use-server-credentials';
@@ -32,6 +33,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../ui/dialog';
+import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import SSHKeychainEditorForm from './SSHKeychainEditorForm';
 
 type SshFolder = components['schemas']['SshFolder'];
@@ -259,6 +261,27 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
     [notifyError, tags],
   );
 
+  const importKeychainPrivateKeyFromFile = React.useCallback(async () => {
+    const importedKey = await importPrivateKeyFromFile({
+      onSuccess: notifySuccess,
+      onError: notifyError,
+      importSuccessMessage: t('ssh.privateKeyImportSuccess'),
+      importFailedMessage: t('ssh.privateKeyImportFailed'),
+    });
+
+    if (importedKey) {
+      onChangeForm('privateKey', importedKey.content);
+    }
+  }, [notifyError, notifySuccess, onChangeForm]);
+
+  const privateKeyContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
+    return createPrivateKeyImportContextMenuItems({
+      icon: FileUp,
+      label: t('ssh.privateKeyImportAction'),
+      onImport: importKeychainPrivateKeyFromFile,
+    });
+  }, [importKeychainPrivateKeyFromFile]);
+
   const onSubmit = React.useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
@@ -345,6 +368,7 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
               requiresPrivateKey={requiresPrivateKey}
               folders={editorFolders}
               tags={tags}
+              privateKeyContextMenuItems={privateKeyContextMenuItems}
               onSubmit={(event) => {
                 void onSubmit(event);
               }}

@@ -195,7 +195,7 @@ flowchart TD
   - `packages/main/src/ipc/register-backend-ipc.ts` 与 `packages/main/src/preload.ts` 负责钥匙链 IPC 代理通道。
 - Renderer 归属：
   - `packages/renderer/src/pages/Home.tsx` 负责主页共享侧栏以及 SSH 服务器 / 钥匙链 / 端口转发模式正文。Home 是服务器与钥匙链的标准管理界面。
-  - `packages/renderer/src/components/ssh/SSHServerEditorDialog.tsx` 负责单服务器创建/编辑，包括钥匙链选择与内联认证回退。
+  - `packages/renderer/src/components/ssh/SSHServerEditorDialog.tsx` 负责单服务器创建/编辑，包括钥匙链选择与内联认证回退。当它内嵌创建钥匙链时，本地刚保存的钥匙链必须与进行中的引用列表重载结果合并，确保服务器表单能立即选中刚保存的钥匙链。
   - `packages/renderer/src/components/ssh/SSHKeychainEditorDialog.tsx` 负责公用钥匙链创建/编辑。每个 Home 模式都拥有独立的排序/分组视图偏好，切换模式不会改写另一个界面的组织状态。
 
 ## 9. SSH 端口转发模块归属（2026-05）

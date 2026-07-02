@@ -60,14 +60,6 @@ export const createServerEditorTag = async ({
   }
 };
 
-type ImportPrivateKeyFromFileParams = {
-  onPrivateKeyImported: (privateKey: string) => void;
-  onSuccess: (message: string) => void;
-  onError: (message: string) => void;
-  importSuccessMessage: string;
-  importFailedMessage: string;
-};
-
 /**
  * Credential fields that were intentionally submitted with a server save request.
  */
@@ -100,42 +92,6 @@ type SaveServerFromEditorParams = {
 export type SaveServerFromEditorResult = {
   savedServer: SshServerListItem;
   submittedCredentialPayload: ServerCredentialSubmission;
-};
-
-/**
- * Imports a private key from file picker and applies it to editor state.
- *
- * @param params Import flow parameters.
- * @param params.onPrivateKeyImported Callback to write key content into form state.
- * @param params.onSuccess Success notifier callback.
- * @param params.onError Error notifier callback.
- * @param params.importSuccessMessage Localized success message.
- * @param params.importFailedMessage Localized failure message.
- * @returns Resolves when import handling is finished.
- */
-export const importServerEditorPrivateKeyFromFile = async ({
-  onPrivateKeyImported,
-  onSuccess,
-  onError,
-  importSuccessMessage,
-  importFailedMessage,
-}: ImportPrivateKeyFromFileParams): Promise<void> => {
-  try {
-    const result = await window.electron?.importPrivateKeyFromFile?.();
-    if (!result || result.canceled) {
-      return;
-    }
-
-    if (typeof result.content !== 'string') {
-      onError(importFailedMessage);
-      return;
-    }
-
-    onPrivateKeyImported(result.content);
-    onSuccess(importSuccessMessage);
-  } catch (error: unknown) {
-    onError(error instanceof Error ? error.message : importFailedMessage);
-  }
 };
 
 /**

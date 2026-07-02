@@ -148,6 +148,7 @@ declare global {
       showSaveFileDialog: (defaultPath?: string) => Promise<{ canceled: boolean; filePath?: string }>;
       importPrivateKeyFromFile: () => Promise<{
         canceled: boolean;
+        fileName?: string;
         content?: string;
       }>;
       getProcessPerformanceStats: () => Promise<{

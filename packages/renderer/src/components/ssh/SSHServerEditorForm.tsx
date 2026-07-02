@@ -7,7 +7,7 @@ import {
   type TerminalClipboardAccess,
 } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { Edit, Folder, FolderPlus, Save } from 'lucide-react';
+import { Edit, FolderPlus, Save } from 'lucide-react';
 import React from 'react';
 
 import { getEntityColorClassName, isEntityColorKey, renderEntityIcon } from '../../lib/entity-visuals';
@@ -26,6 +26,7 @@ import { Select, SelectContent, SelectItem, SelectSeparator, SelectTrigger, Sele
 import { Switch } from '../ui/switch';
 import { TagInput } from '../ui/tag-input';
 import { Textarea } from '../ui/textarea';
+import SSHFolderSelectItem from './SSHFolderSelectItem';
 
 type SshAuthType = components['schemas']['SshAuthType'];
 type SshFolder = components['schemas']['SshFolder'];
@@ -334,7 +335,9 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
                   id="ssh-editor-private-key"
                   value={formState.privateKey}
                   placeholder={
-                    activeServer?.hasPrivateKey ? t('ssh.privateKeySavedPlaceholder') : t('ssh.privateKeyPlaceholder')
+                    activeServer?.hasPrivateKey
+                      ? t('ssh.privateKeySavedPlaceholder')
+                      : t('ssh.privateKeyImportPlaceholder')
                   }
                   rows={5}
                   contextMenuItems={privateKeyContextMenuItems}
@@ -524,13 +527,10 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
                 <SelectContent>
                   <SelectItem value={NO_FOLDER_SELECT_VALUE}>{t('ssh.noFolder')}</SelectItem>
                   {folders.map((folder) => (
-                    <SelectItem
+                    <SSHFolderSelectItem
                       key={folder.id}
-                      value={folder.id}
-                      icon={Folder}
-                    >
-                      {folder.name}
-                    </SelectItem>
+                      folder={folder}
+                    />
                   ))}
                   <SelectSeparator />
                   <SelectItem
@@ -545,14 +545,16 @@ const SSHServerEditorForm: React.FC<SSHServerEditorFormProps> = ({
           </FormField>
 
           <FormField>
-            <FormLabel>{t('ssh.tagsLegend')}</FormLabel>
+            <FormLabel htmlFor="ssh-editor-tags">{t('ssh.tagsLegend')}</FormLabel>
             <FormControl>
               <TagInput
+                inputId="ssh-editor-tags"
                 tags={tags}
                 selectedTagIds={formState.tagIds}
                 menuTitle={t('ssh.tagsLegend')}
                 inputPlaceholder={t('ssh.tagNamePlaceholder')}
                 emptyText={t('ssh.emptyTags')}
+                removeTagLabel={(tagName) => t('ssh.removeTagLabel', { tagName })}
                 disabled={isSubmitting}
                 onSelectedTagIdsChange={(nextTagIds) => onChangeForm('tagIds', nextTagIds)}
                 onCreateTag={onCreateTag}

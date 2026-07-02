@@ -4,11 +4,11 @@ import React from 'react';
 
 import { listSshKeychains, listSshTags } from '../../lib/backend';
 import { t } from '../../lib/i18n';
-import { upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
+import { mergeKeychainListItems, upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
+import { createPrivateKeyImportContextMenuItems, importPrivateKeyFromFile } from '../../lib/ssh-private-key-import';
 import {
   buildInlineCredentialKeychainEditorFormState,
   createServerEditorTag,
-  importServerEditorPrivateKeyFromFile,
   saveServerFromEditor,
 } from '../../lib/ssh-server-editor-actions';
 import {
@@ -79,6 +79,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   const initializedEditorTargetRef = React.useRef<string | null | undefined>(undefined);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
+  const savedKeychainsRef = React.useRef<SshKeychainListItem[]>([]);
   const displayServerId = open ? serverId : stableServerIdRef.current;
 
   React.useEffect(() => {
@@ -104,6 +105,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   React.useEffect(() => {
     if (!open) {
       initializedEditorTargetRef.current = undefined;
+      savedKeychainsRef.current = [];
       return;
     }
 
@@ -156,7 +158,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
         }
 
         setTags(tagsResponse.data.items);
-        setKeychains(keychainsResponse.data.items);
+        setKeychains(mergeKeychainListItems(keychainsResponse.data.items, savedKeychainsRef.current));
       } catch (error: unknown) {
         if (!cancelled) {
           notifyError(error instanceof Error ? error.message : t('ssh.editorLoadFailed'));
@@ -283,30 +285,26 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     [notifyError, tags],
   );
 
-  const importPrivateKeyFromFile = React.useCallback(async () => {
-    await importServerEditorPrivateKeyFromFile({
-      onPrivateKeyImported: (privateKey) => {
-        onChangeForm('privateKey', privateKey);
-      },
+  const importServerPrivateKeyFromFile = React.useCallback(async () => {
+    const importedKey = await importPrivateKeyFromFile({
       onSuccess: notifySuccess,
       onError: notifyError,
       importSuccessMessage: t('ssh.privateKeyImportSuccess'),
       importFailedMessage: t('ssh.privateKeyImportFailed'),
     });
+
+    if (importedKey) {
+      onChangeForm('privateKey', importedKey.content);
+    }
   }, [notifyError, notifySuccess, onChangeForm]);
 
   const privateKeyContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
-    return [
-      {
-        key: 'import-private-key',
-        label: t('ssh.privateKeyImportAction'),
-        icon: FileUp,
-        onSelect: () => {
-          void importPrivateKeyFromFile();
-        },
-      },
-    ];
-  }, [importPrivateKeyFromFile]);
+    return createPrivateKeyImportContextMenuItems({
+      icon: FileUp,
+      label: t('ssh.privateKeyImportAction'),
+      onImport: importServerPrivateKeyFromFile,
+    });
+  }, [importServerPrivateKeyFromFile]);
 
   const openSelectedKeychainEditor = React.useCallback(() => {
     if (!formState.keychainId) {
@@ -490,6 +488,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           }
         }}
         onSaved={(savedKeychain) => {
+          savedKeychainsRef.current = upsertKeychainListItem(savedKeychainsRef.current, savedKeychain);
           setKeychains((previous) => upsertKeychainListItem(previous, savedKeychain));
           onChangeForm('keychainId', savedKeychain.id);
         }}

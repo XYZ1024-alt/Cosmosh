@@ -356,9 +356,14 @@ SelectLabel.displayName = SelectPrimitive.Label.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & { icon?: MenuIconComponent; withIconSlot?: boolean }
->(({ className, children, icon: Icon, withIconSlot, ...props }, ref) => {
-  const shouldShowIconSlot = useMenuIconSlot(withIconSlot, Icon);
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
+    icon?: MenuIconComponent;
+    iconNode?: React.ReactNode;
+    withIconSlot?: boolean;
+  }
+>(({ className, children, icon: Icon, iconNode, withIconSlot, ...props }, ref) => {
+  const leadingIcon = iconNode ?? (Icon ? <Icon className="h-4 w-4" /> : null);
+  const shouldShowIconSlot = useMenuIconSlot(withIconSlot, leadingIcon);
 
   return (
     <SelectPrimitive.Item
@@ -372,9 +377,7 @@ const SelectItem = React.forwardRef<
         </SelectPrimitive.ItemIndicator>
       </span>
       {shouldShowIconSlot ? (
-        <span className={classNames(menuStyles.leadingIconSlot, !Icon && 'opacity-0')}>
-          {Icon ? <Icon className="h-4 w-4" /> : null}
-        </span>
+        <span className={classNames(menuStyles.leadingIconSlot, !leadingIcon && 'opacity-0')}>{leadingIcon}</span>
       ) : null}
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
     </SelectPrimitive.Item>

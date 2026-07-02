@@ -33,3 +33,30 @@ test('remote path provider avoids non-portable basename flags and returns ranked
     },
   ]);
 });
+
+test('remote path provider expands home-relative paths while preserving typed prefix', async () => {
+  let capturedCommand = '';
+  const provider = createRemotePathProvider({
+    resolveCwd: async () => '/tmp',
+    resolveHomeDirectory: async () => '/home/dev',
+    executeCommand: async (command) => {
+      capturedCommand = command;
+      return 'D\tprojects\nF\t.profile\n';
+    },
+  });
+
+  const entries = await provider({
+    partialPath: '~/',
+    directoriesOnly: true,
+    fuzzyMatch: false,
+    limit: 10,
+  });
+
+  assert.ok(capturedCommand.includes('/home/dev'));
+  assert.deepEqual(entries, [
+    {
+      name: '~/projects/',
+      kind: 'directory',
+    },
+  ]);
+});
