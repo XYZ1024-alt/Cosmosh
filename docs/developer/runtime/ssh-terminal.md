@@ -378,7 +378,8 @@ sequenceDiagram
 
 - Bootstrap starts after the first WebSocket attach and only once per SSH session.
 - The side-channel uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
-- Renderer stores the latest `bootstrap-status` so the message stream stays observable, but v1 does not render a dedicated Remote Enhancements status card in the SSH sidebar. The status is informational and does not block terminal I/O.
+- Renderer stores the latest `bootstrap-status` and a per-session debug event history. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Bootstrap Debug`; selecting it opens a fixed top-right terminal overlay with the latest phase/state/code/message/version plus selectable raw JSON payloads for every received bootstrap event in the current session attempt.
+- The debug overlay only records side-channel remote bootstrap status events. It does not record terminal `input`, terminal `output`, command text, or password prompts.
 - Terminal `ready`, `output`, telemetry, history, and completion messages remain independent from bootstrap progress.
 
 ### 8.3 Manifest and Asset Contract

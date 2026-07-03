@@ -377,7 +377,8 @@ sequenceDiagram
 
 - Bootstrap 会在首次 WebSocket attach 后启动，并且每个 SSH session 只启动一次。
 - 侧通道使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
-- Renderer 会保存最新 `bootstrap-status`，保证消息流可观测，但 v1 不在 SSH 侧栏渲染专用的远端增强状态卡。该状态仅用于观测，不阻塞终端 I/O。
+- Renderer 会保存最新 `bootstrap-status` 和当前 session 尝试内的调试事件历史。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Bootstrap Debug`；选择后会在终端右上角打开固定浮层，展示最新 phase/state/code/message/version，以及当前 session 尝试中收到的每条可选中的 bootstrap 事件原始 JSON payload。
+- 调试浮层只记录侧通道远端 bootstrap 状态事件，不记录 terminal `input`、terminal `output`、命令文本或密码提示。
 - Terminal `ready`、`output`、telemetry、history 与 completion 消息都与 bootstrap 进度彼此独立。
 
 ### 8.3 Manifest 与资产契约

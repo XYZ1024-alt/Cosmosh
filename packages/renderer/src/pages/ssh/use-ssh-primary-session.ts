@@ -14,7 +14,12 @@ import {
   resolveTerminalTargetFromSnapshot,
   toResolvedTargetSnapshot,
 } from './ssh-target';
-import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } from './ssh-types';
+import type {
+  RemoteBootstrapDebugEvent,
+  ResolvedTerminalTarget,
+  ServerInboundMessage,
+  SshTelemetryState,
+} from './ssh-types';
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
 import {
@@ -69,6 +74,7 @@ type UseSshPrimarySessionParams = {
   setRemoteBootstrapStatus: React.Dispatch<
     React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
   >;
+  setRemoteBootstrapDebugEvents: React.Dispatch<React.SetStateAction<RemoteBootstrapDebugEvent[]>>;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -133,6 +139,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
+    setRemoteBootstrapDebugEvents,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
@@ -377,6 +384,13 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (payload.type === 'bootstrap-status') {
           setRemoteBootstrapStatus(payload);
+          setRemoteBootstrapDebugEvents((previous) => [
+            ...previous,
+            {
+              receivedAt: Date.now(),
+              payload,
+            },
+          ]);
           return;
         }
 
@@ -404,6 +418,8 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         setConnectionState('connecting');
         setConnectionError('');
         setTelemetryState(DEFAULT_TELEMETRY_STATE);
+        setRemoteBootstrapStatus(null);
+        setRemoteBootstrapDebugEvents([]);
 
         const activeIntent = connectionIntentRef.current;
         if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
@@ -686,6 +702,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setActivePane,
     setConnectionError,
     setConnectionState,
+    setRemoteBootstrapDebugEvents,
     setRemoteBootstrapStatus,
     setTelemetryState,
     socketRef,

@@ -23,11 +23,13 @@ import {
 } from '../components/ui/dialog';
 import { Menubar } from '../components/ui/menubar';
 import { Toggle } from '../components/ui/toggle';
+import { useDateTimeFormatter } from '../lib/date-time-format';
 import { t } from '../lib/i18n';
 import { useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import { useTerminalTextDropZone } from '../lib/use-terminal-text-drop-zone';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../types/tabs';
+import { RemoteBootstrapDebugPanel } from './ssh/RemoteBootstrapDebugPanel';
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import {
   createTerminalPasteWarningRequest,
@@ -133,6 +135,7 @@ const SSH: React.FC<SSHProps> = ({
   onTabVisualChange,
 }) => {
   const { error: notifyError, info: notifyInfo, success: notifySuccess, warning: notifyWarning } = useToast();
+  const { formatTime } = useDateTimeFormatter();
   const settingsValues = useSettingsValues();
 
   // Derive terminal-relevant settings from the centralized store.
@@ -183,6 +186,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
+  const userMenuDebugEntryEnabled = settingsValues.userMenuDebugEntryEnabled;
   const terminalWebLinksSettings = React.useMemo(
     () => ({
       enabled: terminalWebLinksEnabled,
@@ -399,6 +403,8 @@ const SSH: React.FC<SSHProps> = ({
       connectionState,
       connectionError,
       telemetryState,
+      remoteBootstrapStatus,
+      remoteBootstrapDebugEvents,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -436,6 +442,7 @@ const SSH: React.FC<SSHProps> = ({
   const [terminalSearchQuery, setTerminalSearchQuery] = React.useState<string>('');
   const [terminalSearchCaseSensitive, setTerminalSearchCaseSensitive] = React.useState<boolean>(false);
   const [terminalSearchRegex, setTerminalSearchRegex] = React.useState<boolean>(false);
+  const [remoteBootstrapDebugPanelOpen, setRemoteBootstrapDebugPanelOpen] = React.useState<boolean>(false);
   const [terminalPasteWarningRequest, setTerminalPasteWarningRequest] =
     React.useState<TerminalPasteWarningRequest | null>(null);
   /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
@@ -484,6 +491,15 @@ const SSH: React.FC<SSHProps> = ({
   React.useEffect(() => {
     terminalPaneIdsRef.current = terminalPaneIds;
   }, [terminalPaneIds]);
+
+  React.useEffect(() => {
+    const isRemoteSshSession = connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+    if (userMenuDebugEntryEnabled && isRemoteSshSession) {
+      return;
+    }
+
+    setRemoteBootstrapDebugPanelOpen(false);
+  }, [connectionIntent.lastResolvedSnapshot, userMenuDebugEntryEnabled]);
 
   React.useEffect(() => {
     const startupCommand = connectionIntent.startupCommand?.trim();
@@ -1252,6 +1268,14 @@ const SSH: React.FC<SSHProps> = ({
     runTerminalSearch('last');
   }, [runTerminalSearch]);
 
+  const handleToggleRemoteBootstrapDebugPanel = React.useCallback(
+    (paneId: string) => {
+      activatePane(paneId);
+      setRemoteBootstrapDebugPanelOpen((previous) => !previous);
+    },
+    [activatePane],
+  );
+
   const terminalSearchFooter = (
     <div className="flex w-full items-center gap-2">
       <div className="flex items-center gap-1.5">
@@ -1317,6 +1341,11 @@ const SSH: React.FC<SSHProps> = ({
     Boolean(selectedSftpDirectoryPath) &&
     connectionIntent.lastResolvedSnapshot?.type === 'ssh-server' &&
     Boolean(onOpenDirectoryInSFTP);
+  const canShowRemoteBootstrapDebug =
+    userMenuDebugEntryEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+  const remoteBootstrapDebugContextMenuLabel = remoteBootstrapDebugPanelOpen
+    ? t('ssh.contextMenuCloseRemoteBootstrapDebug')
+    : t('ssh.contextMenuOpenRemoteBootstrapDebug');
   const selectionBarSearchLabel = selectionLink ? t('ssh.selectionBarOpenLink') : t('ssh.selectionBarSearch');
   const contextMenuSearchLabel = selectionLink ? t('ssh.contextMenuOpenLink') : t('ssh.contextMenuSearchOnline');
 
@@ -1355,7 +1384,7 @@ const SSH: React.FC<SSHProps> = ({
       onDrop={handleWrapperDrop}
     >
       {/* SSH */}
-      <div className={classNames(cardStyle, 'min-w-0')}>
+      <div className={classNames(cardStyle, 'relative min-w-0')}>
         <SSHTerminalPaneLayout
           terminalPaneIds={terminalPaneIds}
           activePaneId={activePaneId}
@@ -1367,6 +1396,7 @@ const SSH: React.FC<SSHProps> = ({
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
           rightClickAction={terminalRightClickAction}
+          remoteBootstrapDebugLabel={canShowRemoteBootstrapDebug ? remoteBootstrapDebugContextMenuLabel : undefined}
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
@@ -1413,7 +1443,17 @@ const SSH: React.FC<SSHProps> = ({
             activatePane(paneId);
             closePane(paneId);
           }}
+          onToggleRemoteBootstrapDebug={canShowRemoteBootstrapDebug ? handleToggleRemoteBootstrapDebugPanel : undefined}
         />
+
+        {remoteBootstrapDebugPanelOpen ? (
+          <RemoteBootstrapDebugPanel
+            latestStatus={remoteBootstrapStatus}
+            events={remoteBootstrapDebugEvents}
+            formatTime={formatTime}
+            onClose={() => setRemoteBootstrapDebugPanelOpen(false)}
+          />
+        ) : null}
       </div>
 
       <TerminalAutocompleteMenu

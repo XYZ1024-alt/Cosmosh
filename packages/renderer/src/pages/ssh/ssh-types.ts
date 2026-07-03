@@ -107,6 +107,14 @@ export type ServerInboundMessage =
 export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'bootstrap-status' }>;
 
 /**
+ * Timestamped remote bootstrap status event retained for SSH debug inspection.
+ */
+export type RemoteBootstrapDebugEvent = {
+  receivedAt: number;
+  payload: RemoteBootstrapStatus;
+};
+
+/**
  * Aggregated telemetry state rendered in SSH sidebar cards.
  */
 export type SshTelemetryState = {
