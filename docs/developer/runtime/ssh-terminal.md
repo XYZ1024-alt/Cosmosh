@@ -341,7 +341,7 @@ Remote Enhancements are the optional runtime layer for host-aware SSH features s
 - `packages/remote-bootstrap` owns the Go installer and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
 - The feature is enabled only when Settings `remoteEnhancementsEnabled` is true and the SSH server record `remoteEnhancementsEnabled` is true. Both defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
 - When either gate is disabled, backend does not run any remote command and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
-- Backend requires `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` to load the release manifest. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
+- Backend requires a manifest URL to load the bootstrap manifest. `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is the first-class override. Packaged CI builds may also carry `remote-bootstrap/manifest-url.json`, generated before app packaging, so installers can discover the GitHub-hosted manifest without a user-provided environment variable. Tagged releases point at the same versioned GitHub Release as the app installers; `main` push builds point at the rolling `remote-bootstrap-dev` prerelease; remote-bootstrap feature branches and manual workflow dispatch runs can point at branch-scoped temporary prereleases such as `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`. Ordinary PR and feature-branch builds do not package a default URL. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
 
 During development, set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh so the backend process inherits it. Keep examples placeholder-only in documentation and use a real HTTPS manifest URL only in the local shell environment:
 
@@ -391,13 +391,13 @@ sequenceDiagram
     {
       "os": "linux",
       "arch": "amd64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-amd64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-amd64",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     },
     {
       "os": "linux",
       "arch": "arm64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-arm64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-arm64",
       "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     }
   ]
@@ -410,6 +410,9 @@ sequenceDiagram
 - v1 selects assets only for Linux `amd64` and `arm64` remotes.
 - The injected wrapper treats all manifest fields as quoted data, never as executable shell source, then downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, and runs `cosmosh-bootstrap install`.
 - `cosmosh-wrappergen` independently enforces HTTPS asset URLs and lowercase SHA-256 input validation before rendering shell source.
+- `scripts/build-remote-bootstrap-release.mjs` builds `cosmosh-remote-bootstrap-linux-amd64` and `cosmosh-remote-bootstrap-linux-arm64`, computes SHA-256 values, and writes the git-ignored `packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json`. CI can override the download tag/base URL and the manifest `version`, so a fixed GitHub release tag can still publish a manifest version such as `dev-<commit-sha>`.
+- Tagged release CI uploads the helper assets plus manifest to the draft GitHub Release for the same tag and packages that tagged manifest URL into the app. The `cosmosh-remote-bootstrap-*` prefix intentionally distinguishes helper assets from user-facing app installers on the release page.
+- `build-main` CI always validates the Go package and manifest generation path. On `push` to `main`, a separate write-scoped job rebuilds the helper assets, publishes them to the fixed prerelease tag `remote-bootstrap-dev` with `--clobber`, and packages `https://github.com/<repo>/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json` into the main build artifacts. On `push` to branches named `codex/remote-bootstrap-*`, or on manual `workflow_dispatch` with `publishRemoteBootstrap=true`, the same job publishes to a branch-scoped prerelease tag `remote-bootstrap-branch-<sanitized-branch>` and packages that manifest URL into the branch build artifacts. These branch prereleases are temporary internal test buckets and can be deleted after the PR is merged or abandoned. Ordinary branches and PRs only validate the build path unless a maintainer explicitly opts into the publish path.
 
 ### 8.4 Remote Requirements and Installed Files
 

@@ -99,13 +99,13 @@ The backend only runs a remote probe after it has loaded and validated the manif
     {
       "os": "linux",
       "arch": "amd64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-amd64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-amd64",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     },
     {
       "os": "linux",
       "arch": "arm64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-arm64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-arm64",
       "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     }
   ]
@@ -217,9 +217,10 @@ go test ./...
 Build the remote installer for Linux targets:
 
 ```sh
-GOOS=linux GOARCH=amd64 go build -o dist/cosmosh-bootstrap-linux-amd64 ./cmd/cosmosh-bootstrap
-GOOS=linux GOARCH=arm64 go build -o dist/cosmosh-bootstrap-linux-arm64 ./cmd/cosmosh-bootstrap
+node ../../scripts/build-remote-bootstrap-release.mjs
 ```
+
+The CI/release helper writes git-ignored files under `dist/`: `cosmosh-remote-bootstrap-linux-amd64`, `cosmosh-remote-bootstrap-linux-arm64`, and `cosmosh-remote-bootstrap-manifest.json`. Tagged releases publish those files to the versioned GitHub Release. `main` branch builds publish the same file names to the fixed `remote-bootstrap-dev` prerelease with a manifest version such as `dev-<commit-sha>`. Remote-bootstrap feature branches and manual workflow dispatch runs can publish branch-scoped temporary prereleases for end-to-end package testing; ordinary PR and feature-branch CI runs use the script for compilation and manifest validation only.
 
 Render a wrapper for inspection:
 
@@ -229,7 +230,7 @@ go run ./cmd/cosmosh-wrappergen \
   --os linux \
   --arch amd64 \
   --version 1.2.3 \
-  --asset-url https://downloads.example.test/cosmosh-bootstrap-linux-amd64 \
+  --asset-url https://downloads.example.test/cosmosh-remote-bootstrap-linux-amd64 \
   --sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
   --helper-payload-b64 ZXhwb3J0IENPU01PU0hfQk9PVFNUUkFQX1JFQURZPTEK
 ```

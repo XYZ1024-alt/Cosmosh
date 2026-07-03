@@ -139,11 +139,13 @@ dist
 app/
 release/
 packages/main/release-*/
+packages/remote-bootstrap/dist/
 .pnpm-store/
 **/.cosmosh/
 
 # Auto-generated NSIS installer string defines (built from i18n locale JSON files)
 packages/main/resources/installer-strings.nsh
+packages/main/resources/remote-bootstrap/manifest-url.json
 
 # IDE
 .vscode/*

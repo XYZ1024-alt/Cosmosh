@@ -340,7 +340,7 @@ flowchart LR
 - `packages/remote-bootstrap` 负责 Go 安装器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
 - 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此在用户未关闭任一开关前，部署级启用条件由 manifest URL 控制。
 - 任一开关关闭时，backend 不会执行任何远端命令，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
-- Backend 需要配置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 才会加载发布 manifest。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
+- Backend 需要 manifest URL 才会加载 bootstrap manifest。`COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 是最高优先级 override。CI 打包也可以在 app 打包前生成 `remote-bootstrap/manifest-url.json`，让安装包无需用户手动配置环境变量即可发现 GitHub 托管的 manifest。正式 tag release 指向同版本 GitHub Release；`main` push 构建指向滚动的 `remote-bootstrap-dev` prerelease；remote-bootstrap 功能分支和手动 workflow dispatch 可以指向分支专用临时 prerelease，例如 `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`。普通 PR 与 feature branch 构建默认不写入 packaged URL。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 
 开发环境下，在启动 Cosmosh 的同一个终端里设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，确保 backend 进程可以继承该环境变量。文档示例只保留占位符，真实 HTTPS manifest URL 只写在本地 shell 环境中：
 
@@ -390,13 +390,13 @@ sequenceDiagram
     {
       "os": "linux",
       "arch": "amd64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-amd64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-amd64",
       "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     },
     {
       "os": "linux",
       "arch": "arm64",
-      "url": "https://downloads.example.test/cosmosh-bootstrap-linux-arm64",
+      "url": "https://downloads.example.test/cosmosh-remote-bootstrap-linux-arm64",
       "sha256": "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
     }
   ]
@@ -409,6 +409,9 @@ sequenceDiagram
 - v1 只为 Linux `amd64` 与 `arm64` 远端选择 asset。
 - 注入的 wrapper 会把所有 manifest 字段作为已引用的数据处理，永远不把它们当作可执行 shell source，然后使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
 - `cosmosh-wrappergen` 会在渲染 shell source 之前独立校验 asset URL 必须为 HTTPS，且 SHA-256 必须为小写 hex。
+- `scripts/build-remote-bootstrap-release.mjs` 会编译 `cosmosh-remote-bootstrap-linux-amd64` 与 `cosmosh-remote-bootstrap-linux-arm64`，计算 SHA-256，并写入被 git ignore 的 `packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json`。CI 可以覆盖下载 tag/base URL 与 manifest `version`，因此即使用固定 GitHub release tag，也可以发布类似 `dev-<commit-sha>` 的 manifest version。
+- 正式 tag release CI 会把 helper assets 与 manifest 上传到同 tag 的 draft GitHub Release，并把该 tag 的 manifest URL 打进 app。`cosmosh-remote-bootstrap-*` 前缀是故意的，用来和 release 页面上的用户可见 app 安装包区分开。
+- `build-main` CI 总是验证 Go package 与 manifest 生成路径。在 `push` 到 `main` 时，独立的写权限 job 会重新编译 helper assets，用 `--clobber` 发布到固定 prerelease tag `remote-bootstrap-dev`，并把 `https://github.com/<repo>/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json` 打进 main 构建产物。在 `push` 到 `codex/remote-bootstrap-*` 分支，或手动 `workflow_dispatch` 且 `publishRemoteBootstrap=true` 时，同一个 job 会发布到分支专用 prerelease tag `remote-bootstrap-branch-<sanitized-branch>`，并把这个 manifest URL 打进该分支构建产物。这些分支 prerelease 是临时内部测试桶，PR 合并或废弃后可以删除。普通分支和 PR 默认只验证构建链路，除非维护者显式选择发布路径。
 
 ### 8.4 远端要求与安装文件
 
