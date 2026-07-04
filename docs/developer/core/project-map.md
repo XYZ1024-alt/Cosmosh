@@ -22,7 +22,7 @@ flowchart TB
 - **Role**: Repository-level developer and release workflow helpers.
 - **Key files**:
   - `dev-profile.mjs`: development profile manager used by `pnpm dev:profile` and `pnpm dev:main:fresh`. It automatically imports the legacy implicit default identity into the protected `default` profile, then creates, switches, resets, deletes, and runs commands with profile-scoped runtime paths under `.cosmosh/dev-profiles/<name>/`.
-  - `build-remote-bootstrap-release.mjs`: CI/release helper that cross-compiles Linux remote bootstrap binaries, computes SHA-256 values, and writes the git-ignored manifest under `packages/remote-bootstrap/dist/`. Tagged releases upload those files to the versioned release; `main` pushes upload them to the fixed `remote-bootstrap-dev` prerelease; remote-bootstrap feature branches and manual dispatch runs can upload them to branch-scoped temporary prereleases for end-to-end testing; ordinary PRs use it only for validation.
+  - `build-remote-bootstrap-release.mjs`: CI/release helper that cross-compiles Linux remote bootstrap binaries, computes SHA-256 values, and writes the git-ignored manifest under `packages/remote-bootstrap/dist/`. Tagged releases upload those files to the versioned release; `main` pushes upload them to the fixed `remote-bootstrap-dev` prerelease; pushed branches whose name contains `remote-bootstrap` and manual dispatch runs can upload them to branch-scoped temporary prereleases for end-to-end testing; ordinary PRs use it only for validation.
   - `update-version.js`: version metadata update helper.
   - `precommit-staged.mjs`: staged-file precommit validation helper.
   - `setup-githooks.mjs`: local Git hook bootstrap.

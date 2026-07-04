@@ -22,7 +22,7 @@ flowchart TB
 - **角色**：仓库级开发与发布流程辅助脚本。
 - **关键文件**：
   - `dev-profile.mjs`：`pnpm dev:profile` 与 `pnpm dev:main:fresh` 使用的开发身份管理器。它会自动把旧的隐式默认身份导入到受保护的 `default` 身份，然后在 `.cosmosh/dev-profiles/<name>/` 下创建、切换、重置、删除身份，并可用身份级运行路径执行命令。
-  - `build-remote-bootstrap-release.mjs`：CI/发布辅助脚本，用于交叉编译 Linux 远端 bootstrap binary、计算 SHA-256，并在 `packages/remote-bootstrap/dist/` 下写入被 git ignore 的 manifest。正式 tag release 会把这些文件上传到版本化 release；`main` push 会上传到固定 `remote-bootstrap-dev` prerelease；remote-bootstrap 功能分支和手动 dispatch 可以上传到分支专用临时 prerelease 做端到端测试；普通 PR 只用它做校验。
+  - `build-remote-bootstrap-release.mjs`：CI/发布辅助脚本，用于交叉编译 Linux 远端 bootstrap binary、计算 SHA-256，并在 `packages/remote-bootstrap/dist/` 下写入被 git ignore 的 manifest。正式 tag release 会把这些文件上传到版本化 release；`main` push 会上传到固定 `remote-bootstrap-dev` prerelease；分支名包含 `remote-bootstrap` 的 push 和手动 dispatch 可以上传到分支专用临时 prerelease 做端到端测试；普通 PR 只用它做校验。
   - `update-version.js`：版本元数据更新辅助。
   - `precommit-staged.mjs`：暂存文件 precommit 校验辅助。
   - `setup-githooks.mjs`：本地 Git hook 初始化。
