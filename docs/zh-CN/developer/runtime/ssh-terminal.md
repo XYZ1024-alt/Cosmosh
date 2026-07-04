@@ -421,17 +421,18 @@ type RemoteShellEventMessage = {
 
 当前第一期 helper 行为：
 
-- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。
-- Zsh 使用 `precmd` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
-- Fish 使用 `fish_prompt`、`fish_postexec` 与 `PWD` variable event。
+- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start`。
+- Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
+- Fish 使用 `fish_preexec`、`fish_prompt`、`fish_postexec` 与 `PWD` variable event。
 - Sh/Ash 降级为仅基于 prompt 的 `cwd`、`prompt-ready` 与 `command-end`，不承诺精准 preexec 行为。
-- 第一期刻意不发送 `command-start`、完整命令文本、line-buffer 状态、密码输入或原生 shell completion 列表。
+- `command-start` 与 `foreground-command` 只携带经过清洗的可执行命令名（例如 `vim`），不携带完整命令行或参数。
+- 第一期刻意不发送完整命令文本、line-buffer 状态、密码输入或原生 shell completion 列表。
 
 Backend 状态模型：
 
 - 每个 `SshLiveSession` 保存 `remoteShellReady`、`remoteShellCwd`、`remoteShellForegroundCommand`、`lastRemoteCommand`、`lastExitCode` 与 `lastCommandDurationMs`。
 - `remoteShellCwd` 是 path completion 的优先 cwd 来源；现有 exec probe 与 renderer hint 仍作为 fallback。
-- 未来收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`。
+- 收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`。
 - 密码提示与可复用 secret suggestion 继续由本地 backend 基于输出检测；shell hook 永远不捕获密码输入。
 
 ### 8.3 Manifest 与资产契约

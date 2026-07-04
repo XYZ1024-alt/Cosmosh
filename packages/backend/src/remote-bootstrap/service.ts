@@ -372,20 +372,76 @@ __cosmosh_json_escape() {
   return 1
 }
 
+__cosmosh_command_name_from_line() {
+  __cosmosh_line="$1"
+  __cosmosh_guard=0
+  while [ "$__cosmosh_guard" -lt 8 ]; do
+    __cosmosh_guard=$((__cosmosh_guard + 1))
+    __cosmosh_line="$(printf '%s' "$__cosmosh_line" | sed 's/^[[:space:];|&(){}]*//')" || return 1
+    __cosmosh_word="$(printf '%s' "$__cosmosh_line" | sed 's/[[:space:];|&(){}].*$//')" || return 1
+    __cosmosh_word="$(printf '%s' "$__cosmosh_word" | sed "s/^[\\"']//; s/[\\"']$//")" || return 1
+    case "$__cosmosh_word" in
+      "")
+        return 1
+        ;;
+      command|builtin|exec|env|noglob|time|*=*)
+        __cosmosh_line="$(printf '%s' "$__cosmosh_line" | sed 's/^[^[:space:];|&(){}]*[[:space:]]*//')" || return 1
+        continue
+        ;;
+    esac
+
+    __cosmosh_name="\${__cosmosh_word##*/}"
+    case "$__cosmosh_name" in
+      ""|__cosmosh_*|PROMPT_COMMAND|trap)
+        return 1
+        ;;
+    esac
+
+    printf '%s' "$__cosmosh_name"
+    return 0
+  done
+
+  return 1
+}
+
+__cosmosh_is_foreground_command() {
+  case "$1" in
+    vi|vim|vimdiff|view|nvim|nano|emacs|emacsclient|less|more|most|man|top|htop|btop|mysql|mariadb|psql|sqlite3|redis-cli|python|python2|python3|ipython|node|deno|bun|ruby|irb|pry|php|lua|R|r|sudo|su|ssh|sftp|ftp|telnet|screen|tmux)
+      return 0
+      ;;
+  esac
+
+  return 1
+}
+
 __cosmosh_emit_remote_shell_event() {
   [ -t 1 ] || return 0
   command -v base64 >/dev/null 2>&1 || return 0
   __cosmosh_event="$1"
-  __cosmosh_status="$2"
+  __cosmosh_status="\${2:-}"
+  __cosmosh_command="\${3:-}"
   __cosmosh_timestamp="$(date +%s 2>/dev/null || printf '0')000"
   __cosmosh_cwd="$(__cosmosh_json_escape "$PWD" 2>/dev/null)" || return 0
   __cosmosh_json="{\\"event\\":\\"$__cosmosh_event\\",\\"shell\\":\\"$__COSMOSH_REMOTE_SHELL\\",\\"cwd\\":\\"$__cosmosh_cwd\\",\\"timestamp\\":$__cosmosh_timestamp"
+  if [ -n "$__cosmosh_command" ]; then
+    __cosmosh_command="$(__cosmosh_json_escape "$__cosmosh_command" 2>/dev/null)" || return 0
+    __cosmosh_json="$__cosmosh_json,\\"command\\":\\"$__cosmosh_command\\""
+  fi
   if [ -n "$__cosmosh_status" ]; then
     __cosmosh_json="$__cosmosh_json,\\"exitCode\\":$__cosmosh_status"
   fi
   __cosmosh_json="$__cosmosh_json}"
   __cosmosh_payload="$(printf '%s' "$__cosmosh_json" | base64 | tr -d '\\r\\n')" || return 0
   printf '\\033]777;cosmosh;%s\\007' "$__cosmosh_payload"
+}
+
+__cosmosh_emit_command_start() {
+  __cosmosh_command="$(__cosmosh_command_name_from_line "$1" 2>/dev/null)" || return 0
+  [ -n "$__cosmosh_command" ] || return 0
+  __cosmosh_emit_remote_shell_event command-start "" "$__cosmosh_command"
+  if __cosmosh_is_foreground_command "$__cosmosh_command"; then
+    __cosmosh_emit_remote_shell_event foreground-command "" "$__cosmosh_command"
+  fi
 }
 
 __cosmosh_prompt_ready() {
@@ -403,7 +459,12 @@ __cosmosh_prompt_ready() {
     return `${common}
 __cosmosh_bash_prompt_command() {
   __cosmosh_status=$?
+  __COSMOSH_BASH_PREEXEC_READY=0
   __cosmosh_prompt_ready "$__cosmosh_status"
+}
+
+__cosmosh_bash_arm_preexec() {
+  __COSMOSH_BASH_PREEXEC_READY=1
 }
 
 if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
@@ -411,16 +472,40 @@ if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
   __cosmosh_emit_remote_shell_event integration-ready ""
   case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
     declare\\ -*a*PROMPT_COMMAND=*)
-      PROMPT_COMMAND=(__cosmosh_bash_prompt_command "\${PROMPT_COMMAND[@]}")
+      PROMPT_COMMAND=(__cosmosh_bash_prompt_command "\${PROMPT_COMMAND[@]}" __cosmosh_bash_arm_preexec)
       ;;
     *)
       if [ -n "\${PROMPT_COMMAND:-}" ]; then
-        PROMPT_COMMAND="__cosmosh_bash_prompt_command; \${PROMPT_COMMAND}"
+        PROMPT_COMMAND="__cosmosh_bash_prompt_command; \${PROMPT_COMMAND}; __cosmosh_bash_arm_preexec"
       else
-        PROMPT_COMMAND='__cosmosh_bash_prompt_command'
+        PROMPT_COMMAND='__cosmosh_bash_prompt_command; __cosmosh_bash_arm_preexec'
       fi
       ;;
   esac
+  __COSMOSH_BASH_PREV_DEBUG_CMD="$(trap -p DEBUG | sed -n "s/^trap -- '\\(.*\\)' DEBUG$/\\1/p")"
+  __cosmosh_bash_debug_trap() {
+    local __cosmosh_debug_status=$?
+    local __cosmosh_debug_command="\${BASH_COMMAND:-}"
+    if [ "\${__COSMOSH_BASH_DEBUG_ACTIVE:-0}" != "1" ] && [ "\${__COSMOSH_BASH_PREEXEC_READY:-0}" = "1" ]; then
+      case "$__cosmosh_debug_command" in
+        ""|__cosmosh_*|PROMPT_COMMAND=*|trap\\ *)
+          ;;
+        *)
+          __COSMOSH_BASH_PREEXEC_READY=0
+          __COSMOSH_BASH_DEBUG_ACTIVE=1
+          __cosmosh_emit_command_start "$__cosmosh_debug_command"
+          __COSMOSH_BASH_DEBUG_ACTIVE=0
+          ;;
+      esac
+    fi
+    if [ -n "\${__COSMOSH_BASH_PREV_DEBUG_CMD:-}" ]; then
+      __COSMOSH_BASH_DEBUG_ACTIVE=1
+      eval "$__COSMOSH_BASH_PREV_DEBUG_CMD"
+      __COSMOSH_BASH_DEBUG_ACTIVE=0
+    fi
+    return "$__cosmosh_debug_status"
+  }
+  trap '__cosmosh_bash_debug_trap' DEBUG
 fi
 `;
   }
@@ -436,12 +521,17 @@ if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
   __cosmosh_zsh_chpwd() {
     __cosmosh_emit_remote_shell_event cwd ""
   }
+  __cosmosh_zsh_preexec() {
+    __cosmosh_emit_command_start "$1"
+  }
   if autoload -Uz add-zsh-hook 2>/dev/null; then
     add-zsh-hook precmd __cosmosh_zsh_precmd
     add-zsh-hook chpwd __cosmosh_zsh_chpwd
+    add-zsh-hook preexec __cosmosh_zsh_preexec
   else
     precmd_functions=(\${precmd_functions[@]} __cosmosh_zsh_precmd)
     chpwd_functions=(\${chpwd_functions[@]} __cosmosh_zsh_chpwd)
+    preexec_functions=(\${preexec_functions[@]} __cosmosh_zsh_preexec)
   fi
 fi
 `;
@@ -468,6 +558,43 @@ function __cosmosh_json_escape
   string replace -a '\\\\' '\\\\\\\\' -- $argv[1] | string replace -a '"' '\\\\"'
 end
 
+function __cosmosh_command_name_from_line
+  set -l line (string trim -- $argv[1])
+  set -l guard 0
+  while test $guard -lt 8
+    set guard (math $guard + 1)
+    set line (string replace -r '^[[:space:];|&(){}]*' '' -- $line)
+    set -l word (string replace -r '[[:space:];|&(){}].*$' '' -- $line)
+    switch $word
+      case ''
+        return 1
+      case command builtin exec env noglob time '*=*'
+        set line (string replace -r '^[^[:space:];|&(){}]*[[:space:]]*' '' -- $line)
+        continue
+    end
+
+    set -l name (basename -- $word 2>/dev/null)
+    switch $name
+      case '' '__cosmosh_*' PROMPT_COMMAND trap
+        return 1
+    end
+
+    printf '%s' "$name"
+    return 0
+  end
+
+  return 1
+end
+
+function __cosmosh_is_foreground_command
+  switch $argv[1]
+    case vi vim vimdiff view nvim nano emacs emacsclient less more most man top htop btop mysql mariadb psql sqlite3 redis-cli python python2 python3 ipython node deno bun ruby irb pry php lua R r sudo su ssh sftp ftp telnet screen tmux
+      return 0
+  end
+
+  return 1
+end
+
 function __cosmosh_emit_remote_shell_event
   if not isatty stdout
     return 0
@@ -477,6 +604,7 @@ function __cosmosh_emit_remote_shell_event
   end
   set -l event $argv[1]
   set -l status $argv[2]
+  set -l command_name $argv[3]
   set -l timestamp (date +%s 2>/dev/null)
   if test -z "$timestamp"
     set timestamp 0
@@ -484,6 +612,10 @@ function __cosmosh_emit_remote_shell_event
   set timestamp "$timestamp"000
   set -l cwd (__cosmosh_json_escape "$PWD")
   set -l json "{\\"event\\":\\"$event\\",\\"shell\\":\\"$__COSMOSH_REMOTE_SHELL\\",\\"cwd\\":\\"$cwd\\",\\"timestamp\\":$timestamp"
+  if test -n "$command_name"
+    set -l escaped_command (__cosmosh_json_escape "$command_name")
+    set json "$json,\\"command\\":\\"$escaped_command\\""
+  end
   if test -n "$status"
     set json "$json,\\"exitCode\\":$status"
   end
@@ -492,9 +624,25 @@ function __cosmosh_emit_remote_shell_event
   printf '\\e]777;cosmosh;%s\\a' "$payload"
 end
 
+function __cosmosh_emit_command_start
+  set -l command_name (__cosmosh_command_name_from_line $argv[1])
+  if test -z "$command_name"
+    return 0
+  end
+
+  __cosmosh_emit_remote_shell_event command-start "" "$command_name"
+  if __cosmosh_is_foreground_command "$command_name"
+    __cosmosh_emit_remote_shell_event foreground-command "" "$command_name"
+  end
+end
+
 if not set -q __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED
   set -gx __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED 1
   __cosmosh_emit_remote_shell_event integration-ready
+
+  function __cosmosh_on_preexec --on-event fish_preexec
+    __cosmosh_emit_command_start $argv[1]
+  end
 
   function __cosmosh_on_prompt --on-event fish_prompt
     __cosmosh_emit_remote_shell_event cwd

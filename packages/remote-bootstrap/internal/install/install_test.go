@@ -85,8 +85,10 @@ func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.sh")
 	assertFileContains(t, helperPath, "__cosmosh_emit_remote_shell_event")
 	assertFileContains(t, helperPath, "PROMPT_COMMAND='__cosmosh_bash_prompt_command'")
+	assertFileContains(t, helperPath, "trap '__cosmosh_bash_debug_trap' DEBUG")
 	assertFileContains(t, helperPath, "command-end")
-	assertFileNotContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "foreground-command")
 }
 
 func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {
@@ -113,7 +115,9 @@ func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {
 	assertFileContains(t, filepath.Join(homeDir, ".zshrc"), markerStart)
 	assertFileContains(t, helperPath, "add-zsh-hook precmd __cosmosh_zsh_precmd")
 	assertFileContains(t, helperPath, "add-zsh-hook chpwd __cosmosh_zsh_chpwd")
-	assertFileNotContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "add-zsh-hook preexec __cosmosh_zsh_preexec")
+	assertFileContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "foreground-command")
 }
 
 func TestRunInstallsFishRemoteShellHelperHooks(t *testing.T) {
@@ -139,9 +143,11 @@ func TestRunInstallsFishRemoteShellHelperHooks(t *testing.T) {
 	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.fish")
 	assertFileContains(t, helperPath, "__cosmosh_emit_remote_shell_event")
 	assertFileContains(t, helperPath, "--on-event fish_prompt")
+	assertFileContains(t, helperPath, "--on-event fish_preexec")
 	assertFileContains(t, helperPath, "--on-event fish_postexec")
 	assertFileContains(t, helperPath, "--on-variable PWD")
-	assertFileNotContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "command-start")
+	assertFileContains(t, helperPath, "foreground-command")
 }
 
 func TestRunInstallsShAshDegradedPromptHooks(t *testing.T) {
@@ -384,15 +390,15 @@ func assertFileNotExists(t *testing.T, path string) {
 
 func posixHelperPayload(shell string) string {
 	if shell == "zsh" {
-		return "__cosmosh_emit_remote_shell_event() { :; }\nadd-zsh-hook precmd __cosmosh_zsh_precmd\nadd-zsh-hook chpwd __cosmosh_zsh_chpwd\n# command-end\n"
+		return "__cosmosh_emit_remote_shell_event() { :; }\nadd-zsh-hook precmd __cosmosh_zsh_precmd\nadd-zsh-hook chpwd __cosmosh_zsh_chpwd\nadd-zsh-hook preexec __cosmosh_zsh_preexec\n# command-start\n# foreground-command\n# command-end\n"
 	}
 	if shell == "bash" {
-		return "__cosmosh_emit_remote_shell_event() { :; }\nPROMPT_COMMAND='__cosmosh_bash_prompt_command'\n# command-end\n"
+		return "__cosmosh_emit_remote_shell_event() { :; }\nPROMPT_COMMAND='__cosmosh_bash_prompt_command'\ntrap '__cosmosh_bash_debug_trap' DEBUG\n# command-start\n# foreground-command\n# command-end\n"
 	}
 
 	return "__cosmosh_emit_remote_shell_event() { :; }\nPS1='$(__cosmosh_prompt_ready \"$?\")'$PS1\n# command-end\n"
 }
 
 func fishHelperPayload() string {
-	return "__cosmosh_emit_remote_shell_event\nfunction __cosmosh_on_prompt --on-event fish_prompt\nend\nfunction __cosmosh_on_postexec --on-event fish_postexec\nend\nfunction __cosmosh_on_pwd --on-variable PWD\nend\n"
+	return "__cosmosh_emit_remote_shell_event\nfunction __cosmosh_on_preexec --on-event fish_preexec\nend\nfunction __cosmosh_on_prompt --on-event fish_prompt\nend\nfunction __cosmosh_on_postexec --on-event fish_postexec\nend\nfunction __cosmosh_on_pwd --on-variable PWD\nend\n# command-start\n# foreground-command\n"
 }

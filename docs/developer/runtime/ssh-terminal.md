@@ -422,17 +422,18 @@ type RemoteShellEventMessage = {
 
 Current first-phase helper behavior:
 
-- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code.
-- Zsh uses `precmd` and `chpwd` hooks, preferring `add-zsh-hook` when available.
-- Fish uses `fish_prompt`, `fish_postexec`, and `PWD` variable events.
+- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. A guarded `DEBUG` trap emits one `command-start` per submitted command line after prompt setup finishes.
+- Zsh uses `precmd`, `preexec`, and `chpwd` hooks, preferring `add-zsh-hook` when available.
+- Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash degrade to prompt-based `cwd`, `prompt-ready`, and `command-end` only; they do not claim precise preexec behavior.
-- First phase intentionally does not emit `command-start`, full command text, line-buffer state, password input, or native shell completion lists.
+- `command-start` and `foreground-command` only carry the sanitized executable name (for example `vim`), not the full command line or arguments.
+- First phase intentionally does not emit full command text, line-buffer state, password input, or native shell completion lists.
 
 Backend state model:
 
 - Each `SshLiveSession` keeps `remoteShellReady`, `remoteShellCwd`, `remoteShellForegroundCommand`, `lastRemoteCommand`, `lastExitCode`, and `lastCommandDurationMs`.
 - `remoteShellCwd` is the preferred path-completion cwd source; existing exec probes and renderer hints remain fallback paths.
-- When `remoteShellForegroundCommand` is set by a future foreground event, backend returns an empty completion response until the next `prompt-ready`.
+- When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`.
 - Password prompts and reusable secret suggestions remain output-driven local backend behavior; shell hooks never capture password input.
 
 ### 8.3 Manifest and Asset Contract

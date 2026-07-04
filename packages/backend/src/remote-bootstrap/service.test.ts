@@ -158,8 +158,54 @@ test('RemoteBootstrapService embeds bash remote shell event hooks in helper payl
   assert.match(helper, /OSC 777|Remote Enhancements shell integration/);
   assert.match(helper, /__cosmosh_emit_remote_shell_event/);
   assert.match(helper, /PROMPT_COMMAND=.*__cosmosh_bash_prompt_command/);
+  assert.match(helper, /trap '__cosmosh_bash_debug_trap' DEBUG/);
   assert.match(helper, /command-end/);
-  assert.doesNotMatch(helper, /command-start/);
+  assert.match(helper, /command-start/);
+  assert.match(helper, /foreground-command/);
+  assert.match(helper, /vim\|vimdiff/);
+});
+
+test('RemoteBootstrapService embeds zsh command start and foreground hooks in helper payload', async () => {
+  const statuses: RemoteBootstrapStatus[] = [];
+  const executedCommands: string[] = [];
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+    manifestUrl: 'https://downloads.example.test/manifest.json',
+    fetchManifest: async () => ({
+      version: '1.2.3',
+      assets: [
+        {
+          os: 'linux',
+          arch: 'amd64',
+          url: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+          sha256: TEST_SHA256,
+        },
+      ],
+    }),
+  });
+
+  await service.runForSession({
+    serverId: 'server-1',
+    sessionId: 'session-1',
+    executeCommand: async (command) => {
+      executedCommands.push(command);
+      if (executedCommands.length === 1) {
+        return '{"os":"linux","arch":"amd64","shell":"zsh"}\n';
+      }
+
+      return '{"type":"bootstrap-status","phase":"install","state":"ok","version":"1.2.3"}\n';
+    },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  const helperMatch = /cosmosh_helper_payload_b64='([^']+)'/.exec(decodeWrapperPayload(executedCommands.at(-1) ?? ''));
+  assert.ok(helperMatch?.[1], 'expected helper payload in wrapper');
+  const helper = Buffer.from(helperMatch[1], 'base64').toString('utf8');
+
+  assert.equal(statuses.at(-1)?.state, 'ok');
+  assert.match(helper, /add-zsh-hook preexec __cosmosh_zsh_preexec/);
+  assert.match(helper, /command-start/);
+  assert.match(helper, /foreground-command/);
 });
 
 test('RemoteBootstrapService embeds fish remote shell event hooks in helper payload', async () => {
@@ -173,9 +219,11 @@ test('RemoteBootstrapService embeds fish remote shell event hooks in helper payl
 
   assert.match(helper, /__cosmosh_emit_remote_shell_event/);
   assert.match(helper, /--on-event fish_prompt/);
+  assert.match(helper, /--on-event fish_preexec/);
   assert.match(helper, /--on-event fish_postexec/);
   assert.match(helper, /--on-variable PWD/);
-  assert.doesNotMatch(helper, /command-start/);
+  assert.match(helper, /command-start/);
+  assert.match(helper, /foreground-command/);
 });
 
 test('RemoteBootstrapService rejects manifests that include invalid assets', async () => {
