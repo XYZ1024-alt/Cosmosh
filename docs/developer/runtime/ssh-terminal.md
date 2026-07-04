@@ -422,18 +422,18 @@ type RemoteShellEventMessage = {
 
 Current first-phase helper behavior:
 
-- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. A guarded `DEBUG` trap emits one `command-start` per submitted command line after prompt setup finishes.
+- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. A guarded `DEBUG` trap emits one `command-start` and one `foreground-command` per submitted command line after prompt setup finishes.
 - Zsh uses `precmd`, `preexec`, and `chpwd` hooks, preferring `add-zsh-hook` when available.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash degrade to prompt-based `cwd`, `prompt-ready`, and `command-end` only; they do not claim precise preexec behavior.
-- `command-start` and `foreground-command` only carry the sanitized executable name (for example `vim`), not the full command line or arguments.
+- `command-start` and `foreground-command` are emitted for every submitted command that can be reduced to an executable name; they carry only that sanitized executable name (for example `vim`), not the full command line or arguments.
 - First phase intentionally does not emit full command text, line-buffer state, password input, or native shell completion lists.
 
 Backend state model:
 
 - Each `SshLiveSession` keeps `remoteShellReady`, `remoteShellCwd`, `remoteShellForegroundCommand`, `lastRemoteCommand`, `lastExitCode`, and `lastCommandDurationMs`.
 - `remoteShellCwd` is the preferred path-completion cwd source; existing exec probes and renderer hints remain fallback paths.
-- When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`.
+- When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`; this covers short commands, long-running foreground processes, and unknown TUI/REPL programs without maintaining a command whitelist.
 - Password prompts and reusable secret suggestions remain output-driven local backend behavior; shell hooks never capture password input.
 
 ### 8.3 Manifest and Asset Contract

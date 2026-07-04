@@ -164,12 +164,12 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 
 First-phase behavior:
 
-- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` per submitted command line.
+- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line.
 - Zsh uses `precmd`, `preexec`, and `chpwd`, preferring `add-zsh-hook` when available so existing hook functions remain in the chain.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash only install prompt-based degraded hooks for `cwd`, `prompt-ready`, and `command-end`; they do not claim precise preexec behavior.
 
-The helper must not capture passwords, private keys, terminal line buffers, full screen output, or native shell completion lists. `command-start` and `foreground-command` carry only the sanitized executable name, not the full submitted command line or arguments.
+The helper must not capture passwords, private keys, terminal line buffers, full screen output, or native shell completion lists. `command-start` and `foreground-command` are emitted for every submitted command that can be reduced to an executable name, and they carry only that sanitized executable name, not the full submitted command line or arguments.
 
 ## Idempotency and Repair Behavior
 

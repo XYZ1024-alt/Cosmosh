@@ -404,16 +404,6 @@ __cosmosh_command_name_from_line() {
   return 1
 }
 
-__cosmosh_is_foreground_command() {
-  case "$1" in
-    vi|vim|vimdiff|view|nvim|nano|emacs|emacsclient|less|more|most|man|top|htop|btop|mysql|mariadb|psql|sqlite3|redis-cli|python|python2|python3|ipython|node|deno|bun|ruby|irb|pry|php|lua|R|r|sudo|su|ssh|sftp|ftp|telnet|screen|tmux)
-      return 0
-      ;;
-  esac
-
-  return 1
-}
-
 __cosmosh_emit_remote_shell_event() {
   [ -t 1 ] || return 0
   command -v base64 >/dev/null 2>&1 || return 0
@@ -439,9 +429,7 @@ __cosmosh_emit_command_start() {
   __cosmosh_command="$(__cosmosh_command_name_from_line "$1" 2>/dev/null)" || return 0
   [ -n "$__cosmosh_command" ] || return 0
   __cosmosh_emit_remote_shell_event command-start "" "$__cosmosh_command"
-  if __cosmosh_is_foreground_command "$__cosmosh_command"; then
-    __cosmosh_emit_remote_shell_event foreground-command "" "$__cosmosh_command"
-  fi
+  __cosmosh_emit_remote_shell_event foreground-command "" "$__cosmosh_command"
 }
 
 __cosmosh_prompt_ready() {
@@ -586,15 +574,6 @@ function __cosmosh_command_name_from_line
   return 1
 end
 
-function __cosmosh_is_foreground_command
-  switch $argv[1]
-    case vi vim vimdiff view nvim nano emacs emacsclient less more most man top htop btop mysql mariadb psql sqlite3 redis-cli python python2 python3 ipython node deno bun ruby irb pry php lua R r sudo su ssh sftp ftp telnet screen tmux
-      return 0
-  end
-
-  return 1
-end
-
 function __cosmosh_emit_remote_shell_event
   if not isatty stdout
     return 0
@@ -631,9 +610,7 @@ function __cosmosh_emit_command_start
   end
 
   __cosmosh_emit_remote_shell_event command-start "" "$command_name"
-  if __cosmosh_is_foreground_command "$command_name"
-    __cosmosh_emit_remote_shell_event foreground-command "" "$command_name"
-  end
+  __cosmosh_emit_remote_shell_event foreground-command "" "$command_name"
 end
 
 if not set -q __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED

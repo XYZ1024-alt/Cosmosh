@@ -162,7 +162,7 @@ test('RemoteBootstrapService embeds bash remote shell event hooks in helper payl
   assert.match(helper, /command-end/);
   assert.match(helper, /command-start/);
   assert.match(helper, /foreground-command/);
-  assert.match(helper, /vim\|vimdiff/);
+  assert.doesNotMatch(helper, /__cosmosh_is_foreground_command/);
 });
 
 test('RemoteBootstrapService embeds zsh command start and foreground hooks in helper payload', async () => {
