@@ -56,8 +56,8 @@ type TerminalContextMenuProps = {
   splitTerminalLabel?: string;
   /** Label for the "Close Terminal" menu item. */
   closeTerminalLabel?: string;
-  /** Label for the remote bootstrap debug panel toggle. */
-  remoteBootstrapDebugLabel?: string;
+  /** Label for the Remote Enhancements debug panel toggle. */
+  remoteEnhancementsDebugLabel?: string;
   /** Whether split action is available for the current pane. */
   canSplitTerminal?: boolean;
   /** Whether close action is available for the current pane. */
@@ -81,7 +81,7 @@ type TerminalContextMenuProps = {
   onClearTerminal: () => void;
   onSplitTerminal?: () => void;
   onCloseTerminal?: () => void;
-  onToggleRemoteBootstrapDebug?: () => void;
+  onToggleRemoteEnhancementsDebug?: () => void;
   children: React.ReactNode;
 };
 
@@ -102,7 +102,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   clearTerminalShortcutLabel,
   splitTerminalLabel,
   closeTerminalLabel,
-  remoteBootstrapDebugLabel,
+  remoteEnhancementsDebugLabel,
   canSplitTerminal = false,
   canCloseTerminal = false,
   canOpenDirectoryInSftp = false,
@@ -117,7 +117,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   onClearTerminal,
   onSplitTerminal,
   onCloseTerminal,
-  onToggleRemoteBootstrapDebug,
+  onToggleRemoteEnhancementsDebug,
   children,
 }) => {
   const triggerHostRef = React.useRef<HTMLDivElement | null>(null);
@@ -365,14 +365,14 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           </ContextMenuItem>
         ) : null}
 
-        {remoteBootstrapDebugLabel && onToggleRemoteBootstrapDebug ? (
+        {remoteEnhancementsDebugLabel && onToggleRemoteEnhancementsDebug ? (
           <>
             <ContextMenuSeparator />
             <ContextMenuItem
               icon={Bug}
-              onSelect={onToggleRemoteBootstrapDebug}
+              onSelect={onToggleRemoteEnhancementsDebug}
             >
-              {remoteBootstrapDebugLabel}
+              {remoteEnhancementsDebugLabel}
             </ContextMenuItem>
           </>
         ) : null}

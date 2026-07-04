@@ -99,6 +99,17 @@ export type ServerInboundMessage =
       version?: string;
       code?: string;
       message?: string;
+    }
+  | {
+      type: 'remote-shell-event';
+      event: 'integration-ready' | 'prompt-ready' | 'cwd' | 'command-start' | 'command-end' | 'foreground-command';
+      shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+      cwd?: string;
+      command?: string;
+      exitCode?: number;
+      durationMs?: number;
+      commandId?: string;
+      timestamp: number;
     };
 
 /**
@@ -107,11 +118,16 @@ export type ServerInboundMessage =
 export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'bootstrap-status' }>;
 
 /**
- * Timestamped remote bootstrap status event retained for SSH debug inspection.
+ * Remote shell status event emitted by the installed shell helper over OSC 777.
  */
-export type RemoteBootstrapDebugEvent = {
+export type RemoteShellEvent = Extract<ServerInboundMessage, { type: 'remote-shell-event' }>;
+
+/**
+ * Timestamped remote enhancement event retained for SSH debug inspection.
+ */
+export type RemoteEnhancementsDebugEvent = {
   receivedAt: number;
-  payload: RemoteBootstrapStatus;
+  payload: RemoteBootstrapStatus | RemoteShellEvent;
 };
 
 /**

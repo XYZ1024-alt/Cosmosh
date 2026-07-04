@@ -11,8 +11,8 @@ import {
   type HostFingerprintPrompt,
   MAX_TERMINAL_PANES,
   type MirrorPaneRuntime,
-  type RemoteBootstrapDebugEvent,
   type RemoteBootstrapStatus,
+  type RemoteEnhancementsDebugEvent,
   type ResolvedTerminalTarget,
   type SshTelemetryState,
   type TerminalAutocompleteAnchor,
@@ -207,7 +207,7 @@ export type SshCoreState = {
   connectionError: string;
   telemetryState: SshTelemetryState;
   remoteBootstrapStatus: RemoteBootstrapStatus | null;
-  remoteBootstrapDebugEvents: RemoteBootstrapDebugEvent[];
+  remoteEnhancementsDebugEvents: RemoteEnhancementsDebugEvent[];
   hostFingerprintPrompt: HostFingerprintPrompt | null;
   canSplitTerminal: boolean;
   selectionAnchor: TerminalSelectionAnchor | null;
@@ -545,7 +545,9 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const [connectionError, setConnectionError] = React.useState<string>('');
   const [telemetryState, setTelemetryState] = React.useState<SshTelemetryState>(DEFAULT_TELEMETRY_STATE);
   const [remoteBootstrapStatus, setRemoteBootstrapStatus] = React.useState<RemoteBootstrapStatus | null>(null);
-  const [remoteBootstrapDebugEvents, setRemoteBootstrapDebugEvents] = React.useState<RemoteBootstrapDebugEvent[]>([]);
+  const [remoteEnhancementsDebugEvents, setRemoteEnhancementsDebugEvents] = React.useState<
+    RemoteEnhancementsDebugEvent[]
+  >([]);
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
 
   React.useEffect(() => {
@@ -904,7 +906,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
-    setRemoteBootstrapDebugEvents,
+    setRemoteEnhancementsDebugEvents,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     setActivePane: activatePane,
     refreshSelectionAnchor,
@@ -1239,7 +1241,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       connectionError,
       telemetryState,
       remoteBootstrapStatus,
-      remoteBootstrapDebugEvents,
+      remoteEnhancementsDebugEvents,
       hostFingerprintPrompt,
       canSplitTerminal: terminalPaneIds.length < MAX_TERMINAL_PANES,
       selectionAnchor,

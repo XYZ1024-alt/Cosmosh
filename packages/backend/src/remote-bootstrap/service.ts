@@ -352,10 +352,164 @@ const buildWrapperScript = (
 
 const buildHelperScript = (shell: RemoteBootstrapProbe['shell']): string => {
   if (shell === 'fish') {
-    return 'set -gx COSMOSH_BOOTSTRAP_READY 1\n';
+    return buildFishHelperScript();
   }
 
-  return 'export COSMOSH_BOOTSTRAP_READY=1\n';
+  return buildPosixHelperScript(shell);
+};
+
+const buildPosixHelperScript = (shell: Exclude<RemoteBootstrapProbe['shell'], 'fish'>): string => {
+  const common = `# Cosmosh Remote Enhancements shell integration.
+export COSMOSH_BOOTSTRAP_READY=1
+__COSMOSH_REMOTE_SHELL=${quotePosixShell(shell)}
+
+__cosmosh_json_escape() {
+  if command -v sed >/dev/null 2>&1; then
+    printf '%s' "$1" | sed 's/\\\\/\\\\\\\\/g; s/"/\\\\"/g'
+    return
+  fi
+
+  return 1
+}
+
+__cosmosh_emit_remote_shell_event() {
+  [ -t 1 ] || return 0
+  command -v base64 >/dev/null 2>&1 || return 0
+  __cosmosh_event="$1"
+  __cosmosh_status="$2"
+  __cosmosh_timestamp="$(date +%s 2>/dev/null || printf '0')000"
+  __cosmosh_cwd="$(__cosmosh_json_escape "$PWD" 2>/dev/null)" || return 0
+  __cosmosh_json="{\\"event\\":\\"$__cosmosh_event\\",\\"shell\\":\\"$__COSMOSH_REMOTE_SHELL\\",\\"cwd\\":\\"$__cosmosh_cwd\\",\\"timestamp\\":$__cosmosh_timestamp"
+  if [ -n "$__cosmosh_status" ]; then
+    __cosmosh_json="$__cosmosh_json,\\"exitCode\\":$__cosmosh_status"
+  fi
+  __cosmosh_json="$__cosmosh_json}"
+  __cosmosh_payload="$(printf '%s' "$__cosmosh_json" | base64 | tr -d '\\r\\n')" || return 0
+  printf '\\033]777;cosmosh;%s\\007' "$__cosmosh_payload"
+}
+
+__cosmosh_prompt_ready() {
+  __cosmosh_status="$1"
+  if [ "\${__COSMOSH_REMOTE_SHELL_SEEN_PROMPT:-0}" = "1" ]; then
+    __cosmosh_emit_remote_shell_event command-end "$__cosmosh_status"
+  fi
+  __COSMOSH_REMOTE_SHELL_SEEN_PROMPT=1
+  __cosmosh_emit_remote_shell_event cwd ""
+  __cosmosh_emit_remote_shell_event prompt-ready ""
+}
+`;
+
+  if (shell === 'bash') {
+    return `${common}
+__cosmosh_bash_prompt_command() {
+  __cosmosh_status=$?
+  __cosmosh_prompt_ready "$__cosmosh_status"
+}
+
+if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
+  __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
+  __cosmosh_emit_remote_shell_event integration-ready ""
+  case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
+    declare\\ -*a*PROMPT_COMMAND=*)
+      PROMPT_COMMAND=(__cosmosh_bash_prompt_command "\${PROMPT_COMMAND[@]}")
+      ;;
+    *)
+      if [ -n "\${PROMPT_COMMAND:-}" ]; then
+        PROMPT_COMMAND="__cosmosh_bash_prompt_command; \${PROMPT_COMMAND}"
+      else
+        PROMPT_COMMAND='__cosmosh_bash_prompt_command'
+      fi
+      ;;
+  esac
+fi
+`;
+  }
+
+  if (shell === 'zsh') {
+    return `${common}
+if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
+  __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
+  __cosmosh_emit_remote_shell_event integration-ready ""
+  __cosmosh_zsh_precmd() {
+    __cosmosh_prompt_ready "$?"
+  }
+  __cosmosh_zsh_chpwd() {
+    __cosmosh_emit_remote_shell_event cwd ""
+  }
+  if autoload -Uz add-zsh-hook 2>/dev/null; then
+    add-zsh-hook precmd __cosmosh_zsh_precmd
+    add-zsh-hook chpwd __cosmosh_zsh_chpwd
+  else
+    precmd_functions=(\${precmd_functions[@]} __cosmosh_zsh_precmd)
+    chpwd_functions=(\${chpwd_functions[@]} __cosmosh_zsh_chpwd)
+  fi
+fi
+`;
+  }
+
+  return `${common}
+if [ "\${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
+  __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
+  __cosmosh_emit_remote_shell_event integration-ready ""
+  if [ -n "\${PS1:-}" ]; then
+    __COSMOSH_ORIGINAL_PS1="$PS1"
+    PS1='$(__cosmosh_prompt_ready "$?")'"$__COSMOSH_ORIGINAL_PS1"
+  fi
+fi
+`;
+};
+
+const buildFishHelperScript = (): string => {
+  return `# Cosmosh Remote Enhancements shell integration.
+set -gx COSMOSH_BOOTSTRAP_READY 1
+set -gx __COSMOSH_REMOTE_SHELL fish
+
+function __cosmosh_json_escape
+  string replace -a '\\\\' '\\\\\\\\' -- $argv[1] | string replace -a '"' '\\\\"'
+end
+
+function __cosmosh_emit_remote_shell_event
+  if not isatty stdout
+    return 0
+  end
+  if not command -q base64
+    return 0
+  end
+  set -l event $argv[1]
+  set -l status $argv[2]
+  set -l timestamp (date +%s 2>/dev/null)
+  if test -z "$timestamp"
+    set timestamp 0
+  end
+  set timestamp "$timestamp"000
+  set -l cwd (__cosmosh_json_escape "$PWD")
+  set -l json "{\\"event\\":\\"$event\\",\\"shell\\":\\"$__COSMOSH_REMOTE_SHELL\\",\\"cwd\\":\\"$cwd\\",\\"timestamp\\":$timestamp"
+  if test -n "$status"
+    set json "$json,\\"exitCode\\":$status"
+  end
+  set json "$json}"
+  set -l payload (printf '%s' "$json" | base64 | string collect | string replace -a \\n '')
+  printf '\\e]777;cosmosh;%s\\a' "$payload"
+end
+
+if not set -q __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED
+  set -gx __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED 1
+  __cosmosh_emit_remote_shell_event integration-ready
+
+  function __cosmosh_on_prompt --on-event fish_prompt
+    __cosmosh_emit_remote_shell_event cwd
+    __cosmosh_emit_remote_shell_event prompt-ready
+  end
+
+  function __cosmosh_on_postexec --on-event fish_postexec
+    __cosmosh_emit_remote_shell_event command-end $status
+  end
+
+  function __cosmosh_on_pwd --on-variable PWD
+    __cosmosh_emit_remote_shell_event cwd
+  end
+end
+`;
 };
 
 const buildPosixWrapper = (config: {

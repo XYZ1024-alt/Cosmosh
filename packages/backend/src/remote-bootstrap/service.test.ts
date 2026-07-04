@@ -146,6 +146,38 @@ test('RemoteBootstrapService accepts bash remotes and installs through bash prof
   assert.match(decodeWrapperPayload(executedCommands.at(-1) ?? ''), /install --shell "\$cosmosh_shell"/);
 });
 
+test('RemoteBootstrapService embeds bash remote shell event hooks in helper payload', async () => {
+  const result = await renderWrapper({
+    assetUrl: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+    shell: 'bash',
+  });
+  const helperMatch = /cosmosh_helper_payload_b64='([^']+)'/.exec(result.wrapper);
+  assert.ok(helperMatch?.[1], 'expected helper payload in wrapper');
+  const helper = Buffer.from(helperMatch[1], 'base64').toString('utf8');
+
+  assert.match(helper, /OSC 777|Remote Enhancements shell integration/);
+  assert.match(helper, /__cosmosh_emit_remote_shell_event/);
+  assert.match(helper, /PROMPT_COMMAND=.*__cosmosh_bash_prompt_command/);
+  assert.match(helper, /command-end/);
+  assert.doesNotMatch(helper, /command-start/);
+});
+
+test('RemoteBootstrapService embeds fish remote shell event hooks in helper payload', async () => {
+  const result = await renderWrapper({
+    assetUrl: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+    shell: 'fish',
+  });
+  const helperMatch = /set cosmosh_helper_payload_b64 '([^']+)'/.exec(result.wrapper);
+  assert.ok(helperMatch?.[1], 'expected helper payload in fish wrapper');
+  const helper = Buffer.from(helperMatch[1], 'base64').toString('utf8');
+
+  assert.match(helper, /__cosmosh_emit_remote_shell_event/);
+  assert.match(helper, /--on-event fish_prompt/);
+  assert.match(helper, /--on-event fish_postexec/);
+  assert.match(helper, /--on-variable PWD/);
+  assert.doesNotMatch(helper, /command-start/);
+});
+
 test('RemoteBootstrapService rejects manifests that include invalid assets', async () => {
   const statuses: RemoteBootstrapStatus[] = [];
   const executedCommands: string[] = [];

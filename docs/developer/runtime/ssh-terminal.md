@@ -378,9 +378,62 @@ sequenceDiagram
 
 - Bootstrap starts after the first WebSocket attach and only once per SSH session.
 - The side-channel uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
-- Renderer stores the latest `bootstrap-status` and a per-session debug event history. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Bootstrap Debug`; selecting it opens a fixed top-right terminal overlay with the latest phase/state/code/message/version plus selectable raw JSON payloads for every received bootstrap event in the current session attempt.
-- The debug overlay only records side-channel remote bootstrap status events. It does not record terminal `input`, terminal `output`, command text, or password prompts.
-- Terminal `ready`, `output`, telemetry, history, and completion messages remain independent from bootstrap progress.
+- Renderer stores the latest `bootstrap-status` plus a per-session Remote Enhancements debug event history. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug`; selecting it opens a fixed top-right terminal overlay with the latest bootstrap phase/state/code/message/version plus selectable raw JSON payloads for every received bootstrap status and remote shell event in the current session attempt.
+- The debug overlay records status/event payloads only. It does not record terminal `input`, terminal `output`, passwords, private key material, or full screen output.
+- Terminal `ready`, `output`, telemetry, history, completion, and shell-state messages remain independent from bootstrap progress.
+
+### 8.2.1 Remote Shell Event Protocol
+
+After Remote Bootstrap installs the helper, interactive shell startup files source a user-scoped shell integration. The helper emits runtime shell state through OSC 777 control sequences on the interactive PTY:
+
+```text
+ESC ] 777 ; cosmosh ; <base64-json> BEL
+```
+
+Backend parsing rules:
+
+- `SshSessionService` streams SSH output through `RemoteShellEventOscParser` before writing to xterm.
+- Valid Cosmosh OSC sequences are stripped from visible terminal output, decoded, normalized, and forwarded to renderer as `remote-shell-event`.
+- Non-Cosmosh OSC sequences and ordinary ANSI output remain visible and unchanged.
+- Invalid JSON, invalid event shapes, and payloads over 8 KiB are dropped without crashing the session.
+- Split SSH chunks are supported; incomplete OSC data is buffered until a BEL or ST terminator arrives.
+
+Server-to-renderer payload:
+
+```ts
+type RemoteShellEventMessage = {
+  type: 'remote-shell-event';
+  event:
+    | 'integration-ready'
+    | 'prompt-ready'
+    | 'cwd'
+    | 'command-start'
+    | 'command-end'
+    | 'foreground-command';
+  shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+  cwd?: string;
+  command?: string;
+  exitCode?: number;
+  durationMs?: number;
+  commandId?: string;
+  timestamp: number;
+};
+```
+
+Current first-phase helper behavior:
+
+- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code.
+- Zsh uses `precmd` and `chpwd` hooks, preferring `add-zsh-hook` when available.
+- Fish uses `fish_prompt`, `fish_postexec`, and `PWD` variable events.
+- Sh/Ash degrade to prompt-based `cwd`, `prompt-ready`, and `command-end` only; they do not claim precise preexec behavior.
+- First phase intentionally does not emit `command-start`, full command text, line-buffer state, password input, or native shell completion lists.
+
+Backend state model:
+
+- Each `SshLiveSession` keeps `remoteShellReady`, `remoteShellCwd`, `remoteShellForegroundCommand`, `lastRemoteCommand`, `lastExitCode`, and `lastCommandDurationMs`.
+- `remoteShellCwd` is the preferred path-completion cwd source; existing exec probes and renderer hints remain fallback paths.
+- When `remoteShellForegroundCommand` is set by a future foreground event, backend returns an empty completion response until the next `prompt-ready`.
+- Password prompts and reusable secret suggestions remain output-driven local backend behavior; shell hooks never capture password input.
 
 ### 8.3 Manifest and Asset Contract
 

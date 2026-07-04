@@ -15,7 +15,7 @@ import {
   toResolvedTargetSnapshot,
 } from './ssh-target';
 import type {
-  RemoteBootstrapDebugEvent,
+  RemoteEnhancementsDebugEvent,
   ResolvedTerminalTarget,
   ServerInboundMessage,
   SshTelemetryState,
@@ -74,7 +74,7 @@ type UseSshPrimarySessionParams = {
   setRemoteBootstrapStatus: React.Dispatch<
     React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
   >;
-  setRemoteBootstrapDebugEvents: React.Dispatch<React.SetStateAction<RemoteBootstrapDebugEvent[]>>;
+  setRemoteEnhancementsDebugEvents: React.Dispatch<React.SetStateAction<RemoteEnhancementsDebugEvent[]>>;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -139,7 +139,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
-    setRemoteBootstrapDebugEvents,
+    setRemoteEnhancementsDebugEvents,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
@@ -384,7 +384,18 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (payload.type === 'bootstrap-status') {
           setRemoteBootstrapStatus(payload);
-          setRemoteBootstrapDebugEvents((previous) => [
+          setRemoteEnhancementsDebugEvents((previous) => [
+            ...previous,
+            {
+              receivedAt: Date.now(),
+              payload,
+            },
+          ]);
+          return;
+        }
+
+        if (payload.type === 'remote-shell-event') {
+          setRemoteEnhancementsDebugEvents((previous) => [
             ...previous,
             {
               receivedAt: Date.now(),
@@ -419,7 +430,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         setConnectionError('');
         setTelemetryState(DEFAULT_TELEMETRY_STATE);
         setRemoteBootstrapStatus(null);
-        setRemoteBootstrapDebugEvents([]);
+        setRemoteEnhancementsDebugEvents([]);
 
         const activeIntent = connectionIntentRef.current;
         if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
@@ -702,7 +713,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setActivePane,
     setConnectionError,
     setConnectionState,
-    setRemoteBootstrapDebugEvents,
+    setRemoteEnhancementsDebugEvents,
     setRemoteBootstrapStatus,
     setTelemetryState,
     socketRef,

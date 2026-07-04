@@ -377,9 +377,62 @@ sequenceDiagram
 
 - Bootstrap 会在首次 WebSocket attach 后启动，并且每个 SSH session 只启动一次。
 - 侧通道使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
-- Renderer 会保存最新 `bootstrap-status` 和当前 session 尝试内的调试事件历史。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Bootstrap Debug`；选择后会在终端右上角打开固定浮层，展示最新 phase/state/code/message/version，以及当前 session 尝试中收到的每条可选中的 bootstrap 事件原始 JSON payload。
-- 调试浮层只记录侧通道远端 bootstrap 状态事件，不记录 terminal `input`、terminal `output`、命令文本或密码提示。
-- Terminal `ready`、`output`、telemetry、history 与 completion 消息都与 bootstrap 进度彼此独立。
+- Renderer 会保存最新 `bootstrap-status` 以及当前 session 尝试内的 Remote Enhancements 调试事件历史。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Enhancements Debug`；选择后会在终端右上角打开固定浮层，展示最新 bootstrap phase/state/code/message/version，以及当前 session 尝试中收到的每条 bootstrap 状态和远端 shell 事件原始 JSON payload，内容可选中。
+- 调试浮层只记录状态/事件 payload，不记录 terminal `input`、terminal `output`、密码、私钥材料或完整屏幕输出。
+- Terminal `ready`、`output`、telemetry、history、completion 与 shell-state 消息都与 bootstrap 进度彼此独立。
+
+### 8.2.1 远端 Shell 事件协议
+
+Remote Bootstrap 安装 helper 后，交互式 shell 启动文件会 source 用户级 shell integration。helper 会通过交互 PTY 上的 OSC 777 控制序列发送运行期 shell 状态：
+
+```text
+ESC ] 777 ; cosmosh ; <base64-json> BEL
+```
+
+Backend 解析规则：
+
+- `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
+- 合法 Cosmosh OSC 会从可见终端输出中剥离，解码、规范化后以 `remote-shell-event` 转发给 renderer。
+- 非 Cosmosh OSC 与普通 ANSI 输出保持可见且不变。
+- 非法 JSON、非法事件形状以及超过 8 KiB 的 payload 会被丢弃，不会导致 session 崩溃。
+- 支持 SSH chunk 切分；未完成的 OSC 数据会缓冲到 BEL 或 ST 结束符到来。
+
+服务端到 renderer payload：
+
+```ts
+type RemoteShellEventMessage = {
+  type: 'remote-shell-event';
+  event:
+    | 'integration-ready'
+    | 'prompt-ready'
+    | 'cwd'
+    | 'command-start'
+    | 'command-end'
+    | 'foreground-command';
+  shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+  cwd?: string;
+  command?: string;
+  exitCode?: number;
+  durationMs?: number;
+  commandId?: string;
+  timestamp: number;
+};
+```
+
+当前第一期 helper 行为：
+
+- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。
+- Zsh 使用 `precmd` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
+- Fish 使用 `fish_prompt`、`fish_postexec` 与 `PWD` variable event。
+- Sh/Ash 降级为仅基于 prompt 的 `cwd`、`prompt-ready` 与 `command-end`，不承诺精准 preexec 行为。
+- 第一期刻意不发送 `command-start`、完整命令文本、line-buffer 状态、密码输入或原生 shell completion 列表。
+
+Backend 状态模型：
+
+- 每个 `SshLiveSession` 保存 `remoteShellReady`、`remoteShellCwd`、`remoteShellForegroundCommand`、`lastRemoteCommand`、`lastExitCode` 与 `lastCommandDurationMs`。
+- `remoteShellCwd` 是 path completion 的优先 cwd 来源；现有 exec probe 与 renderer hint 仍作为 fallback。
+- 未来收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`。
+- 密码提示与可复用 secret suggestion 继续由本地 backend 基于输出检测；shell hook 永远不捕获密码输入。
 
 ### 8.3 Manifest 与资产契约
 

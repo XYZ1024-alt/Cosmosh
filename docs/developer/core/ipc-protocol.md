@@ -153,6 +153,8 @@ Although terminal stream messages are not Electron IPC channels, they are part o
 - Server to client:
   - `ready`, `output`, `telemetry`, `history`, `pong`, `error`, `exit`
   - `completion-response` with `requestId`, `replacePrefixLength`, and ranked completion `items`
+  - `bootstrap-status` for side-channel Remote Bootstrap install/probe status
+  - `remote-shell-event` for runtime shell state emitted by the installed helper over OSC 777
 
 Completion item contract notes:
 
@@ -163,6 +165,7 @@ Completion item contract notes:
 Current implementation note:
 
 - Completion messages are handled in `SshSessionService` and `LocalTerminalSessionService` via shared normalization in `terminal/shared.ts` and shared ranking engine in `terminal/completion/engine.ts`.
+- `remote-shell-event` is SSH-only and never appears on local-terminal sessions. Payloads carry status fields such as shell, cwd, command end exit code, duration, and timestamp; they must not carry passwords, secrets, full terminal output, or large arbitrary payloads. The backend caps each decoded OSC payload at 8 KiB and strips valid Cosmosh OSC sequences before renderer xterm output.
 
 ## 4. Change Rules
 

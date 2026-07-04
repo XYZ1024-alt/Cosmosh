@@ -44,6 +44,7 @@ import { buildSshCompressionAlgorithms } from './compression.js';
 import { decryptSensitiveValue } from './crypto.js';
 import { executeBoundedSshCommand } from './exec.js';
 import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from './proxy.js';
+import { type RemoteShellEventMessage, RemoteShellEventOscParser } from './remote-shell-events.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -170,6 +171,7 @@ type ServerOutboundMessage =
         score: number;
       }>;
     }
+  | RemoteShellEventMessage
   | RemoteBootstrapStatus;
 
 type SshLiveSession = TerminalManagedSessionBase & {
@@ -198,6 +200,14 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionPendingCwdCommands: string[];
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
+  remoteShellEventParser: RemoteShellEventOscParser;
+  pendingRemoteShellEvents: RemoteShellEventMessage[];
+  remoteShellReady: boolean;
+  remoteShellCwd: string | null;
+  remoteShellForegroundCommand: string | null;
+  lastRemoteCommand: string | null;
+  lastExitCode: number | null;
+  lastCommandDurationMs: number | null;
   remoteBootstrapStarted: boolean;
   remoteEnhancementsEnabled: boolean;
 };
@@ -223,6 +233,7 @@ const REMOTE_SHELL_UTF8_ENV = {
 const REMOTE_COMPLETION_CWD_PROBE_COMMAND = 'sh -lc \'printf "%s\\n%s\\n" "$PWD" "$HOME"\'';
 const SSH_COMPLETION_EXEC_TIMEOUT_MS = 3_000;
 const SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS = 1_200;
+const SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT = 128;
 
 /**
  * SSH session orchestrator:
@@ -331,23 +342,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       t: i18n.t,
       onOutput: (data) => {
         if (liveSession) {
-          liveSession.completionPromptState = updatePromptStateFromOutput(
-            liveSession.completionPromptState,
-            data,
-            Date.now(),
-          );
-          const promptCwd = resolveRemotePromptCwd(
-            liveSession.completionPromptState.outputTail,
-            liveSession.completionWorkingDirectory,
-            liveSession.completionHomeDirectory,
-          );
-          if (promptCwd) {
-            this.applyResolvedRemoteCompletionCwd(liveSession, promptCwd);
-          }
-          this.sendServerMessage(liveSession, {
-            type: 'output',
-            data,
-          });
+          this.handleShellOutput(liveSession, data);
           return;
         }
 
@@ -495,6 +490,14 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         shouldSuggestSecret: false,
       },
       completionSecretValue: shellResult.completionSecretValue,
+      remoteShellEventParser: new RemoteShellEventOscParser(),
+      pendingRemoteShellEvents: [],
+      remoteShellReady: false,
+      remoteShellCwd: null,
+      remoteShellForegroundCommand: null,
+      lastRemoteCommand: null,
+      lastExitCode: null,
+      lastCommandDurationMs: null,
       remoteBootstrapStarted: false,
       remoteEnhancementsEnabled,
       t: i18n.t,
@@ -502,20 +505,12 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       disposed: false,
     };
 
-    pendingOutput.forEach((chunk) => {
-      liveSession.completionPromptState = updatePromptStateFromOutput(
-        liveSession.completionPromptState,
-        chunk,
-        Date.now(),
-      );
-      const promptCwd = resolveRemotePromptCwd(
-        liveSession.completionPromptState.outputTail,
-        liveSession.completionWorkingDirectory,
-        liveSession.completionHomeDirectory,
-      );
-      if (promptCwd) {
-        this.applyResolvedRemoteCompletionCwd(liveSession, promptCwd);
-      }
+    const rawPendingOutput = [...pendingOutput];
+    liveSession.pendingOutput = [];
+    liveSession.pendingOutputBytes = 0;
+    liveSession.pendingOutputDropCount = pendingOutputDropCount;
+    rawPendingOutput.forEach((chunk) => {
+      this.handleShellOutput(liveSession, chunk);
     });
 
     shellResult.stream.on('close', () => {
@@ -646,7 +641,138 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       type: 'output',
       data,
     }));
+    this.flushPendingRemoteShellEvents(session);
     this.startRemoteBootstrap(session);
+  }
+
+  /**
+   * Parses shell OSC events out of a raw SSH output chunk before xterm rendering.
+   *
+   * @param session Live SSH session that owns the parser state.
+   * @param data Raw output bytes decoded as UTF-8.
+   * @returns Nothing.
+   */
+  private handleShellOutput(session: SshLiveSession, data: string): void {
+    const parsed = session.remoteShellEventParser.parse(data);
+
+    for (const event of parsed.events) {
+      this.handleRemoteShellEvent(session, event);
+    }
+
+    if (parsed.output) {
+      this.handleVisibleShellOutput(session, parsed.output);
+    }
+  }
+
+  /**
+   * Applies visible terminal output to prompt tracking and renderer output.
+   *
+   * @param session Live SSH session receiving the visible output.
+   * @param data Visible output with Cosmosh OSC events removed.
+   * @returns Nothing.
+   */
+  private handleVisibleShellOutput(session: SshLiveSession, data: string): void {
+    session.completionPromptState = updatePromptStateFromOutput(session.completionPromptState, data, Date.now());
+    const promptCwd = resolveRemotePromptCwd(
+      session.completionPromptState.outputTail,
+      session.completionWorkingDirectory,
+      session.completionHomeDirectory,
+    );
+    if (promptCwd) {
+      this.applyResolvedRemoteCompletionCwd(session, promptCwd);
+    }
+    this.sendServerMessage(session, {
+      type: 'output',
+      data,
+    });
+  }
+
+  /**
+   * Updates backend-owned remote shell state and forwards the event to renderer.
+   *
+   * @param session Live SSH session receiving the event.
+   * @param event Normalized remote shell event message.
+   * @returns Nothing.
+   */
+  private handleRemoteShellEvent(session: SshLiveSession, event: RemoteShellEventMessage): void {
+    this.applyRemoteShellEventState(session, event);
+
+    if (!session.socket || session.socket.readyState !== session.socket.OPEN) {
+      session.pendingRemoteShellEvents.push(event);
+      if (session.pendingRemoteShellEvents.length > SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT) {
+        session.pendingRemoteShellEvents.splice(
+          0,
+          session.pendingRemoteShellEvents.length - SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT,
+        );
+      }
+      return;
+    }
+
+    this.sendServerMessage(session, event);
+  }
+
+  /**
+   * Flushes remote shell events captured before renderer attach.
+   *
+   * @param session Live SSH session.
+   * @returns Nothing.
+   */
+  private flushPendingRemoteShellEvents(session: SshLiveSession): void {
+    while (session.pendingRemoteShellEvents.length > 0) {
+      const event = session.pendingRemoteShellEvents.shift();
+      if (!event) {
+        continue;
+      }
+
+      this.sendServerMessage(session, event);
+    }
+  }
+
+  /**
+   * Applies one remote shell event to per-session state.
+   *
+   * @param session Live SSH session.
+   * @param event Remote shell event from the interactive shell helper.
+   * @returns Nothing.
+   */
+  private applyRemoteShellEventState(session: SshLiveSession, event: RemoteShellEventMessage): void {
+    if (event.event === 'integration-ready') {
+      session.remoteShellReady = true;
+    }
+
+    if (event.cwd) {
+      session.remoteShellCwd = event.cwd;
+      this.applyResolvedRemoteCompletionCwd(session, event.cwd);
+    }
+
+    if (event.event === 'prompt-ready') {
+      session.remoteShellReady = true;
+      session.remoteShellForegroundCommand = null;
+      return;
+    }
+
+    if (event.event === 'foreground-command') {
+      session.remoteShellForegroundCommand = event.command ?? null;
+      return;
+    }
+
+    if (event.event === 'command-start' && event.command) {
+      session.lastRemoteCommand = event.command;
+      return;
+    }
+
+    if (event.event === 'command-end') {
+      if (event.command) {
+        session.lastRemoteCommand = event.command;
+      }
+      if (event.exitCode !== undefined) {
+        session.lastExitCode = event.exitCode;
+      }
+      if (event.durationMs !== undefined) {
+        session.lastCommandDurationMs = event.durationMs;
+      }
+      session.remoteShellForegroundCommand = null;
+    }
   }
 
   /**
@@ -799,6 +925,16 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     session: SshLiveSession,
     message: Extract<TerminalClientInboundMessage, { type: 'completion-request' }>,
   ): Promise<void> {
+    if (session.remoteShellForegroundCommand) {
+      this.sendServerMessage(session, {
+        type: 'completion-response',
+        requestId: message.requestId,
+        replacePrefixLength: 0,
+        items: [],
+      });
+      return;
+    }
+
     const completionResult = await resolveTerminalCompletions(
       {
         linePrefix: message.linePrefix,
@@ -817,6 +953,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         typingPathProviderTimeoutMs: SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS,
         pathProvider: createRemotePathProvider({
           resolveCwd: async () => {
+            if (session.remoteShellCwd) {
+              return session.remoteShellCwd;
+            }
+
             const hintedCwd = await this.resolveRequestCompletionWorkingDirectory(
               session,
               message.workingDirectoryHint,

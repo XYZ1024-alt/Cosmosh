@@ -11,6 +11,7 @@ The module exists so Cosmosh can add remote-side capabilities without pushing pr
 - Installs the current bootstrap binary into user-scoped XDG paths.
 - Writes a small shell helper and wires it into the user's shell startup file.
 - Emits line-delimited `bootstrap-status` JSON so the backend can forward progress over the SSH WebSocket.
+- Installs first-phase shell integration hooks that can emit runtime shell state over Cosmosh OSC 777 from the interactive PTY.
 - Keeps installation idempotent by comparing the installed version, binary, helper, and shell hook before rewriting files.
 
 ## What This Module Does Not Do
@@ -152,6 +153,23 @@ Fish uses a dedicated `conf.d/cosmosh.fish` file:
 set -gx PATH "/home/user/.local/share/cosmosh/bootstrap/bin" $PATH
 source "/home/user/.config/cosmosh/bootstrap/helper.fish"
 ```
+
+## Shell State Integration
+
+The installed helper is the user-scoped runtime boundary for shell-state events. It reports status over the interactive PTY with invisible OSC 777 control sequences:
+
+```text
+ESC ] 777 ; cosmosh ; <base64-json> BEL
+```
+
+First-phase behavior:
+
+- Bash preserves any existing `PROMPT_COMMAND` and appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code.
+- Zsh uses `precmd` and `chpwd`, preferring `add-zsh-hook` when available so existing hook functions remain in the chain.
+- Fish uses `fish_prompt`, `fish_postexec`, and `PWD` variable events.
+- Sh/Ash only install prompt-based degraded hooks for `cwd`, `prompt-ready`, and `command-end`; they do not claim precise preexec behavior.
+
+The helper must not capture passwords, private keys, terminal line buffers, full screen output, or native shell completion lists. Command-start and foreground-command precision are intentionally deferred to later phases.
 
 ## Idempotency and Repair Behavior
 
