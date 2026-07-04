@@ -69,6 +69,8 @@ const DOCUMENTATION_URL = 'https://github.com/agoudbg/cosmosh/tree/main/docs';
 const GITHUB_REPOSITORY_URL = 'https://github.com/agoudbg/cosmosh';
 const SFTP_PROPERTIES_WINDOW_ROUTE_PARAM = 'sftp-entry-properties';
 const PACKAGED_REMOTE_BOOTSTRAP_MANIFEST_RESOURCE = path.join('remote-bootstrap', 'manifest-url.json');
+const DEVELOPMENT_REMOTE_BOOTSTRAP_MANIFEST_URL =
+  'https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json';
 
 type TrustedRendererWindowOpenTarget = {
   origin: string;
@@ -996,8 +998,9 @@ const startBackendService = async (): Promise<void> => {
       DATABASE_URL: databaseUrl,
     };
 
-    if (!backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL && packagedRemoteBootstrapManifestUrl) {
-      backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL = packagedRemoteBootstrapManifestUrl;
+    if (!backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL) {
+      backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL =
+        packagedRemoteBootstrapManifestUrl ?? (isDev ? DEVELOPMENT_REMOTE_BOOTSTRAP_MANIFEST_URL : undefined);
     }
 
     let command: string;
