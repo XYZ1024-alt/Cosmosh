@@ -340,7 +340,7 @@ Remote Enhancements are the optional runtime layer for host-aware SSH features s
 - `packages/backend/src/remote-bootstrap/service.ts` owns runtime orchestration. It fetches the manifest, probes the remote host, injects a shell wrapper, parses JSON-line statuses, and writes audit events.
 - `packages/remote-bootstrap` owns the Go installer and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
 - The feature is enabled only when Settings `remoteEnhancementsEnabled` is true and the SSH server record `remoteEnhancementsEnabled` is true. Both defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
-- When either gate is disabled, backend does not run any remote command and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
+- When either gate is disabled, backend does not run any remote command, ignores runtime shell OSC events from previously installed helpers, and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
 - Backend requires a manifest URL to load the bootstrap manifest. `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is the first-class override. Unpackaged development runs default to the rolling `remote-bootstrap-dev` manifest so local development can exercise Remote Enhancements without per-shell setup. Packaged CI builds may also carry `remote-bootstrap/manifest-url.json`, generated before app packaging, so installers can discover the GitHub-hosted manifest without a user-provided environment variable. Tagged releases point at the same versioned GitHub Release as the app installers; `main` push builds point at `remote-bootstrap-dev`; pushed branches whose name contains `remote-bootstrap` and manual workflow dispatch runs can point at branch-scoped temporary prereleases such as `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`. Ordinary PR and feature-branch builds do not package a default URL. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
 
 During development, the default manifest URL is `https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json`. Set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh only when you need to override that default, for example to test a branch-scoped temporary prerelease:
@@ -393,7 +393,7 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend parsing rules:
 
 - `SshSessionService` streams SSH output through `RemoteShellEventOscParser` before writing to xterm.
-- Valid Cosmosh OSC sequences are stripped from visible terminal output, decoded, normalized, and forwarded to renderer as `remote-shell-event`.
+- Valid Cosmosh OSC sequences are stripped from visible terminal output, decoded, normalized, and forwarded to renderer as `remote-shell-event` only while Remote Enhancements are enabled for the live session.
 - Non-Cosmosh OSC sequences and ordinary ANSI output remain visible and unchanged.
 - Invalid JSON, invalid event shapes, and payloads over 8 KiB are dropped without crashing the session.
 - Split SSH chunks are supported; incomplete OSC data is buffered until a BEL or ST terminator arrives.
@@ -513,7 +513,7 @@ Common status codes:
 
 | Code | Meaning |
 | --- | --- |
-| `REMOTE_ENHANCEMENTS_DISABLED` | Global Settings or server-level gate disabled bootstrap before any remote command. |
+| `REMOTE_ENHANCEMENTS_DISABLED` | Global Settings or server-level gate disabled bootstrap before any remote command; runtime shell OSC events are ignored for the session. |
 | `MANIFEST_URL_NOT_CONFIGURED` | Remote Enhancements are enabled, but backend has no manifest URL. |
 | `MANIFEST_FETCH_FAILED` | Backend could not fetch the manifest URL. |
 | `MANIFEST_INVALID` | Manifest shape, asset URL, or SHA-256 failed validation. |

@@ -339,7 +339,7 @@ flowchart LR
 - `packages/backend/src/remote-bootstrap/service.ts` 负责运行时编排。它会获取 manifest、探测远端主机、注入 shell wrapper、解析 JSON-line 状态并写入审计事件。
 - `packages/remote-bootstrap` 负责 Go 安装器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
 - 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此在用户未关闭任一开关前，部署级启用条件由 manifest URL 控制。
-- 任一开关关闭时，backend 不会执行任何远端命令，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
+- 任一开关关闭时，backend 不会执行任何远端命令，会忽略此前已安装 helper 发出的运行期 shell OSC 事件，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
 - Backend 需要 manifest URL 才会加载 bootstrap manifest。`COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 是最高优先级 override。未打包的开发运行会默认使用滚动的 `remote-bootstrap-dev` manifest，因此本地开发无需每次设置 shell 环境变量也能测试远端增强。CI 打包也可以在 app 打包前生成 `remote-bootstrap/manifest-url.json`，让安装包无需用户手动配置环境变量即可发现 GitHub 托管的 manifest。正式 tag release 指向同版本 GitHub Release；`main` push 构建指向 `remote-bootstrap-dev`；分支名包含 `remote-bootstrap` 的 push 构建和手动 workflow dispatch 可以指向分支专用临时 prerelease，例如 `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`。普通 PR 与 feature branch 构建默认不写入 packaged URL。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 
 开发环境默认 manifest URL 为 `https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json`。只有需要覆盖默认值时才需要在启动 Cosmosh 的同一个终端里设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，例如测试分支专用临时 prerelease：
@@ -392,7 +392,7 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend 解析规则：
 
 - `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
-- 合法 Cosmosh OSC 会从可见终端输出中剥离，解码、规范化后以 `remote-shell-event` 转发给 renderer。
+- 合法 Cosmosh OSC 会从可见终端输出中剥离，解码、规范化后，仅在当前 live session 启用了 Remote Enhancements 时以 `remote-shell-event` 转发给 renderer。
 - 非 Cosmosh OSC 与普通 ANSI 输出保持可见且不变。
 - 非法 JSON、非法事件形状以及超过 8 KiB 的 payload 会被丢弃，不会导致 session 崩溃。
 - 支持 SSH chunk 切分；未完成的 OSC 数据会缓冲到 BEL 或 ST 结束符到来。
@@ -512,7 +512,7 @@ Backend 状态模型：
 
 | Code | 含义 |
 | --- | --- |
-| `REMOTE_ENHANCEMENTS_DISABLED` | 全局 Settings 或服务器级开关在执行任何远端命令前禁用了 bootstrap。 |
+| `REMOTE_ENHANCEMENTS_DISABLED` | 全局 Settings 或服务器级开关在执行任何远端命令前禁用了 bootstrap；该 session 内的运行期 shell OSC 事件会被忽略。 |
 | `MANIFEST_URL_NOT_CONFIGURED` | 远端增强已启用，但 backend 没有 manifest URL。 |
 | `MANIFEST_FETCH_FAILED` | Backend 无法获取 manifest URL。 |
 | `MANIFEST_INVALID` | Manifest 结构、asset URL 或 SHA-256 校验失败。 |

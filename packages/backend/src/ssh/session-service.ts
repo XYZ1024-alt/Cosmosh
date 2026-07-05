@@ -210,6 +210,7 @@ type SshLiveSession = TerminalManagedSessionBase & {
   lastCommandDurationMs: number | null;
   remoteBootstrapStarted: boolean;
   remoteEnhancementsEnabled: boolean;
+  remoteEnhancementsRuntimeEnabled: boolean;
 };
 
 type ParsedRemoteTelemetry = {
@@ -500,6 +501,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       lastCommandDurationMs: null,
       remoteBootstrapStarted: false,
       remoteEnhancementsEnabled,
+      remoteEnhancementsRuntimeEnabled: false,
       t: i18n.t,
       socket: null,
       disposed: false,
@@ -695,6 +697,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * @returns Nothing.
    */
   private handleRemoteShellEvent(session: SshLiveSession, event: RemoteShellEventMessage): void {
+    if (!session.remoteEnhancementsRuntimeEnabled) {
+      return;
+    }
+
     this.applyRemoteShellEventState(session, event);
 
     if (!session.socket || session.socket.readyState !== session.socket.OPEN) {
@@ -718,6 +724,11 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * @returns Nothing.
    */
   private flushPendingRemoteShellEvents(session: SshLiveSession): void {
+    if (!session.remoteEnhancementsRuntimeEnabled) {
+      session.pendingRemoteShellEvents = [];
+      return;
+    }
+
     while (session.pendingRemoteShellEvents.length > 0) {
       const event = session.pendingRemoteShellEvents.shift();
       if (!event) {
@@ -798,6 +809,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    */
   private async runRemoteBootstrapWhenEnabled(session: SshLiveSession): Promise<void> {
     if (!session.remoteEnhancementsEnabled) {
+      this.disableRemoteEnhancementsRuntime(session);
       this.sendRemoteBootstrapSkipped(session);
       return;
     }
@@ -819,9 +831,12 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     }
 
     if (!remoteEnhancementsEnabled) {
+      this.disableRemoteEnhancementsRuntime(session);
       this.sendRemoteBootstrapSkipped(session);
       return;
     }
+
+    session.remoteEnhancementsRuntimeEnabled = true;
 
     void this.remoteBootstrapService.runForSession({
       serverId: session.serverId,
@@ -849,6 +864,23 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       code: 'REMOTE_ENHANCEMENTS_DISABLED',
       message: 'remote enhancements are disabled',
     });
+  }
+
+  /**
+   * Disables all runtime Remote Enhancements state for the live session.
+   *
+   * @param session Live SSH session whose remote enhancement runtime is disabled.
+   * @returns Nothing.
+   */
+  private disableRemoteEnhancementsRuntime(session: SshLiveSession): void {
+    session.remoteEnhancementsRuntimeEnabled = false;
+    session.pendingRemoteShellEvents = [];
+    session.remoteShellReady = false;
+    session.remoteShellCwd = null;
+    session.remoteShellForegroundCommand = null;
+    session.lastRemoteCommand = null;
+    session.lastExitCode = null;
+    session.lastCommandDurationMs = null;
   }
 
   protected handleClientMessage(session: SshLiveSession, rawPayload: RawData): void {
