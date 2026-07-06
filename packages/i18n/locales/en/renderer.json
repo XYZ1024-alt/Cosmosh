@@ -130,9 +130,6 @@
   "common": {
     "click": "Click"
   },
-  "componentsPlayground": {
-    "title": "Component Lab"
-  },
   "header": {
     "about": "About",
     "avatarAlt": "User Avatar",
@@ -1427,7 +1424,6 @@
     "newToRight": "New Tab to the Right",
     "page": {
       "auditLogs": "Audit Logs",
-      "componentsField": "Components Playground",
       "debug": "Debug",
       "home": "Home",
       "localTerminal": "Local Terminal",

@@ -26,7 +26,6 @@ The glossary matrix lives only on this English source page. Localized documentat
 | Settings Editor | 设置编辑器 | Settings Editor |
 | Audit Logs | 审计日志 | Audit Logs |
 | Command Palette | 命令面板 | Command Palette |
-| Components Playground | 组件实验场 | Components Playground |
 | Debug | 调试 | Debug |
 | Developer Tools | 开发人员工具 | Developer Tools |
 | User Menu | 用户菜单 | User Menu |

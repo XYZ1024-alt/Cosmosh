@@ -24,7 +24,6 @@ import { resolvePageDefaults, useTabs } from './lib/useTabs';
 import Home from './pages/Home';
 import type { TabIconKey, TabItem } from './types/tabs';
 
-const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
 const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
 const Debug = React.lazy(() => import('./pages/Debug'));
 const Settings = React.lazy(() => import('./pages/Settings'));
@@ -782,11 +781,6 @@ const App: React.FC = () => {
                   <SettingsEditor initialSettingKey={tab.state?.settingsEditorSettingKey} />
                 </React.Suspense>
               )}
-              {tab.page === 'components-field' && (
-                <React.Suspense fallback={pageLoadingFallback}>
-                  <ComponentsField />
-                </React.Suspense>
-              )}
               {tab.page === 'debug' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <Debug
@@ -808,11 +802,6 @@ const App: React.FC = () => {
                       openInNewTab
                         ? addTab('settings-editor', undefined, { insertAfterTabId: tab.id })
                         : openPageInTab(tab.id, 'settings-editor')
-                    }
-                    onOpenComponentsField={(openInNewTab) =>
-                      openInNewTab
-                        ? addTab('components-field', undefined, { insertAfterTabId: tab.id })
-                        : openPageInTab(tab.id, 'components-field')
                     }
                     onRenameTab={(title) => updateTab(tab.id, { title })}
                     onChangeIcon={(iconKey) => updateTab(tab.id, { iconKey })}

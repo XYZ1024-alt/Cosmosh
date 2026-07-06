@@ -130,9 +130,6 @@
   "common": {
     "click": "点击"
   },
-  "componentsPlayground": {
-    "title": "组件试验场"
-  },
   "header": {
     "about": "关于",
     "avatarAlt": "用户头像",
@@ -1427,7 +1424,6 @@
     "newToRight": "在右侧新建标签页",
     "page": {
       "auditLogs": "审计日志",
-      "componentsField": "组件实验场",
       "debug": "调试",
       "home": "主页",
       "localTerminal": "本地终端",

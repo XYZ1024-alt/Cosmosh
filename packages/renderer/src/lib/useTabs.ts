@@ -76,10 +76,6 @@ export const resolvePageDefaults = (page: TabPage): { title: string; iconKey: Ta
     return { title: t('tabs.page.settingsEditor'), iconKey: 'settings' };
   }
 
-  if (page === 'components-field') {
-    return { title: t('tabs.page.componentsField'), iconKey: 'file' };
-  }
-
   if (page === 'debug') {
     return { title: t('tabs.page.debug'), iconKey: 'debug' };
   }
