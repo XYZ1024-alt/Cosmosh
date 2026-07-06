@@ -44,6 +44,7 @@ type CommandPaletteProps = {
   onInputArrowDown?: () => void;
   onActiveIndexChange?: (index: number) => void;
   onOpenChange?: (open: boolean) => void;
+  onInputKeyDownCapture?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
   className?: string;
   onQueryChange: (query: string) => void;
 };
@@ -84,6 +85,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
   onInputArrowDown,
   onActiveIndexChange,
   onOpenChange,
+  onInputKeyDownCapture,
   className,
   onQueryChange,
 }) => {
@@ -376,6 +378,7 @@ const CommandPalette: React.FC<CommandPaletteProps> = ({
                 placeholder={placeholder}
                 className="placeholder:!text-command-text-muted/80 h-[34px] !rounded-none !bg-transparent !px-0 !text-command-text hover:!bg-transparent focus-visible:!outline-none"
                 onChange={(event) => onQueryChange(event.target.value)}
+                onKeyDownCapture={onInputKeyDownCapture}
                 onKeyDown={handleInputKeyDown}
               />
             </div>

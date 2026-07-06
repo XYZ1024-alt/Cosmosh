@@ -117,7 +117,7 @@
       "systemMonitorOverlayDisabled": "系统监视器浮层已隐藏。",
       "systemMonitorOverlayEnabled": "系统监视器浮层已显示。"
     },
-    "placeholder": "输入命令或搜索设置",
+    "placeholder": "> 输入命令或搜索设置",
     "scopes": {
       "developer": "开发者",
       "forward": "端口转发",

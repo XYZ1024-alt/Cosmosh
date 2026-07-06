@@ -117,7 +117,7 @@
       "systemMonitorOverlayDisabled": "System monitor overlay hidden.",
       "systemMonitorOverlayEnabled": "System monitor overlay shown."
     },
-    "placeholder": "Type a command or search settings",
+    "placeholder": "> Type a command or search settings",
     "scopes": {
       "developer": "Developer",
       "forward": "Port Forwarding",
