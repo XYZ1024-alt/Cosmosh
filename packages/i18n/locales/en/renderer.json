@@ -23,7 +23,7 @@
       "time": "Time"
     },
     "countSummary": "{count} events",
-    "detailEmpty": "Select an event to inspect details.",
+    "detailEmpty": "Select an event to view details.",
     "detailLoadFailed": "Failed to load audit event detail.",
     "detailLoading": "Loading event detail...",
     "detailSections": {
@@ -66,7 +66,7 @@
     "pagination": {
       "page": "Page {page}"
     },
-    "retentionHint": "Default retention policy keeps events for 180 days.",
+    "retentionHint": "Default retention keeps the last 180 days of events.",
     "severity": {
       "critical": "Critical",
       "info": "Info",
@@ -86,7 +86,7 @@
         "captureMainHeapSnapshot": "Capture Main Process Heap Snapshot",
         "reloadBackend": "Reload Backend Runtime",
         "reloadWebView": "Reload WebView",
-        "toggleDevTools": "Toggle DevTools",
+        "toggleDevTools": "Toggle Developer Tools",
         "toggleMainHeapSnapshotExport": "Toggle Enable Main Process Heap Snapshot",
         "toggleSystemMonitorOverlay": "Toggle System Monitor Overlay"
       },
@@ -120,7 +120,7 @@
     "placeholder": "Type a command or search settings",
     "scopes": {
       "developer": "Developer",
-      "forward": "Forward",
+      "forward": "Port Forwarding",
       "settings": "Settings",
       "sftp": "SFTP",
       "ssh": "SSH",
@@ -131,7 +131,7 @@
     "click": "Click"
   },
   "componentsPlayground": {
-    "title": "Components Playground"
+    "title": "Component Lab"
   },
   "header": {
     "about": "About",
@@ -141,15 +141,14 @@
     "guestEmail": "guest@cosmosh.local",
     "guestUser": "Guest User",
     "login": "Login",
-    "openDevTools": "Open DevTools",
+    "openDevTools": "Open Developer Tools",
     "restartBackend": "Restart Backend Runtime",
     "restartBackendFailed": "Failed to restart backend runtime.",
     "restartBackendSuccess": "Backend runtime restarted.",
     "settings": "Settings",
-    "syncDisabled": "Account Sync is disabled in Settings.",
-    "syncFailed": "Failed to sync settings.",
+    "syncDisabled": "Sync is disabled.",
     "syncSettings": "Sync Settings",
-    "syncSuccess": "Settings synced from current account scope.",
+    "syncSuccess": "Settings synced.",
     "userMenu": "User Menu"
   },
   "home": {
@@ -157,7 +156,6 @@
     "actionCreate": "Create",
     "actionSave": "Save",
     "addAction": "Add...",
-    "clearSearch": "Clear Search",
     "contextConnect": "Connect",
     "contextConnectSftp": "Connect SFTP",
     "contextCopy": "Copy",
@@ -187,8 +185,6 @@
     "dragServerToFolderSuccess": "Server added to folder.",
     "editVisual": "Edit Icon and Color",
     "empty": "No matching servers found.",
-    "fileAction": "Files",
-    "filterAction": "Filter",
     "folderCreateFailed": "Failed to create folder.",
     "folderDeleteFailed": "Failed to delete folder.",
     "folderNamePlaceholder": "Folder name",
@@ -219,7 +215,6 @@
     "groupRecentlyUpdatedKeychains": "Recently Updated",
     "groupUntitled": "Group Name",
     "hostCount": "{count, plural, =0 {No hosts} one {# host} other {# hosts}}",
-    "iconOptionsPending": "Icon customization is available in editors.",
     "iconSearchPlaceholder": "Search icons...",
     "keychainCount": "{count, plural, =0 {No keychains} one {# keychain} other {# keychains}}",
     "loading": "Loading data...",
@@ -227,7 +222,6 @@
     "modePortForwarding": "Port Forwarding",
     "modeSsh": "SSH",
     "openInFileManagerFailed": "Failed to open file manager.",
-    "openSshCurrentTab": "Open SSH In Current Tab",
     "openSshNewTab": "Open in New Tab",
     "portForwardingActiveDeleteDisabled": "Stop this rule before deleting it.",
     "portForwardingActiveEditDisabled": "Stop this rule before editing it.",
@@ -272,7 +266,7 @@
     "portForwardingStartFailed": "Failed to start port forwarding rule.",
     "portForwardingStartSuccess": "Port forwarding started.",
     "portForwardingStatusRunning": "Running",
-    "portForwardingStatusRunningWithConnections": "Running · {count, plural, one {# conn} other {# conns}}",
+    "portForwardingStatusRunningWithConnections": "Running, {count, plural, one {# connection} other {# connections}}",
     "portForwardingStatusStopped": "Stopped",
     "portForwardingStopAction": "Stop",
     "portForwardingStopFailed": "Failed to stop port forwarding rule.",
@@ -293,15 +287,13 @@
     "sectionRecent": "Recent Connections",
     "sectionRecentlyUpdated": "Recently Updated",
     "serverDeleteFailed": "Failed to delete server.",
-    "serverDeleteSuccess": "Server deleted successfully.",
+    "serverDeleteSuccess": "Server deleted.",
     "sortAction": "Sort",
     "sortByCreatedAt": "Created Time",
     "sortByLastUsed": "Last Used Time",
     "sortByNameAsc": "Name (A to Z)",
     "sortByNameDesc": "Name (Z to A)",
-    "tagAll": "All",
-    "tagUntagged": "No Tag",
-    "title": "Home"
+    "tagUntagged": "Untagged"
   },
   "inputContextMenu": {
     "copy": "Copy",
@@ -387,7 +379,7 @@
     },
     "items": {
       "accountSyncEnabled": {
-        "description": "Enable to sync settings across devices using the current account.",
+        "description": "Sync settings across devices signed in to the current account.",
         "title": "Account Sync"
       },
       "autoSaveEnabled": {
@@ -395,15 +387,15 @@
         "title": "Auto Save"
       },
       "dateFormat": {
-        "description": "Controls how dates are displayed across SFTP, audit logs, and diagnostics.",
+        "description": "Choose how dates are shown in the app.",
         "title": "Date Format"
       },
       "dateTimeTimeZone": {
-        "description": "Use the operating system time zone, or choose a supported IANA time zone such as UTC or Asia/Shanghai.",
+        "description": "Choose the time zone used in the app.",
         "title": "Time Zone"
       },
       "defaultLocalTerminalProfile": {
-        "description": "Default local terminal used when opening from context.",
+        "description": "Choose the default local terminal used when opening a terminal from context.",
         "title": "Default Local Terminal"
       },
       "defaultServerNoteTemplate": {
@@ -412,23 +404,23 @@
         "title": "Default Server Note"
       },
       "devToolsEnabled": {
-        "description": "Allows UI debugging. This option is intended for advanced users and should be enabled with caution.",
-        "title": "Enable DevTools"
+        "description": "Allow debugging the app interface. This option is intended for advanced users and should not be enabled casually.",
+        "title": "Enable Developer Tools"
       },
       "language": {
         "description": "Sets the UI language.",
         "title": "Language"
       },
       "localTerminalClipboardAccess": {
-        "description": "Controls clipboard requests from local terminal programs only.",
+        "description": "Set clipboard access for local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
       "remoteEnhancementsEnabled": {
-        "description": "Allows SSH sessions to install Cosmosh's remote helper for OS detection, SFTP enhancement, and command completion support when a manifest URL is configured.",
+        "description": "Allow Cosmosh to install remote enhancement helpers for SSH sessions. Turning this off may degrade or disable some terminal features.",
         "title": "Remote Enhancements"
       },
       "serverProxyMode": {
-        "description": "Controls the default proxy policy for new SSH, SFTP, and port-forwarding connections. Individual servers can override this setting.",
+        "description": "Set the default proxy policy for SSH, SFTP, and port forwarding.",
         "title": "Server Proxy"
       },
       "serverProxyUrl": {
@@ -437,44 +429,44 @@
         "title": "Custom Proxy URL"
       },
       "sftpAuxiliarySidebarMode": {
-        "description": "Controls whether the SFTP auxiliary sidebar shows details, editable previews, or stays closed.",
+        "description": "Choose which auxiliary sidebar appears in SFTP tabs.",
         "title": "SFTP Auxiliary Sidebar"
       },
       "sftpDeleteConfirmationMode": {
-        "description": "Controls when SFTP delete actions ask for confirmation before removing remote files or directories.",
+        "description": "Choose whether to confirm before deleting remote files or directories.",
         "title": "Confirm Before Delete"
       },
       "sftpDimHiddenEntries": {
-        "description": "Applies 80% opacity to hidden SFTP entry icons and names when hidden files are visible.",
+        "description": "Show hidden files more subtly in the list.",
         "title": "Dim Hidden Files"
       },
       "sftpDirectoryListView": {
-        "description": "Controls the SFTP file list columns, column order, and sort preference.",
+        "description": "Set how the SFTP file list is displayed.",
         "title": "SFTP File List View"
       },
       "sftpImagePreviewWarningThresholdBytes": {
-        "description": "Shows a confirmation before downloading image previews at or above this many bytes.",
+        "description": "Images above this size (bytes) will only download for preview after confirmation.",
         "placeholder": "4194304",
         "title": "Image Preview Warning Threshold"
       },
       "sftpReconnectMode": {
-        "description": "Controls how SFTP recovers when the remote connection drops while the tab remains open.",
+        "description": "Set whether to automatically reconnect after an SFTP session disconnects.",
         "title": "SFTP Auto-Reconnect"
       },
       "sftpShowAddressAsText": {
-        "description": "Always shows the SFTP address bar as a plain editable path input instead of the breadcrumb control.",
+        "description": "Always show a text address input in the address bar.",
         "title": "Show Address as Text"
       },
       "sftpShowHiddenEntries": {
-        "description": "Shows hidden SFTP files and folders reported by the server or whose names start with a dot.",
+        "description": "Show hidden SFTP files and folders.",
         "title": "Show Hidden Files"
       },
       "sftpShowParentDirectoryEntry": {
-        "description": "Shows a \"..\" row at the top of the SFTP file list for navigating to the parent directory.",
+        "description": "Show a \"..\" option in the SFTP file list for going to the parent directory.",
         "title": "Show Parent Directory Row"
       },
       "sftpTextPreviewWarningThresholdBytes": {
-        "description": "Shows a confirmation before opening editable text/code previews at or above this many bytes.",
+        "description": "Text files above this size (bytes) will only open for preview after confirmation.",
         "placeholder": "524288",
         "title": "Text Preview Warning Threshold"
       },
@@ -483,7 +475,7 @@
         "title": "Show Full Server Address"
       },
       "sshConnectionTimeoutSec": {
-        "description": "Connection is automatically disconnected after timeout.",
+        "description": "The connection will disconnect after the timeout.",
         "placeholder": "45",
         "title": "SSH Connection Timeout (sec)"
       },
@@ -497,15 +489,15 @@
         "title": "Auto-Reconnect on Tab Focus"
       },
       "sshTabApplyServerVisualStyle": {
-        "description": "Apply the selected server icon color and background style to SSH and SFTP tabs.",
-        "title": "Apply Server Icon Colors To SSH And SFTP Tabs"
+        "description": "Apply the server icon and background colors to open tabs.",
+        "title": "Apply Server Icon Colors to Tabs"
       },
       "terminalAltClickMovesCursor": {
-        "description": "Use Alt (Option on macOS) + click to move the cursor to the clicked position.",
-        "title": "Alt/Option Click Moves Cursor"
+        "description": "Hold Alt (Option on macOS) and click to move the cursor to that position.",
+        "title": "Hold Alt/Option and Click to Move Cursor"
       },
       "terminalAutoCompleteAcceptKeys": {
-        "description": "Controls which key applies the highlighted auto-complete suggestion.",
+        "description": "Set which key applies the highlighted auto-complete suggestion.",
         "title": "Auto Complete Apply Shortcut"
       },
       "terminalAutoCompleteBuiltInCommandsEnabled": {
@@ -526,12 +518,10 @@
       },
       "terminalAutoCompleteMaxItems": {
         "description": "Maximum number of suggestions shown in the auto-complete menu.",
-        "placeholder": "8",
         "title": "Auto Complete Suggestion Limit"
       },
       "terminalAutoCompleteMinChars": {
         "description": "Minimum number of typed characters before auto-complete is triggered.",
-        "placeholder": "1",
         "title": "Auto Complete Trigger Length"
       },
       "terminalAutoCompletePasswordEnabled": {
@@ -543,28 +533,28 @@
         "title": "Auto Complete Path Suggestions"
       },
       "terminalAutoCompletePromptRegex": {
-        "description": "Optional regex for parsing prompt prefix before command text. Leave empty to use built-in heuristics.",
+        "description": "Use a regular expression to customize prompt parsing before command text. Leave empty to use the default rules.",
         "placeholder": "^.*[#$%>]\\s+",
-        "title": "Auto Complete Prompt Regex"
+        "title": "Customize Auto Complete Prompt Parsing"
       },
       "terminalBracketedPasteEnabled": {
-        "description": "Wrap pasted text in safe paste markers so commands are not executed immediately.",
+        "description": "Wrap pasted text in safe paste markers to prevent immediate execution.",
         "title": "Safe Paste"
       },
       "terminalCharacterWidthCompatibilityModeEnabled": {
-        "description": "Use xterm Unicode 11 width tables for better CJK and emoji alignment. If terminal output looks misaligned, try disabling this and reconnecting with the legacy width mode.",
+        "description": "Use Unicode 11 width tables to improve CJK and emoji alignment. If terminal output looks misaligned, try disabling this and reconnecting to use legacy width mode.",
         "title": "Character Width Compatibility Mode"
       },
       "terminalContextLaunchBehavior": {
-        "description": "Controls how terminals are opened from context launch or 'Open terminal in Cosmosh'.",
+        "description": "Set how terminals open from context launch or 'Open terminal in Cosmosh'.",
         "title": "Launch from Context"
       },
       "terminalCopyOnSelectionEnabled": {
-        "description": "Automatically copy non-blank text to the clipboard when selecting text with the mouse in terminal sessions.",
+        "description": "Automatically copy text selected in the terminal with the mouse to the clipboard.",
         "title": "Copy On Text Selection"
       },
       "terminalCursorBlink": {
-        "description": "Controls whether the cursor blinks.",
+        "description": "Set whether the cursor blinks.",
         "title": "Cursor Blink"
       },
       "terminalCursorInactiveStyle": {
@@ -572,16 +562,16 @@
         "title": "Cursor Inactive Style"
       },
       "terminalCursorStyle": {
-        "description": "Sets the cursor shape when terminal is focused.",
+        "description": "Set the cursor style when the terminal is focused.",
         "title": "Cursor Style"
       },
       "terminalCursorWidth": {
-        "description": "Cursor width in CSS pixels when cursor style is Bar. Leave empty to use default behavior.",
+        "description": "Customize the cursor width when cursor style is Bar. Leave empty to use the default value.",
         "placeholder": "(empty)",
         "title": "Cursor Width"
       },
       "terminalCustomGlyphs": {
-        "description": "Render box drawing and block glyphs with custom renderer for better alignment.",
+        "description": "Render box drawing and block glyphs with custom glyphs to improve alignment.",
         "title": "Custom Glyphs"
       },
       "terminalDrawBoldTextInBrightColors": {
@@ -635,22 +625,22 @@
         "title": "Large Paste Warning Threshold"
       },
       "terminalLetterSpacing": {
-        "description": "Additional spacing between terminal characters (px).",
+        "description": "Add extra spacing between terminal characters, in pixels.",
         "placeholder": "0",
         "title": "Terminal Letter Spacing"
       },
       "terminalLineHeight": {
-        "description": "Line height multiplier used by terminal rendering.",
+        "description": "Set the terminal line height multiplier.",
         "placeholder": "1",
         "title": "Terminal Line Height"
       },
       "terminalMinimumContrastRatio": {
-        "description": "Minimum text contrast ratio. Use 1 to disable dynamic adjustment.",
+        "description": "Set the terminal minimum text contrast ratio. Use 1 to disable dynamic adjustment.",
         "placeholder": "1",
         "title": "Minimum Contrast Ratio"
       },
       "terminalRightClickAction": {
-        "description": "Controls what right-click does inside terminal panes.",
+        "description": "Set the terminal right-click action.",
         "title": "Terminal Right-Click Action"
       },
       "terminalRightClickSelectsWord": {
@@ -662,11 +652,11 @@
         "title": "Screen Reader Mode"
       },
       "terminalScrollOnUserInput": {
-        "description": "Auto-scroll to the bottom when user input is sent.",
+        "description": "Auto-scroll to the bottom when typing in the terminal.",
         "title": "Scroll On User Input"
       },
       "terminalScrollSensitivity": {
-        "description": "Base scrolling speed multiplier for wheel scrolling.",
+        "description": "Control the mouse wheel scroll multiplier.",
         "placeholder": "1",
         "title": "Scroll Sensitivity"
       },
@@ -675,54 +665,54 @@
         "title": "Orbit Bar"
       },
       "terminalSelectionSearchEngine": {
-        "description": "Defines which search engine is used for web search.",
+        "description": "Set the search engine for web search.",
         "title": "Search Engine"
       },
       "terminalSelectionSearchUrlTemplate": {
-        "description": "Sets a custom search engine URL. Use QUERY_TOKEN as the search placeholder.",
+        "description": "Set a custom search engine URL. Use QUERY_TOKEN to represent the search keywords.",
         "placeholder": "https://www.google.com/search?q=QUERY_TOKEN",
         "title": "Custom Search URL"
       },
       "terminalSmoothScrollDuration": {
-        "description": "Smooth scrolling duration in milliseconds. Set 0 to disable.",
+        "description": "Smooth scrolling duration, in milliseconds. Use 0 to disable.",
         "placeholder": "0",
         "title": "Smooth Scroll Duration"
       },
       "terminalTabStopWidth": {
-        "description": "Tab stop width in terminal cells.",
+        "description": "Set the tab width in the terminal.",
         "placeholder": "8",
-        "title": "Tab Stop Width"
+        "title": "Tab Width"
       },
       "terminalTextDropMode": {
-        "description": "Controls when drag-and-drop text insertion into terminal is enabled.",
+        "description": "Set when drag-and-drop text insertion into the terminal is enabled.",
         "title": "Drag To Terminal"
       },
       "terminalWarnOnControlCharactersPaste": {
-        "description": "Warn before pasting text that contains ESC, BEL, ANSI control sequences, or other embedded control characters.",
+        "description": "Warn when pasted content contains ESC, BEL, ANSI control sequences, or other control characters.",
         "title": "Control Character Paste Warning"
       },
       "terminalWarnOnLargePaste": {
-        "description": "Warn before pasting text that is at or above the configured large-text threshold.",
+        "description": "Warn when pasted text reaches the configured large-text threshold.",
         "title": "Large Text Paste Warning"
       },
       "terminalWarnOnMultiLinePaste": {
-        "description": "Warn before pasting text that spans multiple lines.",
+        "description": "Warn before pasting multi-line text.",
         "title": "Multi-Line Paste Warning"
       },
       "terminalWebLinksEnabled": {
-        "description": "Detect HTTP and HTTPS URLs in terminal output and open them through Cosmosh's external browser bridge.",
+        "description": "Detect links in terminal output and allow clicking to open them.",
         "title": "Terminal Web Links"
       },
       "terminalWebLinksRequireModifierKey": {
-        "description": "Require Ctrl+Click to open terminal links. On macOS, use Cmd+Click.",
+        "description": "Require Ctrl (Cmd on macOS) and click to open terminal links.",
         "title": "Use Ctrl/Cmd+Click to Open Links"
       },
       "theme": {
-        "description": "Controls the color theme used in the interface.",
+        "description": "Set the app color theme.",
         "title": "Theme"
       },
       "timeFormat": {
-        "description": "Controls whether displayed times use seconds and 12-hour or 24-hour clock text.",
+        "description": "Choose how times are shown in the app.",
         "title": "Time Format"
       },
       "userMenuDebugEntryEnabled": {
@@ -736,11 +726,6 @@
       "boolean": {
         "false": "Disabled",
         "true": "Enabled"
-      },
-      "cursorStyle": {
-        "bar": "Bar",
-        "block": "Block",
-        "underline": "Underline"
       },
       "dateFormat": {
         "dd/MM/yy": "21/12/25",
@@ -847,7 +832,7 @@
     "query": "Query",
     "saveChanges": "Save",
     "saveFailed": "Failed to save settings.",
-    "saveSuccess": "Settings saved successfully.",
+    "saveSuccess": "Settings saved.",
     "saving": "Saving...",
     "searchPlaceholder": "Search settings",
     "searchResults": "Search Results",
@@ -864,12 +849,10 @@
       "search": "Search",
       "sftpBrowser": "Browser",
       "sftpSafety": "Safety",
-      "sshRuntime": "SSH Runtime",
       "sshStyle": "SSH Style",
       "synchronization": "Synchronization",
       "terminalSelection": "Orbit Bar"
     },
-    "title": "Settings",
     "validation": {
       "booleanRequired": "{name} must be a boolean.",
       "enumRequired": "{name} must be one of: {options}.",
@@ -881,7 +864,7 @@
       "notObject": "Settings values must be a JSON object.",
       "proxyUrlInvalid": "Custom proxy URL must use http://, https://, or socks5:// without a path, query, or fragment.",
       "stringRequired": "{name} must be a string.",
-      "timeZoneUnsupported": "{name} must be system or a supported IANA time zone.",
+      "timeZoneUnsupported": "{name} must be system or a supported time zone.",
       "unknownKeys": "Settings contain unknown keys: {keys}.",
       "unsupportedKey": "Unsupported setting key: {key}.",
       "unsupportedType": "Unsupported setting value type for key: {key}."
@@ -893,7 +876,7 @@
     "loading": "Loading settings JSON...",
     "save": "Save",
     "saveFailed": "Failed to save settings.",
-    "saveSuccess": "Settings saved successfully.",
+    "saveSuccess": "Settings saved.",
     "saving": "Saving...",
     "schema": {
       "diagnostics": {
@@ -1010,19 +993,18 @@
     "deleteConfirmAccept": "Delete",
     "deleteConfirmCancel": "Cancel",
     "deleteConfirmDescription": "Delete \"{name}\" from the remote server?",
-    "deleteConfirmDescriptionMany": "Delete {count} entries from the remote server?",
-    "deleteConfirmTitle": "Delete SFTP Entries",
+    "deleteConfirmDescriptionMany": "Delete {count} items from the remote server?",
+    "deleteConfirmTitle": "Delete Items",
     "detail": {
       "modified": "Modified",
       "path": "Path",
       "permissions": "Permissions",
-      "size": "Size",
-      "type": "Type"
+      "size": "Size"
     },
     "detailEmpty": "Select a file or directory to inspect metadata.",
-    "detailSelectedMany": "{count} entries selected.",
+    "detailSelectedMany": "{count} items selected.",
     "detailTitle": "Details",
-    "directoryListLabel": "SFTP directory entries",
+    "directoryListLabel": "SFTP directory items",
     "downloadPathUnavailable": "The local download path is unavailable.",
     "downloadUnsupported": "Only regular files can be saved locally.",
     "empty": "This directory is empty.",
@@ -1033,17 +1015,17 @@
       "symlink": "Symbolic Link"
     },
     "feedback": {
-      "batchPartialFailure": "Completed {completed} of {total} entries. {failed} failed and {skipped} skipped.",
+      "batchPartialFailure": "Completed {completed}/{total} items. {failed} failed and {skipped} skipped.",
       "copied": "Copied.",
-      "copiedMany": "Copied {count} entries.",
+      "copiedMany": "Copied {count} items.",
       "copyPathFailed": "Failed to copy path.",
       "deleted": "Deleted.",
-      "deletedMany": "Deleted {count} entries.",
+      "deletedMany": "Deleted {count} items.",
       "directoryCreated": "Folder created.",
       "downloaded": "Saved to {path}.",
       "fileCreated": "File created.",
       "moved": "Moved.",
-      "movedMany": "Moved {count} entries.",
+      "movedMany": "Moved {count} items.",
       "pathCopied": "File address copied.",
       "relativePathCopied": "Relative address copied.",
       "renamed": "Renamed.",
@@ -1051,17 +1033,17 @@
       "uploaded": "Uploaded changes.",
       "uploadedFile": "Uploaded {name}."
     },
-    "loadFailed": "Failed to load SFTP directory.",
+    "loadFailed": "Failed to load directory.",
     "loading": "Loading directory...",
     "noSession": "No SFTP session is active.",
     "openLocalFileFailed": "Failed to open the temporary local file.",
-    "openUnsupported": "This entry cannot be opened.",
+    "openUnsupported": "This item cannot be opened.",
     "openWithApplicationsUnavailable": "Failed to load available applications.",
     "openWithFailed": "Failed to open the file with the selected application.",
     "openWithLoading": "Loading applications...",
     "openWithNoApplications": "No available applications",
     "openWithUnsupported": "Open With is only available for regular files on Windows and macOS.",
-    "operationFailed": "SFTP operation failed.",
+    "operationFailed": "Operation failed.",
     "parentDirectoryEntryLabel": "Go to parent directory",
     "pathInputLabel": "Remote path",
     "previewEmpty": "This file is empty.",
@@ -1077,10 +1059,9 @@
     "previewSelectOne": "Select one item to preview.",
     "previewTitle": "Preview",
     "previewTooLargeToOpen": "This file exceeds the supported text preview size.",
-    "previewTruncated": "preview truncated",
     "previewUnsavedChanges": "Save or undo the preview changes before switching selection.",
     "properties": {
-      "browserUnsupported": "SFTP properties are not implemented for the browser runtime yet.",
+      "browserUnsupported": "SFTP properties are not supported in the browser runtime yet.",
       "close": "Close",
       "edit": "Edit",
       "field": {
@@ -1092,7 +1073,6 @@
         "gid": "Group ID",
         "hidden": "Hidden",
         "modified": "Modified",
-        "name": "Name",
         "octalMode": "Octal Mode",
         "other": "Other",
         "parentPath": "Parent",
@@ -1116,13 +1096,13 @@
         "hidden": "Yes",
         "visible": "No"
       },
-      "loadFailed": "Failed to load SFTP entry properties.",
+      "loadFailed": "Failed to load properties.",
       "loading": "Loading properties...",
-      "missingPayload": "The properties window is missing the SFTP session or path.",
-      "mixed": "Mixed",
+      "missingPayload": "Properties cannot be read from an unknown or interrupted session.",
+      "mixed": "Multiple values",
       "multipleItemsTitle": "{count} Items",
-      "notFound": "The selected SFTP entry could not be found.",
-      "openFailed": "Failed to open the SFTP properties window.",
+      "notFound": "The selected item could not be found.",
+      "openFailed": "Failed to open the properties window.",
       "permissionsTitle": "Permissions",
       "rawDataTitle": "Raw Data",
       "selectionSubtitle": "Selection",
@@ -1133,14 +1113,13 @@
         "unknown": "Unknown"
       },
       "symlinkTitle": "Symbolic Link",
-      "title": "Properties",
-      "windowTitle": "SFTP Properties",
-      "windowTitleWithCount": "{count} Items Properties",
+      "windowTitle": "Properties",
+      "windowTitleWithCount": "Properties for {count} Items",
       "windowTitleWithName": "{name} Properties"
     },
     "reconnectFailed": "Failed to reconnect SFTP session.",
-    "renameInputLabel": "Entry name",
-    "searchEmpty": "No entries match this search.",
+    "renameInputLabel": "Item name",
+    "searchEmpty": "No matching items.",
     "searchPlaceholder": "Search files...",
     "sessionInitFailed": "Failed to initialize SFTP session.",
     "tasks": {
@@ -1149,8 +1128,8 @@
       "createFolder": "Create Folder",
       "delete": "Delete",
       "download": "Download",
-      "entryCountMany": "{count} entries",
-      "entryCountOne": "1 entry",
+      "entryCountMany": "{count} items",
+      "entryCountOne": "1 item",
       "move": "Move",
       "open": "Open",
       "openWith": "Open With",
@@ -1169,7 +1148,7 @@
         "running": "Running",
         "success": "Done"
       },
-      "title": "SFTP Tasks",
+      "title": "Tasks",
       "toolbarMixed": "{running} running, {queued} queued",
       "toolbarQueued": "{count, plural, one {# queued task} other {# queued tasks}}",
       "toolbarRecent": "{count, plural, one {# recent task} other {# recent tasks}}",
@@ -1179,8 +1158,6 @@
       "uploadSkipped": "Upload skipped"
     },
     "temporaryPathUnavailable": "The temporary local file path is unavailable.",
-    "title": "SFTP",
-    "untitledServer": "SFTP Server",
     "uploadConfirmAccept": "Upload",
     "uploadConfirmDescription": "\"{name}\" changed locally. Upload the changes to {path}?",
     "uploadConfirmIgnore": "Ignore",
@@ -1241,7 +1218,7 @@
     "createTagFailed": "Failed to create tag.",
     "credentialsLoadFailed": "Failed to load saved credentials.",
     "disableCharacterWidthCompatibilityMode": "Disable Character Width Compatibility Mode",
-    "disableCharacterWidthCompatibilityModeTooltip": "Disable Unicode 11 character-width support for this server. New SSH sessions will use xterm's legacy width rules, which may help when remote terminal output looks misaligned.",
+    "disableCharacterWidthCompatibilityModeTooltip": "Disable Unicode 11 character-width support for this server. Try this when remote terminal output looks misaligned.",
     "dropTextToTerminal": "Drop text here to insert into terminal",
     "editorLoadFailed": "Failed to load server editor resources.",
     "emptyTags": "No added tags",
@@ -1261,7 +1238,7 @@
     "historyTerminalLabel": "Terminal {index}",
     "hostFingerprintDialogAlgorithm": "Algorithm",
     "hostFingerprintDialogCancel": "Cancel",
-    "hostFingerprintDialogDescription": "An untrusted host fingerprint was detected on first connection. Please confirm before continuing.",
+    "hostFingerprintDialogDescription": "The current remote host fingerprint is not trusted. Trust the remote host fingerprint before continuing.",
     "hostFingerprintDialogFingerprint": "Fingerprint",
     "hostFingerprintDialogHost": "Host",
     "hostFingerprintDialogTitle": "Trust Host Fingerprint",
@@ -1288,10 +1265,10 @@
       "previewLabel": "Preview",
       "reasons": {
         "controlCharacters": "The paste contains ESC, BEL, ANSI control sequences, or other control characters.",
-        "largeText": "The paste contains {count} characters, which meets or exceeds the {threshold} character threshold.",
+        "largeText": "The paste contains {count}/{threshold} characters.",
         "multiLine": "The paste spans multiple lines."
       },
-      "title": "Paste Into Terminal?"
+      "title": "Confirm Paste"
     },
     "portPlaceholder": "Port",
     "privateKeyImportAction": "Import Private Key...",
@@ -1325,7 +1302,7 @@
       "title": "Remote Enhancements Debug",
       "version": "Version"
     },
-    "remoteEnhancementsTooltip": "When enabled, this server can run Cosmosh's remote helper installer after connection if the global Remote Enhancements setting and manifest URL are configured.",
+    "remoteEnhancementsTooltip": "When enabled, this server can run the Cosmosh remote enhancement helper after connection if global Remote Enhancements is enabled.",
     "remoteShellEvents": {
       "command-end": "Command End",
       "command-start": "Command Start",
@@ -1334,7 +1311,7 @@
       "integration-ready": "Integration Ready",
       "prompt-ready": "Prompt Ready"
     },
-    "removeTagLabel": "Remove {tagName}",
+    "removeTagLabel": "Remove \"{tagName}\"",
     "retry": "Retry",
     "saveChanges": "Save Changes",
     "saveInlineCredentialsToKeychain": "Save as Keychain",
@@ -1362,13 +1339,13 @@
     "selectionBarOpenLinkFailed": "Failed to open link.",
     "selectionBarSearch": "Search selected text online",
     "selectionBarSearchFailed": "Failed to open browser search.",
-    "serverCreatedSuccessfully": "Server created successfully.",
+    "serverCreatedSuccessfully": "Server created.",
     "serverEditorDialogDescription": "Create or edit an SSH server connection profile.",
     "serverNamePlaceholder": "Server name",
-    "serverUpdatedSuccessfully": "Server updated successfully.",
+    "serverUpdatedSuccessfully": "Server updated.",
     "sessionInitFailed": "Failed to initialize SSH session.",
     "strictHostKeyChecking": "Strict Host Key Checking",
-    "strictHostKeyCheckingTooltip": "When enabled, Cosmosh only connects to hosts whose SSH host key fingerprint is already trusted. Unknown fingerprints trigger a confirmation prompt.",
+    "strictHostKeyCheckingTooltip": "When enabled, sessions with unknown fingerprints can continue only after confirmation.",
     "tagNamePlaceholder": "Press Enter to add tag",
     "tagsLegend": "Tags",
     "terminalClipboard": {
@@ -1432,7 +1409,7 @@
     "removeTagLabel": "Remove {tagName}",
     "saveAction": "Save Keychain",
     "saveFailed": "Failed to save keychain.",
-    "saveSuccess": "Keychain saved successfully.",
+    "saveSuccess": "Keychain saved.",
     "tagPlaceholder": "Press Enter to add tag",
     "tagsLabel": "Tags",
     "visibilityShared": "Shared"

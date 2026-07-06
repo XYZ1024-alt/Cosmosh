@@ -17,13 +17,13 @@
       "startMenu": "创建开始菜单快捷方式 (&S)"
     },
     "uninstallPage": {
-      "deleteData": "同时删除 AppData 中的用户数据（此操作无法撤销）(&D)",
-      "description": "卸载 {productName} 将删除所有应用程序文件。\n\n您也可以选择同时删除保存在 AppData 中的个人数据，这包括设置、已知主机、SSH 密钥等。"
+      "deleteData": "同时删除使用数据（此操作无法撤销）(&D)",
+      "description": "勾选此选项来删除保存在电脑中的 {productName} 使用数据，例如设置、添加的主机和 SSH 密钥。"
     },
     "windowsIntegrationPage": {
       "contextMenu": "将“在 Cosmosh 中打开终端”添加到文件夹右键菜单",
       "label": "Windows 集成（可选）：",
-      "terminalApp": "将 Cosmosh 注册为终端启动应用（App Paths）"
+      "terminalApp": "将 Cosmosh 注册到终端"
     },
     "windowsShell": {
       "openTerminal": "在 Cosmosh 中打开终端"
