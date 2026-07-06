@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cosmosh i18n Copy"
+  short_description: "Guide Cosmosh locale copy sync"
+  default_prompt: "Use $cosmosh-i18n-copy-style to update Cosmosh locale copy and validate supported-locale sync."

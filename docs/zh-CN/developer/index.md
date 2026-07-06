@@ -14,6 +14,7 @@ flowchart TD
   B --> E[SFTP 文件系统]
   B --> I[SSH 端口转发]
   B --> F[UI/UX 规范]
+  F --> J[本地化术语表]
 ```
 
 ## 文档分区
@@ -30,6 +31,7 @@ flowchart TD
   - [SSH 端口转发](./runtime/port-forwarding.md)
 - 设计与治理
   - [UI/UX 规范](./design/ui-ux-standards.md)
+  - [本地化术语表](./design/localization-terminology.md)
 
 ## 任务导向入口
 
@@ -39,6 +41,7 @@ flowchart TD
 - 排查安全敏感操作链路：优先阅读[本地优先审计事件](./runtime/audit-events.md)，并在[IPC 协议字典](./core/ipc-protocol.md)核对桥接覆盖。
 - 排查数据库加密启动问题：优先阅读[数据库安全](./runtime/database-security.md)，再结合[架构设计](./core/architecture.md)核对进程职责。
 - 调整界面交互：先遵循[UI/UX 规范](./design/ui-ux-standards.md)，再落地页面样式变更。
+- 调整产品界面文案或功能命名：先遵循[本地化术语表](./design/localization-terminology.md)，并同步 locale 文件。
 
 ## 治理参考
 

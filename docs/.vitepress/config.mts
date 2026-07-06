@@ -80,6 +80,7 @@ export default defineConfig({
           text: 'Developer Design & Governance',
           items: [
             { text: 'UI/UX Standards', link: '/developer/design/ui-ux-standards' },
+            { text: 'Localization Terminology', link: '/developer/design/localization-terminology' },
           ],
         },
       ],
@@ -160,6 +161,7 @@ export default defineConfig({
               text: '开发设计与治理',
               items: [
                 { text: 'UI/UX 规范', link: '/zh-CN/developer/design/ui-ux-standards' },
+                { text: '本地化术语表', link: '/zh-CN/developer/design/localization-terminology' },
               ],
             },
           ],

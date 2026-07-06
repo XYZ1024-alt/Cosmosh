@@ -14,6 +14,7 @@ flowchart TD
   B --> E[SFTP File System]
   B --> I[SSH Port Forwarding]
   B --> F[UI/UX Standards]
+  F --> J[Localization Terminology]
 ```
 
 ## Sections
@@ -30,6 +31,7 @@ flowchart TD
   - [SSH Port Forwarding](./runtime/port-forwarding.md)
 - Design & Governance
   - [UI/UX Standards](./design/ui-ux-standards.md)
+  - [Localization Terminology](./design/localization-terminology.md)
 
 ## Task-Oriented Entry Points
 
@@ -39,6 +41,7 @@ flowchart TD
 - Reviewing security-sensitive action traces: read [Local-First Audit Events](./runtime/audit-events.md), then verify bridge coverage in [IPC Protocol](./core/ipc-protocol.md).
 - Debugging DB encryption startup: read [Database Security](./runtime/database-security.md), then verify process flow in [Architecture](./core/architecture.md).
 - Updating visual behavior: follow [UI/UX Standards](./design/ui-ux-standards.md) before touching page-level styles.
+- Updating product-surface copy or feature names: follow [Localization Terminology](./design/localization-terminology.md) and keep locale files synchronized.
 
 ## Governance Reference
 

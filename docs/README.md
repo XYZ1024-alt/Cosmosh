@@ -20,6 +20,7 @@ docs/
       port-forwarding.md
     design/
       ui-ux-standards.md
+      localization-terminology.md
   user/
     roadmap.md
   zh-CN/
@@ -44,6 +45,7 @@ flowchart TD
   B --> F[developer/runtime/sftp-file-system.md]
   B --> G[developer/runtime/port-forwarding.md]
   B --> H[developer/design/ui-ux-standards.md]
+  H --> I[developer/design/localization-terminology.md]
 ```
 
 ## Localization Policy
@@ -51,6 +53,7 @@ flowchart TD
 - English pages are the source of truth.
 - Chinese pages under `zh-CN/` are synchronized translations.
 - Any English developer-doc update must include same-cycle Chinese synchronization.
+- Cross-locale matrices such as terminology tables may live only in the English source page, with localized pages linking to that single source to avoid duplicated tables drifting apart.
 
 ## Writing Conventions
 
