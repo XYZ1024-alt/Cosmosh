@@ -8,6 +8,7 @@ import {
   FolderOpen,
   FolderPlus,
   Info,
+  Link2,
   RefreshCcw,
   Scissors,
   Terminal,
@@ -34,6 +35,7 @@ import {
 } from '../../components/ui/dropdown-menu';
 import { t } from '../../lib/i18n';
 import { SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK } from './sftp-constants';
+import { isUnsafeDirectorySelfDrop } from './sftp-drag-drop';
 import type {
   ClipboardState,
   InlineEditMenuAction,
@@ -60,6 +62,7 @@ type SftpActionMenuHandlers = {
   handleOpenEntryWithPicker: (entry: ApiSftpEntry) => Promise<void>;
   handleOpenProperties: (entries: ApiSftpEntry[]) => void;
   handleOpenSshAtEntryLocation: (entry: ApiSftpEntry | null, targetDirectoryPath?: string) => void;
+  handleCreateLinkFromClipboard: (targetDirectoryPath?: string) => void;
   handlePasteEntry: (targetDirectoryPath?: string) => Promise<void>;
   handleTreeDirectoryRefresh: (directoryPath: string) => void;
   handleUploadFiles: (targetDirectoryPath?: string) => Promise<void>;
@@ -116,6 +119,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   handleOpenEntryWithPicker,
   handleOpenProperties,
   handleOpenSshAtEntryLocation,
+  handleCreateLinkFromClipboard,
   handlePasteEntry,
   handleTreeDirectoryRefresh,
   handleUploadFiles,
@@ -139,6 +143,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const shouldShowEntryMutationActions = scope === 'entry';
   const shouldShowCreateActions = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowPasteAction = scope === 'directory' || isTreeDirectoryScope;
+  const shouldShowCreateLinkAction = shouldShowPasteAction || scope === 'toolbarMore';
   const shouldShowUploadAction = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowRefreshAction = isTreeDirectoryScope;
   const shouldShowLocationActions =
@@ -160,6 +165,11 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const canMutateEntry = canUseFileActions && targetEntries.length > 0;
   const canRenameEntry = canMutateEntry && targetEntries.length === 1;
   const canPaste = canUseFileActions && Boolean(clipboardState);
+  const canCreateLinkFromClipboard =
+    canUseFileActions &&
+    Boolean(clipboardState?.entries.length) &&
+    Boolean(targetDirectoryPath) &&
+    !isUnsafeDirectorySelfDrop(clipboardState?.entries ?? [], targetDirectoryPath);
   const canRefreshDirectory = canUseFileActions && Boolean(targetDirectoryPath);
   const shouldShowOpenSeparator =
     shouldShowLocationActions ||
@@ -167,9 +177,11 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
     shouldShowRefreshAction ||
     shouldShowUploadAction ||
     shouldShowPasteAction ||
+    shouldShowCreateLinkAction ||
     shouldShowCreateActions;
   const shouldShowCreateSeparator =
-    (shouldShowUploadAction || shouldShowPasteAction || shouldShowRefreshAction) && shouldShowCreateActions;
+    (shouldShowUploadAction || shouldShowPasteAction || shouldShowCreateLinkAction || shouldShowRefreshAction) &&
+    shouldShowCreateActions;
 
   const ShortcutComponent = menuSurface === 'context' ? ContextMenuShortcut : DropdownMenuShortcut;
   const ItemComponent = menuSurface === 'context' ? ContextMenuItem : DropdownMenuItem;
@@ -341,6 +353,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
           shouldShowRefreshAction ||
           shouldShowUploadAction ||
           shouldShowPasteAction ||
+          shouldShowCreateLinkAction ||
           shouldShowCreateActions ? (
             <SeparatorComponent />
           ) : null}
@@ -390,7 +403,9 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
             {t('sftp.actions.delete')}
             {showShortcuts ? <ShortcutComponent>{deleteShortcut}</ShortcutComponent> : null}
           </ItemComponent>
-          {shouldShowPasteAction || shouldShowCreateActions ? <SeparatorComponent /> : null}
+          {shouldShowPasteAction || shouldShowCreateLinkAction || shouldShowCreateActions ? (
+            <SeparatorComponent />
+          ) : null}
         </>
       ) : null}
       {shouldShowRefreshAction ? (
@@ -423,6 +438,17 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
         >
           {t('sftp.actions.paste')}
           {showShortcuts ? <ShortcutComponent>{shortcutModifier}+V</ShortcutComponent> : null}
+        </ItemComponent>
+      ) : null}
+      {shouldShowCreateLinkAction ? (
+        <ItemComponent
+          icon={Link2}
+          disabled={!canCreateLinkFromClipboard}
+          onSelect={() => {
+            handleCreateLinkFromClipboard(targetDirectoryPath);
+          }}
+        >
+          {t('sftp.actions.pasteAsLink')}
         </ItemComponent>
       ) : null}
       {shouldShowCreateActions ? (

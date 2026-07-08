@@ -3496,6 +3496,32 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   /**
+   * Creates absolute symlinks in a target directory from the current SFTP clipboard snapshot.
+   *
+   * @param targetDirectoryPath Remote directory that receives the symlinks.
+   * @returns void.
+   */
+  const handleCreateLinkFromClipboard = React.useCallback(
+    (targetDirectoryPath = currentPath): void => {
+      if (!clipboardState || clipboardState.entries.length === 0) {
+        return;
+      }
+
+      runSftpDroppedEntriesOperation(
+        'link',
+        targetDirectoryPath,
+        clipboardState.entries.map((entry) => ({
+          name: entry.name,
+          parentPath: entry.parentPath ?? resolveEntryParentPath(entry.path),
+          path: entry.path,
+          type: entry.type,
+        })),
+      );
+    },
+    [clipboardState, currentPath, runSftpDroppedEntriesOperation],
+  );
+
+  /**
    * Starts an internal SFTP entry drag with either the selected set or the row being dragged.
    *
    * @param entry Row entry where dragging started.
@@ -3794,6 +3820,7 @@ const SFTP: React.FC<SFTPProps> = ({
           clipboardState={clipboardState}
           contextEntry={contextEntry}
           currentPath={currentPath}
+          handleCreateLinkFromClipboard={handleCreateLinkFromClipboard}
           handleCopyEntries={handleCopyEntries}
           handleCopyRelativeRemotePath={handleCopyRelativeRemotePath}
           handleCopyRemotePath={handleCopyRemotePath}
@@ -3831,6 +3858,7 @@ const SFTP: React.FC<SFTPProps> = ({
       canUseSftpOpenWith,
       clipboardState,
       currentPath,
+      handleCreateLinkFromClipboard,
       handleCopyEntries,
       handleCopyRelativeRemotePath,
       handleCopyRemotePath,
