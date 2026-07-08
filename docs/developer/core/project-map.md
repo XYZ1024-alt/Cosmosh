@@ -51,7 +51,7 @@ flowchart TB
 - **Role**: React UI layer.
 - **Key folders**:
   - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
-  - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
+  - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
