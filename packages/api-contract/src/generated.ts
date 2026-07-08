@@ -1119,7 +1119,7 @@ export interface components {
       recursive: boolean;
     };
     /** @enum {string} */
-    SftpBatchOperationType: 'copy' | 'move' | 'delete';
+    SftpBatchOperationType: 'copy' | 'move' | 'delete' | 'link';
     SftpBatchOperationItemRequest: {
       path: string;
       type: components['schemas']['SftpEntryType'];
@@ -1127,7 +1127,7 @@ export interface components {
     SftpBatchOperationRequest: {
       operation: components['schemas']['SftpBatchOperationType'];
       entries: components['schemas']['SftpBatchOperationItemRequest'][];
-      /** @description Required when operation is copy or move. */
+      /** @description Required when operation is copy, move, or link. */
       targetDirectoryPath?: string;
     };
     /** @enum {string} */

@@ -2929,7 +2929,7 @@ components:
               default: true
     SftpBatchOperationType:
       type: string
-      enum: ['copy', 'move', 'delete']
+      enum: ['copy', 'move', 'delete', 'link']
     SftpBatchOperationItemRequest:
       type: object
       required:
@@ -2957,7 +2957,7 @@ components:
         targetDirectoryPath:
           type: string
           minLength: 1
-          description: Required when operation is copy or move.
+          description: Required when operation is copy, move, or link.
     SftpBatchOperationItemStatus:
       type: string
       enum: ['success', 'failed', 'skipped']

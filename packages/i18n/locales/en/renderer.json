@@ -466,6 +466,14 @@
         "placeholder": "4194304",
         "title": "Image Preview Warning Threshold"
       },
+      "sftpInternalDragDefaultAction": {
+        "description": "Choose what happens when SFTP items are dropped onto a folder.",
+        "title": "SFTP Drag Drop Action"
+      },
+      "sftpInternalDragModifierAction": {
+        "description": "Choose what happens when SFTP items are dropped while holding Ctrl (Cmd on macOS).",
+        "title": "SFTP Drag Modifier Action"
+      },
       "sftpReconnectMode": {
         "description": "Set whether to automatically reconnect after an SFTP session disconnects.",
         "title": "SFTP Auto-Reconnect"
@@ -785,6 +793,12 @@
         "off": "Off",
         "shortcut": "Enabled for keyboard shortcuts"
       },
+      "sftpDragAction": {
+        "ask": "Ask every time",
+        "copy": "Copy",
+        "link": "Create link",
+        "move": "Move"
+      },
       "sftpReconnectMode": {
         "active": "Active",
         "off": "Off",
@@ -1024,6 +1038,14 @@
     "directoryListLabel": "SFTP directory items",
     "downloadPathUnavailable": "The local download path is unavailable.",
     "downloadUnsupported": "Only regular files can be saved locally.",
+    "drag": {
+      "copyHere": "Copy Here",
+      "linkHere": "Create Link Here",
+      "menuTitle": "Drag to {path}",
+      "menuTitleMany": "Drag {count} items to {path}",
+      "menuTrigger": "SFTP drop operation menu",
+      "moveHere": "Move Here"
+    },
     "empty": "This directory is empty.",
     "entryType": {
       "directory": "Directory",
@@ -1032,6 +1054,7 @@
       "symlink": "Symbolic Link"
     },
     "feedback": {
+      "alreadyInTargetDirectory": "Already in this folder.",
       "batchPartialFailure": "Completed {completed}/{total} items. {failed} failed and {skipped} skipped.",
       "copied": "Copied.",
       "copiedMany": "Copied {count} items.",
@@ -1041,6 +1064,9 @@
       "directoryCreated": "Folder created.",
       "downloaded": "Saved to {path}.",
       "fileCreated": "File created.",
+      "invalidDropTarget": "Cannot drop a folder into itself.",
+      "linked": "Link created.",
+      "linkedMany": "Created {count} links.",
       "moved": "Moved.",
       "movedMany": "Moved {count} items.",
       "pathCopied": "File address copied.",
@@ -1147,6 +1173,7 @@
       "download": "Download",
       "entryCountMany": "{count} items",
       "entryCountOne": "1 item",
+      "link": "Create Link",
       "move": "Move",
       "open": "Open",
       "openWith": "Open With",

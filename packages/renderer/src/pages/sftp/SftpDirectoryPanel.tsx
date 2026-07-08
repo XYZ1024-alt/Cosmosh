@@ -43,6 +43,11 @@ import {
   type SftpDirectoryColumnDefinition,
 } from './sftp-directory-view';
 import type {
+  SftpDirectoryDropEventHandler,
+  SftpDirectoryDropTarget,
+  SftpEntryDragStartHandler,
+} from './sftp-drag-drop';
+import type {
   PendingCreateState,
   SftpActionMenuOptions,
   SftpConnectionStatus,
@@ -118,6 +123,7 @@ const SortableHeaderCell: React.FC<SortableHeaderCellProps> = ({ column, sort, o
  * Props for the central SFTP directory listing panel.
  */
 type SftpDirectoryPanelProps = {
+  activeDropTarget: SftpDirectoryDropTarget | null;
   canActivateParentDirectoryListEntry: boolean;
   clipboardMode?: 'copy' | 'cut';
   clipboardPaths: ReadonlySet<string>;
@@ -148,7 +154,13 @@ type SftpDirectoryPanelProps = {
     direction: SftpDirectoryListSortDirection;
   }) => void;
   onDirectoryListSortFieldClick: (columnId: SftpDirectoryListColumnId) => void;
+  onDirectoryDropTargetDragEnter: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragLeave: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragOver: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDrop: SftpDirectoryDropEventHandler;
   onEntryContextMenu: (entry: ApiSftpEntry) => void;
+  onEntryDragEnd: () => void;
+  onEntryDragStart: SftpEntryDragStartHandler;
   onEntryOpen: (entry: ApiSftpEntry) => void;
   onEntrySelect: (entry: ApiSftpEntry, event: SftpSelectionClickEvent) => void;
   onFileNavigationRowKeyDown: (event: React.KeyboardEvent<HTMLElement>, row: SftpFileNavigationRow) => void;
@@ -168,6 +180,7 @@ type SftpDirectoryPanelProps = {
  * @returns SFTP directory panel.
  */
 export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
+  activeDropTarget,
   canActivateParentDirectoryListEntry,
   clipboardMode,
   clipboardPaths,
@@ -184,7 +197,13 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   onDirectoryListColumnVisibilityChange,
   onDirectoryListSortChange,
   onDirectoryListSortFieldClick,
+  onDirectoryDropTargetDragEnter,
+  onDirectoryDropTargetDragLeave,
+  onDirectoryDropTargetDragOver,
+  onDirectoryDropTargetDrop,
   onEntryContextMenu,
+  onEntryDragEnd,
+  onEntryDragStart,
   onEntryOpen,
   onEntrySelect,
   onFileNavigationRowKeyDown,
@@ -482,6 +501,11 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                         const isCut = clipboardMode === 'cut' ? clipboardPaths.has(entry.path) : false;
                         const shouldDimHiddenEntry = sftpShowHiddenEntries && sftpDimHiddenEntries && entry.isHidden;
                         const hiddenEntryVisualClassName = shouldDimHiddenEntry ? 'opacity-80' : undefined;
+                        const isDirectoryDropTarget = entry.type === 'directory';
+                        const isActiveDropTarget =
+                          isDirectoryDropTarget &&
+                          activeDropTarget?.surface === 'directory-list' &&
+                          activeDropTarget.path === entry.path;
 
                         return (
                           <ContextMenu key={entry.path}>
@@ -493,6 +517,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                 role="option"
                                 aria-selected={isSelected}
                                 aria-label={entry.name}
+                                draggable={renamingEntryPath !== entry.path}
                                 tabIndex={resolvedActiveFileRowKey === entry.path ? 0 : -1}
                                 className={classNames(
                                   'grid h-[34px] w-full items-center px-3 text-left text-sm transition-colors hover:bg-home-card-hover',
@@ -504,6 +529,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                         ? 'rounded-b-none rounded-t-lg'
                                         : 'rounded-lg',
                                   isSelected ? 'text-home-text bg-home-card-hover' : 'text-home-text',
+                                  isActiveDropTarget ? 'bg-home-card-active' : '',
                                   isCut ? 'opacity-55' : '',
                                 )}
                                 style={directoryGridStyle}
@@ -513,6 +539,44 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                 }}
                                 onDoubleClick={() => onEntryOpen(entry)}
                                 onContextMenu={() => onEntryContextMenu(entry)}
+                                onDragEnd={onEntryDragEnd}
+                                onDragEnter={
+                                  isDirectoryDropTarget
+                                    ? (event) =>
+                                        onDirectoryDropTargetDragEnter(event, {
+                                          path: entry.path,
+                                          surface: 'directory-list',
+                                        })
+                                    : undefined
+                                }
+                                onDragLeave={
+                                  isDirectoryDropTarget
+                                    ? (event) =>
+                                        onDirectoryDropTargetDragLeave(event, {
+                                          path: entry.path,
+                                          surface: 'directory-list',
+                                        })
+                                    : undefined
+                                }
+                                onDragOver={
+                                  isDirectoryDropTarget
+                                    ? (event) =>
+                                        onDirectoryDropTargetDragOver(event, {
+                                          path: entry.path,
+                                          surface: 'directory-list',
+                                        })
+                                    : undefined
+                                }
+                                onDragStart={(event) => onEntryDragStart(entry, event)}
+                                onDrop={
+                                  isDirectoryDropTarget
+                                    ? (event) =>
+                                        onDirectoryDropTargetDrop(event, {
+                                          path: entry.path,
+                                          surface: 'directory-list',
+                                        })
+                                    : undefined
+                                }
                                 onFocus={() => onSetActiveFileRowKey(entry.path)}
                                 onKeyDown={(event) => {
                                   onFileNavigationRowKeyDown(event, {

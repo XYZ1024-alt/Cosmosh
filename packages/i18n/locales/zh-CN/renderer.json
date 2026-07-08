@@ -466,6 +466,14 @@
         "placeholder": "4194304",
         "title": "图片预览警告阈值"
       },
+      "sftpInternalDragDefaultAction": {
+        "description": "选择将 SFTP 项拖放到文件夹后执行的操作。",
+        "title": "SFTP 拖放操作"
+      },
+      "sftpInternalDragModifierAction": {
+        "description": "选择按住 Ctrl（macOS 为 Cmd）拖放 SFTP 项时执行的操作。",
+        "title": "SFTP 拖放修饰键操作"
+      },
       "sftpReconnectMode": {
         "description": "设置 SFTP 会话断开后是否自动尝试重连。",
         "title": "SFTP 自动重连"
@@ -785,6 +793,12 @@
         "off": "关闭",
         "shortcut": "使用快捷键时开启"
       },
+      "sftpDragAction": {
+        "ask": "每次询问",
+        "copy": "复制",
+        "link": "创建链接",
+        "move": "移动"
+      },
       "sftpReconnectMode": {
         "active": "主动",
         "off": "关闭",
@@ -1024,6 +1038,14 @@
     "directoryListLabel": "SFTP 目录项目",
     "downloadPathUnavailable": "无法获取本地下载路径。",
     "downloadUnsupported": "仅普通文件可以保存到本地。",
+    "drag": {
+      "copyHere": "复制到这里",
+      "linkHere": "在这里创建链接",
+      "menuTitle": "拖拽到 {path}",
+      "menuTitleMany": "拖拽 {count} 个文件到 {path}",
+      "menuTrigger": "SFTP 拖放操作菜单",
+      "moveHere": "移动到这里"
+    },
     "empty": "该目录为空。",
     "entryType": {
       "directory": "目录",
@@ -1032,6 +1054,7 @@
       "symlink": "符号链接"
     },
     "feedback": {
+      "alreadyInTargetDirectory": "已在该文件夹中。",
       "batchPartialFailure": "已完成 {completed}/{total} 项，{failed} 个失败，{skipped} 个已跳过。",
       "copied": "已复制。",
       "copiedMany": "已复制 {count} 项。",
@@ -1041,6 +1064,9 @@
       "directoryCreated": "文件夹已创建。",
       "downloaded": "已保存到 {path}。",
       "fileCreated": "文件已创建。",
+      "invalidDropTarget": "不能将文件夹拖放到自身内部。",
+      "linked": "链接已创建。",
+      "linkedMany": "已创建 {count} 个链接。",
       "moved": "已移动。",
       "movedMany": "已移动 {count} 项。",
       "pathCopied": "文件地址已复制。",
@@ -1147,6 +1173,7 @@
       "download": "下载",
       "entryCountMany": "{count} 项",
       "entryCountOne": "1 项",
+      "link": "创建链接",
       "move": "移动",
       "open": "打开",
       "openWith": "打开方式",

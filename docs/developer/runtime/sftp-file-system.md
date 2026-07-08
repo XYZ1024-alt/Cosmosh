@@ -14,14 +14,15 @@ Implemented in v1:
 - Preview mode follows a Windows Explorer-style auxiliary sidebar. Text/code previews use CodeMirror 6 and can save UTF-8 changes back through SFTP; image previews materialize through the same controlled temp-file download path. Large text and image previews require explicit user confirmation before opening, with thresholds backed by settings.
 - The left directory tree shows the current directory ancestry, caches loaded child directories as users browse, automatically scrolls the current directory row near the upper third of the tree viewport after directory navigation only when the mounted parent/current/expanded-child context is outside the visible viewport, and exposes directory-scoped right-click actions for open, new-tab open, refresh, paste, new file, and new folder.
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, delete, new file, new folder, and inline rename. The directory list supports mouse and keyboard multi-selection with `Ctrl`/`Cmd` toggle, `Ctrl`/`Cmd+A` select-all, and `Shift` range selection.
+- Internal same-tab dragging starts from one or more directory-list entries and drops only on explicit remote directory targets: left tree rows, center-list directory rows, breadcrumb directory segments, and address-bar directory dropdown entries. The resolved action is ask, move, copy, or create-link, with a separate platform-primary-modifier setting (`Ctrl` on Windows/Linux, `Cmd` on macOS).
 - The toolbar, directory blank-area menu, and tree-directory menu can upload one or more local regular files into the selected remote directory. Main stages native-picker selections under the controlled SFTP temp root; uploads run sequentially through the tab-local task queue, and existing remote names require explicit overwrite confirmation.
 - Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, failed, and progress states.
-- SFTP settings control reconnect mode, delete-confirmation scope, file-list column/sort view state, whether the center file list shows a leading `..` parent-directory row, whether the address bar always renders as text, the auxiliary sidebar mode, and the text/image preview warning thresholds.
-- Backend write operations support local-file upload, empty-file creation, directory creation, rename/move, recursive copy, and recursive delete.
+- SFTP settings control reconnect mode, delete-confirmation scope, internal-drag default and modifier actions, file-list column/sort view state, whether the center file list shows a leading `..` parent-directory row, whether the address bar always renders as text, the auxiliary sidebar mode, and the text/image preview warning thresholds.
+- Backend write operations support local-file upload, empty-file creation, directory creation, rename/move, recursive copy, absolute symlink creation, and recursive delete.
 
 Intentionally not included in v1:
 
-- directory upload/download, chmod, drag/drop, global search, and backend-level transfer queues with byte progress and cancellation.
+- directory upload/download, chmod, external or cross-tab drag/drop targets, blank-area/file-row/text-address drop targets, global search, and backend-level transfer queues with byte progress and cancellation.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -43,28 +44,28 @@ flowchart LR
 - **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
 - **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/ipc/register-app-utility-ipc.ts` owns native save/open helpers, validates Cosmosh SFTP temp paths, and launches platform Open With behavior. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
 - **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
-- **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP reconnect, delete-confirmation, directory-list view, parent-directory-row, hidden-entry, address-display, auxiliary-sidebar, and preview-threshold preferences consumed by the renderer settings store.
+- **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP reconnect, delete-confirmation, internal-drag action, directory-list view, parent-directory-row, hidden-entry, address-display, auxiliary-sidebar, and preview-threshold preferences consumed by the renderer settings store.
 
 ## 3. API Contract
 
 All callers must use generated exports from `@cosmosh/api-contract`, especially `API_PATHS` and generated request/response payload types.
 
-| Method | Path | Purpose |
-|---|---|---|
-| `POST` | `/api/v1/sftp/sessions` | Create an SFTP file-system session for one SSH server. |
-| `GET` | `/api/v1/sftp/sessions/{sessionId}/entries?path=...` | List one remote directory for an active SFTP session. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/entries/details` | Fetch non-recursive metadata for selected remote entries, including `lstat` fields and symbolic-link target metadata. |
-| `GET` | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/file` | Save editable UTF-8 preview content back to one regular remote file after size/mtime conflict checks. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/download` | Stream one regular remote file to a local destination selected by main/preload. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/upload` | Stream one controlled local temp file to a new remote path, or replace an existing regular file after snapshot/explicit overwrite confirmation. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/files` | Create one empty remote file. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/directories` | Create one remote directory. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/rename` | Rename or move one remote entry. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/copy` | Copy one remote file or directory tree. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/entries/delete` | Delete one remote file, symlink, or directory tree. |
-| `POST` | `/api/v1/sftp/sessions/{sessionId}/batch` | Run one ordered batch copy, move, or delete operation across multiple remote entries. |
-| `DELETE` | `/api/v1/sftp/sessions/{sessionId}` | Close one SFTP session and release the SSH connection. |
+| Method   | Path                                                           | Purpose                                                                                                                                         |
+| -------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST`   | `/api/v1/sftp/sessions`                                        | Create an SFTP file-system session for one SSH server.                                                                                          |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/entries?path=...`           | List one remote directory for an active SFTP session.                                                                                           |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/details`            | Fetch non-recursive metadata for selected remote entries, including `lstat` fields and symbolic-link target metadata.                           |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | Read a bounded UTF-8 preview for one remote file.                                                                                               |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/file`                       | Save editable UTF-8 preview content back to one regular remote file after size/mtime conflict checks.                                           |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/download`                   | Stream one regular remote file to a local destination selected by main/preload.                                                                 |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/upload`                     | Stream one controlled local temp file to a new remote path, or replace an existing regular file after snapshot/explicit overwrite confirmation. |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/files`                      | Create one empty remote file.                                                                                                                   |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/directories`                | Create one remote directory.                                                                                                                    |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/rename`                     | Rename or move one remote entry.                                                                                                                |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                       | Copy one remote file or directory tree.                                                                                                         |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`             | Delete one remote file, symlink, or directory tree.                                                                                             |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                      | Run one ordered batch copy, move, link, or delete operation across multiple remote entries.                                                     |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                            | Close one SFTP session and release the SSH connection.                                                                                          |
 
 Success codes:
 
@@ -165,6 +166,8 @@ Mutation rules:
 - Empty files are created with exclusive write semantics so existing remote files are not overwritten.
 - Directory copy is recursive. The backend chooses a `copy`, `copy 2`, ... suffix when the requested destination already exists.
 - Copying a directory into itself or one of its descendants is rejected.
+- Moving a directory into itself or one of its descendants is rejected before issuing the remote rename.
+- Batch `link` creates an absolute symbolic link in the target directory that points to the source remote absolute path. The link name uses the source basename and the same `copy`, `copy 2`, ... conflict suffix policy as copy.
 - Delete uses `lstat` so symlinks are removed as links instead of following their targets.
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
@@ -174,7 +177,7 @@ Mutation rules:
 - Staged upload files are removed after their task settles. Connection resets and tab unmount also request best-effort cleanup for queued staging paths that did not start.
 - Passive reconnect is surfaced as a regular `Reconnect` task in the same task menu. Concurrent SFTP operations that observe the same stale session share one in-flight reconnect promise, then each operation retries once against the new session id. If reconnect succeeds but the original operation still fails, the renderer reports that operation failure and does not start a second reconnect loop.
 - Reconnect prefers the tab's current path (`currentPathRef.current`) when creating the replacement session and falls back to the original connection intent path, or `.` when no initial path was provided.
-- Multi-entry cut/copy/delete/paste uses one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
+- Multi-entry cut/copy/link/delete/paste and internal drag operations use one backend batch API request against the current SFTP session. The service executes entries in order, stops on the first failure, returns per-entry `success`/`failed`/`skipped` results, and does not roll back already completed entries. Rename, open, Open With, local save, empty-file creation, and directory creation remain single-entry tasks. Open-in-new-tab remains immediate because it does not mutate the current session.
 - Local save actions remain single-entry actions and only support regular files. `Save to Downloads` asks main to authorize one exact file under the OS Downloads directory, while `Save to...` asks main to authorize the native save-dialog selection. Both capabilities are owner-bound and single-use; the backend proxy rejects arbitrary renderer-provided destinations before streaming the remote file through the live SFTP session into a temporary local file and replacing the final destination.
 - Default file open and Open With actions also remain single-entry actions for regular files. The renderer asks main for a unique, reusable owner-bound path under `app.getPath('temp')/cosmosh-sftp`, reuses the existing SFTP download endpoint to materialize the file, then asks main to open only that validated temp path.
 - Preview reads are renderer-driven and single-entry only. Text/code preview reads call the bounded UTF-8 file endpoint; files above `sftpTextPreviewWarningThresholdBytes` require confirmation before reading, and reads are capped by the backend maximum. Image previews reuse the temp download path with a preview-owned, size/mtime-validated cache that is separate from Open/Open With temp files; images above `sftpImagePreviewWarningThresholdBytes` require confirmation before downloading, but confirmation never bypasses the hard image preview size cap checked before download.
@@ -203,13 +206,14 @@ Error mapping:
 
 - Missing or invalid request data -> `SFTP_VALIDATION_FAILED`.
 - Missing session id, evicted session, or closed SSH/SFTP transport -> `SFTP_SESSION_NOT_FOUND`.
-- Connection failures, permission errors, unreadable paths, copy/delete/rename failures, and remote SFTP errors -> `SFTP_OPERATION_FAILED`.
+- Connection failures, permission errors, unreadable paths, copy/link/delete/rename failures, and remote SFTP errors -> `SFTP_OPERATION_FAILED`.
 - Unknown host fingerprint -> `SSH_HOST_UNTRUSTED` with fingerprint confirmation data.
 
 Security constraints:
 
 - Renderer and preload never receive decrypted SSH credentials.
 - SFTP paths are passed as structured API payloads, not shell commands.
+- Internal drag payloads are renderer-local structured data with the source SFTP `sessionId`; directory drop targets accept them only when the payload session matches the current tab.
 - Local save destinations are selected or resolved by main/preload and passed to backend as explicit paths; renderer does not receive filesystem write primitives.
 - Local OS-open actions are restricted to paths under the Cosmosh SFTP temp root. Main normalizes the candidate path, verifies it stays inside that root, and checks that it is an existing file before calling `shell.openPath`, Windows `openas`, or the macOS helper.
 - SFTP temp-file watchers use the same temp-root validation and are owned by the renderer webContents that requested them. Watchers stop when the tab runtime resets, the renderer is destroyed, or the renderer explicitly stops the watch.
@@ -240,6 +244,9 @@ The SFTP page follows Cosmosh workbench layout rules:
 - Row and toolbar overflow menu `Properties` items open the standalone Properties window for the selected entry or selection.
 - Expose tree-node actions through the left directory tree context menu. These actions are scoped to the clicked directory and must not inherit center-list multi-selection state.
 - Directory-list row selection matches desktop file-manager conventions: plain click replaces the selection, `Ctrl`/`Cmd` toggles one row, `Ctrl`/`Cmd+A` selects every visible entry, `Shift` selects the visible range from the current anchor, `Space` selects the focused row, and primary-clicking blank space in the center list clears the current selection. Row context menus preserve an existing multi-selection when the clicked row is already selected.
+- Internal SFTP dragging follows selection ownership: dragging an unselected row drags only that row, while dragging an already selected row drags the current multi-selection. The first release accepts only explicit directory drop targets in the same tab: tree rows, center-list directory rows, breadcrumb segments, and address-bar directory dropdown entries. Dropping on blank areas, file rows, the address text input, external files, another SFTP tab, or a selected directory itself/descendant is intentionally ignored for the whole dragged set.
+- Drop-target hover state is scoped to the rendered target surface, so the same remote path shown in the tree, file list, and address bar does not highlight every matching surface at once.
+- Drag-drop action resolution is controlled by `sftpInternalDragDefaultAction` and `sftpInternalDragModifierAction`. Defaults are `ask` for unmodified drops and `copy` when the platform-primary modifier is held. The `ask` path opens the shared Radix/Tailwind dropdown at the drop coordinates with Move, Copy, and Create Link actions; canceling the menu does not queue work.
 - The left directory tree and center file list use roving focus: `Tab` enters each list once, then `ArrowUp`/`ArrowDown` move between rows. In the file list, unmodified arrow navigation selects the focused file row, `Ctrl`/`Cmd` plus arrow navigation moves focus without changing selection, and `Shift` plus arrow/Home/End expands the selected range while the optional `..` parent row remains activation-only.
 - Avoid duplicated menu entries across the toolbar overflow menu and the context-menu surface. Row context menus focus on the selected entry, blank-area context menus focus on paste/create actions, tree context menus focus on the clicked directory, and the toolbar overflow menu contains actions that do not already have dedicated toolbar buttons.
 - The Properties surface is a separate Electron/browser window. Its first version reuses existing SFTP card, text, and button styles, keeps field labels and values selectable, and reserves permissions editing through a standard edit button at the end of the permissions section.
@@ -263,8 +270,9 @@ Future SFTP work should be planned separately. Likely next phases:
 1. Directory upload/download plus byte-level transfer progress and cancellation.
 2. chmod and richer permissions editing.
 3. Transfer queue and conflict handling for long-running copies/uploads/downloads.
-4. Richer editor workflows such as encoding choices and explicit reload/compare actions.
-5. Optional terminal-path handoff once the SSH terminal and SFTP session model can share state safely.
+4. External-file, cross-tab, blank-area, and file-row drag/drop targets once their security and target-resolution rules are defined.
+5. Richer editor workflows such as encoding choices and explicit reload/compare actions.
+6. Optional terminal-path handoff once the SSH terminal and SFTP session model can share state safely.
 
 ## 9. Server Proxy Behavior
 

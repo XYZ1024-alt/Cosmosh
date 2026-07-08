@@ -101,7 +101,7 @@ const isSftpEntryType = (value: unknown): value is SftpEntryType => {
 };
 
 const isSftpBatchOperation = (value: unknown): value is SftpBatchOperation => {
-  return value === 'copy' || value === 'move' || value === 'delete';
+  return value === 'copy' || value === 'move' || value === 'delete' || value === 'link';
 };
 
 /**
@@ -476,7 +476,10 @@ const parseSftpBatchOperationRequest = (payload: unknown): ValidationResult<Norm
 
   if (!isSftpBatchOperation(payload.operation)) {
     return {
-      error: buildValidationError('errors.sftp.batchOperationRequired', 'operation must be copy, move, or delete.'),
+      error: buildValidationError(
+        'errors.sftp.batchOperationRequired',
+        'operation must be copy, move, delete, or link.',
+      ),
     };
   }
 
@@ -514,11 +517,14 @@ const parseSftpBatchOperationRequest = (payload: unknown): ValidationResult<Norm
   }
 
   const targetDirectoryPath = normalizeOptionalString(payload.targetDirectoryPath);
-  if ((payload.operation === 'copy' || payload.operation === 'move') && !targetDirectoryPath) {
+  if (
+    (payload.operation === 'copy' || payload.operation === 'move' || payload.operation === 'link') &&
+    !targetDirectoryPath
+  ) {
     return {
       error: buildValidationError(
         'errors.sftp.batchTargetRequired',
-        'targetDirectoryPath is required for copy and move batch operations.',
+        'targetDirectoryPath is required for copy, move, and link batch operations.',
       ),
     };
   }

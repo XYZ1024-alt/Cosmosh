@@ -50,6 +50,7 @@ import type { InputContextMenuItem } from '../../components/ui/input-context-men
 import { Menubar, MenubarSeparator } from '../../components/ui/menubar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { t } from '../../lib/i18n';
+import type { SftpDirectoryDropEventHandler, SftpDirectoryDropTarget } from './sftp-drag-drop';
 import type {
   AddressBreadcrumbRenderState,
   NavigationHistoryControlOptions,
@@ -65,6 +66,7 @@ import { SftpDirectoryViewMenuItems } from './SftpDirectoryViewMenuItems';
  * Props for the SFTP toolbar.
  */
 type SftpToolbarProps = {
+  activeDropTarget: SftpDirectoryDropTarget | null;
   addressBreadcrumbRenderState: AddressBreadcrumbRenderState;
   addressInputContextMenuItems: InputContextMenuItem[];
   addressInputRef: React.RefObject<HTMLInputElement | null>;
@@ -101,6 +103,10 @@ type SftpToolbarProps = {
   isBreadcrumbLoading: (breadcrumbPath: string) => boolean;
   keepAddressInputDuringContextMenu: () => void;
   onAddressInputPointerDown: (event: React.PointerEvent<HTMLInputElement>) => void;
+  onDirectoryDropTargetDragEnter: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragLeave: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragOver: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDrop: SftpDirectoryDropEventHandler;
   onAuxiliarySidebarModeChange: (mode: SftpAuxiliarySidebarMode) => Promise<void>;
   onBeginCreateEntry: (type: 'file' | 'directory') => void;
   onBeginRenameEntry: (entry: ApiSftpEntry) => void;
@@ -146,6 +152,7 @@ type SftpToolbarProps = {
  * @returns SFTP toolbar.
  */
 export const SftpToolbar: React.FC<SftpToolbarProps> = ({
+  activeDropTarget,
   addressBreadcrumbRenderState,
   addressInputContextMenuItems,
   addressInputRef,
@@ -172,6 +179,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   keepAddressInputDuringContextMenu,
   navigationIndex,
   onAddressInputPointerDown,
+  onDirectoryDropTargetDragEnter,
+  onDirectoryDropTargetDragLeave,
+  onDirectoryDropTargetDragOver,
+  onDirectoryDropTargetDrop,
   onAuxiliarySidebarModeChange,
   onBeginCreateEntry,
   onBeginRenameEntry,
@@ -425,6 +436,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
           <MenubarSeparator vertical />
 
           <SftpAddressControl
+            activeDropTarget={activeDropTarget}
             addressBreadcrumbRenderState={addressBreadcrumbRenderState}
             addressInputContextMenuItems={addressInputContextMenuItems}
             addressInputRef={addressInputRef}
@@ -439,6 +451,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
             sftpShowAddressAsText={sftpShowAddressAsText}
             onAddressInputPointerDown={onAddressInputPointerDown}
             onCopyCurrentPath={onCopyCurrentPath}
+            onDirectoryDropTargetDragEnter={onDirectoryDropTargetDragEnter}
+            onDirectoryDropTargetDragLeave={onDirectoryDropTargetDragLeave}
+            onDirectoryDropTargetDragOver={onDirectoryDropTargetDragOver}
+            onDirectoryDropTargetDrop={onDirectoryDropTargetDrop}
             onEditCurrentPath={onEditCurrentPath}
             onNavigateToPath={onNavigateToPath}
             onPathInputBlur={onPathInputBlur}

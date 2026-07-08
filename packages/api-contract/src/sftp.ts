@@ -15,6 +15,17 @@ export type SftpAuxiliarySidebarMode = (typeof SFTP_AUXILIARY_SIDEBAR_MODES)[num
 /** Default SFTP sidebar mode keeps the existing metadata panel visible. */
 export const DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE: SftpAuxiliarySidebarMode = 'details';
 
+/** SFTP internal drag actions that can be bound to default or modifier-key drops. */
+export const SFTP_INTERNAL_DRAG_ACTIONS = ['ask', 'move', 'copy', 'link'] as const;
+
+export type SftpInternalDragAction = (typeof SFTP_INTERNAL_DRAG_ACTIONS)[number];
+
+/** Default internal SFTP drag behavior asks before mutating remote entries. */
+export const DEFAULT_SFTP_INTERNAL_DRAG_DEFAULT_ACTION: SftpInternalDragAction = 'ask';
+
+/** Default internal SFTP drag modifier behavior matches common file-manager copy semantics. */
+export const DEFAULT_SFTP_INTERNAL_DRAG_MODIFIER_ACTION: SftpInternalDragAction = 'copy';
+
 /** Default byte threshold before text/code preview asks for confirmation. */
 export const DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES = 512 * 1024;
 

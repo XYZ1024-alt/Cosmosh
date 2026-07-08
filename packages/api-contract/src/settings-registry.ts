@@ -18,13 +18,17 @@ import {
   DEFAULT_SFTP_AUXILIARY_SIDEBAR_MODE,
   DEFAULT_SFTP_DIRECTORY_LIST_VIEW_SETTING,
   DEFAULT_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
+  DEFAULT_SFTP_INTERNAL_DRAG_DEFAULT_ACTION,
+  DEFAULT_SFTP_INTERNAL_DRAG_MODIFIER_ACTION,
   DEFAULT_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
   MAX_SFTP_IMAGE_PREVIEW_WARNING_THRESHOLD_BYTES,
   MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES,
   SFTP_AUXILIARY_SIDEBAR_MODES,
   SFTP_DIRECTORY_LIST_COLUMN_IDS,
+  SFTP_INTERNAL_DRAG_ACTIONS,
   type SftpAuxiliarySidebarMode,
   type SftpDirectoryListViewSetting,
+  type SftpInternalDragAction,
 } from './sftp';
 import {
   DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
@@ -121,6 +125,8 @@ export interface SettingsValues {
   sshReconnectOnFocus: boolean;
   sftpReconnectMode: 'passive' | 'active' | 'off';
   sftpDeleteConfirmationMode: 'always' | 'batch' | 'shortcut' | 'off';
+  sftpInternalDragDefaultAction: SftpInternalDragAction;
+  sftpInternalDragModifierAction: SftpInternalDragAction;
   sftpShowHiddenEntries: boolean;
   sftpDimHiddenEntries: boolean;
   sftpShowParentDirectoryEntry: boolean;
@@ -620,6 +626,36 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.sftp.safety.deleteConfirmationMode.set',
     searchTerms: ['sftp', 'delete', 'confirm', 'confirmation', 'batch', 'shortcut', 'safety'],
     options: [{ value: 'always' }, { value: 'batch' }, { value: 'shortcut' }, { value: 'off' }],
+  },
+  {
+    key: 'sftpInternalDragDefaultAction',
+    valueType: 'string',
+    defaultValue: DEFAULT_SFTP_INTERNAL_DRAG_DEFAULT_ACTION,
+    nameI18nKey: 'settings.items.sftpInternalDragDefaultAction.title',
+    descriptionI18nKey: 'settings.items.sftpInternalDragDefaultAction.description',
+    optionI18nNamespace: 'sftpDragAction',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'select',
+    path: 'sftp.browser.internalDragDefaultAction',
+    commandActionId: 'settings.sftp.browser.internalDragDefaultAction.set',
+    searchTerms: ['sftp', 'drag', 'drop', 'move', 'copy', 'link', 'ask', 'browser'],
+    options: SFTP_INTERNAL_DRAG_ACTIONS.map((value) => ({ value })),
+  },
+  {
+    key: 'sftpInternalDragModifierAction',
+    valueType: 'string',
+    defaultValue: DEFAULT_SFTP_INTERNAL_DRAG_MODIFIER_ACTION,
+    nameI18nKey: 'settings.items.sftpInternalDragModifierAction.title',
+    descriptionI18nKey: 'settings.items.sftpInternalDragModifierAction.description',
+    optionI18nNamespace: 'sftpDragAction',
+    category: SETTINGS_CATEGORIES.sftp,
+    section: SETTINGS_CATEGORIES.sftp.sections.browser,
+    control: 'select',
+    path: 'sftp.browser.internalDragModifierAction',
+    commandActionId: 'settings.sftp.browser.internalDragModifierAction.set',
+    searchTerms: ['sftp', 'drag', 'drop', 'modifier', 'ctrl', 'cmd', 'move', 'copy', 'link', 'ask'],
+    options: SFTP_INTERNAL_DRAG_ACTIONS.map((value) => ({ value })),
   },
   {
     key: 'sftpShowHiddenEntries',

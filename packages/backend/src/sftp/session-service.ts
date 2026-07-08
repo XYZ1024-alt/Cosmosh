@@ -102,7 +102,7 @@ export type SftpEntryDetailsItem = {
 /**
  * Batch operation modes supported by one SFTP API request.
  */
-export type SftpBatchOperation = 'copy' | 'move' | 'delete';
+export type SftpBatchOperation = 'copy' | 'move' | 'delete' | 'link';
 
 /**
  * Remote entry descriptor accepted by the SFTP batch operation endpoint.
@@ -330,6 +330,10 @@ type SftpDirectoryEntry = {
 
 type SftpReadlinkWrapper = SFTPWrapper & {
   readlink(targetPath: string, callback: (error: Error | undefined | null, linkString: string) => void): void;
+};
+
+type SftpSymlinkWrapper = SFTPWrapper & {
+  symlink(targetPath: string, linkPath: string, callback: (error: Error | undefined | null) => void): void;
 };
 
 type SftpOpenSshExtensions = {
@@ -1338,6 +1342,11 @@ export class SftpSessionService {
     }
 
     try {
+      const sourceStats = await this.lstat(session, sourcePath);
+      if (sourceStats.isDirectory() && this.isSameOrDescendantPath(sourcePath, targetPath)) {
+        throw new Error(session.t('errors.sftp.moveIntoSelfUnsupported'));
+      }
+
       await this.rename(session, sourcePath, targetPath);
       this.logSftpMutation(session, 'rename', {
         path: sourcePath,
@@ -1406,6 +1415,55 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryCopyFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Creates one absolute symbolic link to a remote file or directory.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Source path the link should point to.
+   * @param requestedTargetPath Desired link path.
+   * @returns Link result.
+   */
+  public async linkEntry(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const sourcePath = normalizeSftpPathInput(requestedSourcePath);
+    const targetPath = normalizeSftpPathInput(requestedTargetPath);
+    if (!isMutableSftpEntryPath(sourcePath) || !isMutableSftpEntryPath(targetPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      const resolvedTargetPath = await this.resolveAvailableCopyPath(session, targetPath);
+      await this.symlink(session, sourcePath, resolvedTargetPath);
+      this.logSftpMutation(session, 'link', {
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      });
+
+      return {
+        type: 'success',
+        sessionId,
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.entryLinkFailedNoReason')),
       };
     }
   }
@@ -1481,7 +1539,10 @@ export class SftpSessionService {
     const targetDirectoryPath = input.targetDirectoryPath
       ? normalizeSftpPathInput(input.targetDirectoryPath)
       : undefined;
-    if ((input.operation === 'copy' || input.operation === 'move') && !targetDirectoryPath) {
+    if (
+      (input.operation === 'copy' || input.operation === 'move' || input.operation === 'link') &&
+      !targetDirectoryPath
+    ) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.batchTargetRequired'),
@@ -1872,6 +1933,28 @@ export class SftpSessionService {
     });
   }
 
+  /**
+   * Creates one symbolic link through the active SFTP subsystem.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Absolute remote path the new link should point to.
+   * @param linkPath Remote path where the symlink should be created.
+   * @returns Nothing.
+   */
+  private async symlink(session: SftpLiveSession, targetPath: string, linkPath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const sftp = session.sftp as SftpSymlinkWrapper;
+      sftp.symlink(targetPath, linkPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      });
+    });
+  }
+
   private async stat(session: SftpLiveSession, targetPath: string): Promise<Stats> {
     return await new Promise((resolve, reject) => {
       session.sftp.stat(targetPath, (error, stats) => {
@@ -2195,6 +2278,10 @@ export class SftpSessionService {
     const targetPath = joinSftpPath(targetDirectoryPath ?? '.', POSIX_PATH.basename(entry.path));
     if (operation === 'copy') {
       return await this.copyEntry(sessionId, entry.path, targetPath);
+    }
+
+    if (operation === 'link') {
+      return await this.linkEntry(sessionId, entry.path, targetPath);
     }
 
     return await this.renameEntry(sessionId, entry.path, targetPath);

@@ -5,6 +5,7 @@ import React from 'react';
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '../../components/ui/context-menu';
 import { t } from '../../lib/i18n';
 import { SFTP_CARD_CLASS_NAME } from './sftp-constants';
+import type { SftpDirectoryDropEventHandler, SftpDirectoryDropTarget } from './sftp-drag-drop';
 import type { SftpActionMenuOptions, SftpConnectionStatus, TreeDirectoryNode } from './sftp-types';
 import { resolveTreeDirectoryEntry, resolveTreeIndentClassName } from './sftp-utils';
 
@@ -79,6 +80,7 @@ const isDirectoryContextInTreeViewport = (
  * Props for the SFTP directory tree panel.
  */
 type SftpTreePanelProps = {
+  activeDropTarget: SftpDirectoryDropTarget | null;
   currentPath: string;
   resolvedActiveTreePath: string;
   sftpDimHiddenEntries: boolean;
@@ -87,6 +89,10 @@ type SftpTreePanelProps = {
   treeNodes: Record<string, TreeDirectoryNode>;
   treeRootPaths: string[];
   treeRowRefs: React.MutableRefObject<Record<string, HTMLButtonElement | null>>;
+  onDirectoryDropTargetDragEnter: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragLeave: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragOver: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDrop: SftpDirectoryDropEventHandler;
   onInlineEditMenuCloseAutoFocus: (event: Event) => void;
   onNavigateToPath: (directoryPath: string) => Promise<boolean>;
   onSetActiveTreePath: (nodePath: string) => void;
@@ -102,7 +108,12 @@ type SftpTreePanelProps = {
  * @returns SFTP tree panel.
  */
 export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
+  activeDropTarget,
   currentPath,
+  onDirectoryDropTargetDragEnter,
+  onDirectoryDropTargetDragLeave,
+  onDirectoryDropTargetDragOver,
+  onDirectoryDropTargetDrop,
   onInlineEditMenuCloseAutoFocus,
   onNavigateToPath,
   onSetActiveTreePath,
@@ -166,6 +177,7 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
       const treeContextEntry = resolveTreeDirectoryEntry(node);
       const shouldDimHiddenNode = sftpShowHiddenEntries && sftpDimHiddenEntries && node.isHidden;
       const hiddenNodeVisualClassName = shouldDimHiddenNode ? 'opacity-80' : undefined;
+      const isActiveDropTarget = activeDropTarget?.surface === 'tree' && activeDropTarget.path === node.path;
 
       return (
         <React.Fragment key={node.path}>
@@ -175,7 +187,32 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
                 className={classNames(
                   'group flex h-[30px] w-full items-center rounded-lg text-sm transition-colors hover:bg-home-card-hover',
                   isCurrent ? 'bg-home-card-hover' : '',
+                  isActiveDropTarget ? 'bg-home-card-active' : '',
                 )}
+                onDragEnter={(event) =>
+                  onDirectoryDropTargetDragEnter(event, {
+                    path: node.path,
+                    surface: 'tree',
+                  })
+                }
+                onDragLeave={(event) =>
+                  onDirectoryDropTargetDragLeave(event, {
+                    path: node.path,
+                    surface: 'tree',
+                  })
+                }
+                onDragOver={(event) =>
+                  onDirectoryDropTargetDragOver(event, {
+                    path: node.path,
+                    surface: 'tree',
+                  })
+                }
+                onDrop={(event) =>
+                  onDirectoryDropTargetDrop(event, {
+                    path: node.path,
+                    surface: 'tree',
+                  })
+                }
               >
                 <div
                   className={classNames(
@@ -245,10 +282,15 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
       currentPath,
       onInlineEditMenuCloseAutoFocus,
       onNavigateToPath,
+      onDirectoryDropTargetDragEnter,
+      onDirectoryDropTargetDragLeave,
+      onDirectoryDropTargetDragOver,
+      onDirectoryDropTargetDrop,
       onSetActiveTreePath,
       onTreeNodeToggle,
       onTreeRowKeyDown,
       renderActionMenuItems,
+      activeDropTarget,
       resolvedActiveTreePath,
       sftpDimHiddenEntries,
       sftpShowHiddenEntries,

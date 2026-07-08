@@ -14,10 +14,19 @@ import {
   type SftpDirectoryListViewSetting,
   type SftpUploadLocalFile,
 } from '@cosmosh/api-contract';
+import { Copy, Link2, MoveRight } from 'lucide-react';
 import React from 'react';
 
 import { Button } from '../components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '../components/ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../components/ui/dropdown-menu';
 import type { InputContextMenuItem } from '../components/ui/input-context-menu-registry';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip';
 import {
@@ -49,6 +58,23 @@ import {
   SFTP_TASK_RETENTION_MS,
 } from './sftp/sftp-constants';
 import { sortSftpEntriesByDirectoryListView } from './sftp/sftp-directory-view';
+import {
+  createSftpInternalDragPayload,
+  isSameParentMove,
+  isSameSftpDirectoryDropTarget,
+  isUnsafeDirectorySelfDrop,
+  readSftpInternalDragPayloadForSession,
+  resolveSftpDragDecisionAction,
+  resolveSftpDragDropEffect,
+  serializeSftpInternalDragPayload,
+  SFTP_INTERNAL_ENTRY_DRAG_MIME,
+  type SftpDirectoryDropEventHandler,
+  type SftpDirectoryDropTarget,
+  type SftpEntryDragStartHandler,
+  type SftpInternalDragEntry,
+  type SftpInternalDragPayload,
+  type SftpResolvedDragOperation,
+} from './sftp/sftp-drag-drop';
 import { buildSftpEntryPropertiesWindowUrl } from './sftp/sftp-entry-properties-window';
 import type {
   ClipboardState,
@@ -239,6 +265,13 @@ type SFTPProps = {
   onTabTitleChange: (title: string) => void;
 };
 
+type SftpPendingDropOperationMenu = {
+  entries: SftpInternalDragEntry[];
+  targetDirectoryPath: string;
+  x: number;
+  y: number;
+};
+
 /**
  * Read-only SFTP browser page bound to one renderer tab.
  *
@@ -262,6 +295,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpTextPreviewWarningThresholdBytes = useSettingsValue('sftpTextPreviewWarningThresholdBytes');
   const sftpImagePreviewWarningThresholdBytes = useSettingsValue('sftpImagePreviewWarningThresholdBytes');
   const registrySftpDirectoryListView = useSettingsValue('sftpDirectoryListView');
+  const sftpInternalDragDefaultAction = useSettingsValue('sftpInternalDragDefaultAction');
+  const sftpInternalDragModifierAction = useSettingsValue('sftpInternalDragModifierAction');
   const sftpReconnectMode = useSettingsValue('sftpReconnectMode');
   const [directoryListViewDraft, setDirectoryListViewDraft] = React.useState<SftpDirectoryListViewSetting | null>(null);
   const sftpDirectoryListView = directoryListViewDraft ?? registrySftpDirectoryListView;
@@ -286,6 +321,13 @@ const SFTP: React.FC<SFTPProps> = ({
   const [renameInput, setRenameInput] = React.useState<string>('');
   const [pendingCreate, setPendingCreate] = React.useState<PendingCreateState | null>(null);
   const [previewState, setPreviewState] = React.useState<SftpPreviewState | null>(null);
+  const [activeInternalDragPayload, setActiveInternalDragPayload] = React.useState<SftpInternalDragPayload | null>(
+    null,
+  );
+  const [activeDropTarget, setActiveDropTarget] = React.useState<SftpDirectoryDropTarget | null>(null);
+  const [pendingDropOperationMenu, setPendingDropOperationMenu] = React.useState<SftpPendingDropOperationMenu | null>(
+    null,
+  );
   const [openWithApplicationsByPath, setOpenWithApplicationsByPath] = React.useState<
     Record<string, SftpOpenWithApplication[]>
   >({});
@@ -327,6 +369,7 @@ const SFTP: React.FC<SFTPProps> = ({
   const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
   const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
+  const dropOperationMenuTriggerRef = React.useRef<HTMLButtonElement | null>(null);
   const shouldRetainAddressInputAfterContextMenuRef = React.useRef(false);
   const addressInputContextMenuTimerRef = React.useRef<number | null>(null);
 
@@ -512,6 +555,25 @@ const SFTP: React.FC<SFTPProps> = ({
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    if (!activeInternalDragPayload) {
+      return undefined;
+    }
+
+    const clearDragState = (): void => {
+      setActiveInternalDragPayload(null);
+      setActiveDropTarget(null);
+    };
+
+    window.addEventListener('dragend', clearDragState);
+    window.addEventListener('blur', clearDragState);
+
+    return () => {
+      window.removeEventListener('dragend', clearDragState);
+      window.removeEventListener('blur', clearDragState);
+    };
+  }, [activeInternalDragPayload]);
 
   /**
    * Focuses and selects the active inline-edit input after React mounts it.
@@ -3283,6 +3345,316 @@ const SFTP: React.FC<SFTPProps> = ({
     ],
   );
 
+  /**
+   * Returns the active internal drag payload when it belongs to this SFTP tab.
+   *
+   * @param event Optional drop event used as a fallback on the final drop.
+   * @returns Current tab drag payload.
+   */
+  const resolveCurrentSftpDragPayload = React.useCallback(
+    (event?: React.DragEvent<HTMLElement>): SftpInternalDragPayload | null => {
+      if (activeInternalDragPayload?.sessionId === sessionId && activeInternalDragPayload.entries.length > 0) {
+        return activeInternalDragPayload;
+      }
+
+      if (!event) {
+        return null;
+      }
+
+      return readSftpInternalDragPayloadForSession(event.dataTransfer, sessionId);
+    },
+    [activeInternalDragPayload, sessionId],
+  );
+
+  /**
+   * Checks whether a directory target can accept the current SFTP drag.
+   *
+   * @param target Directory drop target.
+   * @param event Optional drag event.
+   * @returns Active payload when the target is usable.
+   */
+  const resolveAcceptedSftpDropPayload = React.useCallback(
+    (target: SftpDirectoryDropTarget, event?: React.DragEvent<HTMLElement>): SftpInternalDragPayload | null => {
+      if (!canUseFileActions || !target.path) {
+        return null;
+      }
+
+      const payload = resolveCurrentSftpDragPayload(event);
+      if (!payload || isUnsafeDirectorySelfDrop(payload.entries, target.path)) {
+        return null;
+      }
+
+      return payload;
+    },
+    [canUseFileActions, resolveCurrentSftpDragPayload],
+  );
+
+  /**
+   * Runs one internal SFTP drag operation through the shared batch task queue.
+   *
+   * @param operation Operation chosen by settings or the ask menu.
+   * @param targetDirectoryPath Remote directory that receives the drop.
+   * @param draggedEntries Entries captured when the drag started.
+   * @returns void.
+   */
+  const runSftpDroppedEntriesOperation = React.useCallback(
+    (
+      operation: SftpResolvedDragOperation,
+      targetDirectoryPath: string,
+      draggedEntries: readonly SftpInternalDragEntry[],
+    ): void => {
+      if (!hasSftpSession || draggedEntries.length === 0) {
+        return;
+      }
+
+      if (isUnsafeDirectorySelfDrop(draggedEntries, targetDirectoryPath)) {
+        notifyError(t('sftp.feedback.invalidDropTarget'));
+        return;
+      }
+
+      if (operation === 'move' && isSameParentMove(draggedEntries, targetDirectoryPath)) {
+        notifySuccess(t('sftp.feedback.alreadyInTargetDirectory'));
+        return;
+      }
+
+      const operationLabel =
+        operation === 'copy'
+          ? t('sftp.tasks.copy')
+          : operation === 'move'
+            ? t('sftp.tasks.move')
+            : t('sftp.tasks.link');
+
+      runSftpOperation(
+        {
+          label: operationLabel,
+          detail: targetDirectoryPath,
+          progress: { completed: 0, total: draggedEntries.length },
+        },
+        async ({ isCurrent, update }) => {
+          const response = await runWithSftpReconnect((activeSessionId) =>
+            runSftpBatchOperation(activeSessionId, {
+              operation,
+              targetDirectoryPath,
+              entries: draggedEntries.map((entry) => ({
+                path: entry.path,
+                type: entry.type,
+              })),
+            }),
+          );
+          update({ progress: { completed: response.data.completedCount, total: response.data.totalCount } });
+          if (!isCurrent()) {
+            return;
+          }
+
+          if (response.data.failedCount > 0) {
+            notifyError(formatBatchPartialFailureFeedback(response.data));
+          } else {
+            const feedbackKeys =
+              operation === 'copy'
+                ? (['sftp.feedback.copied', 'sftp.feedback.copiedMany'] as const)
+                : operation === 'move'
+                  ? (['sftp.feedback.moved', 'sftp.feedback.movedMany'] as const)
+                  : (['sftp.feedback.linked', 'sftp.feedback.linkedMany'] as const);
+            notifySuccess(formatBatchFeedback(response.data.completedCount, feedbackKeys[0], feedbackKeys[1]));
+          }
+
+          if (operation === 'move') {
+            const movedPaths = new Set(
+              response.data.results.filter((result) => result.status === 'success').map((result) => result.path),
+            );
+            setSelectedPaths((previous) => previous.filter((path) => !movedPaths.has(path)));
+            setSelectionAnchorPath((previous) => (movedPaths.has(previous) ? '' : previous));
+            setPreviewState((previous) => (movedPaths.has(resolvePreviewStatePath(previous)) ? null : previous));
+            movedPaths.forEach((path) => {
+              delete temporaryOpenFilePathsRef.current[path];
+              delete imagePreviewTempFilesRef.current[path];
+            });
+            setOpenWithApplicationsByPath((previous) => {
+              const next = { ...previous };
+              movedPaths.forEach((path) => {
+                delete next[path];
+              });
+              return next;
+            });
+          }
+
+          await refreshCurrentDirectoryAfterOperation([
+            ...draggedEntries.map((entry) => entry.parentPath ?? resolveEntryParentPath(entry.path)),
+            targetDirectoryPath,
+          ]);
+        },
+      );
+    },
+    [
+      hasSftpSession,
+      notifyError,
+      notifySuccess,
+      refreshCurrentDirectoryAfterOperation,
+      runSftpOperation,
+      runWithSftpReconnect,
+    ],
+  );
+
+  /**
+   * Starts an internal SFTP entry drag with either the selected set or the row being dragged.
+   *
+   * @param entry Row entry where dragging started.
+   * @param event Browser drag event.
+   * @returns void.
+   */
+  const handleSftpEntryDragStart = React.useCallback<SftpEntryDragStartHandler>(
+    (entry, event): void => {
+      if (!hasSftpSession || !canUseFileActions) {
+        event.preventDefault();
+        return;
+      }
+
+      const draggedEntries = dedupeSftpEntries(
+        selectedPathSet.has(entry.path) && selectedEntries.length > 0 ? selectedEntries : [entry],
+      );
+      if (draggedEntries.length === 0) {
+        event.preventDefault();
+        return;
+      }
+
+      const payload = createSftpInternalDragPayload(sessionId, currentPath, draggedEntries);
+      event.dataTransfer.effectAllowed = 'all';
+      event.dataTransfer.setData(SFTP_INTERNAL_ENTRY_DRAG_MIME, serializeSftpInternalDragPayload(payload));
+      setActiveInternalDragPayload(payload);
+      setActiveDropTarget(null);
+      setPendingDropOperationMenu(null);
+      setSelectedPaths(draggedEntries.map((draggedEntry) => draggedEntry.path));
+      setSelectionAnchorPath(draggedEntries[draggedEntries.length - 1]?.path ?? '');
+    },
+    [canUseFileActions, currentPath, hasSftpSession, selectedEntries, selectedPathSet, sessionId],
+  );
+
+  /**
+   * Clears transient drag target state after a native drag finishes.
+   *
+   * @returns void.
+   */
+  const handleSftpEntryDragEnd = React.useCallback((): void => {
+    setActiveInternalDragPayload(null);
+    setActiveDropTarget(null);
+  }, []);
+
+  /**
+   * Marks a directory target when the active internal drag enters it.
+   *
+   * @param event Browser drag event.
+   * @param target Directory target.
+   * @returns void.
+   */
+  const handleDirectoryDropTargetDragEnter = React.useCallback<SftpDirectoryDropEventHandler>(
+    (event, target): void => {
+      if (!resolveAcceptedSftpDropPayload(target, event)) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveDropTarget(target);
+    },
+    [resolveAcceptedSftpDropPayload],
+  );
+
+  /**
+   * Keeps the browser drop target active while hovering a valid SFTP directory.
+   *
+   * @param event Browser drag event.
+   * @param target Directory target.
+   * @returns void.
+   */
+  const handleDirectoryDropTargetDragOver = React.useCallback<SftpDirectoryDropEventHandler>(
+    (event, target): void => {
+      const payload = resolveAcceptedSftpDropPayload(target, event);
+      if (!payload) {
+        event.dataTransfer.dropEffect = 'none';
+        if (isSameSftpDirectoryDropTarget(activeDropTarget, target)) {
+          setActiveDropTarget(null);
+        }
+        return;
+      }
+
+      const action = resolveSftpDragDecisionAction(
+        event,
+        sftpInternalDragDefaultAction,
+        sftpInternalDragModifierAction,
+      );
+
+      event.preventDefault();
+      event.stopPropagation();
+      event.dataTransfer.dropEffect = resolveSftpDragDropEffect(action);
+      setActiveDropTarget(target);
+    },
+    [activeDropTarget, resolveAcceptedSftpDropPayload, sftpInternalDragDefaultAction, sftpInternalDragModifierAction],
+  );
+
+  /**
+   * Clears a directory drop highlight after leaving the mounted target row.
+   *
+   * @param event Browser drag event.
+   * @param target Directory target.
+   * @returns void.
+   */
+  const handleDirectoryDropTargetDragLeave = React.useCallback<SftpDirectoryDropEventHandler>(
+    (event, target): void => {
+      const relatedNode = event.relatedTarget instanceof Node ? event.relatedTarget : null;
+      if (relatedNode && event.currentTarget.contains(relatedNode)) {
+        return;
+      }
+
+      if (isSameSftpDirectoryDropTarget(activeDropTarget, target)) {
+        setActiveDropTarget(null);
+      }
+    },
+    [activeDropTarget],
+  );
+
+  /**
+   * Resolves and executes the operation for a directory drop target.
+   *
+   * @param event Browser drop event.
+   * @param target Directory target.
+   * @returns void.
+   */
+  const handleDirectoryDropTargetDrop = React.useCallback<SftpDirectoryDropEventHandler>(
+    (event, target): void => {
+      const payload = resolveAcceptedSftpDropPayload(target, event);
+      setActiveInternalDragPayload(null);
+      setActiveDropTarget(null);
+      if (!payload) {
+        return;
+      }
+
+      event.preventDefault();
+      event.stopPropagation();
+      const action = resolveSftpDragDecisionAction(
+        event,
+        sftpInternalDragDefaultAction,
+        sftpInternalDragModifierAction,
+      );
+      if (action === 'ask') {
+        setPendingDropOperationMenu({
+          entries: payload.entries,
+          targetDirectoryPath: target.path,
+          x: event.clientX,
+          y: event.clientY,
+        });
+        return;
+      }
+
+      runSftpDroppedEntriesOperation(action, target.path, payload.entries);
+    },
+    [
+      resolveAcceptedSftpDropPayload,
+      runSftpDroppedEntriesOperation,
+      sftpInternalDragDefaultAction,
+      sftpInternalDragModifierAction,
+    ],
+  );
+
   const handleDeleteEntries = React.useCallback(
     async (targetEntries: ApiSftpEntry[], source: SftpDeleteInvocationSource = 'action'): Promise<void> => {
       const entriesToDelete = dedupeSftpEntries(targetEntries);
@@ -3981,10 +4353,41 @@ const SFTP: React.FC<SFTPProps> = ({
     [focusTreePath, handleTreeNodeToggle, navigateToPath, treeNodes, visibleTreePaths],
   );
 
+  /**
+   * Executes the pending ask-menu drop operation and closes the transient menu.
+   *
+   * @param operation Operation selected by the user.
+   * @returns void.
+   */
+  const handlePendingDropOperationSelect = React.useCallback(
+    (operation: SftpResolvedDragOperation): void => {
+      const pendingMenu = pendingDropOperationMenu;
+      setPendingDropOperationMenu(null);
+      if (!pendingMenu) {
+        return;
+      }
+
+      runSftpDroppedEntriesOperation(operation, pendingMenu.targetDirectoryPath, pendingMenu.entries);
+    },
+    [pendingDropOperationMenu, runSftpDroppedEntriesOperation],
+  );
+
+  const isPendingDropMoveDisabled = pendingDropOperationMenu
+    ? isUnsafeDirectorySelfDrop(pendingDropOperationMenu.entries, pendingDropOperationMenu.targetDirectoryPath) ||
+      isSameParentMove(pendingDropOperationMenu.entries, pendingDropOperationMenu.targetDirectoryPath)
+    : true;
+  const isPendingDropCopyDisabled = pendingDropOperationMenu
+    ? isUnsafeDirectorySelfDrop(pendingDropOperationMenu.entries, pendingDropOperationMenu.targetDirectoryPath)
+    : true;
+  const isPendingDropLinkDisabled = pendingDropOperationMenu
+    ? isUnsafeDirectorySelfDrop(pendingDropOperationMenu.entries, pendingDropOperationMenu.targetDirectoryPath)
+    : true;
+
   return (
     <>
       <div className="flex h-full w-full flex-col gap-2.5 overflow-hidden">
         <SftpToolbar
+          activeDropTarget={activeDropTarget}
           addressBreadcrumbRenderState={addressBreadcrumbRenderState}
           addressInputContextMenuItems={addressInputContextMenuItems}
           addressInputRef={addressInputRef}
@@ -4033,6 +4436,10 @@ const SFTP: React.FC<SFTPProps> = ({
           onCopyEntries={handleCopyEntries}
           onCutEntries={handleCutEntries}
           onDeleteEntries={handleDeleteEntries}
+          onDirectoryDropTargetDragEnter={handleDirectoryDropTargetDragEnter}
+          onDirectoryDropTargetDragLeave={handleDirectoryDropTargetDragLeave}
+          onDirectoryDropTargetDragOver={handleDirectoryDropTargetDragOver}
+          onDirectoryDropTargetDrop={handleDirectoryDropTargetDrop}
           onDirectoryListColumnVisibilityChange={setSftpDirectoryListColumnVisibility}
           onDirectoryListSortChange={setSftpDirectoryListSort}
           onEditCurrentPath={handleEditCurrentPath}
@@ -4057,6 +4464,7 @@ const SFTP: React.FC<SFTPProps> = ({
         />
         <div className={sftpWorkbenchGridClassName}>
           <SftpTreePanel
+            activeDropTarget={activeDropTarget}
             currentPath={currentPath}
             renderActionMenuItems={renderSftpActionMenuItems}
             resolvedActiveTreePath={resolvedActiveTreePath}
@@ -4066,6 +4474,10 @@ const SFTP: React.FC<SFTPProps> = ({
             treeNodes={treeNodes}
             treeRootPaths={treeRootPaths}
             treeRowRefs={treeRowRefs}
+            onDirectoryDropTargetDragEnter={handleDirectoryDropTargetDragEnter}
+            onDirectoryDropTargetDragLeave={handleDirectoryDropTargetDragLeave}
+            onDirectoryDropTargetDragOver={handleDirectoryDropTargetDragOver}
+            onDirectoryDropTargetDrop={handleDirectoryDropTargetDrop}
             onInlineEditMenuCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}
             onNavigateToPath={navigateToPath}
             onSetActiveTreePath={setActiveTreePath}
@@ -4073,6 +4485,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onTreeRowKeyDown={handleTreeRowKeyDown}
           />
           <SftpDirectoryPanel
+            activeDropTarget={activeDropTarget}
             canActivateParentDirectoryListEntry={canActivateParentDirectoryListEntry}
             clipboardMode={clipboardState?.mode}
             clipboardPaths={clipboardPaths}
@@ -4101,7 +4514,13 @@ const SFTP: React.FC<SFTPProps> = ({
             onDirectoryListColumnVisibilityChange={setSftpDirectoryListColumnVisibility}
             onDirectoryListSortChange={setSftpDirectoryListSort}
             onDirectoryListSortFieldClick={handleSftpDirectoryListSortFieldClick}
+            onDirectoryDropTargetDragEnter={handleDirectoryDropTargetDragEnter}
+            onDirectoryDropTargetDragLeave={handleDirectoryDropTargetDragLeave}
+            onDirectoryDropTargetDragOver={handleDirectoryDropTargetDragOver}
+            onDirectoryDropTargetDrop={handleDirectoryDropTargetDrop}
             onEntryContextMenu={handleEntryContextMenu}
+            onEntryDragEnd={handleSftpEntryDragEnd}
+            onEntryDragStart={handleSftpEntryDragStart}
             onEntryOpen={handleEntryOpen}
             onEntrySelect={handleEntrySelect}
             onFileNavigationRowKeyDown={handleFileNavigationRowKeyDown}
@@ -4126,6 +4545,75 @@ const SFTP: React.FC<SFTPProps> = ({
           ) : null}
         </div>
       </div>
+      <DropdownMenu
+        open={Boolean(pendingDropOperationMenu)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDropOperationMenu(null);
+          }
+        }}
+      >
+        <DropdownMenuTrigger asChild>
+          <button
+            ref={dropOperationMenuTriggerRef}
+            type="button"
+            aria-label={t('sftp.drag.menuTrigger')}
+            tabIndex={-1}
+            className="pointer-events-none fixed h-px w-px opacity-0"
+            style={
+              pendingDropOperationMenu
+                ? {
+                    left: pendingDropOperationMenu.x,
+                    top: pendingDropOperationMenu.y,
+                  }
+                : undefined
+            }
+          />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          className="min-w-[220px]"
+          horizontalAlign="left"
+          sideOffset={0}
+          onCloseAutoFocus={(event) => event.preventDefault()}
+        >
+          {pendingDropOperationMenu ? (
+            <>
+              <DropdownMenuLabel>
+                {pendingDropOperationMenu.entries.length === 1
+                  ? t('sftp.drag.menuTitle', {
+                      path: pendingDropOperationMenu.targetDirectoryPath,
+                    })
+                  : t('sftp.drag.menuTitleMany', {
+                      count: pendingDropOperationMenu.entries.length,
+                      path: pendingDropOperationMenu.targetDirectoryPath,
+                    })}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                icon={MoveRight}
+                disabled={isPendingDropMoveDisabled}
+                onSelect={() => handlePendingDropOperationSelect('move')}
+              >
+                {t('sftp.drag.moveHere')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                icon={Copy}
+                disabled={isPendingDropCopyDisabled}
+                onSelect={() => handlePendingDropOperationSelect('copy')}
+              >
+                {t('sftp.drag.copyHere')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                icon={Link2}
+                disabled={isPendingDropLinkDisabled}
+                onSelect={() => handlePendingDropOperationSelect('link')}
+              >
+                {t('sftp.drag.linkHere')}
+              </DropdownMenuItem>
+            </>
+          ) : null}
+        </DropdownMenuContent>
+      </DropdownMenu>
       <SftpHostFingerprintDialog
         prompt={hostFingerprintPrompt}
         onResolve={resolveHostFingerprintPrompt}
