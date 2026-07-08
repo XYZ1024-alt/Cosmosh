@@ -8,6 +8,7 @@ export const textEditingShortcut = {
   redo: isMac ? '⇧⌘Z' : 'Ctrl+Y',
   cut: isMac ? '⌘X' : 'Ctrl+X',
   copy: isMac ? '⌘C' : 'Ctrl+C',
+  find: isMac ? '⌘F' : 'Ctrl+F',
   paste: isMac ? '⌘V' : 'Ctrl+V',
   selectAll: isMac ? '⌘A' : 'Ctrl+A',
 };

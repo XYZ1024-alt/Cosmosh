@@ -4,6 +4,7 @@ import { basicSetup } from 'codemirror';
 import React from 'react';
 
 import { CodeMirrorTextContextMenu } from '../../components/ui/codemirror-text-context-menu';
+import { createCodeMirrorSearchReplaceExtension } from '../../lib/codemirror-search';
 import { createSettingsJsonLanguageExtensions, type JsonSchemaDocument } from './settingsJsonLanguage';
 
 const editorEditableCompartment = new Compartment();
@@ -347,6 +348,7 @@ const createEditorExtensions = (options: {
   editorEditableCompartment.of(EditorView.editable.of(!options.readOnly)),
   editorSchemaCompartment.of(createSettingsJsonLanguageExtensions(options.schema)),
   createSettingsEditorTheme(),
+  createCodeMirrorSearchReplaceExtension(),
   EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       options.onChange(update.state.doc.toString());

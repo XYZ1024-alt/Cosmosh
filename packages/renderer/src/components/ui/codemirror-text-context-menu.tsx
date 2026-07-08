@@ -1,9 +1,10 @@
 import { redo, redoDepth, selectAll, undo, undoDepth } from '@codemirror/commands';
 import { EditorSelection, type EditorState, Transaction } from '@codemirror/state';
 import type { EditorView } from '@codemirror/view';
-import { ClipboardPaste, Copy, Redo, Scissors, TextSelect, Undo } from 'lucide-react';
+import { ClipboardPaste, Copy, Redo, Scissors, Search, TextSelect, Undo } from 'lucide-react';
 import React from 'react';
 
+import { openCodeMirrorSearchReplace } from '../../lib/codemirror-search';
 import { t } from '../../lib/i18n';
 import {
   ContextMenu,
@@ -18,6 +19,7 @@ import { readTextFromClipboard, textEditingShortcut, writeTextToClipboard } from
 type CodeMirrorTextContextMenuSnapshot = {
   canCopy: boolean;
   canEditSelection: boolean;
+  canFind: boolean;
   canRedo: boolean;
   canSelectAll: boolean;
   canUndo: boolean;
@@ -26,6 +28,7 @@ type CodeMirrorTextContextMenuSnapshot = {
 const emptyMenuSnapshot: CodeMirrorTextContextMenuSnapshot = {
   canCopy: false,
   canEditSelection: false,
+  canFind: false,
   canRedo: false,
   canSelectAll: false,
   canUndo: false,
@@ -56,6 +59,7 @@ const resolveContextMenuSnapshot = (view: EditorView | null, readOnly: boolean):
   return {
     canCopy: hasSelection,
     canEditSelection: !readOnly && hasSelection,
+    canFind: true,
     canRedo: !readOnly && redoDepth(view.state) > 0,
     canSelectAll: view.state.doc.length > 0,
     canUndo: !readOnly && undoDepth(view.state) > 0,
@@ -129,6 +133,7 @@ export const CodeMirrorTextContextMenu: React.FC<CodeMirrorTextContextMenuProps>
   readOnly,
 }) => {
   const readOnlyRef = React.useRef(readOnly);
+  const shouldKeepPanelFocusRef = React.useRef(false);
 
   React.useEffect(() => {
     readOnlyRef.current = readOnly;
@@ -204,6 +209,13 @@ export const CodeMirrorTextContextMenu: React.FC<CodeMirrorTextContextMenuProps>
     })();
   }, [getEditorView]);
 
+  const handleFindReplace = React.useCallback((): void => {
+    runEditorCommand((view) => {
+      shouldKeepPanelFocusRef.current = true;
+      openCodeMirrorSearchReplace(view);
+    });
+  }, [runEditorCommand]);
+
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
@@ -218,6 +230,11 @@ export const CodeMirrorTextContextMenu: React.FC<CodeMirrorTextContextMenuProps>
       <ContextMenuContent
         onCloseAutoFocus={(event) => {
           event.preventDefault();
+          if (shouldKeepPanelFocusRef.current) {
+            shouldKeepPanelFocusRef.current = false;
+            return;
+          }
+
           getEditorView()?.focus();
         }}
       >
@@ -236,6 +253,15 @@ export const CodeMirrorTextContextMenu: React.FC<CodeMirrorTextContextMenuProps>
         >
           {t('inputContextMenu.redo')}
           <ContextMenuShortcut>{textEditingShortcut.redo}</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          icon={Search}
+          disabled={!menuSnapshot.canFind}
+          onSelect={handleFindReplace}
+        >
+          {t('inputContextMenu.findReplace')}
+          <ContextMenuShortcut>{textEditingShortcut.find}</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

@@ -295,10 +295,30 @@
   "inputContextMenu": {
     "copy": "Copy",
     "cut": "Cut",
+    "findReplace": "Find / Replace...",
     "paste": "Paste",
     "redo": "Redo",
     "selectAll": "Select All",
     "undo": "Undo"
+  },
+  "searchReplace": {
+    "close": "Close",
+    "currentMatch": "{current} of {total}",
+    "currentMatchCapped": "{current} of {total}+",
+    "findNext": "Find Next",
+    "findPlaceholder": "Find",
+    "findPrevious": "Find Previous",
+    "invalidPattern": "Invalid pattern",
+    "matchCase": "Match Case",
+    "matchCount": "{total} matches",
+    "matchCountCapped": "{total}+ matches",
+    "noMatches": "No matches",
+    "regexp": "Regex",
+    "replaceAll": "Replace All",
+    "replaceNext": "Replace",
+    "replacePlaceholder": "Replace",
+    "selectAllMatches": "Select All Matches",
+    "wholeWord": "Whole Word"
   },
   "settings": {
     "about": {

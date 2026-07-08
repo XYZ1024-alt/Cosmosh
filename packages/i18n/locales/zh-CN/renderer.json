@@ -295,10 +295,30 @@
   "inputContextMenu": {
     "copy": "复制",
     "cut": "剪切",
+    "findReplace": "查找/替换...",
     "paste": "粘贴",
     "redo": "重做",
     "selectAll": "全选",
     "undo": "撤销"
+  },
+  "searchReplace": {
+    "close": "关闭",
+    "currentMatch": "{current}/{total}",
+    "currentMatchCapped": "{current}/{total}+",
+    "findNext": "查找下一个",
+    "findPlaceholder": "查找",
+    "findPrevious": "查找上一个",
+    "invalidPattern": "表达式无效",
+    "matchCase": "区分大小写",
+    "matchCount": "共 {total} 处",
+    "matchCountCapped": "超过 {total} 处",
+    "noMatches": "无匹配",
+    "regexp": "正则",
+    "replaceAll": "全部替换",
+    "replaceNext": "替换",
+    "replacePlaceholder": "替换",
+    "selectAllMatches": "选中全部匹配",
+    "wholeWord": "整词"
   },
   "settings": {
     "about": {

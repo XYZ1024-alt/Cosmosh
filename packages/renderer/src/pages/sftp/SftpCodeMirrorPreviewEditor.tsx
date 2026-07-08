@@ -6,6 +6,7 @@ import { basicSetup } from 'codemirror';
 import React from 'react';
 
 import { CodeMirrorTextContextMenu } from '../../components/ui/codemirror-text-context-menu';
+import { createCodeMirrorSearchReplaceExtension } from '../../lib/codemirror-search';
 import { cosmoshCodeMirrorSyntaxHighlighting } from '../../lib/codemirror-syntax-theme';
 
 type SftpCodeMirrorLanguageLoader = () => Promise<Extension>;
@@ -197,6 +198,7 @@ const createEditorExtensions = (options: {
     ]),
   ),
   createSftpEditorTheme(),
+  createCodeMirrorSearchReplaceExtension(),
   cosmoshCodeMirrorSyntaxHighlighting,
   EditorView.lineWrapping,
   EditorState.tabSize.of(2),
