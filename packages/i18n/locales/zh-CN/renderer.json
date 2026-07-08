@@ -1393,8 +1393,6 @@
     "terminalClipboardAccessPlaceholder": "选择剪贴板权限",
     "terminalHardwareAccelerationDisabled": "WebGL 不可用，已禁用终端硬件加速。",
     "terminalSearchCaseSensitive": "区分大小写",
-    "terminalSearchFirst": "首个",
-    "terminalSearchLast": "末个",
     "terminalSearchNext": "下个",
     "terminalSearchPlaceholder": "在终端输出中搜索",
     "terminalSearchPrevious": "上个",

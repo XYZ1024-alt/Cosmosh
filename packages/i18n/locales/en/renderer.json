@@ -1393,8 +1393,6 @@
     "terminalClipboardAccessPlaceholder": "Select clipboard access",
     "terminalHardwareAccelerationDisabled": "Terminal hardware acceleration was disabled because WebGL became unavailable.",
     "terminalSearchCaseSensitive": "Case Sensitive",
-    "terminalSearchFirst": "First",
-    "terminalSearchLast": "Last",
     "terminalSearchNext": "Next",
     "terminalSearchPlaceholder": "Search in terminal output",
     "terminalSearchPrevious": "Prev",

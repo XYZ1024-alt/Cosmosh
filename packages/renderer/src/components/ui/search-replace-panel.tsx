@@ -69,6 +69,7 @@ export type SearchReplacePanelProps = {
   onSelectAllMatches?: () => void;
   replaceMode: SearchReplaceReplaceMode;
   replaceValue: string;
+  searchPlaceholder?: SearchReplaceLocalizedText;
   searchInputRef?: React.Ref<HTMLInputElement>;
   searchValue: string;
   showMatchCount?: boolean;
@@ -159,6 +160,7 @@ export const SearchReplacePanel: React.FC<SearchReplacePanelProps> = ({
   onSelectAllMatches,
   replaceMode,
   replaceValue,
+  searchPlaceholder,
   searchInputRef,
   searchValue,
   showMatchCount = true,
@@ -177,6 +179,9 @@ export const SearchReplacePanel: React.FC<SearchReplacePanelProps> = ({
   const selectAllLabel = resolveLocalizedText(selectAllState?.label ?? (() => t('searchReplace.selectAllMatches')));
   const closeLabel = t('searchReplace.close');
   const resolvedMatchLabel = matchLabel ? resolveLocalizedText(matchLabel) : '';
+  const resolvedSearchPlaceholder = resolveLocalizedText(
+    searchPlaceholder ?? (() => t('searchReplace.findPlaceholder')),
+  );
 
   React.useEffect(() => {
     return onLocaleChange(setLocaleVersion);
@@ -246,12 +251,12 @@ export const SearchReplacePanel: React.FC<SearchReplacePanelProps> = ({
             <Input
               ref={setSearchInputRef}
               aria-invalid={invalid}
-              aria-label={t('searchReplace.findPlaceholder')}
+              aria-label={resolvedSearchPlaceholder}
               className="h-8 min-w-0 !rounded-md-2 pl-9"
               disabled={disabled}
               form=""
               name="search"
-              placeholder={t('searchReplace.findPlaceholder')}
+              placeholder={resolvedSearchPlaceholder}
               value={searchValue}
               onChange={(event) => onSearchChange(event.target.value)}
             />
