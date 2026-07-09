@@ -138,7 +138,10 @@ const resolveSqlCipherDriver = (): BetterSqlite3LikeConstructor | null => {
     return loadedModule;
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[db:init] SQLCipher native driver unavailable. Falling back to Prisma SQLite mode. ${message}`);
+    const runtimeAction = isDevelopmentRuntime()
+      ? 'Falling back to Prisma SQLite mode.'
+      : 'Production startup will fail before Prisma initialization.';
+    console.warn(`[db:init] SQLCipher native driver unavailable. ${runtimeAction} ${message}`);
     cachedSqlCipherDriver = null;
     return null;
   }
@@ -451,11 +454,18 @@ const ensureDevelopmentPlaintextDatabase = (databaseFilePath: string, databaseKe
  *
  * @param databaseFilePath SQLite file path.
  * @param databaseKey Encryption key used for SQLCipher bootstrap.
- * @returns True when SQLCipher path is active; false when falling back to plaintext compatibility mode.
+ * @returns True when SQLCipher path is active; false only for development plaintext compatibility mode.
+ * @throws When production cannot prove SQLCipher access before Prisma opens the database.
  */
 const bootstrapSqlCipher = (databaseFilePath: string, databaseKey: string): boolean => {
   const SqlCipherDriver = resolveSqlCipherDriver();
   if (!SqlCipherDriver) {
+    if (!isDevelopmentRuntime()) {
+      throw new Error(
+        'SQLCipher native driver is unavailable in production runtime. Refusing plaintext SQLite startup.',
+      );
+    }
+
     return false;
   }
 
@@ -486,6 +496,10 @@ const bootstrapSqlCipher = (databaseFilePath: string, databaseKey: string): bool
     const message = error instanceof Error ? error.message : String(error);
 
     if (message.includes('file is not a database')) {
+      if (!isDevelopmentRuntime()) {
+        throw error;
+      }
+
       console.warn(
         '[db:init] Existing plaintext database detected. Skipping SQLCipher conversion for Prisma compatibility in current runtime.',
       );
@@ -1143,9 +1157,21 @@ export const shutdownDatabase = async (): Promise<void> => {
 };
 
 /**
+ * Overrides the cached SQLCipher driver for focused unit tests.
+ *
+ * @param driver SQLCipher driver constructor, null to simulate an unavailable driver, or undefined to reset cache.
+ * @returns void.
+ */
+const setCachedSqlCipherDriverForTesting = (driver: BetterSqlite3LikeConstructor | null | undefined): void => {
+  cachedSqlCipherDriver = driver;
+};
+
+/**
  * Test-only hooks for pure migration bootstrap helpers.
  */
 export const __dbPrismaTesting = {
   applyPrismaAddColumnMigrationStatements,
+  bootstrapSqlCipher,
   parsePrismaAddColumnMigrationStatements,
+  setCachedSqlCipherDriverForTesting,
 } as const;
