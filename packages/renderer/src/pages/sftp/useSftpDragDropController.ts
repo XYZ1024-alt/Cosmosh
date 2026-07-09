@@ -5,12 +5,14 @@ import { runSftpBatchOperation } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import {
   createSftpInternalDragPayload,
+  hasSftpExternalFileDragItems,
   isSameParentMove,
   isSameSftpDirectoryDropTarget,
   isUnsafeDirectorySelfDrop,
+  readSftpExternalDroppedFiles,
   readSftpInternalDragPayloadForSession,
+  resolveSftpDirectoryDropEffect,
   resolveSftpDragDecisionAction,
-  resolveSftpDragDropEffect,
   serializeSftpInternalDragPayload,
   SFTP_INTERNAL_ENTRY_DRAG_MIME,
   type SftpDirectoryDropEventHandler,
@@ -49,6 +51,7 @@ type UseSftpDragDropControllerParams = {
   imagePreviewTempFilesRef: React.MutableRefObject<Record<string, SftpImagePreviewTempFileCacheEntry>>;
   notifyError: (message: string) => void;
   notifySuccess: (message: string) => void;
+  onUploadDroppedLocalFiles: (files: File[], targetDirectoryPath: string) => Promise<void>;
   refreshCurrentDirectoryAfterOperation: (affectedDirectoryPaths?: readonly string[]) => Promise<void>;
   runSftpOperation: (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>) => void;
   runWithSftpReconnect: <TResult>(operation: (activeSessionId: string) => Promise<TResult>) => Promise<TResult>;
@@ -74,12 +77,25 @@ type UseSftpDragDropControllerResult = {
   handleDirectoryDropTargetDragLeave: SftpDirectoryDropEventHandler;
   handleDirectoryDropTargetDragOver: SftpDirectoryDropEventHandler;
   handleDirectoryDropTargetDrop: SftpDirectoryDropEventHandler;
+  handleDirectoryDropTargetReject: () => void;
   handlePendingDropOperationSelect: (operation: SftpResolvedDragOperation) => void;
   handleSftpEntryDragEnd: () => void;
   handleSftpEntryDragStart: SftpEntryDragStartHandler;
   pendingDropOperationMenu: SftpPendingDropOperationMenu | null;
   setPendingDropOperationMenu: React.Dispatch<React.SetStateAction<SftpPendingDropOperationMenu | null>>;
 };
+
+/**
+ * Accepted directory drop after source and target guards pass.
+ */
+type AcceptedSftpDirectoryDrop =
+  | {
+      source: 'external-files';
+    }
+  | {
+      source: 'internal-entries';
+      payload: SftpInternalDragPayload;
+    };
 
 /**
  * Owns internal SFTP drag payloads, drop-target highlighting, and drop batch execution.
@@ -95,6 +111,7 @@ export const useSftpDragDropController = ({
   imagePreviewTempFilesRef,
   notifyError,
   notifySuccess,
+  onUploadDroppedLocalFiles,
   refreshCurrentDirectoryAfterOperation,
   runSftpOperation,
   runWithSftpReconnect,
@@ -151,18 +168,31 @@ export const useSftpDragDropController = ({
     [activeInternalDragPayload, sessionId],
   );
 
-  const resolveAcceptedSftpDropPayload = React.useCallback(
-    (target: SftpDirectoryDropTarget, event?: React.DragEvent<HTMLElement>): SftpInternalDragPayload | null => {
+  const resolveAcceptedSftpDirectoryDrop = React.useCallback(
+    (target: SftpDirectoryDropTarget, event?: React.DragEvent<HTMLElement>): AcceptedSftpDirectoryDrop | null => {
       if (!canUseFileActions || !target.path) {
         return null;
       }
 
       const payload = resolveCurrentSftpDragPayload(event);
-      if (!payload || isUnsafeDirectorySelfDrop(payload.entries, target.path)) {
-        return null;
+      if (payload) {
+        if (isUnsafeDirectorySelfDrop(payload.entries, target.path)) {
+          return null;
+        }
+
+        return {
+          source: 'internal-entries',
+          payload,
+        };
       }
 
-      return payload;
+      if (event && hasSftpExternalFileDragItems(event.dataTransfer)) {
+        return {
+          source: 'external-files',
+        };
+      }
+
+      return null;
     },
     [canUseFileActions, resolveCurrentSftpDragPayload],
   );
@@ -334,7 +364,7 @@ export const useSftpDragDropController = ({
 
   const handleDirectoryDropTargetDragEnter = React.useCallback<SftpDirectoryDropEventHandler>(
     (event, target): void => {
-      if (!resolveAcceptedSftpDropPayload(target, event)) {
+      if (!resolveAcceptedSftpDirectoryDrop(target, event)) {
         return;
       }
 
@@ -342,13 +372,13 @@ export const useSftpDragDropController = ({
       event.stopPropagation();
       setActiveDropTarget(target);
     },
-    [resolveAcceptedSftpDropPayload],
+    [resolveAcceptedSftpDirectoryDrop],
   );
 
   const handleDirectoryDropTargetDragOver = React.useCallback<SftpDirectoryDropEventHandler>(
     (event, target): void => {
-      const payload = resolveAcceptedSftpDropPayload(target, event);
-      if (!payload) {
+      const acceptedDrop = resolveAcceptedSftpDirectoryDrop(target, event);
+      if (!acceptedDrop) {
         event.dataTransfer.dropEffect = 'none';
         if (isSameSftpDirectoryDropTarget(activeDropTarget, target)) {
           setActiveDropTarget(null);
@@ -364,10 +394,10 @@ export const useSftpDragDropController = ({
 
       event.preventDefault();
       event.stopPropagation();
-      event.dataTransfer.dropEffect = resolveSftpDragDropEffect(action);
+      event.dataTransfer.dropEffect = resolveSftpDirectoryDropEffect(acceptedDrop.source, action);
       setActiveDropTarget(target);
     },
-    [activeDropTarget, resolveAcceptedSftpDropPayload, sftpInternalDragDefaultAction, sftpInternalDragModifierAction],
+    [activeDropTarget, resolveAcceptedSftpDirectoryDrop, sftpInternalDragDefaultAction, sftpInternalDragModifierAction],
   );
 
   const handleDirectoryDropTargetDragLeave = React.useCallback<SftpDirectoryDropEventHandler>(
@@ -384,17 +414,26 @@ export const useSftpDragDropController = ({
     [activeDropTarget],
   );
 
+  const handleDirectoryDropTargetReject = React.useCallback((): void => {
+    setActiveDropTarget(null);
+  }, []);
+
   const handleDirectoryDropTargetDrop = React.useCallback<SftpDirectoryDropEventHandler>(
     (event, target): void => {
-      const payload = resolveAcceptedSftpDropPayload(target, event);
+      const acceptedDrop = resolveAcceptedSftpDirectoryDrop(target, event);
       setActiveInternalDragPayload(null);
       setActiveDropTarget(null);
-      if (!payload) {
+      if (!acceptedDrop) {
         return;
       }
 
       event.preventDefault();
       event.stopPropagation();
+      if (acceptedDrop.source === 'external-files') {
+        void onUploadDroppedLocalFiles(readSftpExternalDroppedFiles(event.dataTransfer), target.path);
+        return;
+      }
+
       const action = resolveSftpDragDecisionAction(
         event,
         sftpInternalDragDefaultAction,
@@ -402,7 +441,7 @@ export const useSftpDragDropController = ({
       );
       if (action === 'ask') {
         setPendingDropOperationMenu({
-          entries: payload.entries,
+          entries: acceptedDrop.payload.entries,
           targetDirectoryPath: target.path,
           x: event.clientX,
           y: event.clientY,
@@ -410,10 +449,11 @@ export const useSftpDragDropController = ({
         return;
       }
 
-      runSftpDroppedEntriesOperation(action, target.path, payload.entries);
+      runSftpDroppedEntriesOperation(action, target.path, acceptedDrop.payload.entries);
     },
     [
-      resolveAcceptedSftpDropPayload,
+      onUploadDroppedLocalFiles,
+      resolveAcceptedSftpDirectoryDrop,
       runSftpDroppedEntriesOperation,
       sftpInternalDragDefaultAction,
       sftpInternalDragModifierAction,
@@ -440,6 +480,7 @@ export const useSftpDragDropController = ({
     handleDirectoryDropTargetDragLeave,
     handleDirectoryDropTargetDragOver,
     handleDirectoryDropTargetDrop,
+    handleDirectoryDropTargetReject,
     handlePendingDropOperationSelect,
     handleSftpEntryDragEnd,
     handleSftpEntryDragStart,

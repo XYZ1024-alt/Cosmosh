@@ -5,6 +5,7 @@ import {
   compareSftpEntryNames,
   compareSftpNames,
   type SftpUploadLocalFile,
+  type SftpUploadRejectedLocalEntry,
 } from '@cosmosh/api-contract';
 import React from 'react';
 
@@ -121,7 +122,7 @@ const SFTP: React.FC<SFTPProps> = ({
   onOpenSshAtPath,
   onTabTitleChange,
 }) => {
-  const { error: notifyError, success: notifySuccess } = useToast();
+  const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const settingsValues = useSettingsValues();
   const sftpDeleteConfirmationMode = useSettingsValue('sftpDeleteConfirmationMode');
   const sftpShowHiddenEntries = useSettingsValue('sftpShowHiddenEntries');
@@ -1242,41 +1243,6 @@ const SFTP: React.FC<SFTPProps> = ({
     [invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
   );
 
-  const {
-    activeDropTarget,
-    handleCreateLinkFromClipboard,
-    handleDirectoryDropTargetDragEnter,
-    handleDirectoryDropTargetDragLeave,
-    handleDirectoryDropTargetDragOver,
-    handleDirectoryDropTargetDrop,
-    handlePendingDropOperationSelect,
-    handleSftpEntryDragEnd,
-    handleSftpEntryDragStart,
-    pendingDropOperationMenu,
-    setPendingDropOperationMenu,
-  } = useSftpDragDropController({
-    canUseFileActions,
-    clipboardState,
-    currentPath,
-    hasSftpSession,
-    imagePreviewTempFilesRef,
-    notifyError,
-    notifySuccess,
-    refreshCurrentDirectoryAfterOperation,
-    runSftpOperation,
-    runWithSftpReconnect,
-    selectedEntries,
-    selectedPathSet,
-    sessionId,
-    setOpenWithApplicationsByPath,
-    setPreviewState,
-    setSelectedPaths,
-    setSelectionAnchorPath,
-    sftpInternalDragDefaultAction,
-    sftpInternalDragModifierAction,
-    temporaryOpenFilePathsRef,
-  });
-
   /**
    * Updates an opened-file watcher with fresh remote metadata from the directory cache.
    *
@@ -1863,32 +1829,42 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   /**
-   * Opens the native file picker and queues each selected file for upload.
+   * Shows a warning for dropped local entries that cannot enter the current upload pipeline.
    *
-   * @param targetDirectoryPath Remote destination directory, defaulting to the visible directory.
-   * @returns Promise resolved after selected files are staged and queued.
+   * @param rejectedEntries Local entries rejected by preload/main staging.
+   * @returns void.
    */
-  const handleUploadFiles = React.useCallback(
-    async (targetDirectoryPath = currentPath): Promise<void> => {
-      const electronBridge = window.electron;
-      if (!canUseFileActions || !electronBridge?.selectSftpUploadFiles) {
-        notifyError(t('sftp.uploadUnsupported'));
+  const notifyRejectedDroppedUploadEntries = React.useCallback(
+    (rejectedEntries: readonly SftpUploadRejectedLocalEntry[] = []): void => {
+      if (rejectedEntries.length === 0) {
         return;
       }
 
-      let selection: Awaited<ReturnType<typeof electronBridge.selectSftpUploadFiles>>;
-      try {
-        selection = await electronBridge.selectSftpUploadFiles();
-      } catch (error: unknown) {
-        notifyError(error instanceof Error ? error.message : t('sftp.uploadSelectionFailed'));
+      const rejectedDirectoryCount = rejectedEntries.filter((entry) => entry.reason === 'directory-unsupported').length;
+      if (rejectedDirectoryCount === rejectedEntries.length) {
+        notifyWarning(t('sftp.uploadDropDirectoriesUnsupported', { count: rejectedDirectoryCount }));
         return;
       }
 
-      if (selection.canceled || selection.files.length === 0) {
+      notifyWarning(t('sftp.uploadDropSomeItemsSkipped', { count: rejectedEntries.length }));
+    },
+    [notifyWarning],
+  );
+
+  /**
+   * Queues staged local files for upload into one remote directory.
+   *
+   * @param files Main-staged local files under the controlled SFTP temp root.
+   * @param targetDirectoryPath Remote destination directory, defaulting to the visible directory.
+   * @returns void.
+   */
+  const queueStagedSftpUploadFiles = React.useCallback(
+    (files: readonly SftpUploadLocalFile[], targetDirectoryPath = currentPath): void => {
+      if (files.length === 0) {
         return;
       }
 
-      selection.files.forEach((file: SftpUploadLocalFile) => {
+      files.forEach((file: SftpUploadLocalFile) => {
         stagedUploadPathsRef.current.add(file.localPath);
         const remotePath = joinRemotePath(targetDirectoryPath, file.name);
         runSftpOperation(
@@ -1946,11 +1922,9 @@ const SFTP: React.FC<SFTPProps> = ({
       });
     },
     [
-      canUseFileActions,
       cleanupStagedUploadFile,
       currentPath,
       isSftpUploadConflictError,
-      notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       requestUploadConflictConfirmation,
@@ -1958,6 +1932,100 @@ const SFTP: React.FC<SFTPProps> = ({
       runWithSftpReconnect,
     ],
   );
+
+  /**
+   * Opens the native file picker and queues each selected file for upload.
+   *
+   * @param targetDirectoryPath Remote destination directory, defaulting to the visible directory.
+   * @returns Promise resolved after selected files are staged and queued.
+   */
+  const handleUploadFiles = React.useCallback(
+    async (targetDirectoryPath = currentPath): Promise<void> => {
+      const electronBridge = window.electron;
+      if (!canUseFileActions || !electronBridge?.selectSftpUploadFiles) {
+        notifyError(t('sftp.uploadUnsupported'));
+        return;
+      }
+
+      let selection: Awaited<ReturnType<typeof electronBridge.selectSftpUploadFiles>>;
+      try {
+        selection = await electronBridge.selectSftpUploadFiles();
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.uploadSelectionFailed'));
+        return;
+      }
+
+      if (selection.canceled) {
+        return;
+      }
+
+      queueStagedSftpUploadFiles(selection.files, targetDirectoryPath);
+    },
+    [canUseFileActions, currentPath, notifyError, queueStagedSftpUploadFiles],
+  );
+
+  /**
+   * Stages and uploads files dropped from the host OS onto an SFTP directory target.
+   *
+   * @param files Browser File objects from the drop event.
+   * @param targetDirectoryPath Remote destination directory.
+   * @returns Promise resolved after dropped files are staged and queued.
+   */
+  const handleDroppedLocalFilesUpload = React.useCallback(
+    async (files: File[], targetDirectoryPath: string): Promise<void> => {
+      const electronBridge = window.electron;
+      if (!canUseFileActions || !electronBridge?.stageDroppedSftpUploadFiles) {
+        notifyError(t('sftp.uploadUnsupported'));
+        return;
+      }
+
+      try {
+        const selection = await electronBridge.stageDroppedSftpUploadFiles(files);
+        notifyRejectedDroppedUploadEntries(selection.rejectedEntries ?? []);
+        queueStagedSftpUploadFiles(selection.files, targetDirectoryPath);
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.uploadDropStagingFailed'));
+      }
+    },
+    [canUseFileActions, notifyError, notifyRejectedDroppedUploadEntries, queueStagedSftpUploadFiles],
+  );
+
+  const {
+    activeDropTarget,
+    handleCreateLinkFromClipboard,
+    handleDirectoryDropTargetDragEnter,
+    handleDirectoryDropTargetDragLeave,
+    handleDirectoryDropTargetDragOver,
+    handleDirectoryDropTargetDrop,
+    handleDirectoryDropTargetReject,
+    handlePendingDropOperationSelect,
+    handleSftpEntryDragEnd,
+    handleSftpEntryDragStart,
+    pendingDropOperationMenu,
+    setPendingDropOperationMenu,
+  } = useSftpDragDropController({
+    canUseFileActions,
+    clipboardState,
+    currentPath,
+    hasSftpSession,
+    imagePreviewTempFilesRef,
+    notifyError,
+    notifySuccess,
+    onUploadDroppedLocalFiles: handleDroppedLocalFilesUpload,
+    refreshCurrentDirectoryAfterOperation,
+    runSftpOperation,
+    runWithSftpReconnect,
+    selectedEntries,
+    selectedPathSet,
+    sessionId,
+    setOpenWithApplicationsByPath,
+    setPreviewState,
+    setSelectedPaths,
+    setSelectionAnchorPath,
+    sftpInternalDragDefaultAction,
+    sftpInternalDragModifierAction,
+    temporaryOpenFilePathsRef,
+  });
 
   /**
    * Resolves the upload prompt raised by an edited temp file.
@@ -2794,6 +2862,7 @@ const SFTP: React.FC<SFTPProps> = ({
             canActivateParentDirectoryListEntry={canActivateParentDirectoryListEntry}
             clipboardMode={clipboardState?.mode}
             clipboardPaths={clipboardPaths}
+            currentPath={currentPath}
             directoryListView={sftpDirectoryListView}
             entries={entries}
             errorMessage={errorMessage}
@@ -2823,6 +2892,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onDirectoryDropTargetDragLeave={handleDirectoryDropTargetDragLeave}
             onDirectoryDropTargetDragOver={handleDirectoryDropTargetDragOver}
             onDirectoryDropTargetDrop={handleDirectoryDropTargetDrop}
+            onDirectoryDropTargetReject={handleDirectoryDropTargetReject}
             onEntryContextMenu={handleEntryContextMenu}
             onEntryDragEnd={handleSftpEntryDragEnd}
             onEntryDragStart={handleSftpEntryDragStart}

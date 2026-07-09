@@ -1211,6 +1211,9 @@
     "uploadConflictDescription": "远程已存在名为“{name}”的文件，或该文件在打开后发生了变化。要覆盖 {path} 吗？",
     "uploadConflictOverwrite": "覆盖",
     "uploadConflictTitle": "覆盖远程更改？",
+    "uploadDropDirectoriesUnsupported": "暂不支持上传文件夹，已跳过 {count} 个文件夹。",
+    "uploadDropSomeItemsSkipped": "已跳过 {count} 个无法上传的拖入项目。",
+    "uploadDropStagingFailed": "无法准备拖入文件进行上传。",
     "uploadSelectionFailed": "无法准备所选本地文件进行上传。",
     "uploadUnsupported": "本地文件上传仅在桌面应用中可用。",
     "viewMenu": {

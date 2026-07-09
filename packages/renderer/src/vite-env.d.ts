@@ -114,6 +114,7 @@ declare global {
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
       createSftpDownloadsFile: (fileName: string) => Promise<string>;
       selectSftpUploadFiles: () => Promise<SftpUploadFileSelection>;
+      stageDroppedSftpUploadFiles: (files: File[]) => Promise<SftpUploadFileSelection>;
       cleanupSftpTemporaryFiles: (localPaths: string[]) => Promise<boolean>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
       readSftpTemporaryImagePreview: (localPath: string) => Promise<string>;

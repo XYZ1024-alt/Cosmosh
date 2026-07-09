@@ -5,11 +5,20 @@ import { resolveEntryParentPath } from './sftp-utils';
 
 export const SFTP_INTERNAL_ENTRY_DRAG_MIME = 'application/x-cosmosh-sftp-entries';
 
+const DATA_TRANSFER_FILES_TYPE = 'Files';
+
 export type SftpDragDecisionAction = SettingsValues['sftpInternalDragDefaultAction'];
 
 export type SftpResolvedDragOperation = Exclude<SftpDragDecisionAction, 'ask'>;
 
-export type SftpDropTargetSurface = 'address-breadcrumb' | 'address-menu' | 'directory-list' | 'tree';
+export type SftpDropTargetSurface =
+  | 'address-breadcrumb'
+  | 'address-menu'
+  | 'current-directory'
+  | 'directory-list'
+  | 'tree';
+
+export type SftpDirectoryDropSource = 'external-files' | 'internal-entries';
 
 export type SftpInternalDragEntry = {
   name: string;
@@ -181,6 +190,52 @@ export const readSftpInternalDragPayloadForSession = (
 };
 
 /**
+ * Detects whether a browser drag carries local filesystem files.
+ *
+ * @param dataTransfer Browser drag data.
+ * @returns Whether the payload advertises local files.
+ */
+export const hasSftpExternalFileDragItems = (dataTransfer: DataTransfer): boolean => {
+  const transferTypes = Array.from(dataTransfer.types ?? []);
+  if (transferTypes.includes(DATA_TRANSFER_FILES_TYPE)) {
+    return true;
+  }
+
+  return Array.from(dataTransfer.items ?? []).some((item) => item.kind === 'file');
+};
+
+/**
+ * Reads dropped local File objects from a DataTransfer.
+ *
+ * @param dataTransfer Browser drop data.
+ * @returns Dropped File objects.
+ */
+export const readSftpExternalDroppedFiles = (dataTransfer: DataTransfer): File[] => {
+  return Array.from(dataTransfer.files ?? []);
+};
+
+/**
+ * Resolves which SFTP directory-drop source should handle one drag payload.
+ *
+ * Internal SFTP payloads take priority so a drag that carries both custom SFTP
+ * data and file-like browser metadata still follows the remote move/copy/link flow.
+ *
+ * @param dataTransfer Browser drag data.
+ * @param sessionId Expected tab-local SFTP session id.
+ * @returns Directory drop source when supported.
+ */
+export const resolveSftpDirectoryDropSource = (
+  dataTransfer: DataTransfer,
+  sessionId: string,
+): SftpDirectoryDropSource | null => {
+  if (readSftpInternalDragPayloadForSession(dataTransfer, sessionId)) {
+    return 'internal-entries';
+  }
+
+  return hasSftpExternalFileDragItems(dataTransfer) ? 'external-files' : null;
+};
+
+/**
  * Resolves the configured operation for a drop event.
  *
  * @param event Drag event snapshot at dragover or drop time.
@@ -213,6 +268,20 @@ export const resolveSftpDragDropEffect = (action: SftpDragDecisionAction): DataT
   }
 
   return 'copy';
+};
+
+/**
+ * Resolves the browser dropEffect hint for an accepted SFTP directory drop.
+ *
+ * @param source Accepted directory-drop source.
+ * @param action Configured internal drag action.
+ * @returns Drop effect shown while hovering eligible targets.
+ */
+export const resolveSftpDirectoryDropEffect = (
+  source: SftpDirectoryDropSource,
+  action: SftpDragDecisionAction,
+): DataTransfer['dropEffect'] => {
+  return source === 'external-files' ? 'copy' : resolveSftpDragDropEffect(action);
 };
 
 /**

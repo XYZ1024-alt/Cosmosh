@@ -56,11 +56,40 @@ export type SftpUploadLocalFile = {
 };
 
 /**
+ * Why a dropped local filesystem entry could not be staged for SFTP upload.
+ */
+export type SftpUploadRejectedLocalEntryReason =
+  | 'directory-unsupported'
+  | 'not-file'
+  | 'path-unavailable'
+  | 'unreadable';
+
+/**
+ * One dropped local entry that main/preload declined before SFTP upload.
+ */
+export type SftpUploadRejectedLocalEntry = {
+  name: string;
+  reason: SftpUploadRejectedLocalEntryReason;
+};
+
+/**
+ * Local path payload resolved by preload for dropped SFTP upload entries.
+ *
+ * Renderer code never constructs this shape; it passes File objects to preload,
+ * and preload narrows them to paths before invoking main.
+ */
+export type SftpDroppedUploadLocalEntry = {
+  name: string;
+  localPath?: string;
+};
+
+/**
  * Result returned by the native SFTP upload file picker.
  */
 export type SftpUploadFileSelection = {
   canceled: boolean;
   files: SftpUploadLocalFile[];
+  rejectedEntries?: SftpUploadRejectedLocalEntry[];
 };
 
 /** HTTP methods mirrored by the development backend request trace store. */

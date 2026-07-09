@@ -1211,6 +1211,9 @@
     "uploadConflictDescription": "A remote file named \"{name}\" already exists or changed after it was opened. Overwrite {path}?",
     "uploadConflictOverwrite": "Overwrite",
     "uploadConflictTitle": "Overwrite Remote Changes?",
+    "uploadDropDirectoriesUnsupported": "Folder upload is not supported yet. Skipped {count} folder(s).",
+    "uploadDropSomeItemsSkipped": "Skipped {count} dropped item(s) that cannot be uploaded.",
+    "uploadDropStagingFailed": "Failed to prepare dropped files for upload.",
     "uploadSelectionFailed": "Failed to prepare the selected local files for upload.",
     "uploadUnsupported": "Local file upload is only available in the desktop app.",
     "viewMenu": {

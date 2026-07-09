@@ -5,11 +5,15 @@ import type { ApiSftpEntry } from '@cosmosh/api-contract';
 
 import {
   createSftpInternalDragPayload,
+  hasSftpExternalFileDragItems,
   isSameParentMove,
   isSameSftpDirectoryDropTarget,
   isUnsafeDirectorySelfDrop,
+  readSftpExternalDroppedFiles,
   readSftpInternalDragPayload,
   readSftpInternalDragPayloadForSession,
+  resolveSftpDirectoryDropEffect,
+  resolveSftpDirectoryDropSource,
   resolveSftpDragDecisionAction,
   serializeSftpInternalDragPayload,
   SFTP_INTERNAL_ENTRY_DRAG_MIME,
@@ -55,12 +59,23 @@ const fileEntry: ApiSftpEntry = {
  * Creates a minimal DataTransfer stand-in for pure payload parser tests.
  *
  * @param payload Serialized SFTP drag payload.
+ * @param options Optional file-drag metadata.
  * @returns Browser DataTransfer-compatible object.
  */
-const createDataTransferStub = (payload: string): DataTransfer =>
+const createDataTransferStub = (
+  payload: string,
+  options: {
+    files?: readonly File[];
+    items?: readonly { kind: string }[];
+    types?: readonly string[];
+  } = {},
+): DataTransfer =>
   ({
     getData: (mimeType: string) => (mimeType === SFTP_INTERNAL_ENTRY_DRAG_MIME ? payload : ''),
-  }) as DataTransfer;
+    files: options.files ?? [],
+    items: options.items ?? [],
+    types: options.types ?? [],
+  }) as unknown as DataTransfer;
 
 /**
  * Sets the platform visible through the renderer bridge for action-resolution tests.
@@ -105,6 +120,34 @@ test('SFTP drag action resolution uses Ctrl on Windows/Linux and Cmd on macOS', 
   assert.equal(resolveSftpDragDecisionAction({ ctrlKey: false, metaKey: true } as DragEvent, 'ask', 'link'), 'link');
 });
 
+test('SFTP external file drag detection accepts Files metadata and file items', () => {
+  assert.equal(hasSftpExternalFileDragItems(createDataTransferStub('', { types: ['Files'] })), true);
+  assert.equal(hasSftpExternalFileDragItems(createDataTransferStub('', { items: [{ kind: 'file' }] })), true);
+  assert.equal(hasSftpExternalFileDragItems(createDataTransferStub('', { items: [{ kind: 'string' }] })), false);
+});
+
+test('SFTP directory drop source gives internal payloads priority over external files', () => {
+  const payload = createSftpInternalDragPayload('session-a', '/srv', [fileEntry]);
+  const dataTransfer = createDataTransferStub(serializeSftpInternalDragPayload(payload), { types: ['Files'] });
+
+  assert.equal(resolveSftpDirectoryDropSource(dataTransfer, 'session-a'), 'internal-entries');
+  assert.equal(
+    resolveSftpDirectoryDropSource(createDataTransferStub('', { types: ['Files'] }), 'session-a'),
+    'external-files',
+  );
+});
+
+test('SFTP external directory drops always use a copy cursor', () => {
+  assert.equal(resolveSftpDirectoryDropEffect('external-files', 'move'), 'copy');
+  assert.equal(resolveSftpDirectoryDropEffect('external-files', 'link'), 'copy');
+  assert.equal(resolveSftpDirectoryDropEffect('internal-entries', 'move'), 'move');
+});
+
+test('SFTP external dropped files are read from DataTransfer files', () => {
+  const files = [{ name: 'report.txt' }] as unknown as File[];
+  assert.deepEqual(readSftpExternalDroppedFiles(createDataTransferStub('', { files })), files);
+});
+
 test('SFTP drop target comparison includes the rendered surface', () => {
   assert.equal(
     isSameSftpDirectoryDropTarget(
@@ -116,6 +159,13 @@ test('SFTP drop target comparison includes the rendered surface', () => {
   assert.equal(
     isSameSftpDirectoryDropTarget({ path: '/srv/app', surface: 'tree' }, { path: '/srv/app', surface: 'tree' }),
     true,
+  );
+  assert.equal(
+    isSameSftpDirectoryDropTarget(
+      { path: '/srv', surface: 'current-directory' },
+      { path: '/srv', surface: 'address-breadcrumb' },
+    ),
+    false,
   );
 });
 

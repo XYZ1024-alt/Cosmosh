@@ -12,9 +12,12 @@ export type {
   SystemProxyResolveRequest,
   SystemProxyResolveResult,
   SftpOpenWithApplication,
+  SftpDroppedUploadLocalEntry,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
   SftpUploadLocalFile,
+  SftpUploadRejectedLocalEntry,
+  SftpUploadRejectedLocalEntryReason,
 } from './ipc';
 export {
   GLOBAL_SERVER_PROXY_MODES,

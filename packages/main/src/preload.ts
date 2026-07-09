@@ -72,13 +72,14 @@ import type {
   ApiTestPingResponse,
   AppMenuAction,
   BackendRequestTrace,
+  SftpDroppedUploadLocalEntry,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
   SystemProxyResolveRequest,
   SystemProxyResolveResult,
 } from '@cosmosh/api-contract';
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 
 const PRELOAD_APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set([
   'open-about',
@@ -109,6 +110,36 @@ const isAppMenuAction = (value: unknown): value is AppMenuAction => {
  */
 const invokeIpc = <TResponse>(channel: string, ...args: unknown[]): Promise<TResponse> => {
   return ipcRenderer.invoke(channel, ...args) as Promise<TResponse>;
+};
+
+type DroppedSftpUploadFile = Parameters<typeof webUtils.getPathForFile>[0];
+
+/**
+ * Resolves dropped File objects into the narrow path payload accepted by main.
+ *
+ * @param files Renderer-provided dropped File objects.
+ * @returns Preload-resolved dropped upload entries.
+ */
+const resolveDroppedSftpUploadLocalEntries = (files: unknown): SftpDroppedUploadLocalEntry[] => {
+  if (!Array.isArray(files)) {
+    return [];
+  }
+
+  return files.map((file) => {
+    const fileRecord = file && typeof file === 'object' ? (file as Record<string, unknown>) : {};
+    const name = typeof fileRecord.name === 'string' ? fileRecord.name : '';
+    let localPath = '';
+    try {
+      localPath = webUtils.getPathForFile(file as DroppedSftpUploadFile);
+    } catch {
+      localPath = '';
+    }
+
+    return {
+      name,
+      ...(localPath ? { localPath } : {}),
+    };
+  });
 };
 
 /**
@@ -275,6 +306,12 @@ contextBridge.exposeInMainWorld('electron', {
   },
   selectSftpUploadFiles: () => {
     return invokeIpc<SftpUploadFileSelection>('app:select-sftp-upload-files');
+  },
+  stageDroppedSftpUploadFiles: (files: File[]) => {
+    return invokeIpc<SftpUploadFileSelection>(
+      'app:stage-sftp-dropped-upload-files',
+      resolveDroppedSftpUploadLocalEntries(files),
+    );
   },
   cleanupSftpTemporaryFiles: (localPaths: string[]) => {
     return invokeIpc<boolean>('app:cleanup-sftp-temporary-files', localPaths);
