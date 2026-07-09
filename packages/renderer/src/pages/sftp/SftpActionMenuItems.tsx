@@ -7,6 +7,7 @@ import {
   FilePlus2,
   FolderOpen,
   FolderPlus,
+  FolderSearch,
   Info,
   Link2,
   RefreshCcw,
@@ -62,6 +63,7 @@ type SftpActionMenuHandlers = {
   handleOpenEntryWithPicker: (entry: ApiSftpEntry) => Promise<void>;
   handleOpenProperties: (entries: ApiSftpEntry[]) => void;
   handleOpenSshAtEntryLocation: (entry: ApiSftpEntry | null, targetDirectoryPath?: string) => void;
+  handleOpenSymlinkTargetLocation: (entry: ApiSftpEntry) => Promise<void>;
   handleCreateLinkFromClipboard: (targetDirectoryPath?: string) => void;
   handlePasteEntry: (targetDirectoryPath?: string) => Promise<void>;
   handleTreeDirectoryRefresh: (directoryPath: string) => void;
@@ -119,6 +121,7 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   handleOpenEntryWithPicker,
   handleOpenProperties,
   handleOpenSshAtEntryLocation,
+  handleOpenSymlinkTargetLocation,
   handleCreateLinkFromClipboard,
   handlePasteEntry,
   handleTreeDirectoryRefresh,
@@ -152,6 +155,8 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const canOpenEntry = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
   const shouldShowOpenInNewTab = Boolean(targetEntry && !isMultiTarget && targetEntry.type === 'directory');
   const canOpenInNewTab = canUseFileActions && shouldShowOpenInNewTab;
+  const shouldShowOpenSymlinkTargetLocation = Boolean(targetEntry && !isMultiTarget && targetEntry.type === 'symlink');
+  const canOpenSymlinkTargetLocation = canUseFileActions && shouldShowOpenSymlinkTargetLocation;
   const canUseSingleEntryAction = canUseFileActions && Boolean(targetEntry) && !isMultiTarget;
   const canDownloadEntry = canUseSingleEntryAction && targetEntry?.type === 'file';
   const shouldShowOpenWithEntry = Boolean(
@@ -219,6 +224,19 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
             >
               {t('sftp.actions.openInNewTab')}
               {showShortcuts ? <ShortcutComponent>{shortcutModifier}+Enter</ShortcutComponent> : null}
+            </ItemComponent>
+          ) : null}
+          {shouldShowOpenSymlinkTargetLocation ? (
+            <ItemComponent
+              icon={FolderSearch}
+              disabled={!canOpenSymlinkTargetLocation}
+              onSelect={() => {
+                if (targetEntry) {
+                  void handleOpenSymlinkTargetLocation(targetEntry);
+                }
+              }}
+            >
+              {t('sftp.actions.openSymlinkTargetLocation')}
             </ItemComponent>
           ) : null}
           {shouldShowOpenWithEntry && window.electron?.platform === 'win32' ? (

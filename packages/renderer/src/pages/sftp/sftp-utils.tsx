@@ -1,6 +1,6 @@
 import { type ApiSftpEntry, type SettingsValues, sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { File, Folder } from 'lucide-react';
+import { File, FileSymlink, Folder, FolderSymlink } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -328,6 +328,7 @@ export const formatModifiedAt = (value: string, formatDateTime: DateTimeDisplayF
  * Resolves the icon for a directory-list entry.
  *
  * @param entry SFTP entry.
+ * @param className Optional icon class override.
  * @returns Icon element matching the entry type.
  */
 export const resolveEntryIcon = (entry: ApiSftpEntry, className?: string): React.ReactNode => {
@@ -335,6 +336,14 @@ export const resolveEntryIcon = (entry: ApiSftpEntry, className?: string): React
 
   if (entry.type === 'directory') {
     return <Folder className={iconClassName} />;
+  }
+
+  if (entry.type === 'symlink') {
+    return entry.symlinkTarget?.type === 'directory' ? (
+      <FolderSymlink className={iconClassName} />
+    ) : (
+      <FileSymlink className={iconClassName} />
+    );
   }
 
   return <File className={iconClassName} />;

@@ -970,6 +970,7 @@
       "open": "Open",
       "openInNewTab": "Open in New Tab",
       "openSshHere": "Open SSH Here",
+      "openSymlinkTargetLocation": "Open File Location",
       "openWith": "Open With...",
       "paste": "Paste",
       "pasteAsLink": "Paste as Link",
@@ -1166,6 +1167,7 @@
     "searchEmpty": "No matching items.",
     "searchPlaceholder": "Search files...",
     "sessionInitFailed": "Failed to initialize SFTP session.",
+    "symlinkTargetLocationUnavailable": "Unable to resolve the linked file location.",
     "tasks": {
       "copy": "Copy",
       "createFile": "Create File",

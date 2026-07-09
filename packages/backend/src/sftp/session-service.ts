@@ -827,24 +827,31 @@ export class SftpSessionService {
 
     try {
       const entries = await this.readdir(session, resolvedPath);
+      const mappedEntries = await Promise.all(
+        entries
+          .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
+          .map(async (entry) => {
+            const entryPath = joinSftpPath(resolvedPath, entry.filename);
+            const entryType = resolveSftpEntryType(entry.attrs.mode);
+            const symlinkTarget =
+              entryType === 'symlink' ? await this.resolveSymlinkTargetMetadata(session, entryPath) : undefined;
+
+            return this.buildSftpEntry({
+              name: entry.filename,
+              path: entryPath,
+              stats: entry.attrs,
+              ...(entry.longname ? { longname: entry.longname } : {}),
+              ...(symlinkTarget ? { symlinkTarget } : {}),
+            });
+          }),
+      );
+
       return {
         type: 'success',
         sessionId,
         path: resolvedPath,
         parentPath: this.resolveParentPath(resolvedPath),
-        entries: sortSftpEntriesByBrowserOrder(
-          entries
-            .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
-            .map((entry) => {
-              const entryPath = joinSftpPath(resolvedPath, entry.filename);
-              return this.buildSftpEntry({
-                name: entry.filename,
-                path: entryPath,
-                stats: entry.attrs,
-                ...(entry.longname ? { longname: entry.longname } : {}),
-              });
-            }),
-        ),
+        entries: sortSftpEntriesByBrowserOrder(mappedEntries),
       };
     } catch (error: unknown) {
       return {

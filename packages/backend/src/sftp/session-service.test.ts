@@ -41,6 +41,19 @@ type TestSftpStats = {
   isDirectory(): boolean;
 };
 
+type TestSftpDirectoryEntry = {
+  filename: string;
+  longname?: string;
+  attrs: TestSftpStats;
+};
+
+type TestListSftp = EventEmitter & {
+  realpath(targetPath: string, callback: (error: Error | null, resolvedPath: string) => void): void;
+  readdir(targetPath: string, callback: (error: Error | null, entries?: TestSftpDirectoryEntry[]) => void): void;
+  readlink(targetPath: string, callback: (error: Error | null, linkString: string) => void): void;
+  stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+};
+
 type TestUploadSftp = EventEmitter & {
   stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
   createWriteStream(targetPath: string, options: { flags: string; mode: number }): Writable;
@@ -102,16 +115,73 @@ const registerTestSession = (service: SftpSessionService, session: TestSftpSessi
  * @param options Stats options.
  * @returns Fake SFTP stats object.
  */
-const createTestSftpStats = (options: { size: number; mtime: number; isFile?: boolean }): TestSftpStats => ({
-  mode: options.isFile === false ? 0o040755 : 0o100644,
-  size: options.size,
-  mtime: options.mtime,
-  atime: options.mtime,
-  uid: 1000,
-  gid: 1000,
-  isFile: () => options.isFile !== false,
-  isDirectory: () => options.isFile === false,
-});
+const createTestSftpStats = (options: {
+  size: number;
+  mtime: number;
+  isFile?: boolean;
+  entryType?: 'directory' | 'file' | 'symlink';
+}): TestSftpStats => {
+  const entryType = options.entryType ?? (options.isFile === false ? 'directory' : 'file');
+  const mode = entryType === 'directory' ? 0o040755 : entryType === 'symlink' ? 0o120777 : 0o100644;
+
+  return {
+    mode,
+    size: options.size,
+    mtime: options.mtime,
+    atime: options.mtime,
+    uid: 1000,
+    gid: 1000,
+    isFile: () => entryType === 'file',
+    isDirectory: () => entryType === 'directory',
+  };
+};
+
+/**
+ * Creates an SFTP stream mock for directory listing and symlink target metadata tests.
+ *
+ * @param entriesByDirectory Directory entries keyed by remote directory path.
+ * @param linkTargetsByPath Raw readlink targets keyed by link path.
+ * @param targetStatsByPath Target stat results keyed by resolved target path.
+ * @returns Mock SFTP wrapper.
+ */
+const createListSftpMock = (
+  entriesByDirectory: Record<string, TestSftpDirectoryEntry[]>,
+  linkTargetsByPath: Record<string, string> = {},
+  targetStatsByPath: Record<string, TestSftpStats> = {},
+): TestListSftp => {
+  const sftp = new EventEmitter() as TestListSftp;
+
+  sftp.realpath = (targetPath, callback): void => {
+    callback(null, targetPath);
+  };
+  sftp.readdir = (targetPath, callback): void => {
+    callback(null, entriesByDirectory[targetPath] ?? []);
+  };
+  sftp.readlink = (targetPath, callback): void => {
+    const linkTarget = linkTargetsByPath[targetPath];
+    if (!linkTarget) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error, '');
+      return;
+    }
+
+    callback(null, linkTarget);
+  };
+  sftp.stat = (targetPath, callback): void => {
+    const stats = targetStatsByPath[targetPath];
+    if (!stats) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
+      return;
+    }
+
+    callback(null, stats);
+  };
+
+  return sftp;
+};
 
 /**
  * Creates an SFTP stream mock that records upload replacement behavior.
@@ -421,6 +491,65 @@ test('SftpSessionService closeSession remains idempotent for evicted sessions', 
   assert.equal(service.closeSession(session.sessionId), false);
   assert.equal(session.isClosed, true);
   assert.equal(endCallCount, 1);
+});
+
+test('SftpSessionService listDirectory includes symlink target metadata', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  session.sftp = createListSftpMock(
+    {
+      '/srv': [
+        {
+          filename: 'app-link',
+          attrs: createTestSftpStats({ size: 7, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'config-link',
+          attrs: createTestSftpStats({ size: 11, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'missing-link',
+          attrs: createTestSftpStats({ size: 8, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'notes.txt',
+          attrs: createTestSftpStats({ size: 64, mtime: 1_710_000_000 }),
+        },
+      ],
+    },
+    {
+      '/srv/app-link': '/opt/app',
+      '/srv/config-link': 'config.json',
+      '/srv/missing-link': '/missing',
+    },
+    {
+      '/opt/app': createTestSftpStats({ size: 0, mtime: 1_710_000_001, entryType: 'directory' }),
+      '/srv/config.json': createTestSftpStats({ size: 128, mtime: 1_710_000_002 }),
+    },
+  );
+  registerTestSession(service, session);
+
+  const result = await service.listDirectory(session.sessionId, '/srv');
+
+  assert.equal(result.type, 'success');
+  if (result.type !== 'success') {
+    return;
+  }
+
+  const appLink = result.entries.find((entry) => entry.path === '/srv/app-link');
+  const configLink = result.entries.find((entry) => entry.path === '/srv/config-link');
+  const missingLink = result.entries.find((entry) => entry.path === '/srv/missing-link');
+  const notesFile = result.entries.find((entry) => entry.path === '/srv/notes.txt');
+
+  assert.equal(appLink?.symlinkTarget?.status, 'exists');
+  assert.equal(appLink?.symlinkTarget?.type, 'directory');
+  assert.equal(appLink?.symlinkTarget?.resolvedPath, '/opt/app');
+  assert.equal(configLink?.symlinkTarget?.status, 'exists');
+  assert.equal(configLink?.symlinkTarget?.type, 'file');
+  assert.equal(configLink?.symlinkTarget?.resolvedPath, '/srv/config.json');
+  assert.equal(missingLink?.symlinkTarget?.status, 'broken');
+  assert.equal(missingLink?.symlinkTarget?.resolvedPath, '/missing');
+  assert.equal(notesFile?.symlinkTarget, undefined);
 });
 
 test('SftpSessionService runBatchOperation creates symlinks with copy-style conflict suffixes', async () => {

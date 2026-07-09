@@ -18,6 +18,7 @@ import {
   createSftpFile,
   createSftpSession,
   downloadSftpFile,
+  getSftpEntryDetails,
   isBackendApiError,
   listSftpDirectory,
   renameSftpEntry,
@@ -1448,6 +1449,49 @@ const SFTP: React.FC<SFTPProps> = ({
     [currentPath, onOpenSshAtPath],
   );
 
+  /**
+   * Opens the containing directory for a symbolic link target.
+   *
+   * @param entry Symlink entry selected from the SFTP list.
+   * @returns Promise resolved after target details are fetched and navigation completes.
+   */
+  const handleOpenSymlinkTargetLocation = React.useCallback(
+    async (entry: ApiSftpEntry): Promise<void> => {
+      if (!hasSftpSession || entry.type !== 'symlink') {
+        notifyError(t('sftp.symlinkTargetLocationUnavailable'));
+        return;
+      }
+
+      try {
+        const response = await runWithSftpReconnect((activeSessionId) =>
+          getSftpEntryDetails(activeSessionId, { paths: [entry.path] }),
+        );
+        const detailItem = response.data.entries[0];
+        if (detailItem?.status !== 'success' || !detailItem.entry) {
+          notifyError(detailItem?.message ?? t('sftp.symlinkTargetLocationUnavailable'));
+          return;
+        }
+
+        const target = detailItem.entry.symlinkTarget;
+        const targetPath = target?.resolvedPath?.trim() ?? '';
+        if (!target || !targetPath || target.status !== 'exists') {
+          notifyError(t('sftp.symlinkTargetLocationUnavailable'));
+          return;
+        }
+
+        const targetDirectoryPath = targetPath === '/' ? '/' : resolveEntryParentPath(targetPath);
+        const didNavigate = await navigateToPath(targetDirectoryPath);
+        if (didNavigate) {
+          setSelectedPaths([targetPath]);
+          setSelectionAnchorPath(targetPath);
+        }
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('sftp.symlinkTargetLocationUnavailable'));
+      }
+    },
+    [hasSftpSession, navigateToPath, notifyError, runWithSftpReconnect, setSelectedPaths, setSelectionAnchorPath],
+  );
+
   const copyTextToClipboard = React.useCallback(
     async (value: string, successMessage: string): Promise<void> => {
       try {
@@ -2391,6 +2435,7 @@ const SFTP: React.FC<SFTPProps> = ({
           handleOpenEntryWithPicker={handleOpenEntryWithPicker}
           handleOpenProperties={handleOpenProperties}
           handleOpenSshAtEntryLocation={handleOpenSshAtEntryLocation}
+          handleOpenSymlinkTargetLocation={handleOpenSymlinkTargetLocation}
           handlePasteEntry={handlePasteEntry}
           handleTreeDirectoryRefresh={handleTreeDirectoryRefresh}
           handleUploadFiles={handleUploadFiles}
@@ -2429,6 +2474,7 @@ const SFTP: React.FC<SFTPProps> = ({
       handleOpenEntryWithPicker,
       handleOpenProperties,
       handleOpenSshAtEntryLocation,
+      handleOpenSymlinkTargetLocation,
       handlePasteEntry,
       handleUploadFiles,
       loadOpenWithApplications,

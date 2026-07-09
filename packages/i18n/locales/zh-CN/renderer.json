@@ -970,6 +970,7 @@
       "open": "打开",
       "openInNewTab": "在新标签页打开",
       "openSshHere": "在此处打开 SSH",
+      "openSymlinkTargetLocation": "打开文件所在的位置",
       "openWith": "打开方式...",
       "paste": "粘贴",
       "pasteAsLink": "粘贴为链接",
@@ -1166,6 +1167,7 @@
     "searchEmpty": "没有匹配项。",
     "searchPlaceholder": "搜索文件...",
     "sessionInitFailed": "初始化 SFTP 会话失败。",
+    "symlinkTargetLocationUnavailable": "无法解析链接的文件位置。",
     "tasks": {
       "copy": "复制",
       "createFile": "新建文件",
