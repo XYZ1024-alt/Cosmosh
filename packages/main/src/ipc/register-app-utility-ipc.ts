@@ -28,6 +28,12 @@ import {
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
 import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
 import {
+  createPrivateSftpTemporaryDirectory,
+  isPathInsideDirectory,
+  resolveExistingSftpTemporaryFilePath as resolveSecureExistingSftpTemporaryFilePath,
+  resolveStagedSftpTemporaryFilePath,
+} from './sftp-temporary-root';
+import {
   cleanupStagedSftpUploadFiles,
   normalizeDroppedSftpUploadLocalEntries,
   stageDroppedSftpUploadLocalEntries,
@@ -60,7 +66,6 @@ type SftpTemporaryFileWatchRecord = {
   lastSignature: string;
 };
 
-const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
 const stagedSftpUploadPaths = new Set<string>();
 const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
 const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
@@ -191,6 +196,8 @@ export type RegisterAppUtilityIpcHandlersOptions = {
   setWindowsSystemMenuSymbolColor: (symbolColor: string) => boolean;
   /** Tracks exact renderer-owned paths that the backend SFTP download proxy may write. */
   sftpDownloadTargetAuthorizations: SftpDownloadTargetAuthorizationRegistry;
+  /** Returns the canonical Main-owned SFTP temp root shared with Backend. */
+  getSftpTemporaryRootPath: () => string;
 };
 
 /**
@@ -224,73 +231,31 @@ const sanitizeSftpTemporaryFileName = (fileName: string | undefined): string => 
 };
 
 /**
- * Resolves the root directory that may contain renderer-opened SFTP temporary files.
- *
- * @returns Absolute SFTP temporary root path.
- */
-const resolveSftpTemporaryRootPath = (): string => {
-  return path.join(app.getPath('temp'), SFTP_TEMP_ROOT_DIRECTORY_NAME);
-};
-
-/**
- * Checks whether a candidate path is inside the expected parent directory.
- *
- * @param candidatePath Absolute candidate path.
- * @param parentPath Absolute parent path.
- * @returns True when candidatePath is parentPath or a descendant.
- */
-const isPathInsideDirectory = (candidatePath: string, parentPath: string): boolean => {
-  const relativePath = path.relative(parentPath, candidatePath);
-  return (
-    relativePath === '' || (relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
-  );
-};
-
-/**
- * Resolves and validates an SFTP temporary path without requiring the file to exist.
- *
- * @param candidatePath Renderer-provided local path.
- * @returns Normalized path inside the Cosmosh SFTP temp root.
- */
-const resolveSftpTemporaryCandidatePath = (candidatePath: string | undefined): string => {
-  if (typeof candidatePath !== 'string' || candidatePath.trim().length === 0) {
-    throw new Error('Invalid file path.');
-  }
-
-  const normalizedPath = path.resolve(candidatePath.trim());
-  const temporaryRootPath = path.resolve(resolveSftpTemporaryRootPath());
-  if (!isPathInsideDirectory(normalizedPath, temporaryRootPath)) {
-    throw new Error('Invalid file path.');
-  }
-
-  return normalizedPath;
-};
-
-/**
  * Resolves a renderer-provided SFTP temp path and ensures it points to an existing file.
  *
+ * @param options Runtime dependencies used to resolve the Main-owned temp root.
  * @param candidatePath Renderer-provided local path.
- * @returns Existing local file path inside the Cosmosh SFTP temp root.
+ * @returns Canonical existing local file path inside the Cosmosh SFTP temp root.
  */
-const resolveExistingSftpTemporaryFilePath = async (candidatePath: string | undefined): Promise<string> => {
-  const normalizedPath = resolveSftpTemporaryCandidatePath(candidatePath);
-  const stats = await fs.stat(normalizedPath);
-  if (!stats.isFile()) {
-    throw new Error('Invalid file path.');
-  }
-
-  return normalizedPath;
+const resolveExistingSftpTemporaryFilePath = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  candidatePath: string | undefined,
+): Promise<string> => {
+  return resolveSecureExistingSftpTemporaryFilePath(options.getSftpTemporaryRootPath(), candidatePath);
 };
 
 /**
  * Creates a unique destination path under the Cosmosh SFTP temp root.
  *
+ * @param options Runtime dependencies used to resolve the Main-owned temp root.
  * @param fileName Desired file name from the remote entry.
  * @returns Absolute local path that the backend download endpoint may write to.
  */
-const createSftpTemporaryFilePath = async (fileName: string | undefined): Promise<string> => {
-  const temporaryDirectoryPath = path.join(resolveSftpTemporaryRootPath(), randomUUID());
-  await fs.mkdir(temporaryDirectoryPath, { recursive: true });
+const createSftpTemporaryFilePath = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  fileName: string | undefined,
+): Promise<string> => {
+  const temporaryDirectoryPath = await createPrivateSftpTemporaryDirectory(options.getSftpTemporaryRootPath());
   return path.join(temporaryDirectoryPath, sanitizeSftpTemporaryFileName(fileName));
 };
 
@@ -300,11 +265,15 @@ const createSftpTemporaryFilePath = async (fileName: string | undefined): Promis
  * @param localPaths Renderer-provided staged paths.
  * @returns Promise resolved after best-effort cleanup.
  */
-const cleanupSftpTemporaryFiles = async (localPaths: readonly string[]): Promise<void> => {
+const cleanupSftpTemporaryFiles = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  localPaths: readonly string[],
+): Promise<void> => {
   await cleanupStagedSftpUploadFiles(localPaths, {
-    resolveTemporaryCandidatePath: resolveSftpTemporaryCandidatePath,
+    resolveTemporaryCandidatePath: (candidatePath) =>
+      resolveStagedSftpTemporaryFilePath(options.getSftpTemporaryRootPath(), candidatePath),
     stagedUploadPaths: stagedSftpUploadPaths,
-    temporaryRootPath: resolveSftpTemporaryRootPath(),
+    temporaryRootPath: options.getSftpTemporaryRootPath(),
     isPathInsideDirectory,
   });
 };
@@ -341,7 +310,7 @@ const selectAndStageSftpUploadFiles = async (
   const stagedResults = await Promise.allSettled(
     selection.filePaths.map((filePath) =>
       stageSftpUploadLocalFile(filePath, {
-        createTemporaryFilePath: createSftpTemporaryFilePath,
+        createTemporaryFilePath: (fileName) => createSftpTemporaryFilePath(options, fileName),
         stagedUploadPaths: stagedSftpUploadPaths,
       }),
     ),
@@ -349,7 +318,10 @@ const selectAndStageSftpUploadFiles = async (
   const stagedFiles = stagedResults.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : []));
   const failedResult = stagedResults.find((result) => result.status === 'rejected');
   if (failedResult?.status === 'rejected') {
-    await cleanupSftpTemporaryFiles(stagedFiles.map((file) => file.localPath));
+    await cleanupSftpTemporaryFiles(
+      options,
+      stagedFiles.map((file) => file.localPath),
+    );
     throw failedResult.reason;
   }
 
@@ -365,9 +337,12 @@ const selectAndStageSftpUploadFiles = async (
  * @param droppedEntries Unknown IPC payload from preload.
  * @returns Staged regular files plus rejected dropped entries.
  */
-const stageRendererDroppedSftpUploadFiles = async (droppedEntries: unknown): Promise<SftpUploadFileSelection> => {
+const stageRendererDroppedSftpUploadFiles = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  droppedEntries: unknown,
+): Promise<SftpUploadFileSelection> => {
   return stageDroppedSftpUploadLocalEntries(normalizeDroppedSftpUploadLocalEntries(droppedEntries), {
-    createTemporaryFilePath: createSftpTemporaryFilePath,
+    createTemporaryFilePath: (fileName) => createSftpTemporaryFilePath(options, fileName),
     stagedUploadPaths: stagedSftpUploadPaths,
   });
 };
@@ -378,12 +353,15 @@ const stageRendererDroppedSftpUploadFiles = async (droppedEntries: unknown): Pro
  * @param localPaths Unknown IPC payload.
  * @returns Whether the cleanup request was valid and processed.
  */
-const cleanupRendererStagedSftpUploadFiles = async (localPaths: unknown): Promise<boolean> => {
+const cleanupRendererStagedSftpUploadFiles = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  localPaths: unknown,
+): Promise<boolean> => {
   if (!Array.isArray(localPaths) || !localPaths.every((localPath) => typeof localPath === 'string')) {
     return false;
   }
 
-  await cleanupSftpTemporaryFiles(localPaths);
+  await cleanupSftpTemporaryFiles(options, localPaths);
   return true;
 };
 
@@ -416,8 +394,11 @@ const resolveSftpTemporaryFileSignature = async (
  * @param candidatePath Renderer-provided local path.
  * @returns Data URL suitable for an image src attribute.
  */
-const readSftpTemporaryImagePreviewDataUrl = async (candidatePath: string | undefined): Promise<string> => {
-  const normalizedPath = await resolveExistingSftpTemporaryFilePath(candidatePath);
+const readSftpTemporaryImagePreviewDataUrl = async (
+  options: RegisterAppUtilityIpcHandlersOptions,
+  candidatePath: string | undefined,
+): Promise<string> => {
+  const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, candidatePath);
   const stats = await fs.stat(normalizedPath);
   if (stats.size > MAX_SFTP_TEMPORARY_IMAGE_PREVIEW_BYTES) {
     throw new Error('SFTP image preview file is too large.');
@@ -811,7 +792,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   });
 
   ipcMain.handle('app:create-sftp-temporary-file', async (event, fileName?: string): Promise<string> => {
-    const localPath = await createSftpTemporaryFilePath(fileName);
+    const localPath = await createSftpTemporaryFilePath(options, fileName);
     return authorizeSftpDownloadTarget(event.sender, localPath, true);
   });
 
@@ -827,16 +808,16 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   ipcMain.handle(
     'app:stage-sftp-dropped-upload-files',
     async (_event, droppedEntries?: unknown): Promise<SftpUploadFileSelection> => {
-      return stageRendererDroppedSftpUploadFiles(droppedEntries);
+      return stageRendererDroppedSftpUploadFiles(options, droppedEntries);
     },
   );
 
   ipcMain.handle('app:cleanup-sftp-temporary-files', async (_event, localPaths?: unknown): Promise<boolean> => {
-    return cleanupRendererStagedSftpUploadFiles(localPaths);
+    return cleanupRendererStagedSftpUploadFiles(options, localPaths);
   });
 
   ipcMain.handle('app:open-sftp-temporary-file', async (_event, localPath?: string): Promise<boolean> => {
-    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, localPath);
     const result = await shell.openPath(normalizedPath);
     if (result.length > 0) {
       throw new Error(result);
@@ -846,11 +827,11 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   });
 
   ipcMain.handle('app:read-sftp-temporary-image-preview', async (_event, localPath?: string): Promise<string> => {
-    return readSftpTemporaryImagePreviewDataUrl(localPath);
+    return readSftpTemporaryImagePreviewDataUrl(options, localPath);
   });
 
   ipcMain.handle('app:start-sftp-temporary-file-watch', async (event, localPath?: string): Promise<string> => {
-    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, localPath);
     const ownerWebContents = event.sender;
     const watchId = randomUUID();
     const initialSignature = await resolveSftpTemporaryFileSignature(normalizedPath);
@@ -920,7 +901,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
       throw new Error('Open With dialog is only implemented on Windows.');
     }
 
-    const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+    const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, localPath);
     await openWithDialogWindows(normalizedPath);
     return true;
   });
@@ -932,7 +913,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
         return [];
       }
 
-      const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+      const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, localPath);
       return listMacOsOpenWithApplications(normalizedPath);
     },
   );
@@ -944,7 +925,7 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
         throw new Error('Open With application selection is only implemented on macOS.');
       }
 
-      const normalizedPath = await resolveExistingSftpTemporaryFilePath(localPath);
+      const normalizedPath = await resolveExistingSftpTemporaryFilePath(options, localPath);
       await openWithApplicationMacOs(normalizedPath, applicationPath);
       return true;
     },

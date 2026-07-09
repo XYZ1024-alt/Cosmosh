@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, lstatSync, realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { pipeline } from 'node:stream/promises';
 
@@ -18,7 +17,7 @@ import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadat
 
 type GetDbClient = () => PrismaClient;
 
-const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
+const SFTP_TEMP_ROOT_ENV_NAME = 'COSMOSH_SFTP_TEMP_ROOT';
 
 type SshServerWithKeychain = Prisma.SshServerGetPayload<{
   include: {
@@ -544,15 +543,6 @@ export const isMutableSftpEntryPath = (targetPath: string): boolean => {
 };
 
 /**
- * Resolves the local temp root shared with the Electron main-process SFTP open-file bridge.
- *
- * @returns Absolute local temp root path.
- */
-const resolveSftpTemporaryRootPath = (): string => {
-  return path.join(os.tmpdir(), SFTP_TEMP_ROOT_DIRECTORY_NAME);
-};
-
-/**
  * Checks whether a local path stays inside the controlled SFTP temp root.
  *
  * @param candidatePath Absolute candidate path.
@@ -564,6 +554,49 @@ const isLocalPathInsideDirectory = (candidatePath: string, parentPath: string): 
   return (
     relativePath === '' || (relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
   );
+};
+
+/**
+ * Asserts that the Main-owned SFTP temp root is private on POSIX platforms.
+ *
+ * @param rootPath Candidate root path used for diagnostics.
+ * @param mode File mode from lstat.
+ * @returns void.
+ */
+const assertPrivateSftpTemporaryRootMode = (rootPath: string, mode: number): void => {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  if ((mode & 0o077) !== 0) {
+    throw new Error(`SFTP temporary root is not private: ${rootPath}`);
+  }
+};
+
+/**
+ * Validates the Main-owned SFTP temp root passed into Backend.
+ *
+ * @param configuredPath Path supplied by Main through constructor options or process env.
+ * @returns Canonical temp root path.
+ */
+const validateConfiguredSftpTemporaryRootPath = (configuredPath: string | undefined): string => {
+  const rootPath = configuredPath?.trim();
+  if (!rootPath) {
+    throw new Error(
+      `${SFTP_TEMP_ROOT_ENV_NAME} is required for backend startup. Electron Main creates and injects this ` +
+        'private SFTP temp root automatically. When starting @cosmosh/backend directly, create a real existing ' +
+        `private directory and set ${SFTP_TEMP_ROOT_ENV_NAME} to its absolute path; POSIX platforms require mode 0700.`,
+    );
+  }
+
+  const normalizedRootPath = path.resolve(rootPath);
+  const rootStats = lstatSync(normalizedRootPath);
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+    throw new Error('SFTP temporary root must be a real directory.');
+  }
+
+  assertPrivateSftpTemporaryRootMode(normalizedRootPath, rootStats.mode);
+  return realpathSync(normalizedRootPath);
 };
 
 /**
@@ -636,16 +669,22 @@ export class SftpSessionService {
 
   private readonly credentialEncryptionKey: Buffer;
 
+  private readonly sftpTemporaryRootPath: string;
+
   private readonly sessions = new Map<string, SftpLiveSession>();
 
   constructor(options: {
     getDbClient: GetDbClient;
     auditEventService: AuditEventService;
     credentialEncryptionKey: Buffer;
+    sftpTemporaryRootPath?: string;
   }) {
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
     this.credentialEncryptionKey = options.credentialEncryptionKey;
+    this.sftpTemporaryRootPath = validateConfiguredSftpTemporaryRootPath(
+      options.sftpTemporaryRootPath ?? process.env[SFTP_TEMP_ROOT_ENV_NAME],
+    );
   }
 
   /**
@@ -1139,14 +1178,16 @@ export class SftpSessionService {
       };
     }
 
-    const normalizedLocalPath = localPath ? path.resolve(localPath.trim()) : '';
-    if (!normalizedLocalPath) {
+    const requestedLocalPath = localPath?.trim() ?? '';
+    if (!requestedLocalPath) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.localPathRequired'),
       };
     }
-    if (!isLocalPathInsideDirectory(normalizedLocalPath, path.resolve(resolveSftpTemporaryRootPath()))) {
+
+    const normalizedLocalPath = path.resolve(requestedLocalPath);
+    if (!isLocalPathInsideDirectory(normalizedLocalPath, this.sftpTemporaryRootPath)) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.localFileReadUnsupported'),
@@ -1196,8 +1237,16 @@ export class SftpSessionService {
         };
       }
 
-      const localStats = await fs.stat(normalizedLocalPath);
-      if (!localStats.isFile()) {
+      const canonicalLocalPath = await this.resolveExistingUploadLocalPath(normalizedLocalPath);
+      if (!canonicalLocalPath) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.localFileReadUnsupported'),
+        };
+      }
+
+      const localStats = await fs.lstat(canonicalLocalPath);
+      if (!localStats.isFile() || localStats.isSymbolicLink()) {
         return {
           type: 'failed',
           message: session.t('errors.sftp.localFileReadUnsupported'),
@@ -1205,11 +1254,11 @@ export class SftpSessionService {
       }
 
       if (targetStats) {
-        await this.uploadLocalFileToRemotePath(session, normalizedLocalPath, normalizedPath, targetStats.mode & 0o777, {
+        await this.uploadLocalFileToRemotePath(session, canonicalLocalPath, normalizedPath, targetStats.mode & 0o777, {
           expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
         });
       } else {
-        await this.createRemoteFileFromLocalPath(session, normalizedLocalPath, normalizedPath, 0o644);
+        await this.createRemoteFileFromLocalPath(session, canonicalLocalPath, normalizedPath, 0o644);
       }
 
       this.logSftpMutation(session, 'upload', {
@@ -2306,6 +2355,35 @@ export class SftpSessionService {
   }
 
   /**
+   * Resolves a renderer-supplied upload source into a canonical Main-owned temp file path.
+   *
+   * @param localPath Renderer-supplied local temp path.
+   * @returns Canonical local file path, or null when validation fails.
+   */
+  private async resolveExistingUploadLocalPath(localPath: string): Promise<string | null> {
+    const normalizedLocalPath = path.resolve(localPath);
+    if (!isLocalPathInsideDirectory(normalizedLocalPath, this.sftpTemporaryRootPath)) {
+      return null;
+    }
+
+    try {
+      const localStats = await fs.lstat(normalizedLocalPath);
+      if (!localStats.isFile() || localStats.isSymbolicLink()) {
+        return null;
+      }
+
+      const canonicalLocalPath = await fs.realpath(normalizedLocalPath);
+      if (!isLocalPathInsideDirectory(canonicalLocalPath, this.sftpTemporaryRootPath)) {
+        return null;
+      }
+
+      return canonicalLocalPath;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Streams one remote file to a temporary local file before replacing the final destination.
    *
    * @param session Live SFTP session.
@@ -2328,7 +2406,11 @@ export class SftpSessionService {
 
     try {
       const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
-      const writeStream = createWriteStream(temporaryPath, { flags: 'wx' });
+      const shouldHardenTemporaryFile = isLocalPathInsideDirectory(path.resolve(localPath), this.sftpTemporaryRootPath);
+      const writeStream = createWriteStream(temporaryPath, {
+        flags: 'wx',
+        ...(shouldHardenTemporaryFile ? { mode: 0o600 } : {}),
+      });
       await pipeline(readStream, writeStream);
       await fs.rename(temporaryPath, localPath);
     } catch (error: unknown) {

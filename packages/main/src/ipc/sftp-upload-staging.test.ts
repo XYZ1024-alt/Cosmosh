@@ -69,7 +69,7 @@ const isPathInsideDirectory = (candidatePath: string, parentPath: string): boole
  * @param candidatePath Candidate local path.
  * @returns Normalized candidate path.
  */
-const resolveTemporaryCandidatePath = (rootPath: string, candidatePath: string | undefined): string => {
+const resolveTemporaryCandidatePath = async (rootPath: string, candidatePath: string | undefined): Promise<string> => {
   if (!candidatePath) {
     throw new Error('Invalid path.');
   }

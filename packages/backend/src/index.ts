@@ -225,6 +225,7 @@ const bootstrap = async (): Promise<void> => {
 
   const sshWebSocketPort = await findAvailablePort();
   const localTerminalWebSocketPort = await findAvailablePort();
+  const sftpTemporaryRootPath = process.env.COSMOSH_SFTP_TEMP_ROOT;
 
   sshSessionService = new SshSessionService({
     host: '127.0.0.1',
@@ -238,6 +239,7 @@ const bootstrap = async (): Promise<void> => {
     getDbClient,
     auditEventService,
     credentialEncryptionKey,
+    sftpTemporaryRootPath,
   });
 
   portForwardSessionService = new PortForwardSessionService({

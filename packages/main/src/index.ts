@@ -32,6 +32,11 @@ import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
 import { registerDebugIpcHandlers } from './ipc/register-debug-ipc';
 import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-target-authorizations';
 import {
+  cleanupSftpTemporaryRoot,
+  createPrivateSftpTemporaryRoot,
+  SFTP_TEMP_ROOT_ENV_NAME,
+} from './ipc/sftp-temporary-root';
+import {
   getDatabaseEncryptionKey,
   getDatabasePath,
   getDatabaseSecurityInfo,
@@ -48,6 +53,7 @@ let backendPort: number | null = null;
 let backendToken: string | null = null;
 let backendStartupPromise: Promise<void> | null = null;
 let backendShutdownPromise: Promise<void> | null = null;
+let sftpTemporaryRootPath: string | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
@@ -592,6 +598,33 @@ const stopBackendService = async (origin: string): Promise<void> => {
   }
 };
 
+/**
+ * Creates or returns the canonical Main-owned SFTP temp root for this app run.
+ *
+ * @returns Canonical private temp root path.
+ */
+const resolveSftpTemporaryRootPath = async (): Promise<string> => {
+  if (sftpTemporaryRootPath) {
+    return sftpTemporaryRootPath;
+  }
+
+  sftpTemporaryRootPath = await createPrivateSftpTemporaryRoot(app.getPath('temp'));
+  return sftpTemporaryRootPath;
+};
+
+/**
+ * Returns the initialized SFTP temp root required by IPC handlers.
+ *
+ * @returns Canonical private temp root path.
+ */
+const requireSftpTemporaryRootPath = (): string => {
+  if (!sftpTemporaryRootPath) {
+    throw new Error('SFTP temporary root is not initialized.');
+  }
+
+  return sftpTemporaryRootPath;
+};
+
 const formatStartupError = (error: unknown): string => {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`;
@@ -974,6 +1007,7 @@ const startBackendService = async (): Promise<void> => {
       getDatabaseEncryptionKey(),
       resolveBackendSecretKey(),
     ]);
+    const sftpTemporaryRoot = await resolveSftpTemporaryRootPath();
     const isDev = !app.isPackaged;
     const packagedRemoteBootstrapManifestUrl = await readPackagedRemoteBootstrapManifestUrl();
     const workspaceRoot = resolveWorkspaceRoot();
@@ -995,6 +1029,7 @@ const startBackendService = async (): Promise<void> => {
       COSMOSH_DB_ENCRYPTION_KEY: databaseEncryptionKey,
       COSMOSH_USER_DATA_PATH: app.getPath('userData'),
       COSMOSH_APP_ENV: isDev ? 'development' : 'production',
+      [SFTP_TEMP_ROOT_ENV_NAME]: sftpTemporaryRoot,
       DATABASE_URL: databaseUrl,
     };
 
@@ -1445,6 +1480,7 @@ if (!hasSingleInstanceLock) {
         });
       }
 
+      await resolveSftpTemporaryRootPath();
       const windowStartupTask = createWindow();
       const backendStartupTask = startBackendService();
       await windowStartupTask;
@@ -1488,6 +1524,7 @@ registerAppUtilityIpcHandlers({
   getDatabaseSecurityInfo,
   restartBackendRuntime: restartBackendService,
   getBackendProcessId: () => backendProcess?.pid ?? null,
+  getSftpTemporaryRootPath: requireSftpTemporaryRootPath,
   setWindowsSystemMenuSymbolColor,
   sftpDownloadTargetAuthorizations,
 });
@@ -1521,6 +1558,11 @@ app.on('before-quit', (event) => {
     disableI18nHotReload?.();
     disableI18nHotReload = null;
     await stopBackendService('electron:before-quit');
+    try {
+      await cleanupSftpTemporaryRoot(sftpTemporaryRootPath);
+    } finally {
+      sftpTemporaryRootPath = null;
+    }
   })()
     .catch((error) => {
       console.error('[shutdown] Failed during shutdown cleanup.', error);

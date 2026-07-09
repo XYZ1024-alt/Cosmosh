@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { chmodSync, mkdtempSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { Writable } from 'node:stream';
-import test from 'node:test';
+import test, { after } from 'node:test';
 
 import {
   escapeSftpShellPath,
@@ -77,11 +78,22 @@ type TestSftpSessionServiceInternals = {
   watchSessionTransport(session: TestSftpSession): void;
 };
 
+const TEST_SFTP_TEMP_ROOT_PATH = mkdtempSync(path.join(os.tmpdir(), 'cosmosh-sftp-test-root-'));
+
+if (process.platform !== 'win32') {
+  chmodSync(TEST_SFTP_TEMP_ROOT_PATH, 0o700);
+}
+
+after(async () => {
+  await fs.rm(TEST_SFTP_TEMP_ROOT_PATH, { force: true, recursive: true });
+});
+
 const createTestSftpSessionService = (): SftpSessionService => {
   return new SftpSessionService({
     getDbClient: () => ({}) as never,
     auditEventService: { logEvent: async () => null } as never,
     credentialEncryptionKey: Buffer.alloc(32),
+    sftpTemporaryRootPath: TEST_SFTP_TEMP_ROOT_PATH,
   });
 };
 
@@ -365,9 +377,7 @@ const createRenameSftpMock = (
  * @returns Absolute temp directory path.
  */
 const createSftpTemporaryTestDirectory = async (): Promise<string> => {
-  const temporaryRootPath = path.join(os.tmpdir(), 'cosmosh-sftp');
-  await fs.mkdir(temporaryRootPath, { recursive: true });
-  return fs.mkdtemp(path.join(temporaryRootPath, 'upload-test-'));
+  return fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'upload-test-'));
 };
 
 /**
@@ -376,7 +386,7 @@ const createSftpTemporaryTestDirectory = async (): Promise<string> => {
  * @returns Absolute temp-root path that does not need to exist.
  */
 const resolveUnusedSftpTemporaryTestPath = (): string => {
-  return path.join(os.tmpdir(), 'cosmosh-sftp', 'unused-local-path');
+  return path.join(TEST_SFTP_TEMP_ROOT_PATH, 'unused-local-path');
 };
 
 /**
@@ -971,6 +981,43 @@ test('SftpSessionService uploadFile rejects local paths outside the controlled S
   assert.deepEqual(uploadSftp.writes, []);
   assert.deepEqual(uploadSftp.renames, []);
 });
+
+test(
+  'SftpSessionService uploadFile rejects symlink paths inside the controlled SFTP temp root',
+  { skip: process.platform === 'win32' ? 'Windows symlink creation requires elevated host policy.' : false },
+  async () => {
+    const service = createTestSftpSessionService();
+    const session = createTestSftpSession();
+    const remotePath = '/tmp/file.txt';
+    const uploadSftp = createUploadSftpMock({
+      [remotePath]: createTestSftpStats({ size: 1, mtime: 1_710_000_000 }),
+    });
+    session.sftp = uploadSftp.sftp;
+    registerTestSession(service, session);
+
+    const temporaryDirectoryPath = await createSftpTemporaryTestDirectory();
+    const symlinkTargetPath = path.join(temporaryDirectoryPath, 'target.txt');
+    const localPath = path.join(temporaryDirectoryPath, 'link.txt');
+    await fs.writeFile(symlinkTargetPath, 'hello', 'utf8');
+    await fs.symlink(symlinkTargetPath, localPath);
+
+    try {
+      const result = await service.uploadFile(session.sessionId, remotePath, localPath, {
+        size: 1,
+        modifiedAt: new Date(1_710_000_000 * 1000).toISOString(),
+      });
+
+      assert.deepEqual(result, {
+        type: 'failed',
+        message: 'errors.sftp.localFileReadUnsupported',
+      });
+      assert.deepEqual(uploadSftp.writes, []);
+      assert.deepEqual(uploadSftp.renames, []);
+    } finally {
+      await fs.rm(temporaryDirectoryPath, { force: true, recursive: true });
+    }
+  },
+);
 
 test('SftpSessionService uploadFile keeps the primary error when temp cleanup also fails', async () => {
   const service = createTestSftpSessionService();

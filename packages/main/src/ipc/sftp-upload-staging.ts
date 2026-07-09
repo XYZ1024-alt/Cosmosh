@@ -10,6 +10,8 @@ import type {
   SftpUploadRejectedLocalEntryReason,
 } from '@cosmosh/api-contract';
 
+import { applyPrivateSftpTemporaryFileMode } from './sftp-temporary-root';
+
 const DROPPED_UPLOAD_ENTRY_FALLBACK_NAME = 'Dropped item';
 
 /**
@@ -24,7 +26,7 @@ export type SftpUploadStagingOptions = {
  * Dependencies needed to clean staged upload files while preserving the temp-root boundary.
  */
 export type SftpUploadCleanupOptions = {
-  resolveTemporaryCandidatePath: (candidatePath: string | undefined) => string;
+  resolveTemporaryCandidatePath: (candidatePath: string | undefined) => Promise<string>;
   stagedUploadPaths: Set<string>;
   temporaryRootPath: string;
   isPathInsideDirectory: (candidatePath: string, parentPath: string) => boolean;
@@ -162,6 +164,7 @@ export const stageSftpUploadLocalFile = async (
   const localPath = await options.createTemporaryFilePath(name);
   try {
     await fs.copyFile(sourcePath, localPath);
+    await applyPrivateSftpTemporaryFileMode(localPath);
     const stagedStats = await fs.stat(localPath);
     options.stagedUploadPaths.add(path.resolve(localPath));
     return {
@@ -230,7 +233,7 @@ export const cleanupStagedSftpUploadFiles = async (
   await Promise.all(
     localPaths.map(async (localPath) => {
       try {
-        const normalizedPath = options.resolveTemporaryCandidatePath(localPath);
+        const normalizedPath = await options.resolveTemporaryCandidatePath(localPath);
         if (!options.stagedUploadPaths.has(normalizedPath)) {
           return;
         }
