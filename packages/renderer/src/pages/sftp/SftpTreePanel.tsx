@@ -223,7 +223,7 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
                   <button
                     type="button"
                     aria-label={t(node.isExpanded ? 'sftp.actions.collapse' : 'sftp.actions.expand')}
-                    className="focus-visible:ring-form-ring flex h-[30px] w-5 shrink-0 items-center justify-center rounded-sm-2 text-home-text-subtle focus-visible:outline-none focus-visible:ring-2"
+                    className="flex h-[30px] w-5 shrink-0 items-center justify-center rounded-sm-2 text-home-text-subtle"
                     disabled={node.isLoading}
                     tabIndex={-1}
                     onClick={(event) => {
@@ -249,7 +249,7 @@ export const SftpTreePanel: React.FC<SftpTreePanelProps> = ({
                       treeRowRefs.current[node.path] = element;
                     }}
                     type="button"
-                    className="focus-visible:ring-form-ring text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-left"
+                    className="text-home-text flex h-[30px] min-w-0 flex-1 items-center gap-2 rounded-md pr-2 text-left"
                     tabIndex={resolvedActiveTreePath === node.path ? 0 : -1}
                     onClick={() => {
                       onSetActiveTreePath(node.path);

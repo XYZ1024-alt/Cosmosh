@@ -286,7 +286,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
           <button
             type="button"
             className={classNames(
-              'focus-visible:ring-form-ring text-home-text flex h-[28px] min-w-0 shrink items-center rounded-md px-2 text-sm outline-none transition-colors hover:bg-form-control-hover focus-visible:ring-2',
+              'text-home-text flex h-[28px] min-w-0 shrink items-center rounded-md px-2 text-sm transition-colors hover:bg-form-control-hover',
               options.isCurrent && 'bg-form-control-hover',
               isActiveDropTarget && 'bg-home-card-active',
             )}
@@ -318,7 +318,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
               <button
                 type="button"
                 aria-label={t('sftp.addressSegmentMenuLabel', { path: item.path })}
-                className="focus-visible:ring-form-ring hover:text-home-text focus-visible:text-home-text flex h-[28px] w-6 shrink-0 items-center justify-center rounded-md text-home-text-subtle outline-none transition-colors hover:bg-form-control-hover focus-visible:bg-form-control-hover focus-visible:ring-1 focus-visible:ring-inset disabled:cursor-default disabled:opacity-50"
+                className="hover:text-home-text focus-visible:text-home-text flex h-[28px] w-6 shrink-0 items-center justify-center rounded-md text-home-text-subtle transition-colors hover:bg-form-control-hover focus-visible:bg-form-control-hover disabled:cursor-default disabled:opacity-50"
                 disabled={!sessionId}
                 onClick={(event) => event.stopPropagation()}
               >
@@ -423,7 +423,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
                   <button
                     type="button"
                     aria-label={t('sftp.addressCollapsedMenuLabel')}
-                    className="focus-visible:ring-form-ring text-home-text mx-0.5 flex h-[28px] w-9 shrink-0 items-center justify-center rounded-md outline-none transition-colors hover:bg-form-control-hover focus-visible:ring-2"
+                    className="text-home-text mx-0.5 flex h-[28px] w-9 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-form-control-hover"
                     onClick={(event) => event.stopPropagation()}
                   >
                     <MoreHorizontal className="h-4 w-4" />

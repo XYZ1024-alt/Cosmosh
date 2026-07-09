@@ -489,7 +489,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                           : -1
                       }
                       className={classNames(
-                        'focus-visible:ring-form-ring grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2',
+                        'grid h-[34px] w-full items-center rounded-lg px-3 text-left text-sm transition-colors',
                         canActivateParentDirectoryListEntry
                           ? 'text-home-text hover:bg-home-card-hover'
                           : 'cursor-default text-home-text-subtle opacity-55',

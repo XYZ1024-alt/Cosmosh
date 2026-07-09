@@ -336,7 +336,7 @@ const AuditEventListPanel = React.memo<AuditEventListPanelProps>(
                     aria-selected={isActive}
                     className={classNames(
                       AUDIT_EVENT_TABLE_GRID_CLASS,
-                      'focus-visible:ring-form-ring h-[42px] items-center rounded-lg px-3 text-left text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2',
+                      'h-[42px] items-center rounded-lg px-3 text-left text-[13px] transition-colors',
                       isActive ? 'text-home-text bg-home-card-hover' : 'text-home-text hover:bg-home-card-hover',
                     )}
                     onClick={() => onSelectEvent(item.eventId)}
