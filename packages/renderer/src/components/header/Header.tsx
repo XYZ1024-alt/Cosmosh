@@ -202,9 +202,8 @@ const Header: React.FC<{
               <RadixAvatar.Image
                 className="h-full w-full object-cover"
                 src=""
-              >
-                <span className="sr-only">{t('header.avatarAlt')}</span>
-              </RadixAvatar.Image>
+                alt={t('header.avatarAlt')}
+              />
               <RadixAvatar.Fallback
                 className="flex h-full w-full items-center justify-center text-xs font-medium"
                 delayMs={600}
@@ -229,9 +228,8 @@ const Header: React.FC<{
                 <RadixAvatar.Image
                   className="h-full w-full object-cover"
                   src=""
-                >
-                  <span className="sr-only">{t('header.currentAccountAvatarAlt')}</span>
-                </RadixAvatar.Image>
+                  alt={t('header.currentAccountAvatarAlt')}
+                />
                 <RadixAvatar.Fallback
                   className="flex h-full w-full items-center justify-center text-xs font-medium"
                   style={{ backgroundColor: 'var(--color-menu-control)' }}
