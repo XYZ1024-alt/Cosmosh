@@ -74,7 +74,8 @@ Important behavior:
 - Stored value is encrypted blob, not plaintext key.
 - Decryption is bound to OS secure storage availability.
 - Main process performs encryption/decryption; renderer is not used for this path.
-- If decryption or secure persistence fails at runtime, Main now attempts fallback resolver instead of failing immediately.
+- If decryption succeeds and a plaintext emergency fallback field is present from an older or broken write path, Main removes that plaintext field as best-effort cleanup.
+- If decryption or secure persistence fails at runtime, Main attempts fallback resolver instead of writing a plaintext emergency key while `safeStorage` is available.
 
 ## 5. Fallback Path: Master Password Mode (When `safeStorage` Is Unavailable or Fails)
 
@@ -126,15 +127,16 @@ If hash check fails, startup throws:
 
 ### 5.4 Emergency fallback key path
 
-To avoid startup dead-end when both `safeStorage` and master-password fallback are unavailable, Main now persists an emergency local fallback key:
+To avoid startup dead-end only when `safeStorage` is unavailable, Main may persist an emergency local fallback key:
 
 - `emergencyFallbackDbMasterKey?: string`
 
 Runtime behavior:
 
-1. If emergency fallback key exists, use it directly.
-2. If master-password fallback succeeds, persist emergency fallback key for future non-interactive recovery.
-3. If no DB file exists and fallback resolver fails, auto-provision a new emergency fallback key for first-run startup.
+1. If `safeStorage` is unavailable and an emergency fallback key exists, use it directly.
+2. If `safeStorage` is unavailable and master-password fallback succeeds, persist emergency fallback key for future non-interactive recovery.
+3. If `safeStorage` is unavailable, no DB file exists, and fallback resolver fails, auto-provision a new emergency fallback key for first-run startup.
+4. If `safeStorage` is available, newly generated or recovered keys are persisted only as `encryptedDbMasterKey`. Main does not newly write a plaintext emergency fallback key in this mode.
 
 If an existing DB file already exists and neither `safeStorage` nor fallback materials can recover old key material, startup still fails fast with explicit error to avoid silent data lockout.
 
@@ -144,7 +146,8 @@ If fallback successfully resolves a key while `safeStorage` is available again, 
 
 1. Encrypt the resolved fallback key with `safeStorage`.
 2. Persist it into `security.config.json` as `encryptedDbMasterKey`.
-3. Continue startup using the same recovered key.
+3. Remove `emergencyFallbackDbMasterKey` from the config.
+4. Continue startup using the same recovered key.
 
 This avoids accidental key rotation and keeps previously encrypted database data readable after recovery.
 
@@ -187,7 +190,7 @@ Fields:
 - `encryptedDbMasterKey?: string`
   - Base64 encoded encrypted payload from `safeStorage` path.
 - `emergencyFallbackDbMasterKey?: string`
-  - Plaintext emergency fallback key used for availability-first recovery when `safeStorage` and password resolver are unavailable.
+  - Plaintext emergency fallback key used only for availability-first recovery while `safeStorage` is unavailable.
 - `masterPasswordHash?: string`
   - Hex hash used only in fallback verification.
 - `masterPasswordSalt?: string`
@@ -195,9 +198,9 @@ Fields:
 
 Notes:
 
-- File can contain both safeStorage and fallback fields during transitions.
+- File can temporarily contain both safeStorage and fallback fields during recovery, but the `safeStorage` path removes plaintext emergency material after secure key resolution succeeds.
 - Fallback fields are required only when `safeStorage` is unavailable.
-- Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again.
+- Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again, then it is removed.
 
 ## 6.1 Prisma Engine Target Compatibility (Linux Packaging)
 
