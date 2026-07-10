@@ -25,6 +25,7 @@ import {
 } from 'electron';
 import path from 'path';
 
+import { DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME, resolveDevelopmentBackendNodeExecutable } from './dev/backend-runtime';
 import { applyDevelopmentProfileToElectronApp } from './dev/dev-profile';
 import { BackendRequestTraceStore } from './ipc/backend-request-trace-store';
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
@@ -58,6 +59,10 @@ let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
 const backendRequestTraceStore = new BackendRequestTraceStore(!app.isPackaged);
+
+// Consume the internal handoff before Electron creates child processes that could inherit it.
+const developmentBackendNodeExecutablePath = process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
+delete process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
 
 let isAppShutdownInProgress = false;
 
@@ -1044,6 +1049,11 @@ const startBackendService = async (): Promise<void> => {
     let backendProcessCwd = workspaceRoot;
 
     if (isDev) {
+      const developmentNodeExecutablePath = await resolveDevelopmentBackendNodeExecutable(
+        developmentBackendNodeExecutablePath,
+      );
+      delete backendEnv.ELECTRON_RUN_AS_NODE;
+
       const hasExistingDatabase = await fileExists(databasePath);
 
       if (!hasExistingDatabase) {
@@ -1067,11 +1077,11 @@ const startBackendService = async (): Promise<void> => {
 
       // Launch backend as a direct child process to guarantee deterministic shutdown on Windows.
       // Using `pnpm run` with `shell: true` can orphan the actual runtime after app quit.
-      command = process.execPath;
+      command = developmentNodeExecutablePath;
       args = ['--import', 'tsx', backendDevEntryPath];
       shell = false;
-      backendEnv.ELECTRON_RUN_AS_NODE = '1';
       backendEnv.NODE_ENV = 'development';
+      console.log(`[backend:init] Development backend runtime -> Node ${developmentNodeExecutablePath}`);
     } else {
       await fs.access(packagedBackendEntryPath);
       command = process.execPath;

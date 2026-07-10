@@ -28,15 +28,22 @@ flowchart LR
 - Starts BrowserWindow and backend warmup in parallel during app bootstrap.
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
-- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
+- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh. The same lifecycle probes the SQLCipher native binding under the system Node runtime and rebuilds it only when the current ABI is incompatible.
 - Development profiles are managed by `pnpm dev:profile` (`scripts/dev-profile.mjs`). When a profile is selected or passed through `COSMOSH_DEV_PROFILE`, main applies it before window/backend startup so Electron `userData`, the SQLite file, and backend-only secret storage all resolve under `.cosmosh/dev-profiles/<name>/`.
-- Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
+- `packages/main/scripts/dev-main.cjs` runs under the workspace system Node, compiles Main, and passes that canonical Node executable to Electron through the development-only `COSMOSH_DEV_NODE_EXEC_PATH` handoff.
+- Main launches the development backend directly with the validated system Node executable and `tsx`, avoiding both package-script orphan processes and Electron-versus-Node native ABI conflicts. Packaged Main continues to launch the synchronized backend with Electron's `process.execPath` plus `ELECTRON_RUN_AS_NODE=1`.
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - CI packaging can also write `resources/remote-bootstrap/manifest-url.json` when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is provided. Packaged main reads this resource only as a fallback after the environment variable, preserving local override behavior while allowing tagged release installers and `main` build artifacts to discover their intended bootstrap manifest automatically. Unpackaged development runs fall back once more to the rolling `remote-bootstrap-dev` manifest URL, so local Remote Enhancements testing does not require per-shell setup.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
   - locale header for i18n-compatible backend responses.
+
+#### Development Backend Runtime Boundary
+
+The development launcher owns the system Node executable handoff because it runs before Electron replaces `process.execPath`. Main accepts only an absolute path that resolves to a canonical regular file, requires the POSIX executable bits where applicable, rejects the Electron host executable itself, and removes the handoff variable before spawning Backend. This value is development orchestration metadata, not part of the Backend environment contract.
+
+Development and packaging intentionally use different native targets. The Main and standalone Backend `predev` lifecycles, plus Backend `predb:init`, invoke `ensure-sqlcipher-native.cjs --runtime=node --if-needed`; packaging invokes the same script without arguments to force an Electron-targeted release rebuild. Both paths open and close an in-memory database under the selected runtime after building; a failed probe aborts before Backend startup or packaged-runtime synchronization. On Windows, all Cosmosh processes using the shared binding must be closed before switching targets because a loaded `.node` file cannot be replaced.
 
 ### Backend Process (`packages/backend/src/index.ts`)
 

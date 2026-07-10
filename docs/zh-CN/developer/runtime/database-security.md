@@ -230,6 +230,8 @@ Main 会在以下任一场景进入回退解析器：
 
 `packages/main/scripts/sync-backend-runtime.cjs` 会递归复制 adapter 依赖，并从 multi-cipher 包中单独保留所需的 SQLCipher native binding。
 
+Native binding 有两个显式构建 target。开发态 Main 与 standalone Backend 命令都使用 workspace 系统 Node 运行 Backend，因此它们的启动 lifecycle 会在该运行时下执行探针，仅在 ABI 不匹配后重建。打包流程则会在 runtime 同步前始终针对精确的已安装 Electron 版本重建。每次成功重建都必须在目标运行时下通过内存数据库打开/关闭探针；仅确认文件存在不能作为兼容性证据。在 Windows 上切换 target 前，需要停止正在使用当前 binding 的进程，因为已加载的 native 文件会被锁定。
+
 Prisma Client、Prisma CLI、两个 adapter 包与 `better-sqlite3-multiple-ciphers` 会作为一组经过验证的兼容版本固定。升级这组版本必须显式进行，并在变更前针对所有支持平台重新执行加密重连、错误密钥、明文迁移与打包 runtime 测试。
 
 为避免后端在目标机器启动时报 `Prisma Client could not locate the Query Engine`，Linux 打包必须包含以下 Prisma Linux 目标：

@@ -230,6 +230,8 @@ Packaged production runtime must include all parts of the single encrypted conne
 
 `packages/main/scripts/sync-backend-runtime.cjs` recursively copies the adapter dependencies and separately preserves only the required SQLCipher native binding from the multi-cipher package.
 
+The native binding has two explicit build targets. Development Main and standalone Backend commands run Backend under the workspace system Node, so their startup lifecycles probe that runtime and rebuild only after an ABI mismatch. Packaging always rebuilds for the exact installed Electron version before runtime synchronization. Every successful rebuild must pass an in-memory database open/close probe under its target runtime; file existence alone is not accepted as compatibility evidence. On Windows, stop processes using the current binding before switching targets because the loaded native file is locked.
+
 Prisma Client, Prisma CLI, both adapter packages, and `better-sqlite3-multiple-ciphers` are pinned as one tested compatibility tuple. Upgrade them deliberately and rerun the encrypted reconnect, incorrect-key, plaintext-migration, and packaged-runtime tests on every supported platform before changing that tuple.
 
 To avoid backend startup failures such as `Prisma Client could not locate the Query Engine` on target machines, Linux packaging must include these Prisma Linux targets:

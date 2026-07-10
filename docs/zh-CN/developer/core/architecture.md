@@ -28,15 +28,22 @@ flowchart LR
 - 应用启动阶段并行拉起 BrowserWindow 与 backend 预热流程。
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
-- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
+- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。同一 lifecycle 会在系统 Node 运行时下探测 SQLCipher native binding，并且只在当前 ABI 不兼容时重建。
 - 开发身份由 `pnpm dev:profile`（`scripts/dev-profile.mjs`）管理。当选中身份或通过 `COSMOSH_DEV_PROFILE` 指定身份时，Main 会在窗口/backend 启动前应用该身份，使 Electron `userData`、SQLite 文件和 backend 专用 secret 存储都落到 `.cosmosh/dev-profiles/<name>/` 下。
-- Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
+- `packages/main/scripts/dev-main.cjs` 在 workspace 系统 Node 下运行，编译 Main，并通过仅开发态使用的 `COSMOSH_DEV_NODE_EXEC_PATH` 交接 canonical Node executable 给 Electron。
+- Main 使用已校验的系统 Node executable 与 `tsx` 直接拉起开发态 backend，从而同时避免 package script 遗留孤儿进程以及 Electron/Node native ABI 冲突。打包 Main 仍使用 Electron 的 `process.execPath` 配合 `ELECTRON_RUN_AS_NODE=1` 启动已同步的 backend。
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
   - 用于后端 i18n 响应的 locale header。
+
+#### 开发态 Backend 运行时边界
+
+开发启动器负责交接系统 Node executable，因为它在 Electron 替换 `process.execPath` 之前运行。Main 仅接受能够解析到 canonical regular file 的绝对路径；在适用平台上要求 POSIX executable bits，拒绝 Electron host executable 本身，并在启动 Backend 前从子进程环境中移除交接变量。该值只属于开发编排元数据，不属于 Backend 环境契约。
+
+开发与打包有意使用不同的 native target。Main 与 standalone Backend 的 `predev` lifecycle，以及 Backend 的 `predb:init`，都会调用 `ensure-sqlcipher-native.cjs --runtime=node --if-needed`；打包则无参数调用同一脚本，强制执行 Electron target 的 release rebuild。两个路径都会在构建后使用所选运行时打开并关闭内存数据库；探针失败会在 Backend 启动或 packaged runtime 同步前中止。在 Windows 上，切换 target 前必须关闭所有正在使用共享 binding 的 Cosmosh 进程，因为已加载的 `.node` 文件无法被替换。
 
 ### Backend 进程 (`packages/backend/src/index.ts`)
 

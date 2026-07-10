@@ -53,7 +53,7 @@ For package-local details, see `packages/api-contract/README.md`.
 
 ### Prerequisites
 
-- Node.js >= 18.0.0
+- Node.js >= 20.19.0
 - pnpm >= 8.0.0
 
 ### Installation
@@ -66,13 +66,21 @@ pnpm install
 ### Development
 
 ```bash
-# Start all services in development mode
-pnpm dev              # Start Electron app
-pnpm dev:renderer     # Start Vite dev server (port 2767)
-pnpm dev:backend      # Start Hono backend (port 3000)
+# Terminal 1: start the Vite renderer and wait until it is ready
+pnpm dev:renderer
+
+# Terminal 2: compile and start Electron plus its managed backend child
+pnpm dev:main
+
+# Optional: run only the standalone backend without Electron
+pnpm dev:backend
 ```
 
 Optional override: set `COSMOSH_RENDERER_DEV_PORT` before starting dev services.
+
+`pnpm dev:main` validates that the SQLCipher native addon matches the system Node.js runtime used by the
+development backend and rebuilds it only when necessary. Use `pnpm dev:main:fresh` instead when the Electron
+profile, database, and backend storage must start from an isolated fresh-install state.
 
 ### Build
 
