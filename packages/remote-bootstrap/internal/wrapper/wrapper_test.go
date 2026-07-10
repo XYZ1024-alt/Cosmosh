@@ -168,6 +168,33 @@ func TestGenerateRejectsUnsupportedPlatform(t *testing.T) {
 	}
 }
 
+func TestGenerateAcceptsManifestVersionGrammar(t *testing.T) {
+	config := validConfig("sh")
+	config.Version = "dev-ABC_123+meta.4"
+
+	if _, err := Generate(config); err != nil {
+		t.Fatalf("expected valid version to be accepted: %v", err)
+	}
+}
+
+func TestGenerateRejectsInvalidVersion(t *testing.T) {
+	for _, version := range []string{
+		`1.2"3`,
+		"1.2\n3",
+		"1.2 3",
+		"1.2/3",
+		"1.2$(touch marker)",
+	} {
+		config := validConfig("sh")
+		config.Version = version
+
+		_, err := Generate(config)
+		if err == nil {
+			t.Fatalf("expected version %q to be rejected", version)
+		}
+	}
+}
+
 func TestGenerateRejectsInvalidAssetURL(t *testing.T) {
 	for _, assetURL := range []string{
 		"http://downloads.example.test/cosmosh-bootstrap",

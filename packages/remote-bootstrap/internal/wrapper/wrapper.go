@@ -38,6 +38,7 @@ var supportedShells = map[string]bool{
 }
 
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var versionPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
 
 const posixTemplate = `set -eu
 cosmosh_shell={{.ShellLiteral}}
@@ -167,6 +168,10 @@ func normalize(config Config) (Config, error) {
 
 	if config.Version == "" || config.AssetURL == "" || config.HelperPayloadB64 == "" {
 		return Config{}, errors.New("version, asset url, and helper payload are required")
+	}
+
+	if !versionPattern.MatchString(config.Version) {
+		return Config{}, errors.New("version must contain only letters, digits, dots, underscores, plus signs, or hyphens")
 	}
 
 	if !isHTTPSURL(config.AssetURL) {

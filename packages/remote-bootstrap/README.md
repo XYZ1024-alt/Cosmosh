@@ -215,9 +215,10 @@ Common failure codes include:
 
 ## Security Boundaries
 
+- Manifest versions must match `^[A-Za-z0-9._+-]+$` before wrapper source is rendered.
 - Manifest asset URLs must use HTTPS.
 - Manifest fields are treated as quoted data, never shell source.
-- Wrapper tests include adversarial URL cases with shell metacharacters and command substitutions.
+- Wrapper tests include adversarial version and URL cases with line breaks, shell metacharacters, and command substitutions.
 - Temporary files are created under `${TMPDIR:-/tmp}` with `mktemp`.
 - `umask 077` and `0700`/`0600` file modes keep bootstrap files user-private.
 - Temporary wrapper/download directories are cleaned up on exit, interrupt, and termination signals.
