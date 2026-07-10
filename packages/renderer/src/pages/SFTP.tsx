@@ -455,6 +455,7 @@ const SFTP: React.FC<SFTPProps> = ({
     resetSelection,
     selectSingleEntry,
     selectEntryWithModifiers,
+    selectEntriesByPaths,
     pruneSelectionToEntries,
   } = useSftpSelectionModel({
     visibleEntries,
@@ -2954,6 +2955,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onEntryDragStart={handleSftpEntryDragStart}
             onEntryOpen={handleEntryOpen}
             onEntrySelect={handleEntrySelect}
+            onEntriesMarqueeSelect={selectEntriesByPaths}
             onFileNavigationRowKeyDown={handleFileNavigationRowKeyDown}
             onInlineEditInputBlur={handleInlineEditInputBlur}
             onInlineEditMenuCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}
