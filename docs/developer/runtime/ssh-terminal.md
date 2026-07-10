@@ -106,6 +106,8 @@ Locale behavior:
 - `history`: history-only snapshot push for immediate UI sync.
 - `completion-response`: ranked completion candidates for the active command token.
 - `bootstrap-status`: remote bootstrap probe/download/install status from the backend side-channel installer.
+- `remote-enhancement-runtime-status`: backend-owned `pending`, `active`, or `disabled` trust state plus the validated helper contract.
+- `remote-shell-event`: helper shell state forwarded only through the active runtime gate.
 - `pong`: ping response.
 - `error`: protocol/runtime error.
 - `exit`: terminal session closed with reason.
@@ -333,12 +335,12 @@ When SSH session behavior is wrong, verify in order:
 
 ## 8. Remote Enhancements Runtime
 
-Remote Enhancements are the optional runtime layer for host-aware SSH features such as OS/distribution detection, future SFTP helpers, and command shortcut/completion support. v1 only proves and maintains the remote bootstrap installation path; later capabilities should attach behind the same gates and reuse the same user-scoped remote helper boundary.
+Remote Enhancements are the optional runtime layer for host-aware SSH features such as OS/distribution detection, future SFTP helpers, and command shortcut/completion support. The current phase maintains a versioned helper contract and exposes bounded cwd/command-lifecycle events; later capabilities must attach behind the same gates and reuse the same user-scoped remote helper boundary.
 
 ### 8.1 Ownership and Gates
 
-- `packages/backend/src/remote-bootstrap/service.ts` owns runtime orchestration. It fetches the manifest, probes the remote host, injects a shell wrapper, parses JSON-line statuses, and writes audit events.
-- `packages/remote-bootstrap` owns the Go installer and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
+- `packages/backend/src/remote-bootstrap/service.ts` owns pre-shell orchestration. It fetches the manifest, probes the remote host, reads installed status, injects a download wrapper only when required, verifies the result, returns a trusted runtime contract, parses JSON-line statuses, and writes audit events.
+- `packages/remote-bootstrap` owns the Go installer, helper generator, OSC protocol/capability declarations, installed-state validator, and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
 - The feature is enabled only when Settings `remoteEnhancementsEnabled` is true and the SSH server record `remoteEnhancementsEnabled` is true. Both defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
 - When either gate is disabled, backend does not run any remote command, ignores runtime shell OSC events from previously installed helpers, and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
 - Backend requires a manifest URL to load the bootstrap manifest. `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is the first-class override. Unpackaged development runs default to the rolling `remote-bootstrap-dev` manifest so local development can exercise Remote Enhancements without per-shell setup. Packaged CI builds may also carry `remote-bootstrap/manifest-url.json`, generated before app packaging, so installers can discover the GitHub-hosted manifest without a user-provided environment variable. Tagged releases point at the same versioned GitHub Release as the app installers; `main` push builds point at `remote-bootstrap-dev`; pushed branches whose name contains `remote-bootstrap` and manual workflow dispatch runs can point at branch-scoped temporary prereleases such as `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`. Ordinary PR and feature-branch builds do not package a default URL. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
@@ -364,21 +366,33 @@ sequenceDiagram
   participant REM as Remote SSH Host
   participant REL as HTTPS Manifest/Asset Host
 
-  UI->>SSH: Attach /ws/ssh/{sessionId}
-  SSH-->>UI: ready + buffered terminal output
-  SSH->>BOOT: startRemoteBootstrap(session)
+  UI->>SSH: Create SSH session
+  SSH->>REM: Authenticate SSH transport
+  SSH->>BOOT: Ensure runtime before opening PTY
   BOOT->>REL: Fetch manifest URL
   BOOT->>REM: Probe uname, arch, and shell by bounded exec
-  BOOT->>REM: Run injected launcher/wrapper by bounded exec
-  REM->>REL: Download matching bootstrap binary
-  REM->>REM: Verify checksum and install user-scoped files
-  REM-->>BOOT: bootstrap-status JSON lines
-  BOOT-->>UI: bootstrap-status WS events
+  BOOT->>REM: Run installed binary status
+  alt Installed contract is current
+    BOOT-->>SSH: Current contract, no download
+  else Missing, legacy, or stale
+    BOOT->>REM: Run injected launcher/wrapper by bounded exec
+    REM->>REL: Download matching bootstrap binary
+    REM->>REM: Verify checksum and install user-scoped files
+    BOOT->>REM: Re-run installed binary status
+    BOOT-->>SSH: Validated installed contract
+  end
+  SSH->>REM: Open interactive PTY
+  REM-->>SSH: integration-ready OSC with matching contract
+  UI->>SSH: Attach /ws/ssh/{sessionId}
+  SSH-->>UI: ready + bootstrap/runtime status + buffered output
 ```
 
-- Bootstrap starts after the first WebSocket attach and only once per SSH session.
-- The side-channel uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
-- Renderer stores the latest `bootstrap-status` plus a per-session Remote Enhancements debug event history. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug`; selecting it opens a fixed top-right terminal overlay with the latest bootstrap phase/state/code/message/version plus selectable raw JSON payloads for every received bootstrap status and remote shell event in the current session attempt.
+- Bootstrap ensure runs once after SSH authentication and before `client.shell(...)`. A newly installed profile hook therefore applies to the same first interactive shell; users do not need to reconnect for helper startup.
+- Backend checks the installed binary before downloading. It skips download only when manifest version and asset SHA-256, supported protocol, helper contents, and profile hook are current. Missing fields from an older binary are incompatible and trigger reinstall. A second status read validates the installation before PTY creation.
+- Each side-channel command uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. The entire optional pre-shell ensure has a stricter 15-second connection budget. When that shared deadline expires, backend aborts the manifest request and active exec channel, emits `BOOTSTRAP_ENSURE_TIMEOUT`, and immediately continues to ordinary PTY creation. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
+- Ensure failure or timeout never turns a valid SSH authentication into a failed shell session. Backend opens the PTY with runtime state `disabled`, reports the failure, and ignores all helper-derived events for that session.
+- Go `install`/`status` output establishes installation identity and trust state; it does not directly provide cwd, input state, or command lifecycle data. Live shell data comes later from the Go-generated helper over OSC 777 and remains subject to the runtime gate.
+- Renderer stores the latest `bootstrap-status` and latest `remote-enhancement-runtime-status` independently from the bounded 200-entry Remote Enhancements debug history. History eviction therefore cannot erase the current runtime state. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug`; selecting it opens a fixed top-right terminal overlay with bootstrap status, runtime state, helper/protocol/capability identity, and selectable raw JSON for bootstrap, runtime, and trusted shell events.
 - The debug overlay records status/event payloads only. It does not record terminal `input`, terminal `output`, passwords, private key material, or full screen output.
 - Terminal `ready`, `output`, telemetry, history, completion, and shell-state messages remain independent from bootstrap progress.
 
@@ -393,7 +407,8 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend parsing rules:
 
 - `SshSessionService` streams SSH output through `RemoteShellEventOscParser` before writing to xterm.
-- Valid Cosmosh OSC sequences are stripped from visible terminal output, decoded, normalized, and forwarded to renderer as `remote-shell-event` only while Remote Enhancements are enabled for the live session.
+- Cosmosh OSC sequences are stripped from visible terminal output and decoded, but events are forwarded and applied only after the backend runtime gate becomes `active`.
+- The gate starts `pending` only after pre-shell status validation. It becomes `active` on a matching `integration-ready`. If no valid handshake arrives within 10 seconds, it changes to `disabled` with `HELPER_HANDSHAKE_TIMEOUT`; any shell, helper-version, protocol-version, or capability mismatch also changes it to `disabled` and clears helper-derived state.
 - Non-Cosmosh OSC sequences and ordinary ANSI output remain visible and unchanged.
 - Invalid JSON, invalid event shapes, and payloads over 8 KiB are dropped without crashing the session.
 - Split SSH chunks are supported; incomplete OSC data is buffered until a BEL or ST terminator arrives.
@@ -411,6 +426,9 @@ type RemoteShellEventMessage = {
     | 'command-end'
     | 'foreground-command';
   shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+  helperVersion: string;
+  protocolVersion: number;
+  capabilities: string[];
   cwd?: string;
   command?: string;
   exitCode?: number;
@@ -431,6 +449,7 @@ Current first-phase helper behavior:
 
 Backend state model:
 
+- Each session owns an explicit `pending`, `active`, or `disabled` enhancement runtime state, the contract validated before PTY creation, and a handshake timer that is cleared on activation, disablement, or session disposal.
 - Each `SshLiveSession` keeps `remoteShellReady`, `remoteShellCwd`, `remoteShellForegroundCommand`, `lastRemoteCommand`, `lastExitCode`, and `lastCommandDurationMs`.
 - `remoteShellCwd` is the preferred path-completion cwd source; existing exec probes and renderer hints remain fallback paths.
 - When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`; this covers short commands, long-running foreground processes, and unknown TUI/REPL programs without maintaining a command whitelist.
@@ -499,7 +518,7 @@ Installed files stay under the remote user's scope:
 | Sh/Ash hook | `~/.profile` inside a Cosmosh marker block |
 | Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` or `~/.config/fish/conf.d/cosmosh.fish` |
 
-The installer is idempotent. It emits `skipped` when the installed version, binary, helper, and shell hook are current. If the version and files are current but the profile hook is missing, it repairs the hook instead of skipping. The version marker is written only after file installation and profile updates succeed.
+The installer is idempotent. It emits `skipped` only when the installed version, exact binary contents, exact Go-generated helper contents, and shell hook are current. If the profile hook or helper was removed or edited, it repairs the installation instead of skipping. The version marker is written only after file installation and profile updates succeed. `status` reports `installed`, `version`, `binarySha256`, `protocolVersion`, `capabilities`, `helperCurrent`, `profileCurrent`, and the resolved paths.
 
 ### 8.5 Security and Failure Model
 
@@ -508,6 +527,7 @@ The installer is idempotent. It emits `skipped` when the installed version, bina
 - Missing `mktemp`, `base64`, downloader, hash tool, or target shell remains an explicit `bootstrap-status` failure rather than a silent fallback.
 - The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
 - Bootstrap audit metadata is status-only and must stay secret-free. SSH credentials, private keys, and terminal input are not part of this contract.
+- Bootstrap/settings/manifest/install failures fail closed for enhancement data but fail open for the ordinary authenticated SSH shell. Previously installed helpers cannot be consumed unless the current ensure succeeded and the live helper handshake matches it.
 
 Common status codes:
 
@@ -524,6 +544,10 @@ Common status codes:
 | `DOWNLOADER_NOT_FOUND` | Remote host has neither `curl` nor `wget`. |
 | `HASH_TOOL_NOT_FOUND` | Remote host has neither `sha256sum` nor `shasum`. |
 | `CHECKSUM_MISMATCH` | Downloaded binary did not match the manifest SHA-256. |
+| `BOOTSTRAP_ENSURE_TIMEOUT` | The complete optional pre-shell ensure exceeded 15 seconds; active side-channel work was cancelled and ordinary PTY creation continued. |
+| `INSTALLATION_NOT_CURRENT` | Post-install status did not match the selected version and supported runtime contract. |
+| `HELPER_HANDSHAKE_TIMEOUT` | No valid `integration-ready` event arrived within 10 seconds after PTY creation; runtime helper data was disabled. |
+| `HELPER_CONTRACT_MISMATCH` | Live `integration-ready` or a later helper event did not match the pre-shell contract; runtime data was disabled. |
 | `FILE_INSTALL_FAILED` | Installer could not create or copy user-scoped files. |
 | `PROFILE_UPDATE_FAILED` | Installer could not update the target shell profile hook. |
 | `VERSION_WRITE_FAILED` | Installer could not write the final version marker. |

@@ -403,6 +403,7 @@ const SSH: React.FC<SSHProps> = ({
       connectionError,
       telemetryState,
       remoteBootstrapStatus,
+      remoteEnhancementRuntimeStatus,
       remoteEnhancementsDebugEvents,
       hostFingerprintPrompt,
       canSplitTerminal,
@@ -1466,6 +1467,7 @@ const SSH: React.FC<SSHProps> = ({
         {remoteEnhancementsDebugPanelOpen ? (
           <RemoteEnhancementsDebugPanel
             latestStatus={remoteBootstrapStatus}
+            runtimeStatus={remoteEnhancementRuntimeStatus}
             events={remoteEnhancementsDebugEvents}
             formatTime={formatTime}
             onClose={() => setRemoteEnhancementsDebugPanelOpen(false)}

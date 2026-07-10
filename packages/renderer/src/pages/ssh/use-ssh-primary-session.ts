@@ -15,6 +15,7 @@ import {
   toResolvedTargetSnapshot,
 } from './ssh-target';
 import type {
+  RemoteEnhancementRuntimeStatus,
   RemoteEnhancementsDebugEvent,
   ResolvedTerminalTarget,
   ServerInboundMessage,
@@ -35,6 +36,28 @@ import {
   type TerminalWebLinksSettings,
 } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
+
+const REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT = 200;
+
+/**
+ * Appends one diagnostic event while bounding renderer memory and rerender cost.
+ *
+ * @param previous Existing session-attempt event history.
+ * @param payload Newly received bootstrap, runtime, or helper event.
+ * @returns Bounded event history with the latest payload appended.
+ */
+const appendRemoteEnhancementsDebugEvent = (
+  previous: RemoteEnhancementsDebugEvent[],
+  payload: RemoteEnhancementsDebugEvent['payload'],
+): RemoteEnhancementsDebugEvent[] => {
+  return [
+    ...previous.slice(-(REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT - 1)),
+    {
+      receivedAt: Date.now(),
+      payload,
+    },
+  ];
+};
 
 type UseSshPrimarySessionParams = {
   tabId: string;
@@ -74,6 +97,7 @@ type UseSshPrimarySessionParams = {
   setRemoteBootstrapStatus: React.Dispatch<
     React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
   >;
+  setRemoteEnhancementRuntimeStatus: React.Dispatch<React.SetStateAction<RemoteEnhancementRuntimeStatus | null>>;
   setRemoteEnhancementsDebugEvents: React.Dispatch<React.SetStateAction<RemoteEnhancementsDebugEvent[]>>;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
@@ -139,6 +163,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
+    setRemoteEnhancementRuntimeStatus,
     setRemoteEnhancementsDebugEvents,
     requestHostFingerprintTrust,
     setActivePane,
@@ -384,24 +409,18 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (payload.type === 'bootstrap-status') {
           setRemoteBootstrapStatus(payload);
-          setRemoteEnhancementsDebugEvents((previous) => [
-            ...previous,
-            {
-              receivedAt: Date.now(),
-              payload,
-            },
-          ]);
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
+          return;
+        }
+
+        if (payload.type === 'remote-enhancement-runtime-status') {
+          setRemoteEnhancementRuntimeStatus(payload);
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
           return;
         }
 
         if (payload.type === 'remote-shell-event') {
-          setRemoteEnhancementsDebugEvents((previous) => [
-            ...previous,
-            {
-              receivedAt: Date.now(),
-              payload,
-            },
-          ]);
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
           return;
         }
 
@@ -430,6 +449,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         setConnectionError('');
         setTelemetryState(DEFAULT_TELEMETRY_STATE);
         setRemoteBootstrapStatus(null);
+        setRemoteEnhancementRuntimeStatus(null);
         setRemoteEnhancementsDebugEvents([]);
 
         const activeIntent = connectionIntentRef.current;
@@ -713,6 +733,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setActivePane,
     setConnectionError,
     setConnectionState,
+    setRemoteEnhancementRuntimeStatus,
     setRemoteEnhancementsDebugEvents,
     setRemoteBootstrapStatus,
     setTelemetryState,

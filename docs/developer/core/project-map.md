@@ -77,7 +77,7 @@ flowchart TB
   - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
-  - `src/remote-bootstrap`: Remote Enhancements bootstrap orchestration for live SSH sessions. It loads the deployment manifest, probes the remote platform through bounded side-channel `ssh2 exec`, injects the shell wrapper, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
+  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It loads the deployment manifest, probes the remote platform, validates the installed Go binary's runtime status, injects the download wrapper only for missing/stale installations, returns a trusted helper contract to `SshSessionService`, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
@@ -110,9 +110,9 @@ Go source for the user-scoped remote installer used by Remote Enhancements. This
 
 - `README.md`: module guide covering purpose, runtime ownership, manifest contract, installed paths, status codes, security boundaries, and test/build commands.
 - `cmd/cosmosh-wrappergen`: generates shell-specific bootstrap wrappers for `bash`, `zsh`, `fish`, `ash`, and `sh`.
-- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and thin shell helper into user-scoped remote directories.
+- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and Go-generated shell helper into user-scoped remote directories, or reports the validated installed runtime contract.
 - `internal/wrapper`: validates manifest-derived wrapper inputs and renders POSIX/fish shell source with shell-safe quoting.
-- `internal/install`: performs idempotent user-level installation, shell profile hook repair, version marker writes, and line-delimited `bootstrap-status` output.
+- `internal/install`: owns versioned helper generation, OSC protocol/capability declarations, exact helper/binary validation, idempotent user-level installation, profile-hook repair, installed status reporting, version marker writes, and line-delimited `bootstrap-status` output.
 
 ## 3. Feature Placement Rules
 

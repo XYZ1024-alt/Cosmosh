@@ -15,6 +15,9 @@ const REMOTE_SHELL_EVENTS = new Set([
 ] as const);
 
 const REMOTE_SHELL_NAMES = new Set(['bash', 'zsh', 'fish', 'sh', 'ash'] as const);
+const REMOTE_SHELL_HELPER_VERSION_PATTERN = /^[A-Za-z0-9._+-]+$/;
+const REMOTE_SHELL_CAPABILITY_PATTERN = /^[a-z0-9-]+$/;
+const REMOTE_SHELL_CAPABILITY_MAX_COUNT = 32;
 
 export type RemoteShellEventName =
   | 'integration-ready'
@@ -30,6 +33,9 @@ export type RemoteShellEventMessage = {
   type: 'remote-shell-event';
   event: RemoteShellEventName;
   shell: RemoteShellName;
+  helperVersion: string;
+  protocolVersion: number;
+  capabilities: string[];
   cwd?: string;
   command?: string;
   exitCode?: number;
@@ -260,6 +266,8 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
 
   const event = value.event;
   const shell = value.shell;
+  const helperVersion = value.helperVersion;
+  const protocolVersion = value.protocolVersion;
   const timestamp = value.timestamp;
 
   if (typeof event !== 'string' || !REMOTE_SHELL_EVENTS.has(event as RemoteShellEventName)) {
@@ -267,6 +275,21 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
   }
 
   if (typeof shell !== 'string' || !REMOTE_SHELL_NAMES.has(shell as RemoteShellName)) {
+    return null;
+  }
+
+  if (
+    typeof helperVersion !== 'string' ||
+    !REMOTE_SHELL_HELPER_VERSION_PATTERN.test(helperVersion) ||
+    typeof protocolVersion !== 'number' ||
+    !Number.isInteger(protocolVersion) ||
+    protocolVersion < 1
+  ) {
+    return null;
+  }
+
+  const capabilities = normalizeCapabilities(value.capabilities);
+  if (!capabilities) {
     return null;
   }
 
@@ -278,6 +301,9 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
     type: 'remote-shell-event',
     event: event as RemoteShellEventName,
     shell: shell as RemoteShellName,
+    helperVersion,
+    protocolVersion,
+    capabilities,
     timestamp,
   };
 
@@ -302,6 +328,32 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
   }
 
   return message;
+};
+
+/**
+ * Validates a bounded, unique helper capability list.
+ *
+ * @param value Unknown capabilities payload.
+ * @returns Normalized capabilities, or null when malformed.
+ */
+const normalizeCapabilities = (value: unknown): string[] | null => {
+  if (!Array.isArray(value) || value.length === 0 || value.length > REMOTE_SHELL_CAPABILITY_MAX_COUNT) {
+    return null;
+  }
+
+  const capabilities: string[] = [];
+  for (const capability of value) {
+    if (
+      typeof capability !== 'string' ||
+      !REMOTE_SHELL_CAPABILITY_PATTERN.test(capability) ||
+      capabilities.includes(capability)
+    ) {
+      return null;
+    }
+    capabilities.push(capability);
+  }
+
+  return capabilities;
 };
 
 /**

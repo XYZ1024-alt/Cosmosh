@@ -12,7 +12,7 @@ export const DEFAULT_SSH_EXEC_MAX_OUTPUT_BYTES = 1024 * 1024;
  *
  * @param client Connected ssh2 client.
  * @param command Remote command string.
- * @param options Optional timeout and stdout byte limits.
+ * @param options Optional timeout, stdout byte limits, and cancellation signal.
  * @returns UTF-8 stdout on success, otherwise null.
  */
 export const executeBoundedSshCommand = async (
@@ -21,16 +21,23 @@ export const executeBoundedSshCommand = async (
   options?: {
     timeoutMs?: number;
     maxOutputBytes?: number;
+    signal?: AbortSignal;
   },
 ): Promise<string | null> => {
   const timeoutMs = Math.max(1, options?.timeoutMs ?? DEFAULT_SSH_EXEC_TIMEOUT_MS);
   const maxOutputBytes = Math.max(1, options?.maxOutputBytes ?? DEFAULT_SSH_EXEC_MAX_OUTPUT_BYTES);
+  const signal = options?.signal;
+
+  if (signal?.aborted) {
+    return null;
+  }
 
   return await new Promise<string | null>((resolve) => {
     let channel: ClientChannel | null = null;
     let output = '';
     let outputBytes = 0;
     let settled = false;
+    let timeoutId: NodeJS.Timeout | null = null;
 
     const finish = (result: string | null, closeChannel = false): void => {
       if (settled) {
@@ -38,7 +45,11 @@ export const executeBoundedSshCommand = async (
       }
 
       settled = true;
-      clearTimeout(timeoutId);
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      signal?.removeEventListener('abort', handleAbort);
 
       if (closeChannel && channel) {
         try {
@@ -51,9 +62,19 @@ export const executeBoundedSshCommand = async (
       resolve(result);
     };
 
-    const timeoutId = setTimeout(() => {
+    const handleAbort = (): void => {
+      finish(null, true);
+    };
+
+    timeoutId = setTimeout(() => {
       finish(null, true);
     }, timeoutMs);
+    signal?.addEventListener('abort', handleAbort, { once: true });
+
+    if (signal?.aborted) {
+      handleAbort();
+      return;
+    }
 
     try {
       client.exec(command, (error, openedChannel) => {

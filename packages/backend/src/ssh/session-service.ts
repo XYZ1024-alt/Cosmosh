@@ -9,6 +9,8 @@ import type { AuditEventInput } from '../audit/types.js';
 import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import {
   REMOTE_BOOTSTRAP_EXEC_OPTIONS,
+  type RemoteBootstrapResult,
+  type RemoteBootstrapRuntimeContract,
   RemoteBootstrapService,
   type RemoteBootstrapStatus,
 } from '../remote-bootstrap/service.js';
@@ -112,6 +114,7 @@ type OpenShellResult =
       stream: ClientChannel;
       completionSecretValue: string | null;
       proxyMetadata: SshProxyMetadata;
+      remoteBootstrapResult: RemoteBootstrapResult;
     }
   | {
       type: 'host-untrusted';
@@ -172,7 +175,20 @@ type ServerOutboundMessage =
       }>;
     }
   | RemoteShellEventMessage
-  | RemoteBootstrapStatus;
+  | RemoteBootstrapStatus
+  | RemoteEnhancementRuntimeStatus;
+
+type RemoteEnhancementRuntimeState = 'pending' | 'active' | 'disabled';
+
+type RemoteEnhancementRuntimeStatus = {
+  type: 'remote-enhancement-runtime-status';
+  state: RemoteEnhancementRuntimeState;
+  helperVersion?: string;
+  protocolVersion?: number;
+  capabilities?: string[];
+  code?: string;
+  message?: string;
+};
 
 type SshLiveSession = TerminalManagedSessionBase & {
   serverId: string;
@@ -208,9 +224,12 @@ type SshLiveSession = TerminalManagedSessionBase & {
   lastRemoteCommand: string | null;
   lastExitCode: number | null;
   lastCommandDurationMs: number | null;
-  remoteBootstrapStarted: boolean;
-  remoteEnhancementsEnabled: boolean;
-  remoteEnhancementsRuntimeEnabled: boolean;
+  pendingRemoteBootstrapStatuses: RemoteBootstrapStatus[];
+  remoteEnhancementsRuntimeState: RemoteEnhancementRuntimeState;
+  remoteEnhancementsRuntimeContract: RemoteBootstrapRuntimeContract | null;
+  remoteEnhancementsRuntimeCode: string | null;
+  remoteEnhancementsRuntimeMessage: string | null;
+  remoteEnhancementsHandshakeTimeout: NodeJS.Timeout | null;
 };
 
 type ParsedRemoteTelemetry = {
@@ -235,6 +254,86 @@ const REMOTE_COMPLETION_CWD_PROBE_COMMAND = 'sh -lc \'printf "%s\\n%s\\n" "$PWD"
 const SSH_COMPLETION_EXEC_TIMEOUT_MS = 3_000;
 const SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS = 1_200;
 const SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT = 128;
+const SSH_REMOTE_BOOTSTRAP_ENSURE_TIMEOUT_MS = 15_000;
+const SSH_REMOTE_ENHANCEMENT_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/** Error used to distinguish the optional pre-shell budget from bootstrap failures. */
+class RemoteBootstrapEnsureTimeoutError extends Error {
+  public constructor() {
+    super('remote enhancement setup exceeded the 15 second connection budget');
+    this.name = 'RemoteBootstrapEnsureTimeoutError';
+  }
+}
+
+/**
+ * Awaits an operation while allowing the caller to stop waiting at a shared deadline.
+ *
+ * The underlying operation still receives the same signal and is expected to cancel its
+ * own I/O. The explicit race also contains dependencies that do not support cancellation.
+ *
+ * @param operation In-flight asynchronous operation.
+ * @param signal Signal that owns the shared deadline.
+ * @returns Operation result when it completes before cancellation.
+ */
+const awaitWithAbortSignal = async <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
+  if (signal.aborted) {
+    throw signal.reason;
+  }
+
+  return await new Promise<T>((resolve, reject) => {
+    const handleAbort = (): void => {
+      signal.removeEventListener('abort', handleAbort);
+      reject(signal.reason);
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener('abort', handleAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', handleAbort);
+        reject(error);
+      },
+    );
+  });
+};
+
+/**
+ * Builds the shared status emitted when either enhancement feature gate is off.
+ *
+ * @returns Explicit skipped bootstrap status.
+ */
+const remoteBootstrapDisabledStatus = (): RemoteBootstrapStatus => {
+  return {
+    type: 'bootstrap-status',
+    phase: 'probe',
+    state: 'skipped',
+    code: 'REMOTE_ENHANCEMENTS_DISABLED',
+    message: 'remote enhancements are disabled',
+  };
+};
+
+/**
+ * Verifies that an OSC event came from the exact helper contract validated pre-shell.
+ *
+ * @param event Parsed helper event.
+ * @param contract Bootstrap-validated runtime identity.
+ * @returns True when shell, version, protocol, and capabilities all match.
+ */
+const remoteShellEventMatchesContract = (
+  event: RemoteShellEventMessage,
+  contract: RemoteBootstrapRuntimeContract,
+): boolean => {
+  return (
+    event.shell === contract.shell &&
+    event.helperVersion === contract.helperVersion &&
+    event.protocolVersion === contract.protocolVersion &&
+    event.capabilities.length === contract.capabilities.length &&
+    event.capabilities.every((capability) => contract.capabilities.includes(capability))
+  );
+};
 
 /**
  * SSH session orchestrator:
@@ -309,6 +408,8 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
     const enableSshCompression = input.enableSshCompression ?? server.enableSshCompression;
     const remoteEnhancementsEnabled = input.remoteEnhancementsEnabled ?? server.remoteEnhancementsEnabled;
+    const sessionId = randomUUID();
+    const pendingRemoteBootstrapStatuses: RemoteBootstrapStatus[] = [];
     const pendingOutput: string[] = [];
     let pendingOutputBytes = 0;
     let pendingOutputDropCount = 0;
@@ -341,6 +442,15 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       systemProxyRules: input.systemProxyRules,
       trustedFingerprintSet,
       t: i18n.t,
+      beforeShellOpen: async (client) =>
+        await this.ensureRemoteEnhancementsBeforeShell({
+          client,
+          serverId: server.id,
+          sessionId,
+          requestId: input.requestId,
+          serverEnabled: remoteEnhancementsEnabled,
+          sendStatus: (status) => pendingRemoteBootstrapStatuses.push(status),
+        }),
       onOutput: (data) => {
         if (liveSession) {
           this.handleShellOutput(liveSession, data);
@@ -424,7 +534,6 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       };
     }
 
-    const sessionId = randomUUID();
     const websocketToken = randomBytes(24).toString('hex');
 
     const attachTimeout = setTimeout(() => {
@@ -499,13 +608,21 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       lastRemoteCommand: null,
       lastExitCode: null,
       lastCommandDurationMs: null,
-      remoteBootstrapStarted: false,
-      remoteEnhancementsEnabled,
-      remoteEnhancementsRuntimeEnabled: false,
+      pendingRemoteBootstrapStatuses,
+      remoteEnhancementsRuntimeState: shellResult.remoteBootstrapResult.state === 'ready' ? 'pending' : 'disabled',
+      remoteEnhancementsRuntimeContract:
+        shellResult.remoteBootstrapResult.state === 'ready' ? shellResult.remoteBootstrapResult.contract : null,
+      remoteEnhancementsRuntimeCode:
+        shellResult.remoteBootstrapResult.state === 'disabled' ? shellResult.remoteBootstrapResult.code : null,
+      remoteEnhancementsRuntimeMessage:
+        shellResult.remoteBootstrapResult.state === 'disabled' ? shellResult.remoteBootstrapResult.message : null,
+      remoteEnhancementsHandshakeTimeout: null,
       t: i18n.t,
       socket: null,
       disposed: false,
     };
+
+    this.startRemoteEnhancementHandshakeTimeout(liveSession);
 
     const rawPendingOutput = [...pendingOutput];
     liveSession.pendingOutput = [];
@@ -639,12 +756,18 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   protected onSessionAttached(session: SshLiveSession): void {
     // Reattached clients must receive ready signal first, then buffered stream chunks in order.
     this.sendServerMessage(session, { type: 'ready' });
+    while (session.pendingRemoteBootstrapStatuses.length > 0) {
+      const status = session.pendingRemoteBootstrapStatuses.shift();
+      if (status) {
+        this.sendServerMessage(session, status);
+      }
+    }
+    this.sendRemoteEnhancementRuntimeStatus(session);
     this.flushPendingOutput(session, (data) => ({
       type: 'output',
       data,
     }));
     this.flushPendingRemoteShellEvents(session);
-    this.startRemoteBootstrap(session);
   }
 
   /**
@@ -697,8 +820,26 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * @returns Nothing.
    */
   private handleRemoteShellEvent(session: SshLiveSession, event: RemoteShellEventMessage): void {
-    if (!session.remoteEnhancementsRuntimeEnabled) {
+    if (session.remoteEnhancementsRuntimeState === 'disabled') {
       return;
+    }
+
+    const contract = session.remoteEnhancementsRuntimeContract;
+    if (!contract || !remoteShellEventMatchesContract(event, contract)) {
+      this.disableRemoteEnhancementsRuntime(session, 'HELPER_CONTRACT_MISMATCH', 'remote helper contract mismatch');
+      return;
+    }
+
+    if (session.remoteEnhancementsRuntimeState === 'pending') {
+      if (event.event !== 'integration-ready') {
+        return;
+      }
+
+      this.clearRemoteEnhancementHandshakeTimeout(session);
+      session.remoteEnhancementsRuntimeState = 'active';
+      session.remoteEnhancementsRuntimeCode = null;
+      session.remoteEnhancementsRuntimeMessage = null;
+      this.sendRemoteEnhancementRuntimeStatus(session);
     }
 
     this.applyRemoteShellEventState(session, event);
@@ -724,7 +865,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * @returns Nothing.
    */
   private flushPendingRemoteShellEvents(session: SshLiveSession): void {
-    if (!session.remoteEnhancementsRuntimeEnabled) {
+    if (session.remoteEnhancementsRuntimeState !== 'active') {
       session.pendingRemoteShellEvents = [];
       return;
     }
@@ -787,93 +928,201 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   }
 
   /**
-   * Starts the remote bootstrap flow once per SSH session using a side-channel exec command.
+   * Ensures the remote helper is current after SSH authentication and before PTY creation.
    *
-   * @param session Live SSH session that owns the client transport.
-   * @returns Nothing.
+   * Bootstrap failures intentionally return a disabled runtime contract so ordinary SSH
+   * can continue without accepting stale helper events.
+   *
+   * @param options Authenticated SSH client, feature gates, and status sink.
+   * @returns Ready contract or fail-closed disabled state.
    */
-  private startRemoteBootstrap(session: SshLiveSession): void {
-    if (session.remoteBootstrapStarted) {
-      return;
+  private async ensureRemoteEnhancementsBeforeShell(options: {
+    client: Client;
+    serverId: string;
+    sessionId: string;
+    requestId?: string;
+    serverEnabled: boolean;
+    sendStatus: (status: RemoteBootstrapStatus) => void;
+    ensureTimeoutMs?: number;
+  }): Promise<RemoteBootstrapResult> {
+    if (!options.serverEnabled) {
+      options.sendStatus(remoteBootstrapDisabledStatus());
+      return {
+        state: 'disabled',
+        code: 'REMOTE_ENHANCEMENTS_DISABLED',
+        message: 'remote enhancements are disabled',
+      };
     }
 
-    session.remoteBootstrapStarted = true;
-    void this.runRemoteBootstrapWhenEnabled(session);
-  }
+    const statusContext = {
+      serverId: options.serverId,
+      sessionId: options.sessionId,
+      requestId: options.requestId,
+      sendStatus: options.sendStatus,
+    };
+    const abortController = new AbortController();
+    const timeoutError = new RemoteBootstrapEnsureTimeoutError();
+    const ensureTimeout = setTimeout(
+      () => {
+        abortController.abort(timeoutError);
+      },
+      Math.max(1, options.ensureTimeoutMs ?? SSH_REMOTE_BOOTSTRAP_ENSURE_TIMEOUT_MS),
+    );
+    ensureTimeout.unref();
+    let stage: 'settings' | 'bootstrap' = 'settings';
 
-  /**
-   * Checks global/server Remote Enhancements gates before running side-channel bootstrap.
-   *
-   * @param session Live SSH session that owns the client transport.
-   * @returns Nothing.
-   */
-  private async runRemoteBootstrapWhenEnabled(session: SshLiveSession): Promise<void> {
-    if (!session.remoteEnhancementsEnabled) {
-      this.disableRemoteEnhancementsRuntime(session);
-      this.sendRemoteBootstrapSkipped(session);
-      return;
-    }
-
-    let remoteEnhancementsEnabled: boolean;
     try {
-      const settings = await readDefaultSettingsValues(this.getDbClient());
-      remoteEnhancementsEnabled = settings.remoteEnhancementsEnabled;
+      const settings = await awaitWithAbortSignal(
+        readDefaultSettingsValues(this.getDbClient()),
+        abortController.signal,
+      );
+      if (!settings.remoteEnhancementsEnabled) {
+        options.sendStatus(remoteBootstrapDisabledStatus());
+        return {
+          state: 'disabled',
+          code: 'REMOTE_ENHANCEMENTS_DISABLED',
+          message: 'remote enhancements are disabled',
+        };
+      }
+
+      stage = 'bootstrap';
+      return await awaitWithAbortSignal(
+        this.remoteBootstrapService.runForSession({
+          serverId: options.serverId,
+          sessionId: options.sessionId,
+          requestId: options.requestId,
+          executeCommand: async (command) =>
+            await executeBoundedSshCommand(options.client, command, {
+              ...REMOTE_BOOTSTRAP_EXEC_OPTIONS,
+              signal: abortController.signal,
+            }),
+          sendStatus: (status) => {
+            if (!abortController.signal.aborted) {
+              options.sendStatus(status);
+            }
+          },
+          signal: abortController.signal,
+        }),
+        abortController.signal,
+      );
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'failed to read settings';
-      this.sendServerMessage(session, {
+      if (error instanceof RemoteBootstrapEnsureTimeoutError || abortController.signal.aborted) {
+        this.remoteBootstrapService.reportStatus(statusContext, {
+          type: 'bootstrap-status',
+          phase: 'install',
+          state: 'failed',
+          code: 'BOOTSTRAP_ENSURE_TIMEOUT',
+          message: timeoutError.message,
+        });
+        return {
+          state: 'disabled',
+          code: 'BOOTSTRAP_ENSURE_TIMEOUT',
+          message: timeoutError.message,
+        };
+      }
+
+      const isSettingsFailure = stage === 'settings';
+      const message =
+        error instanceof Error
+          ? error.message
+          : isSettingsFailure
+            ? 'failed to read settings'
+            : 'remote bootstrap failed';
+      const code = isSettingsFailure ? 'SETTINGS_READ_FAILED' : 'BOOTSTRAP_UNEXPECTED_FAILURE';
+      this.remoteBootstrapService.reportStatus(statusContext, {
         type: 'bootstrap-status',
-        phase: 'probe',
+        phase: isSettingsFailure ? 'probe' : 'install',
         state: 'failed',
-        code: 'SETTINGS_READ_FAILED',
+        code,
         message,
       });
-      return;
+      return { state: 'disabled', code, message };
+    } finally {
+      clearTimeout(ensureTimeout);
     }
-
-    if (!remoteEnhancementsEnabled) {
-      this.disableRemoteEnhancementsRuntime(session);
-      this.sendRemoteBootstrapSkipped(session);
-      return;
-    }
-
-    session.remoteEnhancementsRuntimeEnabled = true;
-
-    void this.remoteBootstrapService.runForSession({
-      serverId: session.serverId,
-      sessionId: session.sessionId,
-      requestId: session.requestId,
-      executeCommand: async (command) =>
-        await executeBoundedSshCommand(session.client, command, REMOTE_BOOTSTRAP_EXEC_OPTIONS),
-      sendStatus: (status) => {
-        this.sendServerMessage(session, status);
-      },
-    });
   }
 
   /**
-   * Emits an explicit skipped status when Remote Enhancements are disabled.
+   * Emits the current enhancement runtime state and validated contract.
    *
-   * @param session Live SSH session receiving the status.
+   * @param session Live SSH session receiving the state message.
    * @returns Nothing.
    */
-  private sendRemoteBootstrapSkipped(session: SshLiveSession): void {
+  private sendRemoteEnhancementRuntimeStatus(session: SshLiveSession): void {
+    const contract = session.remoteEnhancementsRuntimeContract;
     this.sendServerMessage(session, {
-      type: 'bootstrap-status',
-      phase: 'probe',
-      state: 'skipped',
-      code: 'REMOTE_ENHANCEMENTS_DISABLED',
-      message: 'remote enhancements are disabled',
+      type: 'remote-enhancement-runtime-status',
+      state: session.remoteEnhancementsRuntimeState,
+      helperVersion: contract?.helperVersion,
+      protocolVersion: contract?.protocolVersion,
+      capabilities: contract ? [...contract.capabilities] : undefined,
+      code: session.remoteEnhancementsRuntimeCode ?? undefined,
+      message: session.remoteEnhancementsRuntimeMessage ?? undefined,
     });
   }
 
   /**
-   * Disables all runtime Remote Enhancements state for the live session.
+   * Starts the finite trust window for an installed helper handshake.
+   *
+   * @param session Live SSH session waiting for `integration-ready`.
+   * @param timeoutMs Handshake deadline, overridden only by focused unit tests.
+   * @returns Nothing.
+   */
+  private startRemoteEnhancementHandshakeTimeout(
+    session: SshLiveSession,
+    timeoutMs = SSH_REMOTE_ENHANCEMENT_HANDSHAKE_TIMEOUT_MS,
+  ): void {
+    this.clearRemoteEnhancementHandshakeTimeout(session);
+    if (session.remoteEnhancementsRuntimeState !== 'pending') {
+      return;
+    }
+
+    session.remoteEnhancementsHandshakeTimeout = setTimeout(
+      () => {
+        session.remoteEnhancementsHandshakeTimeout = null;
+        if (session.disposed || session.remoteEnhancementsRuntimeState !== 'pending') {
+          return;
+        }
+
+        this.disableRemoteEnhancementsRuntime(
+          session,
+          'HELPER_HANDSHAKE_TIMEOUT',
+          'remote helper handshake was not received before the runtime deadline',
+        );
+      },
+      Math.max(1, timeoutMs),
+    );
+    session.remoteEnhancementsHandshakeTimeout.unref();
+  }
+
+  /**
+   * Clears the helper handshake deadline after activation, disablement, or disposal.
+   *
+   * @param session Live SSH session owning the timer.
+   * @returns Nothing.
+   */
+  private clearRemoteEnhancementHandshakeTimeout(session: SshLiveSession): void {
+    if (!session.remoteEnhancementsHandshakeTimeout) {
+      return;
+    }
+
+    clearTimeout(session.remoteEnhancementsHandshakeTimeout);
+    session.remoteEnhancementsHandshakeTimeout = null;
+  }
+
+  /**
+   * Clears trusted helper-derived state and closes the runtime data gate.
    *
    * @param session Live SSH session whose remote enhancement runtime is disabled.
+   * @param code Stable reason code surfaced to diagnostics.
+   * @param message Operator-facing reason.
    * @returns Nothing.
    */
-  private disableRemoteEnhancementsRuntime(session: SshLiveSession): void {
-    session.remoteEnhancementsRuntimeEnabled = false;
+  private disableRemoteEnhancementsRuntime(session: SshLiveSession, code: string, message: string): void {
+    this.clearRemoteEnhancementHandshakeTimeout(session);
+    session.remoteEnhancementsRuntimeState = 'disabled';
+    session.remoteEnhancementsRuntimeCode = code;
+    session.remoteEnhancementsRuntimeMessage = message;
     session.pendingRemoteShellEvents = [];
     session.remoteShellReady = false;
     session.remoteShellCwd = null;
@@ -881,6 +1130,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     session.lastRemoteCommand = null;
     session.lastExitCode = null;
     session.lastCommandDurationMs = null;
+    this.sendRemoteEnhancementRuntimeStatus(session);
   }
 
   protected handleClientMessage(session: SshLiveSession, rawPayload: RawData): void {
@@ -1134,6 +1384,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   ): void {
     this.disposeSessionWithCommonLifecycle(sessionId, reasonKey, reasonParams, {
       beforeExit: (session, reason) => {
+        this.clearRemoteEnhancementHandshakeTimeout(session);
         // Persist audit metadata before underlying transport is torn down.
         void this.finalizeLoginAudit(session, reason);
       },
@@ -1499,6 +1750,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       systemProxyRules?: string;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
+      beforeShellOpen: (client: Client) => Promise<RemoteBootstrapResult>;
       onOutput: (data: string) => void;
     },
   ): Promise<OpenShellResult> {
@@ -1605,38 +1857,56 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       };
 
       client.once('ready', () => {
-        const cols = clampTerminalSize(options.cols, 120, 20, 400);
-        const rows = clampTerminalSize(options.rows, 32, 10, 200);
-        const term = options.term.trim() || 'xterm-256color';
+        void (async () => {
+          let remoteBootstrapResult: RemoteBootstrapResult;
+          try {
+            remoteBootstrapResult = await options.beforeShellOpen(client);
+          } catch (error: unknown) {
+            remoteBootstrapResult = {
+              state: 'disabled',
+              code: 'BOOTSTRAP_UNEXPECTED_FAILURE',
+              message: error instanceof Error ? error.message : 'remote bootstrap failed',
+            };
+          }
 
-        client.shell({ term, cols, rows }, { env: { ...REMOTE_SHELL_UTF8_ENV } }, (error, stream) => {
-          if (error) {
-            client.end();
-            settle({
-              type: 'failed',
-              message: options.t('errors.ssh.openShellFailed', { reason: error.message }),
-            });
+          if (settled) {
             return;
           }
 
-          stream.on('data', (chunk: Buffer | string) => {
-            const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-            options.onOutput(data);
-          });
+          const cols = clampTerminalSize(options.cols, 120, 20, 400);
+          const rows = clampTerminalSize(options.rows, 32, 10, 200);
+          const term = options.term.trim() || 'xterm-256color';
 
-          stream.stderr.on('data', (chunk: Buffer | string) => {
-            const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
-            options.onOutput(data);
-          });
+          client.shell({ term, cols, rows }, { env: { ...REMOTE_SHELL_UTF8_ENV } }, (error, stream) => {
+            if (error) {
+              client.end();
+              settle({
+                type: 'failed',
+                message: options.t('errors.ssh.openShellFailed', { reason: error.message }),
+              });
+              return;
+            }
 
-          settle({
-            type: 'ready',
-            client,
-            stream,
-            completionSecretValue,
-            proxyMetadata: proxyTransport.metadata,
+            stream.on('data', (chunk: Buffer | string) => {
+              const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+              options.onOutput(data);
+            });
+
+            stream.stderr.on('data', (chunk: Buffer | string) => {
+              const data = typeof chunk === 'string' ? chunk : chunk.toString('utf8');
+              options.onOutput(data);
+            });
+
+            settle({
+              type: 'ready',
+              client,
+              stream,
+              completionSecretValue,
+              proxyMetadata: proxyTransport.metadata,
+              remoteBootstrapResult,
+            });
           });
-        });
+        })();
       });
 
       client.on('error', (error: Error) => {

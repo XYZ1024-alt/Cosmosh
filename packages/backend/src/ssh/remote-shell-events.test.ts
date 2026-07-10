@@ -5,6 +5,11 @@ import { REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES, RemoteShellEventOscParser } f
 
 const ESCAPE = '\u001b';
 const BELL = '\u0007';
+const RUNTIME_CONTRACT = {
+  helperVersion: '1.2.3',
+  protocolVersion: 1,
+  capabilities: ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'],
+};
 
 /**
  * Encodes one remote shell event payload in the OSC 777 transport format.
@@ -20,12 +25,14 @@ const encodeCosmoshOsc = (value: Record<string, unknown>): string => {
 test('parser strips one or more Cosmosh OSC events from visible output', () => {
   const parser = new RemoteShellEventOscParser();
   const firstEvent = {
+    ...RUNTIME_CONTRACT,
     event: 'cwd',
     shell: 'zsh',
     cwd: '/tmp',
     timestamp: 1_717_000_000_000,
   };
   const secondEvent = {
+    ...RUNTIME_CONTRACT,
     event: 'command-end',
     shell: 'zsh',
     command: 'false',
@@ -62,6 +69,7 @@ test('parser preserves non-Cosmosh OSC sequences and normal ANSI text', () => {
 test('parser decodes Cosmosh OSC split across chunks', () => {
   const parser = new RemoteShellEventOscParser();
   const sequence = encodeCosmoshOsc({
+    ...RUNTIME_CONTRACT,
     event: 'prompt-ready',
     shell: 'bash',
     cwd: '/home/dev',
@@ -76,6 +84,7 @@ test('parser decodes Cosmosh OSC split across chunks', () => {
   assert.deepEqual(second.events, [
     {
       type: 'remote-shell-event',
+      ...RUNTIME_CONTRACT,
       event: 'prompt-ready',
       shell: 'bash',
       cwd: '/home/dev',
@@ -90,6 +99,21 @@ test('parser drops invalid Cosmosh JSON without affecting surrounding output', (
   const result = parser.parse(`before${ESCAPE}]777;cosmosh;${invalidPayload}${BELL}after`);
 
   assert.equal(result.output, 'beforeafter');
+  assert.deepEqual(result.events, []);
+});
+
+test('parser drops legacy helper events without a runtime contract', () => {
+  const parser = new RemoteShellEventOscParser();
+  const result = parser.parse(
+    encodeCosmoshOsc({
+      event: 'cwd',
+      shell: 'bash',
+      cwd: '/legacy',
+      timestamp: 1_717_000_000_000,
+    }),
+  );
+
+  assert.equal(result.output, '');
   assert.deepEqual(result.events, []);
 });
 

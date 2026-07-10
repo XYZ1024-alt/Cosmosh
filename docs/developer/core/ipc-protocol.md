@@ -164,7 +164,8 @@ Although terminal stream messages are not Electron IPC channels, they are part o
   - `ready`, `output`, `telemetry`, `history`, `pong`, `error`, `exit`
   - `completion-response` with `requestId`, `replacePrefixLength`, and ranked completion `items`
   - `bootstrap-status` for side-channel Remote Bootstrap install/probe status
-  - `remote-shell-event` for runtime shell state emitted by the installed helper over OSC 777
+  - `remote-enhancement-runtime-status` with backend-owned state (`pending`, `active`, or `disabled`), optional `helperVersion`, `protocolVersion`, `capabilities`, `code`, and `message`
+  - `remote-shell-event` for runtime shell state emitted by the installed helper over OSC 777; every event requires `helperVersion`, integer `protocolVersion`, `capabilities`, `shell`, `event`, and `timestamp`
 
 Completion item contract notes:
 
@@ -175,7 +176,8 @@ Completion item contract notes:
 Current implementation note:
 
 - Completion messages are handled in `SshSessionService` and `LocalTerminalSessionService` via shared normalization in `terminal/shared.ts` and shared ranking engine in `terminal/completion/engine.ts`.
-- `remote-shell-event` is SSH-only and never appears on local-terminal sessions. Payloads carry status fields such as shell, cwd, command end exit code, duration, and timestamp; they must not carry passwords, secrets, full terminal output, or large arbitrary payloads. The backend caps each decoded OSC payload at 8 KiB and strips valid Cosmosh OSC sequences before renderer xterm output.
+- `remote-enhancement-runtime-status` and `remote-shell-event` are SSH-only and never appear on local-terminal sessions. A successful pre-shell Bootstrap ensure starts the runtime as `pending`; a matching `integration-ready` event within 10 seconds changes it to `active`. Ensure failure, `BOOTSTRAP_ENSURE_TIMEOUT`, `HELPER_HANDSHAKE_TIMEOUT`, or any live contract mismatch changes it to `disabled`. Renderer keeps the latest runtime status separately from bounded event history and must treat it as diagnostics, not as authority to reconstruct backend helper state.
+- `remote-shell-event` payloads may additionally carry cwd, sanitized executable name, command-end exit code, duration, or command ID. They must not carry passwords, secrets, full terminal output, full command lines, or large arbitrary payloads. Backend requires the event contract to match the pre-shell Go Bootstrap status, caps each decoded OSC payload at 8 KiB, and strips Cosmosh OSC sequences before renderer xterm output. Legacy events without version/protocol/capability fields are dropped.
 
 ## 4. Change Rules
 

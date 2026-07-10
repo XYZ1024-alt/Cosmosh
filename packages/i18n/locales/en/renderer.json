@@ -1339,20 +1339,29 @@
     "proxyUrlHint": "Supports HTTP, HTTPS CONNECT, and SOCKS5 proxy URLs, including URL credentials.",
     "proxyUrlLabel": "Custom Proxy URL",
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
+    "remoteEnhancementRuntimeStates": {
+      "active": "Active",
+      "disabled": "Disabled",
+      "pending": "Pending"
+    },
     "remoteEnhancements": "Remote Enhancements",
     "remoteEnhancementsDebug": {
+      "capabilities": "Capabilities",
       "close": "Close Remote Enhancements Debug",
       "code": "Code",
       "emptyEvents": "No remote enhancement events have been received in this session attempt.",
       "emptyValue": "-",
       "events": "Events",
+      "helperVersion": "Helper Version",
       "latestPhase": "Bootstrap Phase",
       "latestState": "Bootstrap State",
       "message": "Message",
+      "protocolVersion": "Protocol Version",
+      "runtimeState": "Runtime State",
       "title": "Remote Enhancements Debug",
       "version": "Version"
     },
-    "remoteEnhancementsTooltip": "When enabled, this server can run the Cosmosh remote enhancement helper after connection if global Remote Enhancements is enabled.",
+    "remoteEnhancementsTooltip": "When enabled, this server can ensure the Cosmosh remote enhancement helper during connection if global Remote Enhancements is enabled.",
     "remoteShellEvents": {
       "command-end": "Command End",
       "command-start": "Command Start",

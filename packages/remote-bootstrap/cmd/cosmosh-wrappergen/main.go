@@ -17,7 +17,6 @@ func main() {
 	flag.StringVar(&config.Version, "version", "", "bootstrap version")
 	flag.StringVar(&config.AssetURL, "asset-url", "", "bootstrap binary asset URL")
 	flag.StringVar(&config.SHA256, "sha256", "", "bootstrap binary sha256")
-	flag.StringVar(&config.HelperPayloadB64, "helper-payload-b64", "", "base64 shell helper payload")
 	flag.Parse()
 
 	script, err := wrapper.Generate(config)

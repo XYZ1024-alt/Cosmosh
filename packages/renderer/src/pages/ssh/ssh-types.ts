@@ -104,12 +104,24 @@ export type ServerInboundMessage =
       type: 'remote-shell-event';
       event: 'integration-ready' | 'prompt-ready' | 'cwd' | 'command-start' | 'command-end' | 'foreground-command';
       shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+      helperVersion: string;
+      protocolVersion: number;
+      capabilities: string[];
       cwd?: string;
       command?: string;
       exitCode?: number;
       durationMs?: number;
       commandId?: string;
       timestamp: number;
+    }
+  | {
+      type: 'remote-enhancement-runtime-status';
+      state: 'pending' | 'active' | 'disabled';
+      helperVersion?: string;
+      protocolVersion?: number;
+      capabilities?: string[];
+      code?: string;
+      message?: string;
     };
 
 /**
@@ -123,11 +135,19 @@ export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'boots
 export type RemoteShellEvent = Extract<ServerInboundMessage, { type: 'remote-shell-event' }>;
 
 /**
+ * Backend-owned trust state for the installed remote enhancement runtime.
+ */
+export type RemoteEnhancementRuntimeStatus = Extract<
+  ServerInboundMessage,
+  { type: 'remote-enhancement-runtime-status' }
+>;
+
+/**
  * Timestamped remote enhancement event retained for SSH debug inspection.
  */
 export type RemoteEnhancementsDebugEvent = {
   receivedAt: number;
-  payload: RemoteBootstrapStatus | RemoteShellEvent;
+  payload: RemoteBootstrapStatus | RemoteShellEvent | RemoteEnhancementRuntimeStatus;
 };
 
 /**

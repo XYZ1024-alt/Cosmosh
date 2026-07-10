@@ -31,7 +31,6 @@ func runInstall(args []string) {
 	options := install.Options{Stdout: os.Stdout}
 	flags.StringVar(&options.Shell, "shell", "", "target shell")
 	flags.StringVar(&options.Version, "version", "", "bootstrap version")
-	flags.StringVar(&options.HelperPayloadB64, "helper-payload-b64", "", "base64 shell helper payload")
 	_ = flags.Parse(args)
 
 	if err := install.Run(options); err != nil {

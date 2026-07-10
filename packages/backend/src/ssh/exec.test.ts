@@ -62,3 +62,22 @@ test('executeBoundedSshCommand times out stalled exec callbacks', async () => {
 
   assert.equal(await executeBoundedSshCommand(client, 'sleep forever', { timeoutMs: 5 }), null);
 });
+
+test('executeBoundedSshCommand closes the active channel when its shared budget is aborted', async () => {
+  const abortController = new AbortController();
+  const { channel, wasClosed } = createFakeChannel();
+  const client = {
+    exec: (_command: string, callback: (error: Error | undefined, channel: ClientChannel) => void) => {
+      callback(undefined, channel as unknown as ClientChannel);
+    },
+  } as unknown as Client;
+
+  const resultPromise = executeBoundedSshCommand(client, 'sleep forever', {
+    timeoutMs: 60_000,
+    signal: abortController.signal,
+  });
+  abortController.abort();
+
+  assert.equal(await resultPromise, null);
+  assert.equal(wasClosed(), true);
+});
