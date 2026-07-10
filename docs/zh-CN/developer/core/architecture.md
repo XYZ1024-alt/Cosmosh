@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(Prisma adapter 管理的 SQLCipher)]
 ```
 
 ## 2. Main ↔ Renderer 职责划分
@@ -46,6 +46,8 @@ flowchart LR
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
 - SSH 会话首次 attach 后，在全局与服务器级开关以及 manifest URL 均允许时，可以通过 `RemoteBootstrapService` 启动远端增强 bootstrap 侧通道。Backend 负责 manifest 加载、远端探测、侧通道执行、状态转发与审计记录；`packages/remote-bootstrap` 负责下载后在远端运行的用户级 Go 安装器。Manifest URL 优先来自 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，其次是 packaged CI resource，未打包开发运行则再回退到仅开发使用的 `remote-bootstrap-dev` 默认值。正式 tag release 包指向版本化 release manifest；`main` 包指向固定的 `remote-bootstrap-dev` prerelease manifest；分支名包含 `remote-bootstrap` 的 push 构建可以指向分支专用临时 prerelease manifest，用于端到端 CI 测试。该侧通道使用有界 `ssh2 exec`，不会把安装器输出写入交互终端流，并通过结构化 `bootstrap-status` WS 事件回传状态。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
+- 生产环境使用 `PrismaSqlCipherAdapterFactory` 构造 Prisma；该 factory 会把 `better-sqlite3-multiple-ciphers` native binding 注入 Prisma 的 better-sqlite3 adapter，并在暴露连接前应用数据库密钥。Schema migration 与业务查询因此共享同一条 keyed SQLCipher 连接路径。
+- 标准 SQLite 明文文件头会触发一次性的复制/rekey/校验/替换迁移。未知文件或错误密钥不会进入明文 fallback，固定迁移产物可在下一次启动恢复 rename 中断窗口。
 - 简单的 Prisma `ALTER TABLE ... ADD COLUMN` migration 会先对照实时 SQLite 表元数据；若列已存在但 `_prisma_migrations` 缺少记录，启动会补记该 migration，而不是再次执行重复 DDL；非简单 migration 漂移仍然快速失败。
 - Schema 同步采用快速失败策略：若运行时 migration 执行后仍无法满足必需表结构，backend 将中止启动，避免 API 进入部分可用/行为不确定状态。
 - migration 台账元数据采用与 Prisma 兼容的 `_prisma_migrations` 结构，便于后续平滑切换到原生 `prisma migrate deploy/resolve` 工作流。
@@ -203,7 +205,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -334,29 +336,37 @@ sequenceDiagram
 - 会话运行时必须防止陈旧 attach 状态污染。
 - Renderer 重载应视作新生命周期并显式重建状态。
 
-### 8.4 启动时 SQLite 文件不可读
+### 8.4 生产数据库加密与恢复
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: 尝试 SQLCipher 启动校验
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: 以 DB_PRAGMA_FAILED 失败退出
+  BE->>DB: 检查文件头
+  alt 标准 SQLite 明文库
+    BE->>DB: checkpoint + copy + rekey 加密副本
+    BE->>DB: integrity/schema 校验 + 原子提升
+  else 加密数据库
+    BE->>DB: 校验 SQLCipher 密钥与完整性
+  end
+  BE->>DB: Prisma 通过 keyed SQLCipher adapter 连接
+  DB-->>BE: 就绪或返回明确迁移/密钥错误
+  BE-->>MAIN: 仅在确认加密存储后继续
 ```
 
 处理原则：
 
-- 生产环境采用严格策略：SQLCipher/Prisma 不兼容时快速失败，由运维修复。
+- 生产环境不存在明文 Prisma fallback。只有标准明文文件头会进入一次性迁移；未知/损坏文件与错误密钥会直接失败且不会旋转密钥材料。
+- 加密副本通过完整性与 schema 表数量校验前，源库始终保持权威。固定的 `.sqlcipher-migration`、`.plaintext-backup` 产物支持 rename 中断后的重启恢复。加密临时库验证失败时必须与明文备份一起保留并中止启动；恢复流程不得静默恢复明文库并用未经验证的密钥重新加密，从而造成数据库密钥轮换。
 
 ### 8.5 启动时 Schema 升级路径
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as Prisma adapter 管理的 SQLCipher
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: 应用 PRAGMA + 执行待应用 Prisma migration.sql 文件

@@ -2,7 +2,6 @@ import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import { access, chmod, mkdir, open, readdir, readFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -10,22 +9,15 @@ import { promisify } from 'node:util';
 import type { PrismaClient as PrismaClientType } from '@prisma/client';
 import prismaClientPackage from '@prisma/client';
 
+import {
+  assertEncryptedDatabaseFile,
+  ensureDevelopmentPlaintextDatabase,
+  migratePlaintextDatabaseToSqlCipher,
+  PrismaSqlCipherAdapterFactory,
+  verifySqlCipherDatabase,
+} from './sqlcipher.js';
+
 const { PrismaClient, Prisma } = prismaClientPackage;
-const require = createRequire(import.meta.url);
-
-/**
- * Minimal SQLCipher-capable database shape used from better-sqlite3-multiple-ciphers.
- */
-type BetterSqlite3LikeDatabase = {
-  pragma: (statement: string) => unknown;
-  prepare: (statement: string) => { get: () => unknown };
-  close: () => void;
-};
-
-/**
- * Constructor signature for SQLCipher driver used by bootstrap helpers.
- */
-type BetterSqlite3LikeConstructor = new (filePath: string) => BetterSqlite3LikeDatabase;
 
 /**
  * Backend runtime execution mode.
@@ -75,6 +67,7 @@ type DatabaseErrorCode =
   | 'DB_DIRECTORY_PREPARE_FAILED'
   | 'DB_FILE_PREPARE_FAILED'
   | 'DB_ACL_APPLY_FAILED'
+  | 'DB_SQLCIPHER_MIGRATION_FAILED'
   | 'DB_SQLCIPHER_BOOTSTRAP_FAILED'
   | 'DB_CONNECT_FAILED'
   | 'DB_PRAGMA_FAILED'
@@ -120,32 +113,6 @@ const workspaceRootDir = path.resolve(backendRootDir, '../..');
 
 let prismaClient: PrismaClientType | null = null;
 let initializingClientPromise: Promise<PrismaClientType> | null = null;
-let cachedSqlCipherDriver: BetterSqlite3LikeConstructor | null | undefined;
-
-/**
- * Lazily resolves the optional SQLCipher-capable sqlite driver.
- *
- * @returns SQLCipher driver constructor when available, otherwise null.
- */
-const resolveSqlCipherDriver = (): BetterSqlite3LikeConstructor | null => {
-  if (cachedSqlCipherDriver !== undefined) {
-    return cachedSqlCipherDriver;
-  }
-
-  try {
-    const loadedModule = require('better-sqlite3-multiple-ciphers') as BetterSqlite3LikeConstructor;
-    cachedSqlCipherDriver = loadedModule;
-    return loadedModule;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    const runtimeAction = isDevelopmentRuntime()
-      ? 'Falling back to Prisma SQLite mode.'
-      : 'Production startup will fail before Prisma initialization.';
-    console.warn(`[db:init] SQLCipher native driver unavailable. ${runtimeAction} ${message}`);
-    cachedSqlCipherDriver = null;
-    return null;
-  }
-};
 
 /**
  * Resolves whether current process should run with development behaviors.
@@ -345,180 +312,20 @@ const escapeSqliteIdentifier = (input: string): string => {
 };
 
 /**
- * Detects native driver load/runtime incompatibility conditions.
- *
- * @param error Unknown thrown error value.
- * @returns True when error indicates missing/incompatible native bindings.
- */
-const isNativeDriverUnavailableError = (error: unknown): boolean => {
-  const code = (error as { code?: string })?.code;
-  if (code === 'ERR_DLOPEN_FAILED') {
-    return true;
-  }
-
-  const topLevelMessage =
-    error instanceof Error
-      ? error.message
-      : typeof (error as { message?: unknown })?.message === 'string'
-        ? ((error as { message: string }).message ?? '')
-        : String(error);
-
-  const nestedCause = (error as { cause?: unknown })?.cause;
-  const causeMessage =
-    nestedCause instanceof Error
-      ? nestedCause.message
-      : typeof (nestedCause as { message?: unknown })?.message === 'string'
-        ? ((nestedCause as { message: string }).message ?? '')
-        : nestedCause != null
-          ? String(nestedCause)
-          : '';
-
-  const message = `${topLevelMessage}\n${causeMessage}`;
-
-  if (message.includes('NODE_MODULE_VERSION')) {
-    return true;
-  }
-
-  if (message.includes('Could not locate the bindings file')) {
-    return isDevelopmentRuntime();
-  }
-
-  return false;
-};
-
-/**
- * Detects unreadable SQLite file errors returned through Prisma.
- *
- * @param error Unknown thrown error value.
- * @returns True when Prisma reports sqlite file corruption/incompatibility.
- */
-const isPrismaSqliteFileUnreadableError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error);
-  if (message.includes('file is not a database')) {
-    return true;
-  }
-
-  const code = (error as { code?: string })?.code;
-  const metaCode = (error as { meta?: { code?: string } })?.meta?.code;
-  return code === 'P2010' && metaCode === '26';
-};
-
-/**
- * Converts an SQLCipher-encrypted development DB file back to plaintext.
- *
- * @param databaseFilePath SQLite file path.
- * @param databaseKey Encryption key used to unlock SQLCipher file.
- * @returns Void.
- */
-const ensureDevelopmentPlaintextDatabase = (databaseFilePath: string, databaseKey: string): void => {
-  const SqlCipherDriver = resolveSqlCipherDriver();
-  if (!SqlCipherDriver) {
-    return;
-  }
-
-  let encryptedDb: BetterSqlite3LikeDatabase | null = null;
-
-  try {
-    encryptedDb = new SqlCipherDriver(databaseFilePath);
-    encryptedDb.pragma('wal_checkpoint(FULL)');
-    encryptedDb.pragma('journal_mode = DELETE');
-    encryptedDb.pragma("cipher = 'sqlcipher'");
-    encryptedDb.pragma(`key = '${escapeSqliteLiteral(databaseKey)}'`);
-    encryptedDb.prepare('SELECT count(*) AS tableCount FROM sqlite_master').get();
-    encryptedDb.pragma("rekey = ''");
-    console.warn(
-      '[db:init] Development mode compatibility: decrypted SQLCipher database to plaintext for Prisma runtime.',
-    );
-  } catch (error: unknown) {
-    if (isNativeDriverUnavailableError(error)) {
-      console.warn(
-        '[db:init] SQLCipher native addon is unavailable in development runtime. Compatibility conversion is skipped.',
-      );
-      return;
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes('file is not a database')) {
-      return;
-    }
-
-    throw error;
-  } finally {
-    encryptedDb?.close();
-  }
-};
-
-/**
- * Verifies SQLCipher access and prepares encrypted runtime behavior.
- *
- * @param databaseFilePath SQLite file path.
- * @param databaseKey Encryption key used for SQLCipher bootstrap.
- * @returns True when SQLCipher path is active; false only for development plaintext compatibility mode.
- * @throws When production cannot prove SQLCipher access before Prisma opens the database.
- */
-const bootstrapSqlCipher = (databaseFilePath: string, databaseKey: string): boolean => {
-  const SqlCipherDriver = resolveSqlCipherDriver();
-  if (!SqlCipherDriver) {
-    if (!isDevelopmentRuntime()) {
-      throw new Error(
-        'SQLCipher native driver is unavailable in production runtime. Refusing plaintext SQLite startup.',
-      );
-    }
-
-    return false;
-  }
-
-  let sqlite: BetterSqlite3LikeDatabase | null = null;
-
-  try {
-    sqlite = new SqlCipherDriver(databaseFilePath);
-
-    sqlite.pragma("cipher = 'sqlcipher'");
-    sqlite.pragma(`key = '${escapeSqliteLiteral(databaseKey)}'`);
-    sqlite.pragma('foreign_keys = ON');
-    sqlite.pragma('busy_timeout = 5000');
-    sqlite.prepare('SELECT count(*) AS tableCount FROM sqlite_master').get();
-    console.log('[db:init] SQLCipher bootstrap completed successfully.');
-    return true;
-  } catch (error: unknown) {
-    if (isNativeDriverUnavailableError(error)) {
-      if (isDevelopmentRuntime()) {
-        console.warn(
-          '[db:init] SQLCipher native addon is unavailable in development runtime. Falling back to Prisma SQLite mode.',
-        );
-        return false;
-      }
-
-      throw error;
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-
-    if (message.includes('file is not a database')) {
-      if (!isDevelopmentRuntime()) {
-        throw error;
-      }
-
-      console.warn(
-        '[db:init] Existing plaintext database detected. Skipping SQLCipher conversion for Prisma compatibility in current runtime.',
-      );
-      return false;
-    }
-
-    throw error;
-  } finally {
-    sqlite?.close();
-  }
-};
-
-/**
  * Creates a Prisma client bound to the runtime-resolved SQLite datasource URL.
  *
  * @param databaseUrl Prisma sqlite datasource URL.
+ * @param databaseKey SQLCipher key resolved for the current runtime.
+ * @param sqlCipherEnabled Whether Prisma must use the SQLCipher adapter.
  * @returns Configured Prisma client instance.
  */
-const createPrismaClient = (databaseUrl: string): PrismaClientType => {
+const createPrismaClient = (databaseUrl: string, databaseKey: string, sqlCipherEnabled: boolean): PrismaClientType => {
+  if (sqlCipherEnabled) {
+    return new PrismaClient({
+      adapter: new PrismaSqlCipherAdapterFactory(databaseUrl, databaseKey),
+    });
+  }
+
   return new PrismaClient({
     datasources: {
       db: {
@@ -573,19 +380,14 @@ const runPragma = async (client: PrismaClientType, statement: string): Promise<v
  *
  * @param client Active Prisma client.
  * @param runtimeMode Current backend runtime mode.
- * @param databaseKey Resolved database encryption key.
  * @param sqlCipherEnabled Whether SQLCipher mode is currently active.
  * @returns Promise that resolves after all pragmas are applied.
  */
 const applyPragmas = async (
   client: PrismaClientType,
   runtimeMode: RuntimeMode,
-  databaseKey: string,
   sqlCipherEnabled: boolean,
 ): Promise<void> => {
-  if (!isDevelopmentRuntime() && sqlCipherEnabled) {
-    await runPragma(client, `PRAGMA key = '${escapeSqliteLiteral(databaseKey)}';`);
-  }
   await runPragma(client, 'PRAGMA foreign_keys = ON;');
   await runPragma(client, 'PRAGMA journal_mode = WAL;');
   await runPragma(client, 'PRAGMA synchronous = NORMAL;');
@@ -1059,6 +861,21 @@ export const initializeDatabase = async ({ runtimeMode }: InitializeDatabaseOpti
       );
     }
 
+    const sqlCipherEnabled = !isDevelopmentRuntime();
+
+    if (sqlCipherEnabled) {
+      try {
+        await migratePlaintextDatabaseToSqlCipher(databaseFilePath!, databaseKey!);
+      } catch (error: unknown) {
+        withDbError(
+          'DB_SQLCIPHER_MIGRATION_FAILED',
+          'Failed to migrate legacy plaintext SQLite database to SQLCipher.',
+          { runtimeMode, databaseFilePath: databaseFilePath! },
+          error,
+        );
+      }
+    }
+
     try {
       await ensureSecureFile(databaseFilePath!);
     } catch (error: unknown) {
@@ -1070,14 +887,12 @@ export const initializeDatabase = async ({ runtimeMode }: InitializeDatabaseOpti
       );
     }
 
-    let sqlCipherEnabled = false;
-
     try {
       if (isDevelopmentRuntime()) {
         ensureDevelopmentPlaintextDatabase(databaseFilePath!, databaseKey!);
-        sqlCipherEnabled = false;
       } else {
-        sqlCipherEnabled = bootstrapSqlCipher(databaseFilePath!, databaseKey!);
+        verifySqlCipherDatabase(databaseFilePath!, databaseKey!);
+        console.log('[db:init] SQLCipher bootstrap completed successfully.');
       }
     } catch (error: unknown) {
       withDbError(
@@ -1088,25 +903,27 @@ export const initializeDatabase = async ({ runtimeMode }: InitializeDatabaseOpti
       );
     }
 
-    const client = createPrismaClient(databaseUrl);
+    const client = createPrismaClient(databaseUrl, databaseKey!, sqlCipherEnabled);
 
     await connectPrismaClient(client, runtimeMode, databaseFilePath!);
 
     try {
-      await applyPragmas(client, runtimeMode, databaseKey!, sqlCipherEnabled);
+      await applyPragmas(client, runtimeMode, sqlCipherEnabled);
     } catch (error: unknown) {
       await client.$disconnect();
-
-      const strictModeMessage =
-        !isDevelopmentRuntime() && sqlCipherEnabled && isPrismaSqliteFileUnreadableError(error)
-          ? 'Prisma failed to read SQLCipher database in strict mode. Fix SQLCipher/Prisma compatibility or run approved schema migration flow before startup.'
-          : 'Failed to apply SQLite PRAGMA settings.';
-
-      withDbError('DB_PRAGMA_FAILED', strictModeMessage, { runtimeMode, databaseFilePath: databaseFilePath! }, error);
+      withDbError(
+        'DB_PRAGMA_FAILED',
+        'Failed to apply SQLite PRAGMA settings through the active database adapter.',
+        { runtimeMode, databaseFilePath: databaseFilePath! },
+        error,
+      );
     }
 
     try {
       await ensureSchema(client);
+      if (sqlCipherEnabled) {
+        await assertEncryptedDatabaseFile(databaseFilePath!);
+      }
     } catch (error: unknown) {
       await client.$disconnect();
       withDbError(
@@ -1157,21 +974,9 @@ export const shutdownDatabase = async (): Promise<void> => {
 };
 
 /**
- * Overrides the cached SQLCipher driver for focused unit tests.
- *
- * @param driver SQLCipher driver constructor, null to simulate an unavailable driver, or undefined to reset cache.
- * @returns void.
- */
-const setCachedSqlCipherDriverForTesting = (driver: BetterSqlite3LikeConstructor | null | undefined): void => {
-  cachedSqlCipherDriver = driver;
-};
-
-/**
  * Test-only hooks for pure migration bootstrap helpers.
  */
 export const __dbPrismaTesting = {
   applyPrismaAddColumnMigrationStatements,
-  bootstrapSqlCipher,
   parsePrismaAddColumnMigrationStatements,
-  setCachedSqlCipherDriverForTesting,
 } as const;

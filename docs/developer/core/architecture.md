@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(SQLCipher via Prisma adapter)]
 ```
 
 ## 2. Main ↔ Renderer Responsibilities
@@ -46,6 +46,8 @@ flowchart LR
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
 - SSH session attach can start the Remote Enhancements bootstrap side-channel through `RemoteBootstrapService` when global and server-level gates plus a manifest URL allow it. Backend owns manifest loading, remote probing, side-channel execution, status forwarding, and audit logging; `packages/remote-bootstrap` owns the downloaded user-scoped Go installer. The manifest URL comes from `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` first, then the packaged CI resource when present, then the development-only `remote-bootstrap-dev` default for unpackaged runs. Tagged release packages point to a versioned release manifest; `main` packages point to the fixed `remote-bootstrap-dev` prerelease manifest; pushed branches whose name contains `remote-bootstrap` can point to branch-scoped temporary prerelease manifests for end-to-end CI testing. The side-channel uses bounded `ssh2 exec`, never writes installer output into the interactive terminal stream, and emits structured `bootstrap-status` WS events.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
+- Production constructs Prisma with `PrismaSqlCipherAdapterFactory`; the factory loads the `better-sqlite3-multiple-ciphers` native binding into Prisma's better-sqlite3 adapter and applies the database key before exposing the connection. Schema migrations and business queries therefore share one keyed SQLCipher connection path.
+- A canonical plaintext SQLite header triggers a one-time copy/rekey/verify/replace migration. Unknown or wrong-key files fail without plaintext fallback, and fixed migration artifacts allow interrupted rename windows to recover on the next startup.
 - Simple Prisma `ALTER TABLE ... ADD COLUMN` migrations are reconciled against live SQLite table metadata before execution. If a column already exists but `_prisma_migrations` lacks the row, startup records the migration as applied instead of re-running duplicate DDL; non-simple migration drift still fails fast.
 - Schema sync is fail-fast: backend startup stops when required tables still cannot be reconciled after runtime migration execution, preventing partial/undefined API behavior.
 - Migration ledger metadata is stored in Prisma-compatible `_prisma_migrations` format to keep a future path open for native `prisma migrate deploy/resolve` workflows.
@@ -203,7 +205,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -334,29 +336,37 @@ Handling principle:
 - Session runtime must guard against stale attach state.
 - Renderer should treat reload as a new lifecycle and re-establish state explicitly.
 
-### 8.4 Unreadable SQLite File During Startup
+### 8.4 Production Database Encryption and Recovery
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: Try SQLCipher bootstrap
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: fail startup with DB_PRAGMA_FAILED
+  BE->>DB: Inspect file header
+  alt Canonical plaintext SQLite
+    BE->>DB: checkpoint + copy + rekey encrypted copy
+    BE->>DB: integrity/schema verification + atomic promotion
+  else Encrypted database
+    BE->>DB: verify SQLCipher key and integrity
+  end
+  BE->>DB: connect Prisma through keyed SQLCipher adapter
+  DB-->>BE: ready or explicit migration/key error
+  BE-->>MAIN: continue only with encrypted storage
 ```
 
 Handling principle:
 
-- Production uses strict mode: SQLCipher/Prisma incompatibility fails fast and must be fixed operationally.
+- Production has no plaintext Prisma fallback. Only a canonical plaintext header enters the one-time migration; unknown/corrupt files and incorrect keys fail without rotating key material.
+- Migration keeps the source authoritative until an encrypted copy passes integrity and schema-count checks. Fixed `.sqlcipher-migration` and `.plaintext-backup` artifacts support restart recovery across rename interruptions. An encrypted temp that fails verification is preserved with its plaintext backup and causes startup to fail; recovery never rotates the database key by silently restoring and re-encrypting with an unverified key.
 
 ### 8.5 Startup Schema Upgrade Path
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as SQLCipher via Prisma adapter
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: apply PRAGMA + pending Prisma migration.sql files

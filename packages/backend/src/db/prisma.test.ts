@@ -4,22 +4,6 @@ import test from 'node:test';
 import { __dbPrismaTesting } from './prisma.js';
 
 /**
- * Restores or clears one process environment variable.
- *
- * @param key Environment variable name.
- * @param value Previous environment variable value.
- * @returns void.
- */
-const restoreEnvValue = (key: string, value: string | undefined): void => {
-  if (value === undefined) {
-    delete process.env[key];
-    return;
-  }
-
-  process.env[key] = value;
-};
-
-/**
  * Builds a minimal migration SQL client backed by in-memory SQLite column metadata.
  *
  * @param tableColumns Mutable table-column map used by the mock.
@@ -49,42 +33,6 @@ const createMockMigrationSqlClient = (
     },
   };
 };
-
-/**
- * Minimal SQLCipher fixture that simulates a plaintext SQLite file opened with a SQLCipher key.
- */
-class PlaintextDatabaseSqlCipherDriver {
-  /**
-   * Accepts SQLCipher pragmas without side effects.
-   *
-   * @returns void.
-   */
-  public pragma(): void {
-    return undefined;
-  }
-
-  /**
-   * Simulates SQLCipher rejecting an existing plaintext SQLite file.
-   *
-   * @returns Statement object whose `get` call throws the sqlite compatibility error.
-   */
-  public prepare(): { get: () => unknown } {
-    return {
-      get: (): unknown => {
-        throw new Error('file is not a database');
-      },
-    };
-  }
-
-  /**
-   * Matches the SQLCipher driver close contract.
-   *
-   * @returns void.
-   */
-  public close(): void {
-    return undefined;
-  }
-}
 
 test('runtime ADD COLUMN migration skips columns that already exist', async () => {
   const statements = __dbPrismaTesting.parsePrismaAddColumnMigrationStatements([
@@ -130,58 +78,4 @@ test('runtime ADD COLUMN migration applies columns that are still missing', asyn
 
   assert.deepEqual(executedStatements, [statements[0].statement]);
   assert.equal(tableColumns.get('SshServer')?.has('disableCharacterWidthCompatibilityMode'), true);
-});
-
-test('production SQLCipher bootstrap rejects a missing native driver', () => {
-  const originalAppEnv = process.env.COSMOSH_APP_ENV;
-  const originalNodeEnv = process.env.NODE_ENV;
-
-  process.env.COSMOSH_APP_ENV = 'production';
-  process.env.NODE_ENV = 'production';
-  __dbPrismaTesting.setCachedSqlCipherDriverForTesting(null);
-
-  try {
-    assert.throws(
-      () => __dbPrismaTesting.bootstrapSqlCipher('cosmosh.db', 'test-key'),
-      /SQLCipher native driver is unavailable in production runtime/u,
-    );
-  } finally {
-    restoreEnvValue('COSMOSH_APP_ENV', originalAppEnv);
-    restoreEnvValue('NODE_ENV', originalNodeEnv);
-    __dbPrismaTesting.setCachedSqlCipherDriverForTesting(undefined);
-  }
-});
-
-test('development SQLCipher bootstrap keeps plaintext compatibility when the native driver is missing', () => {
-  const originalAppEnv = process.env.COSMOSH_APP_ENV;
-  const originalNodeEnv = process.env.NODE_ENV;
-
-  process.env.COSMOSH_APP_ENV = 'development';
-  process.env.NODE_ENV = 'development';
-  __dbPrismaTesting.setCachedSqlCipherDriverForTesting(null);
-
-  try {
-    assert.equal(__dbPrismaTesting.bootstrapSqlCipher('cosmosh.db', 'test-key'), false);
-  } finally {
-    restoreEnvValue('COSMOSH_APP_ENV', originalAppEnv);
-    restoreEnvValue('NODE_ENV', originalNodeEnv);
-    __dbPrismaTesting.setCachedSqlCipherDriverForTesting(undefined);
-  }
-});
-
-test('production SQLCipher bootstrap rejects plaintext sqlite compatibility fallback', () => {
-  const originalAppEnv = process.env.COSMOSH_APP_ENV;
-  const originalNodeEnv = process.env.NODE_ENV;
-
-  process.env.COSMOSH_APP_ENV = 'production';
-  process.env.NODE_ENV = 'production';
-  __dbPrismaTesting.setCachedSqlCipherDriverForTesting(PlaintextDatabaseSqlCipherDriver);
-
-  try {
-    assert.throws(() => __dbPrismaTesting.bootstrapSqlCipher('cosmosh.db', 'test-key'), /file is not a database/u);
-  } finally {
-    restoreEnvValue('COSMOSH_APP_ENV', originalAppEnv);
-    restoreEnvValue('NODE_ENV', originalNodeEnv);
-    __dbPrismaTesting.setCachedSqlCipherDriverForTesting(undefined);
-  }
 });
