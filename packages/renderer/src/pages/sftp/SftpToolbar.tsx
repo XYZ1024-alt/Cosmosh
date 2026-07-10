@@ -67,6 +67,7 @@ import { SftpDirectoryViewMenuItems } from './SftpDirectoryViewMenuItems';
  */
 type SftpToolbarProps = {
   activeDropTarget: SftpDirectoryDropTarget | null;
+  addressPath: string;
   addressBreadcrumbRenderState: AddressBreadcrumbRenderState;
   addressInputContextMenuItems: InputContextMenuItem[];
   addressInputRef: React.RefObject<HTMLInputElement | null>;
@@ -81,6 +82,7 @@ type SftpToolbarProps = {
   hasSelection: boolean;
   hasSingleSelection: boolean;
   isAddressInputEditing: boolean;
+  isAddressLoading: boolean;
   isBusy: boolean;
   isRefreshingDirectory: boolean;
   parentPath?: string;
@@ -153,6 +155,7 @@ type SftpToolbarProps = {
  */
 export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   activeDropTarget,
+  addressPath,
   addressBreadcrumbRenderState,
   addressInputContextMenuItems,
   addressInputRef,
@@ -171,6 +174,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   hasSelection,
   hasSingleSelection,
   isAddressInputEditing,
+  isAddressLoading,
   isBreadcrumbLoading,
   isBusy,
   isPreviewDirty,
@@ -437,12 +441,14 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
 
           <SftpAddressControl
             activeDropTarget={activeDropTarget}
+            addressPath={addressPath}
             addressBreadcrumbRenderState={addressBreadcrumbRenderState}
             addressInputContextMenuItems={addressInputContextMenuItems}
             addressInputRef={addressInputRef}
             currentPath={currentPath}
             getBreadcrumbDirectories={getBreadcrumbDirectories}
             isAddressInputEditing={isAddressInputEditing}
+            isAddressLoading={isAddressLoading}
             isBreadcrumbLoading={isBreadcrumbLoading}
             isBusy={isBusy}
             keepAddressInputDuringContextMenu={keepAddressInputDuringContextMenu}

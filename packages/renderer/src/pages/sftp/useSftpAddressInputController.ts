@@ -7,7 +7,7 @@ import { t } from '../../lib/i18n';
  * Inputs for the SFTP address input controller.
  */
 type UseSftpAddressInputControllerParams = {
-  currentPath: string;
+  addressPath: string;
   sftpShowAddressAsText: boolean;
   navigateToPath: (directoryPath: string) => Promise<boolean>;
   setSftpAddressDisplayMode: (showAddressAsText: boolean) => Promise<void>;
@@ -34,24 +34,24 @@ type UseSftpAddressInputControllerResult = {
 /**
  * Owns editable address state, focus retention, and address display-mode toggling.
  *
- * @param params Current path, settings state, and navigation helpers.
+ * @param params Displayed address path, settings state, and navigation helpers.
  * @returns Address input state and event handlers.
  */
 export const useSftpAddressInputController = ({
-  currentPath,
+  addressPath,
   sftpShowAddressAsText,
   navigateToPath,
   setSftpAddressDisplayMode,
 }: UseSftpAddressInputControllerParams): UseSftpAddressInputControllerResult => {
-  const [pathInput, setPathInput] = React.useState<string>('.');
+  const [pathInput, setPathInput] = React.useState<string>(addressPath);
   const [isAddressInputEditing, setIsAddressInputEditing] = React.useState(false);
   const addressInputRef = React.useRef<HTMLInputElement | null>(null);
   const shouldRetainAddressInputAfterContextMenuRef = React.useRef(false);
   const addressInputContextMenuTimerRef = React.useRef<number | null>(null);
 
   React.useEffect(() => {
-    setPathInput(currentPath);
-  }, [currentPath]);
+    setPathInput(addressPath);
+  }, [addressPath]);
 
   React.useEffect(() => {
     if (!isAddressInputEditing) {
@@ -98,11 +98,12 @@ export const useSftpAddressInputController = ({
   const handlePathSubmit = React.useCallback(
     (event: React.FormEvent<HTMLFormElement>): void => {
       event.preventDefault();
-      void navigateToPath(pathInput).then((didNavigate) => {
-        if (didNavigate) {
-          setIsAddressInputEditing(false);
-        }
-      });
+      if (!pathInput.trim()) {
+        return;
+      }
+
+      setIsAddressInputEditing(false);
+      void navigateToPath(pathInput);
     },
     [navigateToPath, pathInput],
   );
@@ -122,16 +123,16 @@ export const useSftpAddressInputController = ({
       }
 
       event.preventDefault();
-      setPathInput(currentPath);
+      setPathInput(addressPath);
       setIsAddressInputEditing(false);
     },
-    [currentPath],
+    [addressPath],
   );
 
   const handleEditCurrentPath = React.useCallback((): void => {
-    setPathInput(currentPath);
+    setPathInput(addressPath);
     setIsAddressInputEditing(true);
-  }, [currentPath]);
+  }, [addressPath]);
 
   const addressInputContextMenuItems = React.useMemo<InputContextMenuItem[]>(() => {
     return [

@@ -990,6 +990,7 @@
       "uploadFiles": "Upload Files"
     },
     "addressCollapsedMenuLabel": "Show hidden path levels",
+    "addressLoading": "Loading...",
     "addressMenuEmpty": "No folders",
     "addressMenuLoading": "Loading folders...",
     "addressRootLabel": "Remote Server Root",

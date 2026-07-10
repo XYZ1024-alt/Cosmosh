@@ -1,5 +1,5 @@
 import classNames from 'classnames';
-import { ChevronRight, Copy, Edit3, MoreHorizontal, Server } from 'lucide-react';
+import { ChevronRight, Copy, Edit3, Loader2, MoreHorizontal, Server } from 'lucide-react';
 import React from 'react';
 
 import {
@@ -27,11 +27,13 @@ import type { AddressBreadcrumbRenderState, SftpBreadcrumbItem, TreeDirectoryNod
  */
 type SftpAddressControlProps = {
   activeDropTarget: SftpDirectoryDropTarget | null;
+  addressPath: string;
   addressBreadcrumbRenderState: AddressBreadcrumbRenderState;
   addressInputContextMenuItems: InputContextMenuItem[];
   addressInputRef: React.RefObject<HTMLInputElement | null>;
   currentPath: string;
   isAddressInputEditing: boolean;
+  isAddressLoading: boolean;
   isBusy: boolean;
   pathInput: string;
   sessionId: string;
@@ -63,12 +65,14 @@ type SftpAddressControlProps = {
  */
 export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
   activeDropTarget,
+  addressPath,
   addressBreadcrumbRenderState,
   addressInputContextMenuItems,
   addressInputRef,
   currentPath,
   getBreadcrumbDirectories,
   isAddressInputEditing,
+  isAddressLoading,
   isBreadcrumbLoading,
   isBusy,
   keepAddressInputDuringContextMenu,
@@ -90,6 +94,8 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
   sessionId,
   sftpShowAddressAsText,
 }) => {
+  const isResolvedAddress = addressPath === currentPath;
+
   /**
    * Renders child-directory choices for one breadcrumb segment menu.
    *
@@ -119,7 +125,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
               ? 'bg-menu-control-hover'
               : undefined
           }
-          disabled={isBusy || directory.path === currentPath}
+          disabled={isBusy || (isResolvedAddress && directory.path === currentPath)}
           onDragEnter={(event) =>
             onDirectoryDropTargetDragEnter(event, {
               path: directory.path,
@@ -163,6 +169,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
       getBreadcrumbDirectories,
       isBreadcrumbLoading,
       isBusy,
+      isResolvedAddress,
       onDirectoryDropTargetDragEnter,
       onDirectoryDropTargetDragLeave,
       onDirectoryDropTargetDragOver,
@@ -191,7 +198,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
               ? 'bg-menu-control-hover'
               : undefined
           }
-          disabled={isBusy || item.path === currentPath}
+          disabled={isBusy || (isResolvedAddress && item.path === currentPath)}
           onDragEnter={(event) =>
             onDirectoryDropTargetDragEnter(event, {
               path: item.path,
@@ -233,6 +240,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
       activeDropTarget,
       currentPath,
       isBusy,
+      isResolvedAddress,
       onDirectoryDropTargetDragEnter,
       onDirectoryDropTargetDragLeave,
       onDirectoryDropTargetDragOver,
@@ -290,7 +298,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
               options.isCurrent && 'bg-form-control-hover',
               isActiveDropTarget && 'bg-home-card-active',
             )}
-            disabled={isBusy || item.path === currentPath}
+            disabled={isBusy || (isResolvedAddress && item.path === currentPath)}
             aria-label={isRootBreadcrumb ? t('sftp.addressRootLabel') : undefined}
             title={item.path}
             onClick={(event) => {
@@ -338,6 +346,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
     [
       currentPath,
       isBusy,
+      isResolvedAddress,
       activeDropTarget,
       onDirectoryDropTargetDragEnter,
       onDirectoryDropTargetDragLeave,
@@ -370,6 +379,22 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
           onPointerDown={onAddressInputPointerDown}
         />
       </form>
+    );
+  }
+
+  if (isAddressLoading) {
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="menu-menubar-field flex h-[34px] min-w-0 flex-1 items-center gap-2 overflow-hidden rounded-lg bg-form-control px-2.5 text-sm text-form-text outline-none [-webkit-app-region:no-drag]"
+      >
+        <Loader2
+          aria-hidden
+          className="h-4 w-4 shrink-0 animate-spin text-home-text-subtle"
+        />
+        <span className="min-w-0 truncate text-home-text-subtle">{t('sftp.addressLoading')}</span>
+      </div>
     );
   }
 
@@ -414,7 +439,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
           <div className="flex min-w-0 flex-1 items-center overflow-hidden">
             {addressBreadcrumbRenderState.leadingItem
               ? renderAddressBreadcrumbSegment(addressBreadcrumbRenderState.leadingItem, {
-                  isCurrent: addressBreadcrumbRenderState.leadingItem.path === currentPath,
+                  isCurrent: addressBreadcrumbRenderState.leadingItem.path === addressPath,
                 })
               : null}
             {addressBreadcrumbRenderState.hiddenItems.length > 0 ? (
@@ -438,7 +463,7 @@ export const SftpAddressControl: React.FC<SftpAddressControlProps> = ({
               </DropdownMenu>
             ) : null}
             {addressBreadcrumbRenderState.visibleItems.map((item) =>
-              renderAddressBreadcrumbSegment(item, { isCurrent: item.path === currentPath }),
+              renderAddressBreadcrumbSegment(item, { isCurrent: item.path === addressPath }),
             )}
             <button
               type="button"

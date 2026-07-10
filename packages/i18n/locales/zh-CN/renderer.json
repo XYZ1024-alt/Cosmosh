@@ -990,6 +990,7 @@
       "uploadFiles": "上传文件"
     },
     "addressCollapsedMenuLabel": "显示隐藏的路径层级",
+    "addressLoading": "正在加载...",
     "addressMenuEmpty": "没有文件夹",
     "addressMenuLoading": "正在加载文件夹...",
     "addressRootLabel": "远程服务器根目录",
