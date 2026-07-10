@@ -8,6 +8,7 @@
 flowchart TD
   A[项目地图] --> B[架构设计]
   B --> C[IPC 协议字典]
+  B --> K[发布安全]
   B --> D[SSH 终端实现]
   B --> H[本地优先审计事件]
   B --> G[数据库安全]
@@ -22,6 +23,7 @@ flowchart TD
 - 核心
   - [项目地图](./core/project-map.md)
   - [架构设计](./core/architecture.md)
+  - [发布安全](./core/release-security.md)
   - [IPC 协议字典](./core/ipc-protocol.md)
 - 运行时能力
   - [SSH 终端实现](./runtime/ssh-terminal.md)
@@ -36,6 +38,7 @@ flowchart TD
 ## 任务导向入口
 
 - 新增运行时能力：先看[项目地图](./core/project-map.md)，再看[架构设计](./core/architecture.md)，最后同步[IPC 协议字典](./core/ipc-protocol.md)。
+- 调整 CI 打包、签名、provenance 或发布控制：遵循[发布安全](./core/release-security.md)，并明确保持通道边界。
 - 调整 SSH 行为：优先阅读[SSH 终端实现](./runtime/ssh-terminal.md)，并同步协议说明到[IPC 协议字典](./core/ipc-protocol.md)。
 - 调整 SSH 端口转发：优先阅读[SSH 端口转发](./runtime/port-forwarding.md)，再在[IPC 协议字典](./core/ipc-protocol.md)核对 IPC 覆盖。
 - 排查安全敏感操作链路：优先阅读[本地优先审计事件](./runtime/audit-events.md)，并在[IPC 协议字典](./core/ipc-protocol.md)核对桥接覆盖。

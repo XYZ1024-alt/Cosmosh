@@ -12,6 +12,7 @@ docs/
     core/
       project-map.md
       architecture.md
+      release-security.md
       ipc-protocol.md
     runtime/
       ssh-terminal.md
@@ -40,6 +41,7 @@ docs/
 flowchart TD
   A[developer/core/project-map.md] --> B[developer/core/architecture.md]
   B --> C[developer/core/ipc-protocol.md]
+  B --> J[developer/core/release-security.md]
   B --> D[developer/runtime/ssh-terminal.md]
   B --> E[developer/runtime/database-security.md]
   B --> F[developer/runtime/sftp-file-system.md]

@@ -24,6 +24,8 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.32.0 --activate
           pnpm --version
+      - name: Test release asset preparation
+        run: node --test scripts/prepare-release-assets.test.mjs
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run lint

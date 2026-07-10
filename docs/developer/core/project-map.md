@@ -13,9 +13,17 @@ flowchart TB
   ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
+  ROOT --> CI[".github/workflows"]
 ```
 
 ## 2. Directory Responsibilities
+
+### `.github/workflows`
+
+- **Role**: CI validation, rolling development assets, and versioned release orchestration.
+- `build-main.yml` owns ordinary Electron packaging plus intentionally mutable `remote-bootstrap-dev` and branch prerelease channels.
+- `release.yml` owns read-only platform builds, Windows signature policy checks, artifact inventory validation, checksums, provenance attestations, and draft release publication through one scoped writer job.
+- Every external Action reference is pinned to a full commit SHA. `.github/dependabot.yml` proposes reviewed digest updates.
 
 ### `scripts`
 
@@ -23,6 +31,8 @@ flowchart TB
 - **Key files**:
   - `dev-profile.mjs`: development profile manager used by `pnpm dev:profile` and `pnpm dev:main:fresh`. It automatically imports the legacy implicit default identity into the protected `default` profile, then creates, switches, resets, deletes, and runs commands with profile-scoped runtime paths under `.cosmosh/dev-profiles/<name>/`.
   - `build-remote-bootstrap-release.mjs`: CI/release helper that cross-compiles Linux remote bootstrap binaries, computes SHA-256 values, and writes the git-ignored manifest under `packages/remote-bootstrap/dist/`. Tagged releases upload those files to the versioned release; `main` pushes upload them to the fixed `remote-bootstrap-dev` prerelease; pushed branches whose name contains `remote-bootstrap` and manual dispatch runs can upload them to branch-scoped temporary prereleases for end-to-end testing; ordinary PRs use it only for validation.
+  - `prepare-release-assets.mjs`: validates the flat cross-platform release inventory and writes deterministic `SHA256SUMS` before attestation and draft upload.
+  - `verify-windows-release-signatures.ps1`: audits or enforces Authenticode signatures and timestamp certificates for the NSIS installer and packaged application executable.
   - `update-version.js`: version metadata update helper.
   - `precommit-staged.mjs`: staged-file precommit validation helper.
   - `setup-githooks.mjs`: local Git hook bootstrap.

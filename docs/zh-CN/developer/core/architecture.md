@@ -119,6 +119,14 @@ sequenceDiagram
 - token 不匹配或会话过期会立即关闭（`1008`）。
 - 30 秒 attach 超时用于避免资源孤儿化。
 
+### 发布供应链边界
+
+- 普通 CI 与滚动 remote-bootstrap 通道和版本化公开发布保持分离。滚动 `remote-bootstrap-dev` 与 `remote-bootstrap-branch-*` 资产按设计允许替换；带 tag 的应用只使用对应的精确版本 manifest URL。
+- GitHub Actions 固定到完整 commit SHA，并通过经过评审的 Dependabot pull request 更新。构建任务对仓库只读并暂存短期 workflow artifacts；只有最终 release 任务可以创建或更新 draft。
+- 正式发布组装会校验完整平台资产清单、写入 `SHA256SUMS`、创建 GitHub provenance attestations，并拒绝修改已发布 release。
+- Windows 签名当前使用策略门禁。`audit` 允许生成带醒目标记的未签名 draft 以验证流水线，`enforce` 则要求在创建 draft 前通过 Authenticode 签名、时间戳与已配置发布者身份验证。
+- Draft 可变性是有意设计。首次公开发布前还需通过仓库侧 immutable releases、受保护的 `release` environment 与 `v*` tag ruleset 完成边界。操作契约与剩余配置见[发布安全](./release-security.md)。
+
 ## 5. 运行时能力
 
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。

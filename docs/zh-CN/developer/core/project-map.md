@@ -13,9 +13,17 @@ flowchart TB
   ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
+  ROOT --> CI[".github/workflows"]
 ```
 
 ## 2. 目录职责
+
+### `.github/workflows`
+
+- **角色**：CI 校验、滚动开发资产与版本化发布编排。
+- `build-main.yml` 负责普通 Electron 打包，以及按设计保持可变的 `remote-bootstrap-dev` 与分支 prerelease 通道。
+- `release.yml` 负责只读平台构建、Windows 签名策略检查、资产清单校验、校验和、provenance attestations，并通过单一限权写入任务发布 draft release。
+- 所有外部 Action 引用都固定到完整 commit SHA；`.github/dependabot.yml` 提交需要评审的 digest 更新。
 
 ### `scripts`
 
@@ -23,6 +31,8 @@ flowchart TB
 - **关键文件**：
   - `dev-profile.mjs`：`pnpm dev:profile` 与 `pnpm dev:main:fresh` 使用的开发身份管理器。它会自动把旧的隐式默认身份导入到受保护的 `default` 身份，然后在 `.cosmosh/dev-profiles/<name>/` 下创建、切换、重置、删除身份，并可用身份级运行路径执行命令。
   - `build-remote-bootstrap-release.mjs`：CI/发布辅助脚本，用于交叉编译 Linux 远端 bootstrap binary、计算 SHA-256，并在 `packages/remote-bootstrap/dist/` 下写入被 git ignore 的 manifest。正式 tag release 会把这些文件上传到版本化 release；`main` push 会上传到固定 `remote-bootstrap-dev` prerelease；分支名包含 `remote-bootstrap` 的 push 和手动 dispatch 可以上传到分支专用临时 prerelease 做端到端测试；普通 PR 只用它做校验。
+  - `prepare-release-assets.mjs`：校验扁平的跨平台 release 资产清单，并在 attestation 与 draft 上传前写入确定性的 `SHA256SUMS`。
+  - `verify-windows-release-signatures.ps1`：对 NSIS 安装器与打包应用可执行文件的 Authenticode 签名和时间戳证书进行审计或强制校验。
   - `update-version.js`：版本元数据更新辅助。
   - `precommit-staged.mjs`：暂存文件 precommit 校验辅助。
   - `setup-githooks.mjs`：本地 Git hook 初始化。

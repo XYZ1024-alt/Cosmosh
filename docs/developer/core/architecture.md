@@ -119,6 +119,14 @@ sequenceDiagram
 - Token mismatch or stale session causes immediate close (`1008`).
 - Session attach timeout is enforced (30 seconds) to avoid orphaned resources.
 
+### Release Supply-Chain Boundary
+
+- Ordinary CI and rolling remote-bootstrap channels remain separate from versioned public releases. The rolling `remote-bootstrap-dev` and `remote-bootstrap-branch-*` assets are intentionally replaceable; tagged applications use only their exact versioned manifest URL.
+- GitHub Actions are pinned to full commit SHAs and updated through reviewed Dependabot pull requests. Build jobs are repository read-only and stage short-lived workflow artifacts; only the final release job can create or update a draft.
+- Formal release assembly validates the complete platform inventory, writes `SHA256SUMS`, creates GitHub provenance attestations, and refuses to modify a release after publication.
+- Windows signing is currently policy-gated. `audit` permits a visibly marked unsigned draft for pipeline validation, while `enforce` requires valid Authenticode signatures, timestamps, and the configured publisher identity before draft creation.
+- Draft mutability is intentional. Repository-side immutable releases, a protected `release` environment, and a `v*` tag ruleset complete the boundary before the first public release. See [Release Security](./release-security.md) for the operating contract and remaining setup.
+
 ## 5. Runtime Capabilities
 
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.

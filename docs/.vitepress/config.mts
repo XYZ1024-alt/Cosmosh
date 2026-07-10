@@ -64,6 +64,7 @@ export default defineConfig({
           items: [
             { text: 'Project Map', link: '/developer/core/project-map' },
             { text: 'Architecture', link: '/developer/core/architecture' },
+            { text: 'Release Security', link: '/developer/core/release-security' },
             { text: 'IPC Protocol', link: '/developer/core/ipc-protocol' },
           ],
         },
@@ -145,6 +146,7 @@ export default defineConfig({
               items: [
                 { text: '项目地图', link: '/zh-CN/developer/core/project-map' },
                 { text: '架构设计', link: '/zh-CN/developer/core/architecture' },
+                { text: '发布安全', link: '/zh-CN/developer/core/release-security' },
                 { text: 'IPC 协议字典', link: '/zh-CN/developer/core/ipc-protocol' },
               ],
             },
