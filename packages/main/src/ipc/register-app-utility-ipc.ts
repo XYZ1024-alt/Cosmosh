@@ -27,6 +27,7 @@ import {
 
 import type { DatabaseSecurityInfo } from '../security/database-encryption';
 import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
+import { openWithDialogWindows, resolveMacOsOpenWithHelperInvocation } from './sftp-open-with-runtime';
 import {
   createPrivateSftpTemporaryDirectory,
   isPathInsideDirectory,
@@ -52,11 +53,6 @@ type MacOsOpenWithHelperApplication = {
   bundleIdentifier?: string;
 };
 
-type MacOsHelperInvocation = {
-  command: string;
-  argsPrefix: string[];
-};
-
 type SftpTemporaryFileWatchRecord = {
   watchId: string;
   localPath: string;
@@ -67,11 +63,8 @@ type SftpTemporaryFileWatchRecord = {
 };
 
 const stagedSftpUploadPaths = new Set<string>();
-const MACOS_SFTP_OPEN_WITH_HELPER_NAME = 'cosmosh-sftp-open-with';
-const MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME = 'macos-sftp-open-with.swift';
 const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
 const MAX_SFTP_TEMPORARY_IMAGE_PREVIEW_BYTES = 128 * 1024 * 1024;
-const WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME = 'COSMOSH_SFTP_OPEN_WITH_PATH';
 const SFTP_TEMP_FILE_WATCH_DEBOUNCE_MS = 800;
 const SFTP_TEMPORARY_IMAGE_PREVIEW_MIME_TYPES: Readonly<Record<string, string>> = {
   '.apng': 'image/apng',
@@ -85,17 +78,6 @@ const SFTP_TEMPORARY_IMAGE_PREVIEW_MIME_TYPES: Readonly<Record<string, string>> 
   '.svg': 'image/svg+xml',
   '.webp': 'image/webp',
 };
-const WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT = `
-$ErrorActionPreference = 'Stop'
-[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
-[Console]::Error.Encoding = [System.Text.UTF8Encoding]::new()
-$targetPath = [Environment]::GetEnvironmentVariable('${WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME}', 'Process')
-if ([string]::IsNullOrWhiteSpace($targetPath)) {
-  throw 'Missing Open With file path.'
-}
-
-Start-Process -FilePath $targetPath -Verb OpenAs
-`;
 
 /**
  * Builds the HTTPS target URL used by Chromium's system proxy resolver.
@@ -133,38 +115,6 @@ const buildSystemProxyTargetUrl = (request: unknown): string => {
   } catch {
     throw new Error('Invalid system proxy resolution target.');
   }
-};
-
-/**
- * Runs a Windows child process and converts a non-zero exit into a useful error.
- *
- * @param command Executable to start.
- * @param args Process arguments.
- * @param options Spawn options that are safe for a privileged main-process helper.
- * @returns Promise resolved when the child exits successfully.
- */
-const runWindowsOpenWithProcess = async (
-  command: string,
-  args: string[],
-  options: Parameters<typeof spawn>[2],
-): Promise<void> => {
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, options);
-    let stderr = '';
-
-    child.on('error', reject);
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('close', (code) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-
-      reject(new Error(stderr.trim() || `${command} failed, exit code: ${code ?? 'unknown'}`));
-    });
-  });
 };
 
 /**
@@ -461,98 +411,26 @@ const stopSftpTemporaryFileWatchersForOwner = (
 };
 
 /**
- * Opens a local temp file with the Windows shell OpenAs verb.
- *
- * @param filePath Existing local file path.
- * @returns Promise resolved after the shell verb is handed off successfully.
- */
-const openWithDialogWindows = async (filePath: string): Promise<void> => {
-  try {
-    await runWindowsOpenWithProcess(
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_OPEN_WITH_POWERSHELL_SCRIPT],
-      {
-        env: {
-          ...process.env,
-          [WINDOWS_OPEN_WITH_FILE_PATH_ENV_NAME]: filePath,
-        },
-        stdio: ['ignore', 'ignore', 'pipe'],
-        windowsHide: true,
-      },
-    );
-    return;
-  } catch (error: unknown) {
-    try {
-      await runWindowsOpenWithProcess('rundll32.exe', ['shell32.dll,OpenAs_RunDLL', filePath], {
-        stdio: ['ignore', 'ignore', 'pipe'],
-        windowsHide: true,
-      });
-      return;
-    } catch (fallbackError: unknown) {
-      const primaryMessage = error instanceof Error ? error.message : 'OpenAs shell verb failed.';
-      const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : 'OpenAs_RunDLL failed.';
-      throw new Error(`${primaryMessage}\nFallback Open With failed: ${fallbackMessage}`);
-    }
-  }
-};
-
-/**
- * Resolves the packaged or development macOS helper used for NSWorkspace Open With operations.
- *
- * @returns Helper invocation descriptor, or null when no helper is available.
- */
-const resolveMacOsOpenWithHelperInvocation = async (): Promise<MacOsHelperInvocation | null> => {
-  const binaryCandidates = [
-    path.join(process.resourcesPath, 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
-    path.resolve(__dirname, '..', '..', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
-    path.resolve(process.cwd(), 'packages', 'main', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_NAME),
-  ];
-
-  for (const helperPath of binaryCandidates) {
-    try {
-      const stats = await fs.stat(helperPath);
-      if (stats.isFile()) {
-        return { command: helperPath, argsPrefix: [] };
-      }
-    } catch {
-      // Continue checking the next helper location.
-    }
-  }
-
-  const sourceCandidates = [
-    path.join(process.resourcesPath, 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
-    path.resolve(__dirname, '..', '..', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
-    path.resolve(process.cwd(), 'packages', 'main', 'resources', 'helpers', MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
-  ];
-
-  for (const sourcePath of sourceCandidates) {
-    try {
-      const stats = await fs.stat(sourcePath);
-      if (stats.isFile()) {
-        return { command: '/usr/bin/swift', argsPrefix: [sourcePath] };
-      }
-    } catch {
-      // Continue checking the next helper source location.
-    }
-  }
-
-  return null;
-};
-
-/**
  * Runs the macOS NSWorkspace helper and captures bounded stdout.
  *
  * @param args Helper command arguments.
  * @returns Helper stdout.
  */
 const runMacOsOpenWithHelper = async (args: string[]): Promise<string> => {
-  const invocation = await resolveMacOsOpenWithHelperInvocation();
+  const invocation = await resolveMacOsOpenWithHelperInvocation({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    moduleDirectoryPath: __dirname,
+    workingDirectoryPath: process.cwd(),
+  });
   if (!invocation) {
     throw new Error('macOS Open With helper is unavailable.');
   }
 
   return await new Promise<string>((resolve, reject) => {
     const child = spawn(invocation.command, [...invocation.argsPrefix, ...args], {
+      cwd: invocation.workingDirectoryPath,
+      shell: false,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     });
