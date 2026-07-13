@@ -64,6 +64,14 @@ Implementation principles:
 - Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
 
+### 6.1 Entity Visual Picker Virtualization
+
+- `EntityVisualPicker` uses `@tanstack/react-virtual` to keep the full Lucide icon catalog searchable while mounting only visible fixed-grid rows plus a small overscan window.
+- The virtual grid preserves the established eight-column, 32 px icon-button rhythm and 4 px gap; virtualization must not resize or shift the picker while scrolling.
+- TanStack Virtual owns range calculation, total scroll size, overscan, and row scrolling. Feature code owns search, selection, keyboard semantics, and focus restoration; do not add a parallel manual windowing algorithm.
+- Arrow-key and forward-Tab navigation must call the virtualizer to reveal an offscreen target row before moving focus. Search updates keep the selected icon, or the first filtered icon when the selection is absent, as the active grid item.
+- Virtualization reduces mounted DOM only. Changes to icon-module loading or bundle composition remain a separate concern.
+
 ## 7. Orbit Bar Standard
 
 Terminal text selection interactions in SSH pages must follow these rules:
@@ -130,6 +138,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Icon-only controls must carry a localized accessible name through `aria-label`; tooltips remain visual help and must not be the only name.
 - Registry-driven settings controls must connect visible labels to the rendered control with stable `htmlFor`/`id` pairs, including switches, selects, text fields, textareas, and JSON edit buttons.
 - SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
+- SFTP directory lists must support desktop-style pointer marquee selection from list whitespace and the panel padding beside the list. The marquee must use a clearly visible token-based border and fill, preview intersecting rows as selected while dragging, and continuously auto-scroll near the list's vertical edges. It must not replace entry drag-and-drop, header column dragging, or inline editing; `Ctrl`/`Cmd` extends the existing selection.
 
 ## 8. Compliance Checklist
 

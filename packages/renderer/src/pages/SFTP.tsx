@@ -139,6 +139,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const sftpReconnectMode = useSettingsValue('sftpReconnectMode');
   const [sessionId, setSessionId] = React.useState<string>('');
   const [currentPath, setCurrentPath] = React.useState<string>('.');
+  // Keep the requested address visible after a failed listing without changing the last usable directory.
+  const [addressPath, setAddressPath] = React.useState<string>(connectionIntent?.initialPath ?? '.');
   const [parentPath, setParentPath] = React.useState<string | undefined>(undefined);
   const [entries, setEntries] = React.useState<ApiSftpEntry[]>([]);
   const [status, setStatus] = React.useState<'idle' | 'connecting' | 'loading' | 'ready' | 'error'>('idle');
@@ -213,6 +215,9 @@ const SFTP: React.FC<SFTPProps> = ({
   });
   const hasSftpSession = Boolean(sessionId);
   const isBusy = status === 'connecting' || status === 'loading';
+  const hasResolvedCurrentDirectory = status === 'ready' || navigationState.index >= 0;
+  const isAddressLoading =
+    isBusy || (Boolean(connectionIntent?.serverId) && !hasResolvedCurrentDirectory && status !== 'error');
   const canUseFileActions = hasSftpSession && status === 'ready' && !isBusy;
   const {
     activeTaskCount,
@@ -307,14 +312,13 @@ const SFTP: React.FC<SFTPProps> = ({
       return;
     }
 
-    const hasResolvedCurrentDirectory = status === 'ready' || navigationState.index >= 0;
     const fallbackTitle = serverName.trim() || t('tabs.page.sftp');
     const nextTitle = hasResolvedCurrentDirectory ? formatSftpTabTitle(currentPath, serverName) : fallbackTitle;
     if (syncedTabTitleRef.current !== nextTitle) {
       syncedTabTitleRef.current = nextTitle;
       onTabTitleChange(nextTitle);
     }
-  }, [connectionIntent?.serverName, currentPath, navigationState.index, onTabTitleChange, status]);
+  }, [connectionIntent?.serverName, currentPath, hasResolvedCurrentDirectory, onTabTitleChange]);
 
   React.useEffect(() => {
     previewStateRef.current = previewState;
@@ -328,7 +332,7 @@ const SFTP: React.FC<SFTPProps> = ({
     return sortSftpEntriesByDirectoryListView(filteredEntries, sftpDirectoryListView.sort);
   }, [entries, filterQuery, sftpDirectoryListView.sort, sftpShowHiddenEntries]);
 
-  const breadcrumbs = React.useMemo(() => buildBreadcrumbs(currentPath), [currentPath]);
+  const breadcrumbs = React.useMemo(() => buildBreadcrumbs(addressPath), [addressPath]);
   const addressBreadcrumbRenderState = React.useMemo(
     () => resolveAddressBreadcrumbRenderState(breadcrumbs),
     [breadcrumbs],
@@ -451,6 +455,7 @@ const SFTP: React.FC<SFTPProps> = ({
     resetSelection,
     selectSingleEntry,
     selectEntryWithModifiers,
+    selectEntriesByPaths,
     pruneSelectionToEntries,
   } = useSftpSelectionModel({
     visibleEntries,
@@ -713,6 +718,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const applyDirectoryCacheEntry = React.useCallback(
     (cacheEntry: DirectoryCacheEntry): void => {
+      setAddressPath(cacheEntry.path);
       setCurrentPath(cacheEntry.path);
       setParentPath(cacheEntry.parentPath);
       setEntries(cacheEntry.entries);
@@ -746,6 +752,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const loadDirectory = React.useCallback(
     async (directoryPath: string, options?: DirectoryLoadOptions): Promise<string | null> => {
+      setAddressPath(directoryPath);
       const cachedDirectory = directoryCacheRef.current[directoryPath];
       if (cachedDirectory && !options?.forceRefresh) {
         applyDirectoryCacheEntry(cachedDirectory);
@@ -773,6 +780,7 @@ const SFTP: React.FC<SFTPProps> = ({
         }
 
         const sortedEntries = sortSftpEntries(response.data.entries);
+        setAddressPath(response.data.path);
         setCurrentPath(response.data.path);
         setParentPath(response.data.parentPath);
         setEntries(sortedEntries);
@@ -990,6 +998,7 @@ const SFTP: React.FC<SFTPProps> = ({
         setRenamingEntryPath('');
         resetTaskQueue();
         directoryCacheRef.current = {};
+        setAddressPath(connectionIntent.initialPath ?? '.');
         setCurrentPath(connectionIntent.initialPath ?? '.');
         setParentPath(undefined);
         setNavigationState({ paths: [], index: -1 });
@@ -1188,7 +1197,7 @@ const SFTP: React.FC<SFTPProps> = ({
     handleShowAddressAsText,
     setPathInput,
   } = useSftpAddressInputController({
-    currentPath,
+    addressPath,
     sftpShowAddressAsText,
     navigateToPath,
     setSftpAddressDisplayMode,
@@ -1512,8 +1521,8 @@ const SFTP: React.FC<SFTPProps> = ({
   );
 
   const handleCopyCurrentPath = React.useCallback(async (): Promise<void> => {
-    await copyTextToClipboard(currentPath, t('sftp.feedback.pathCopied'));
-  }, [copyTextToClipboard, currentPath]);
+    await copyTextToClipboard(addressPath, t('sftp.feedback.pathCopied'));
+  }, [addressPath, copyTextToClipboard]);
 
   const handleCopyRelativeRemotePath = React.useCallback(
     async (relativePath: string): Promise<void> => {
@@ -2807,6 +2816,7 @@ const SFTP: React.FC<SFTPProps> = ({
       <div className="flex h-full w-full flex-col gap-2.5 overflow-hidden">
         <SftpToolbar
           activeDropTarget={activeDropTarget}
+          addressPath={addressPath}
           addressBreadcrumbRenderState={addressBreadcrumbRenderState}
           addressInputContextMenuItems={addressInputContextMenuItems}
           addressInputRef={addressInputRef}
@@ -2824,6 +2834,7 @@ const SFTP: React.FC<SFTPProps> = ({
           hasSelection={hasSelection}
           hasSingleSelection={hasSingleSelection}
           isAddressInputEditing={isAddressInputEditing}
+          isAddressLoading={isAddressLoading}
           isBreadcrumbLoading={isBreadcrumbLoading}
           isBusy={isBusy}
           isRefreshingDirectory={isRefreshingDirectory}
@@ -2944,6 +2955,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onEntryDragStart={handleSftpEntryDragStart}
             onEntryOpen={handleEntryOpen}
             onEntrySelect={handleEntrySelect}
+            onEntriesMarqueeSelect={selectEntriesByPaths}
             onFileNavigationRowKeyDown={handleFileNavigationRowKeyDown}
             onInlineEditInputBlur={handleInlineEditInputBlur}
             onInlineEditMenuCloseAutoFocus={handleInlineEditMenuCloseAutoFocus}

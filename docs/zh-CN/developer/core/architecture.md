@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(Prisma adapter 管理的 SQLCipher)]
 ```
 
 ## 2. Main ↔ Renderer 职责划分
@@ -28,15 +28,22 @@ flowchart LR
 - 应用启动阶段并行拉起 BrowserWindow 与 backend 预热流程。
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
-- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
+- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。同一 lifecycle 会在系统 Node 运行时下探测 SQLCipher native binding，并且只在当前 ABI 不兼容时重建。
 - 开发身份由 `pnpm dev:profile`（`scripts/dev-profile.mjs`）管理。当选中身份或通过 `COSMOSH_DEV_PROFILE` 指定身份时，Main 会在窗口/backend 启动前应用该身份，使 Electron `userData`、SQLite 文件和 backend 专用 secret 存储都落到 `.cosmosh/dev-profiles/<name>/` 下。
-- Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
+- `packages/main/scripts/dev-main.cjs` 在 workspace 系统 Node 下运行，编译 Main，并通过仅开发态使用的 `COSMOSH_DEV_NODE_EXEC_PATH` 交接 canonical Node executable 给 Electron。
+- Main 使用已校验的系统 Node executable 与 `tsx` 直接拉起开发态 backend，从而同时避免 package script 遗留孤儿进程以及 Electron/Node native ABI 冲突。打包 Main 仍使用 Electron 的 `process.execPath` 配合 `ELECTRON_RUN_AS_NODE=1` 启动已同步的 backend。
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
   - 用于后端 i18n 响应的 locale header。
+
+#### 开发态 Backend 运行时边界
+
+开发启动器负责交接系统 Node executable，因为它在 Electron 替换 `process.execPath` 之前运行。Main 仅接受能够解析到 canonical regular file 的绝对路径；在适用平台上要求 POSIX executable bits，拒绝 Electron host executable 本身，并在启动 Backend 前从子进程环境中移除交接变量。该值只属于开发编排元数据，不属于 Backend 环境契约。
+
+开发与打包有意使用不同的 native target。Main 与 standalone Backend 的 `predev` lifecycle，以及 Backend 的 `predb:init`，都会调用 `ensure-sqlcipher-native.cjs --runtime=node --if-needed`；打包则无参数调用同一脚本，强制执行 Electron target 的 release rebuild。两个路径都会在构建后使用所选运行时打开并关闭内存数据库；探针失败会在 Backend 启动或 packaged runtime 同步前中止。在 Windows 上，切换 target 前必须关闭所有正在使用共享 binding 的 Cosmosh 进程，因为已加载的 `.node` 文件无法被替换。
 
 ### Backend 进程 (`packages/backend/src/index.ts`)
 
@@ -46,6 +53,8 @@ flowchart LR
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
 - SSH 认证成功后、交互 PTY 打开前，若全局与服务器级开关允许，`SshSessionService` 会通过 `RemoteBootstrapService` 执行远端增强 ensure。Backend 负责 manifest 加载、远端探测、已安装状态校验、按需下载编排、状态转发、运行时事件门禁与审计记录；`packages/remote-bootstrap` 负责远端用户级 Go 安装器，以及由 Go 生成的 helper 协议/能力契约。Manifest URL 优先来自 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，其次是 packaged CI resource，未打包开发运行则再回退到仅开发使用的 `remote-bootstrap-dev` 默认值。正式 tag release 包指向版本化 release manifest；`main` 包指向固定的 `remote-bootstrap-dev` prerelease manifest；分支名包含 `remote-bootstrap` 的 push 构建可以指向分支专用临时 prerelease manifest，用于端到端 CI 测试。有界 `ssh2 exec` 与交互流保持隔离；已安装契约为最新时跳过 asset 下载，ensure 失败则只禁用本次会话的增强数据，不阻止普通 SSH。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
+- 生产环境使用 `PrismaSqlCipherAdapterFactory` 构造 Prisma；该 factory 会把 `better-sqlite3-multiple-ciphers` native binding 注入 Prisma 的 better-sqlite3 adapter，并在暴露连接前应用数据库密钥。Schema migration 与业务查询因此共享同一条 keyed SQLCipher 连接路径。
+- 标准 SQLite 明文文件头会触发一次性的复制/rekey/校验/替换迁移。未知文件或错误密钥不会进入明文 fallback，固定迁移产物可在下一次启动恢复 rename 中断窗口。
 - 简单的 Prisma `ALTER TABLE ... ADD COLUMN` migration 会先对照实时 SQLite 表元数据；若列已存在但 `_prisma_migrations` 缺少记录，启动会补记该 migration，而不是再次执行重复 DDL；非简单 migration 漂移仍然快速失败。
 - Schema 同步采用快速失败策略：若运行时 migration 执行后仍无法满足必需表结构，backend 将中止启动，避免 API 进入部分可用/行为不确定状态。
 - migration 台账元数据采用与 Prisma 兼容的 `_prisma_migrations` 结构，便于后续平滑切换到原生 `prisma migrate deploy/resolve` 工作流。
@@ -214,7 +223,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -345,29 +354,37 @@ sequenceDiagram
 - 会话运行时必须防止陈旧 attach 状态污染。
 - Renderer 重载应视作新生命周期并显式重建状态。
 
-### 8.4 启动时 SQLite 文件不可读
+### 8.4 生产数据库加密与恢复
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: 尝试 SQLCipher 启动校验
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: 以 DB_PRAGMA_FAILED 失败退出
+  BE->>DB: 检查文件头
+  alt 标准 SQLite 明文库
+    BE->>DB: checkpoint + copy + rekey 加密副本
+    BE->>DB: integrity/schema 校验 + 原子提升
+  else 加密数据库
+    BE->>DB: 校验 SQLCipher 密钥与完整性
+  end
+  BE->>DB: Prisma 通过 keyed SQLCipher adapter 连接
+  DB-->>BE: 就绪或返回明确迁移/密钥错误
+  BE-->>MAIN: 仅在确认加密存储后继续
 ```
 
 处理原则：
 
-- 生产环境采用严格策略：SQLCipher/Prisma 不兼容时快速失败，由运维修复。
+- 生产环境不存在明文 Prisma fallback。只有标准明文文件头会进入一次性迁移；未知/损坏文件与错误密钥会直接失败且不会旋转密钥材料。
+- 加密副本通过完整性与 schema 表数量校验前，源库始终保持权威。固定的 `.sqlcipher-migration`、`.plaintext-backup` 产物支持 rename 中断后的重启恢复。加密临时库验证失败时必须与明文备份一起保留并中止启动；恢复流程不得静默恢复明文库并用未经验证的密钥重新加密，从而造成数据库密钥轮换。
 
 ### 8.5 启动时 Schema 升级路径
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as Prisma adapter 管理的 SQLCipher
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: 应用 PRAGMA + 执行待应用 Prisma migration.sql 文件

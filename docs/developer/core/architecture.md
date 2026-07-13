@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(SQLCipher via Prisma adapter)]
 ```
 
 ## 2. Main ↔ Renderer Responsibilities
@@ -28,15 +28,22 @@ flowchart LR
 - Starts BrowserWindow and backend warmup in parallel during app bootstrap.
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
-- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
+- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh. The same lifecycle probes the SQLCipher native binding under the system Node runtime and rebuilds it only when the current ABI is incompatible.
 - Development profiles are managed by `pnpm dev:profile` (`scripts/dev-profile.mjs`). When a profile is selected or passed through `COSMOSH_DEV_PROFILE`, main applies it before window/backend startup so Electron `userData`, the SQLite file, and backend-only secret storage all resolve under `.cosmosh/dev-profiles/<name>/`.
-- Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
+- `packages/main/scripts/dev-main.cjs` runs under the workspace system Node, compiles Main, and passes that canonical Node executable to Electron through the development-only `COSMOSH_DEV_NODE_EXEC_PATH` handoff.
+- Main launches the development backend directly with the validated system Node executable and `tsx`, avoiding both package-script orphan processes and Electron-versus-Node native ABI conflicts. Packaged Main continues to launch the synchronized backend with Electron's `process.execPath` plus `ELECTRON_RUN_AS_NODE=1`.
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - CI packaging can also write `resources/remote-bootstrap/manifest-url.json` when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is provided. Packaged main reads this resource only as a fallback after the environment variable, preserving local override behavior while allowing tagged release installers and `main` build artifacts to discover their intended bootstrap manifest automatically. Unpackaged development runs fall back once more to the rolling `remote-bootstrap-dev` manifest URL, so local Remote Enhancements testing does not require per-shell setup.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
   - locale header for i18n-compatible backend responses.
+
+#### Development Backend Runtime Boundary
+
+The development launcher owns the system Node executable handoff because it runs before Electron replaces `process.execPath`. Main accepts only an absolute path that resolves to a canonical regular file, requires the POSIX executable bits where applicable, rejects the Electron host executable itself, and removes the handoff variable before spawning Backend. This value is development orchestration metadata, not part of the Backend environment contract.
+
+Development and packaging intentionally use different native targets. The Main and standalone Backend `predev` lifecycles, plus Backend `predb:init`, invoke `ensure-sqlcipher-native.cjs --runtime=node --if-needed`; packaging invokes the same script without arguments to force an Electron-targeted release rebuild. Both paths open and close an in-memory database under the selected runtime after building; a failed probe aborts before Backend startup or packaged-runtime synchronization. On Windows, all Cosmosh processes using the shared binding must be closed before switching targets because a loaded `.node` file cannot be replaced.
 
 ### Backend Process (`packages/backend/src/index.ts`)
 
@@ -46,6 +53,8 @@ flowchart LR
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
 - After SSH authentication and before opening the interactive PTY, `SshSessionService` runs the Remote Enhancements ensure flow through `RemoteBootstrapService` when global and server-level gates allow it. Backend owns manifest loading, remote probing, installed-status validation, conditional download orchestration, status forwarding, runtime event gating, and audit logging; `packages/remote-bootstrap` owns the downloaded user-scoped Go installer plus the generated helper's protocol/capability contract. The manifest URL comes from `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` first, then the packaged CI resource when present, then the development-only `remote-bootstrap-dev` default for unpackaged runs. Tagged release packages point to a versioned release manifest; `main` packages point to the fixed `remote-bootstrap-dev` prerelease manifest; pushed branches whose name contains `remote-bootstrap` can point to branch-scoped temporary prerelease manifests for end-to-end CI testing. Bounded `ssh2 exec` remains separate from the interactive stream. A current installed contract skips asset download; an ensure failure disables enhancement data for that session but does not prevent ordinary SSH.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
+- Production constructs Prisma with `PrismaSqlCipherAdapterFactory`; the factory loads the `better-sqlite3-multiple-ciphers` native binding into Prisma's better-sqlite3 adapter and applies the database key before exposing the connection. Schema migrations and business queries therefore share one keyed SQLCipher connection path.
+- A canonical plaintext SQLite header triggers a one-time copy/rekey/verify/replace migration. Unknown or wrong-key files fail without plaintext fallback, and fixed migration artifacts allow interrupted rename windows to recover on the next startup.
 - Simple Prisma `ALTER TABLE ... ADD COLUMN` migrations are reconciled against live SQLite table metadata before execution. If a column already exists but `_prisma_migrations` lacks the row, startup records the migration as applied instead of re-running duplicate DDL; non-simple migration drift still fails fast.
 - Schema sync is fail-fast: backend startup stops when required tables still cannot be reconciled after runtime migration execution, preventing partial/undefined API behavior.
 - Migration ledger metadata is stored in Prisma-compatible `_prisma_migrations` format to keep a future path open for native `prisma migrate deploy/resolve` workflows.
@@ -214,7 +223,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -345,29 +354,37 @@ Handling principle:
 - Session runtime must guard against stale attach state.
 - Renderer should treat reload as a new lifecycle and re-establish state explicitly.
 
-### 8.4 Unreadable SQLite File During Startup
+### 8.4 Production Database Encryption and Recovery
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: Try SQLCipher bootstrap
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: fail startup with DB_PRAGMA_FAILED
+  BE->>DB: Inspect file header
+  alt Canonical plaintext SQLite
+    BE->>DB: checkpoint + copy + rekey encrypted copy
+    BE->>DB: integrity/schema verification + atomic promotion
+  else Encrypted database
+    BE->>DB: verify SQLCipher key and integrity
+  end
+  BE->>DB: connect Prisma through keyed SQLCipher adapter
+  DB-->>BE: ready or explicit migration/key error
+  BE-->>MAIN: continue only with encrypted storage
 ```
 
 Handling principle:
 
-- Production uses strict mode: SQLCipher/Prisma incompatibility fails fast and must be fixed operationally.
+- Production has no plaintext Prisma fallback. Only a canonical plaintext header enters the one-time migration; unknown/corrupt files and incorrect keys fail without rotating key material.
+- Migration keeps the source authoritative until an encrypted copy passes integrity and schema-count checks. Fixed `.sqlcipher-migration` and `.plaintext-backup` artifacts support restart recovery across rename interruptions. An encrypted temp that fails verification is preserved with its plaintext backup and causes startup to fail; recovery never rotates the database key by silently restoring and re-encrypting with an unverified key.
 
 ### 8.5 Startup Schema Upgrade Path
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as SQLCipher via Prisma adapter
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: apply PRAGMA + pending Prisma migration.sql files

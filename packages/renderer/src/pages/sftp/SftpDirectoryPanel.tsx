@@ -165,6 +165,7 @@ type SftpDirectoryPanelProps = {
   onEntryDragStart: SftpEntryDragStartHandler;
   onEntryOpen: (entry: ApiSftpEntry) => void;
   onEntrySelect: (entry: ApiSftpEntry, event: SftpSelectionClickEvent) => void;
+  onEntriesMarqueeSelect: (paths: string[], shouldExtendSelection: boolean) => void;
   onFileNavigationRowKeyDown: (event: React.KeyboardEvent<HTMLElement>, row: SftpFileNavigationRow) => void;
   onInlineEditInputBlur: (commit: () => void | Promise<void>) => void;
   onInlineEditMenuCloseAutoFocus: (event: Event) => void;
@@ -210,6 +211,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   onEntryDragStart,
   onEntryOpen,
   onEntrySelect,
+  onEntriesMarqueeSelect,
   onFileNavigationRowKeyDown,
   onInlineEditInputBlur,
   onInlineEditMenuCloseAutoFocus,
@@ -230,6 +232,18 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   status,
   visibleEntries,
 }) => {
+  const panelRef = React.useRef<HTMLElement | null>(null);
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const marqueePointerIdRef = React.useRef<number | null>(null);
+  const marqueeStartRef = React.useRef({ x: 0, contentY: 0 });
+  const marqueeExtendSelectionRef = React.useRef(false);
+  const marqueeBasePathsRef = React.useRef<string[]>([]);
+  const marqueePathsRef = React.useRef<string[]>([]);
+  const marqueeActivatedRef = React.useRef(false);
+  const marqueePointerPositionRef = React.useRef({ x: 0, y: 0 });
+  const marqueeAutoScrollFrameRef = React.useRef<number | null>(null);
+  const [marqueePreviewPathSet, setMarqueePreviewPathSet] = React.useState<ReadonlySet<string>>(new Set());
+  const [marqueeRect, setMarqueeRect] = React.useState<React.CSSProperties | null>(null);
   const { formatDateTime } = useDateTimeFormatter();
   const visibleColumns = React.useMemo(
     () => resolveVisibleSftpDirectoryColumns(directoryListView),
@@ -252,6 +266,208 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
     }),
+  );
+
+  /**
+   * Resolves entry paths whose rendered rows intersect the active marquee.
+   *
+   * @param left Marquee left edge in viewport coordinates.
+   * @param top Marquee top edge in scroll-content coordinates.
+   * @param right Marquee right edge in viewport coordinates.
+   * @param bottom Marquee bottom edge in scroll-content coordinates.
+   * @returns Intersecting entry paths in visible directory order.
+   */
+  const resolveMarqueeEntryPaths = React.useCallback(
+    (left: number, top: number, right: number, bottom: number): string[] => {
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer) {
+        return [];
+      }
+
+      const scrollRect = scrollContainer.getBoundingClientRect();
+      return visibleEntries
+        .filter((entry) => {
+          const rowRect = fileRowRefs.current[entry.path]?.getBoundingClientRect();
+          if (!rowRect) {
+            return false;
+          }
+
+          const rowTop = rowRect.top - scrollRect.top + scrollContainer.scrollTop;
+          const rowBottom = rowRect.bottom - scrollRect.top + scrollContainer.scrollTop;
+          return rowRect.right >= left && rowRect.left <= right && rowBottom >= top && rowTop <= bottom;
+        })
+        .map((entry) => entry.path);
+    },
+    [fileRowRefs, visibleEntries],
+  );
+
+  /**
+   * Starts marquee selection from list whitespace or the panel padding beside the list.
+   *
+   * @param event Primary pointer event captured by the directory panel.
+   * @returns void.
+   */
+  const handleMarqueePointerDown = React.useCallback(
+    (event: React.PointerEvent<HTMLElement>): void => {
+      if (event.button !== 0 || status !== 'ready' || pendingCreate || renamingEntryPath) {
+        return;
+      }
+
+      const target = event.target;
+      if (!(target instanceof Element)) {
+        return;
+      }
+
+      if (target.closest('[data-sftp-entry-row], [data-sftp-list-header], input, button, [role="menuitem"]')) {
+        return;
+      }
+
+      const scrollContainer = scrollContainerRef.current;
+      if (!scrollContainer) {
+        return;
+      }
+
+      const scrollRect = scrollContainer.getBoundingClientRect();
+      marqueePointerIdRef.current = event.pointerId;
+      marqueeStartRef.current = {
+        x: event.clientX,
+        contentY: event.clientY - scrollRect.top + scrollContainer.scrollTop,
+      };
+      marqueePointerPositionRef.current = { x: event.clientX, y: event.clientY };
+      marqueeExtendSelectionRef.current = window.electron?.platform === 'darwin' ? event.metaKey : event.ctrlKey;
+      marqueeBasePathsRef.current = marqueeExtendSelectionRef.current ? Array.from(selectedPathSet) : [];
+      marqueePathsRef.current = [];
+      marqueeActivatedRef.current = false;
+      setMarqueePreviewPathSet(new Set(marqueeBasePathsRef.current));
+      event.currentTarget.setPointerCapture(event.pointerId);
+      event.preventDefault();
+    },
+    [pendingCreate, renamingEntryPath, selectedPathSet, status],
+  );
+
+  /**
+   * Updates the marquee geometry and the rows currently previewed as selected.
+   *
+   * @param clientX Pointer x coordinate in the viewport.
+   * @param clientY Pointer y coordinate in the viewport.
+   * @returns void.
+   */
+  const updateMarqueeSelectionPreview = React.useCallback(
+    (clientX: number, clientY: number): void => {
+      const panelRect = panelRef.current?.getBoundingClientRect();
+      const scrollContainer = scrollContainerRef.current;
+      if (!panelRect || !scrollContainer) {
+        return;
+      }
+
+      const scrollRect = scrollContainer.getBoundingClientRect();
+      const pointerContentY = clientY - scrollRect.top + scrollContainer.scrollTop;
+      const left = Math.min(marqueeStartRef.current.x, clientX);
+      const top = Math.min(marqueeStartRef.current.contentY, pointerContentY);
+      const right = Math.max(marqueeStartRef.current.x, clientX);
+      const bottom = Math.max(marqueeStartRef.current.contentY, pointerContentY);
+      if (!marqueeActivatedRef.current && right - left < 3 && bottom - top < 3) {
+        return;
+      }
+
+      marqueeActivatedRef.current = true;
+      setMarqueeRect({
+        left: left - panelRect.left,
+        top: scrollRect.top - panelRect.top + top - scrollContainer.scrollTop,
+        width: right - left,
+        height: bottom - top,
+      });
+      marqueePathsRef.current = resolveMarqueeEntryPaths(left, top, right, bottom);
+      setMarqueePreviewPathSet(new Set([...marqueeBasePathsRef.current, ...marqueePathsRef.current]));
+    },
+    [resolveMarqueeEntryPaths],
+  );
+
+  /**
+   * Continues scrolling while the captured pointer remains near a vertical list edge.
+   *
+   * @returns void.
+   */
+  const runMarqueeAutoScroll = React.useCallback((): void => {
+    const scrollContainer = scrollContainerRef.current;
+    if (marqueePointerIdRef.current === null || !scrollContainer) {
+      marqueeAutoScrollFrameRef.current = null;
+      return;
+    }
+
+    const scrollRect = scrollContainer.getBoundingClientRect();
+    const pointerY = marqueePointerPositionRef.current.y;
+    const edgeThreshold = 56;
+    let scrollDelta = 0;
+    if (pointerY < scrollRect.top + edgeThreshold) {
+      scrollDelta = -Math.ceil(((scrollRect.top + edgeThreshold - pointerY) / edgeThreshold) * 18);
+    } else if (pointerY > scrollRect.bottom - edgeThreshold) {
+      scrollDelta = Math.ceil(((pointerY - (scrollRect.bottom - edgeThreshold)) / edgeThreshold) * 18);
+    }
+
+    if (scrollDelta !== 0) {
+      const previousScrollTop = scrollContainer.scrollTop;
+      scrollContainer.scrollTop += scrollDelta;
+      if (scrollContainer.scrollTop !== previousScrollTop) {
+        updateMarqueeSelectionPreview(marqueePointerPositionRef.current.x, marqueePointerPositionRef.current.y);
+      }
+    }
+
+    marqueeAutoScrollFrameRef.current = window.requestAnimationFrame(runMarqueeAutoScroll);
+  }, [updateMarqueeSelectionPreview]);
+
+  /**
+   * Updates the marquee overlay and live selection as the pointer moves.
+   *
+   * @param event Captured pointer movement event.
+   * @returns void.
+   */
+  const handleMarqueePointerMove = React.useCallback(
+    (event: React.PointerEvent<HTMLElement>): void => {
+      if (marqueePointerIdRef.current !== event.pointerId) {
+        return;
+      }
+
+      marqueePointerPositionRef.current = { x: event.clientX, y: event.clientY };
+      updateMarqueeSelectionPreview(event.clientX, event.clientY);
+      if (marqueeActivatedRef.current && marqueeAutoScrollFrameRef.current === null) {
+        marqueeAutoScrollFrameRef.current = window.requestAnimationFrame(runMarqueeAutoScroll);
+      }
+    },
+    [runMarqueeAutoScroll, updateMarqueeSelectionPreview],
+  );
+
+  /**
+   * Completes marquee interaction and restores normal pointer behavior.
+   *
+   * @param event Captured pointer completion event.
+   * @returns void.
+   */
+  const handleMarqueePointerEnd = React.useCallback(
+    (event: React.PointerEvent<HTMLElement>): void => {
+      if (marqueePointerIdRef.current !== event.pointerId) {
+        return;
+      }
+
+      if (marqueeActivatedRef.current) {
+        onEntriesMarqueeSelect([...marqueeBasePathsRef.current, ...marqueePathsRef.current], false);
+      } else {
+        onDirectoryBlankClick();
+      }
+
+      marqueePointerIdRef.current = null;
+      marqueeActivatedRef.current = false;
+      setMarqueePreviewPathSet(new Set());
+      setMarqueeRect(null);
+      if (marqueeAutoScrollFrameRef.current !== null) {
+        window.cancelAnimationFrame(marqueeAutoScrollFrameRef.current);
+        marqueeAutoScrollFrameRef.current = null;
+      }
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+    },
+    [onDirectoryBlankClick, onEntriesMarqueeSelect],
   );
   const currentDirectoryDropTarget = React.useMemo<SftpDirectoryDropTarget>(
     () => ({
@@ -348,7 +564,21 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
   }, []);
 
   return (
-    <main className={SFTP_CARD_CLASS_NAME}>
+    <main
+      ref={panelRef}
+      className={classNames(SFTP_CARD_CLASS_NAME, 'relative select-none')}
+      onPointerDown={handleMarqueePointerDown}
+      onPointerMove={handleMarqueePointerMove}
+      onPointerUp={handleMarqueePointerEnd}
+      onPointerCancel={handleMarqueePointerEnd}
+    >
+      {marqueeRect ? (
+        <div
+          aria-hidden="true"
+          className="bg-home-card-active/55 pointer-events-none absolute z-30 rounded-sm-2 border-2 border-outline shadow-sm"
+          style={marqueeRect}
+        />
+      ) : null}
       {status === 'error' ? (
         <div className="flex h-full min-h-0 items-center justify-center px-6 text-center">
           <div className="flex max-w-[360px] flex-col items-center gap-3">
@@ -374,7 +604,10 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
       ) : (
         <ContextMenu>
           <ContextMenuTrigger asChild>
-            <div className="h-full min-h-0 overflow-auto">
+            <div
+              ref={scrollContainerRef}
+              className="h-full min-h-0 overflow-auto"
+            >
               <div
                 className="flex min-h-full flex-col"
                 style={directoryListStyle}
@@ -392,6 +625,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                     <ContextMenu>
                       <ContextMenuTrigger asChild>
                         <div
+                          data-sftp-list-header="true"
                           className="sticky top-0 z-10 grid h-[30px] shrink-0 items-center bg-ssh-card-bg-terminal px-3 text-xs font-medium text-home-text-subtle"
                           style={directoryGridStyle}
                         >
@@ -586,13 +820,16 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                   ) : null}
                   {status === 'ready' && visibleEntries.length > 0
                     ? visibleEntries.map((entry, index) => {
-                        const isSelected = selectedPathSet.has(entry.path);
+                        const effectiveSelectedPathSet = marqueeRect ? marqueePreviewPathSet : selectedPathSet;
+                        const isSelected = effectiveSelectedPathSet.has(entry.path);
                         const hasSelectedPreviousEntry =
-                          isSelected && index > 0 && selectedPathSet.has(visibleEntries[index - 1]?.path ?? '');
+                          isSelected &&
+                          index > 0 &&
+                          effectiveSelectedPathSet.has(visibleEntries[index - 1]?.path ?? '');
                         const hasSelectedNextEntry =
                           isSelected &&
                           index < visibleEntries.length - 1 &&
-                          selectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
+                          effectiveSelectedPathSet.has(visibleEntries[index + 1]?.path ?? '');
                         const isCut = clipboardMode === 'cut' ? clipboardPaths.has(entry.path) : false;
                         const shouldDimHiddenEntry = sftpShowHiddenEntries && sftpDimHiddenEntries && entry.isHidden;
                         const hiddenEntryVisualClassName = shouldDimHiddenEntry ? 'opacity-80' : undefined;
@@ -609,6 +846,7 @@ export const SftpDirectoryPanel: React.FC<SftpDirectoryPanelProps> = ({
                                 ref={(element) => {
                                   fileRowRefs.current[entry.path] = element;
                                 }}
+                                data-sftp-entry-row="true"
                                 role="option"
                                 aria-selected={isSelected}
                                 aria-label={entry.name}

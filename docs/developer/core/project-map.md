@@ -50,10 +50,14 @@ flowchart TB
   - `src/preload.ts`: secure renderer bridge.
   - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
   - `src/dev/dev-profile.ts`: development-only profile activation that maps selected profiles to Electron `userData`, SQLite, and backend secret storage paths before startup.
+  - `src/dev/backend-runtime.ts`: validation boundary for the system Node executable used by Main's development backend child.
   - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
   - `resources/remote-bootstrap/manifest-url.json`: git-ignored CI packaging resource that records the default Remote Enhancements manifest URL for packaged backend startup when a release or `main` build provides one.
   - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.
+  - `scripts/dev-main.cjs`: system-Node development launcher that compiles Main and hands the canonical Node executable to Electron.
+  - `scripts/dev-preflight.cjs`: incremental development build check for API contract and i18n outputs.
+  - `scripts/ensure-sqlcipher-native.cjs`: target-aware SQLCipher native ABI probe and rebuild path for system Node development and Electron packaging.
   - `scripts/write-remote-bootstrap-manifest-url.cjs`: CI packaging helper that writes the packaged Remote Enhancements manifest URL resource when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is set, and removes any stale ignored resource when it is not set.
   - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded by Main in development runs; it reads the renderer mirror cache and does not alter backend transport.
 
@@ -65,7 +69,7 @@ flowchart TB
   - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
-  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
+  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, TanStack Virtual-backed visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
   - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting and search/replace adapter, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
   - `theme`: token source used to generate CSS variable system.
@@ -85,7 +89,8 @@ flowchart TB
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
   - `src/terminal/completion`: shared terminal auto-complete domain (spec dataset, ranking engine, completion payload shaping) used by both SSH and local-terminal session services.
-  - `src/db`: Prisma initialization and DB lifecycle.
+  - `src/db/prisma.ts`: Prisma lifecycle, runtime migration execution, schema validation, and structured database errors.
+  - `src/db/sqlcipher.ts`: production SQLCipher adapter factory, keyed connection verification, legacy plaintext migration, and interrupted-migration recovery.
 
 ### `packages/api-contract`
 

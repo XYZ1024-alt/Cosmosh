@@ -35,6 +35,7 @@ type UseSftpSelectionModelResult = {
     event: SftpSelectionModifierEvent,
     options?: { rangeAnchorPath?: string },
   ) => void;
+  selectEntriesByPaths: (paths: string[], shouldExtendSelection: boolean) => void;
   pruneSelectionToEntries: (nextEntries: ApiSftpEntry[]) => void;
 };
 
@@ -151,6 +152,30 @@ export const useSftpSelectionModel = ({
     [clearPreviewState, selectEntryRange, selectSingleEntry, selectionAnchorPath],
   );
 
+  /**
+   * Applies a pointer marquee selection while preserving preview safety guards.
+   *
+   * @param paths Visible entry paths intersecting the marquee rectangle.
+   * @param shouldExtendSelection Whether the existing selection should be preserved.
+   * @returns void.
+   */
+  const selectEntriesByPaths = React.useCallback(
+    (paths: string[], shouldExtendSelection: boolean): void => {
+      if (!clearPreviewState()) {
+        return;
+      }
+
+      const visiblePathSet = new Set(visibleEntries.map((entry) => entry.path));
+      const marqueePaths = paths.filter((path) => visiblePathSet.has(path));
+      setSelectedPaths((previous) => {
+        const nextPaths = shouldExtendSelection ? [...previous, ...marqueePaths] : marqueePaths;
+        return Array.from(new Set(nextPaths));
+      });
+      setSelectionAnchorPath(marqueePaths.at(-1) ?? '');
+    },
+    [clearPreviewState, visibleEntries],
+  );
+
   const pruneSelectionToEntries = React.useCallback((nextEntries: ApiSftpEntry[]): void => {
     const validPaths = new Set(nextEntries.map((entry) => entry.path));
     setSelectedPaths((previous) => previous.filter((path) => validPaths.has(path)));
@@ -172,6 +197,7 @@ export const useSftpSelectionModel = ({
     resetSelection,
     selectSingleEntry,
     selectEntryWithModifiers,
+    selectEntriesByPaths,
     pruneSelectionToEntries,
   };
 };

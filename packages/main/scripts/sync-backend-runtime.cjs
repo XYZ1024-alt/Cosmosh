@@ -16,6 +16,7 @@ const thirdPartyEntryPackages = [
   'node-pty',
   'socks',
   'intl-messageformat',
+  '@prisma/adapter-better-sqlite3',
   'better-sqlite3-multiple-ciphers',
 ];
 const workspaceRuntimePackages = ['backend', 'api-contract', 'i18n'];

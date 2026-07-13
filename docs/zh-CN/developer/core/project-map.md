@@ -50,10 +50,14 @@ flowchart TB
   - `src/preload.ts`：安全渲染层桥接。
   - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助，包含开发身份数据库路径覆盖。
   - `src/dev/dev-profile.ts`：仅开发态使用的身份激活逻辑，在启动前将选中身份映射到 Electron `userData`、SQLite 与 backend secret 存储路径。
+  - `src/dev/backend-runtime.ts`：Main 开发态 backend 子进程使用的系统 Node executable 校验边界。
   - `resources/installer.nsh`：Windows NSIS 安装器扩展，包括辅助安装选项页、shell/terminal 注册钩子、卸载数据清理，以及安装器 DPI manifest 设置。
   - `resources/helpers`：打包的系统 helper，包括 macOS NSWorkspace SFTP 打开方式 helper 源码/二进制。
   - `resources/remote-bootstrap/manifest-url.json`：被 git ignore 的 CI 打包资源，在 release 或 `main` 构建提供默认 URL 时记录 packaged backend 启动使用的远端增强 manifest URL。
   - `scripts/compile-macos-open-with-helper.mjs`：仅 macOS 生效的构建钩子，在打包前编译 SFTP 打开方式 helper。
+  - `scripts/dev-main.cjs`：在系统 Node 下编译 Main，并把 canonical Node executable 交接给 Electron 的开发启动器。
+  - `scripts/dev-preflight.cjs`：面向 API contract 与 i18n 产物的增量开发构建检查。
+  - `scripts/ensure-sqlcipher-native.cjs`：面向系统 Node 开发态和 Electron 打包态的 SQLCipher native ABI 探针与重建路径。
   - `scripts/write-remote-bootstrap-manifest-url.cjs`：CI 打包辅助脚本，在设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时写入 packaged 远端增强 manifest URL 资源；未设置时会删除陈旧的被 ignore 资源。
   - `devtools/request-trace-panel`：未打包的仅开发态 DevTools extension，由 Main 在开发运行中加载；它读取 renderer 镜像缓存，不改变 backend transport。
 
@@ -65,7 +69,7 @@ flowchart TB
   - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务队列等 controller hooks 和共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
-  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
+  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、基于 TanStack Virtual 的视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
   - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与查找/替换 adapter，以及工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。
@@ -85,7 +89,8 @@ flowchart TB
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
   - `src/terminal/completion`：终端自动补全共享领域模块（规范数据、排序引擎、补全响应组装），由 SSH 与本地终端会话服务共同使用。
-  - `src/db`：Prisma 初始化与数据库生命周期。
+  - `src/db/prisma.ts`：Prisma 生命周期、运行时 migration 执行、schema 校验与结构化数据库错误。
+  - `src/db/sqlcipher.ts`：生产 SQLCipher adapter factory、keyed connection 校验、旧明文库迁移与迁移中断恢复。
 
 ### `packages/api-contract`
 
