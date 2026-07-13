@@ -860,7 +860,6 @@
         "HH:mm:ss": "23:45:30"
       }
     },
-    "query": "Query",
     "saveChanges": "Save",
     "saveFailed": "Failed to save settings.",
     "saveSuccess": "Settings saved.",

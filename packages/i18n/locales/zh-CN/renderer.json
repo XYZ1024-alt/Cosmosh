@@ -860,7 +860,6 @@
         "HH:mm:ss": "23:45:30"
       }
     },
-    "query": "关键词",
     "saveChanges": "保存",
     "saveFailed": "保存设置失败。",
     "saveSuccess": "设置已保存。",
