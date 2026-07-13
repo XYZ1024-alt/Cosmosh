@@ -28,3 +28,5 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build backend
         run: pnpm --filter @cosmosh/backend build
+      - name: Test SSH session bootstrap
+        run: pnpm --filter @cosmosh/backend test:ssh-session

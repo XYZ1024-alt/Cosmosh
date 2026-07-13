@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { Client } from 'ssh2';
-
 import type { RemoteBootstrapResult, RemoteBootstrapStatus } from '../remote-bootstrap/service.js';
+import type { OpenSshClientResult } from './connect.js';
 import type { RemoteShellEventMessage } from './remote-shell-events.js';
 import { SshSessionService } from './session-service.js';
 
@@ -40,11 +39,12 @@ type RemoteShellEventServiceHarness = {
 
 type RemoteBootstrapEnsureServiceHarness = {
   ensureRemoteEnhancementsBeforeShell(options: {
-    client: Client;
+    openClient: (signal: AbortSignal) => Promise<OpenSshClientResult>;
     serverId: string;
     sessionId: string;
     requestId?: string;
     serverEnabled: boolean;
+    signal?: AbortSignal;
     sendStatus: (status: RemoteBootstrapStatus) => void;
     ensureTimeoutMs?: number;
   }): Promise<RemoteBootstrapResult>;
@@ -240,7 +240,9 @@ test('SshSessionService stops waiting when the optional bootstrap exceeds its to
 
   const result = await serviceHarness.ensureRemoteEnhancementsBeforeShell
     .call(serviceContext, {
-      client: {} as Client,
+      openClient: async () => {
+        throw new Error('bootstrap client should stay lazy while no command is requested');
+      },
       serverId: 'server-1',
       sessionId: 'session-1',
       requestId: 'request-1',

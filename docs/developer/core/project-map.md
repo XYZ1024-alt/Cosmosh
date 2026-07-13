@@ -80,8 +80,8 @@ flowchart TB
 - **Key folders**:
   - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
-  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
-  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It loads the deployment manifest, probes the remote platform, validates the installed Go binary's runtime status, injects the download wrapper only for missing/stale installations, returns a trusted helper contract to `SshSessionService`, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
+  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared authenticated connection helpers for shell and non-shell transports. The helper creates fresh proxy sockets per transport and supports attempt-scoped compression and cancellation.
+  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It loads the deployment manifest, probes the remote platform through a temporary SSH transport isolated from the interactive client, validates the installed Go binary's runtime status, injects the download wrapper only for missing/stale installations, returns a trusted helper contract to `SshSessionService`, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
   - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.

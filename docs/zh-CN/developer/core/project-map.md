@@ -80,8 +80,8 @@ flowchart TB
 - **关键目录**：
   - `src/http/routes`：设置、SSH 实体、端口转发规则与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
-  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测），以及非 shell SSH 连接共享 helper。
-  - `src/remote-bootstrap`：交互 shell 打开前的远端增强编排。它负责加载部署 manifest、探测远端平台、校验已安装 Go binary 的运行时状态，仅在安装缺失或陈旧时注入下载 wrapper，向 `SshSessionService` 返回可信 helper 契约，转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
+  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测、钥匙链凭据解析），以及供 shell 与非 shell transport 共用的已认证连接 helper。该 helper 会为每条 transport 创建新的 proxy socket，并支持 attempt 级压缩策略与取消信号。
+  - `src/remote-bootstrap`：交互 shell 打开前的远端增强编排。它负责加载部署 manifest，通过与交互 client 隔离的临时 SSH transport 探测远端平台，校验已安装 Go binary 的运行时状态，仅在安装缺失或陈旧时注入下载 wrapper，向 `SshSessionService` 返回可信 helper 契约，转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
   - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
   - `src/settings`：设置默认值、请求校验解析，以及供 HTTP 路由和运行时服务复用的 AppSettings 读取器。

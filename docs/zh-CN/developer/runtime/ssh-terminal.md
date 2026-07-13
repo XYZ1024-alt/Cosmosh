@@ -40,7 +40,7 @@ sequenceDiagram
 - 步骤：
   1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
-  3. 使用服务器作用域的压缩协商配置，并携带 UTF-8 locale 请求，通过 `ssh2.Client.shell` 打开 SSH shell。
+  3. 认证主 SSH transport，使用相同连接策略的临时 transport 完成可选的 shell 打开前远端增强工作，再携带 UTF-8 locale 请求通过 `ssh2.Client.shell` 打开主 shell。
   4. 写入 `SshLoginAudit` 记录：
      - 会话创建成功时写入 `result = success`，并记录 `sessionId` 与 `sessionStartedAt`。
      - 主机信任/认证/连接失败时写入 `result = failed`，并记录 `failureReason`。
@@ -362,34 +362,39 @@ sequenceDiagram
   participant UI as Renderer SSH Page
   participant SSH as SshSessionService
   participant BOOT as RemoteBootstrapService
-  participant REM as Remote SSH Host
+  participant PRIMARY as Remote Host (primary transport)
+  participant AUX as Remote Host (bootstrap transport)
   participant REL as HTTPS Manifest/Asset Host
 
   UI->>SSH: Create SSH session
-  SSH->>REM: Authenticate SSH transport
+  SSH->>PRIMARY: Authenticate primary SSH transport
   SSH->>BOOT: Ensure runtime before opening PTY
   BOOT->>REL: Fetch manifest URL
-  BOOT->>REM: Probe uname, arch, and shell by bounded exec
-  BOOT->>REM: Run installed binary status
+  BOOT->>AUX: Lazily authenticate temporary transport
+  BOOT->>AUX: Probe uname, arch, and shell by bounded exec
+  BOOT->>AUX: Run installed binary status
   alt Installed contract is current
     BOOT-->>SSH: Current contract, no download
   else Missing, legacy, or stale
-    BOOT->>REM: Run injected launcher/wrapper by bounded exec
-    REM->>REL: Download matching bootstrap binary
-    REM->>REM: Verify checksum and install user-scoped files
-    BOOT->>REM: Re-run installed binary status
+    BOOT->>AUX: Run injected launcher/wrapper by bounded exec
+    AUX->>REL: Download matching bootstrap binary
+    AUX->>AUX: Verify checksum and install user-scoped files
+    BOOT->>AUX: Re-run installed binary status
     BOOT-->>SSH: Validated installed contract
   end
-  SSH->>REM: Open interactive PTY
-  REM-->>SSH: integration-ready OSC with matching contract
+  SSH->>AUX: Begin temporary transport teardown
+  SSH->>PRIMARY: Open PTY as first session channel
+  PRIMARY-->>SSH: Login messages + integration-ready OSC
   UI->>SSH: Attach /ws/ssh/{sessionId}
   SSH-->>UI: ready + bootstrap/runtime status + buffered output
 ```
 
-- Bootstrap ensure 会在 SSH 认证后、`client.shell(...)` 之前执行一次。新安装的 profile hook 会作用于同一个首次交互 shell，用户不需要重连才能启动 helper。
+- 主 SSH transport 会先完成认证，但在 bootstrap 结束前不创建任何 channel。第一次真正需要远端命令时，backend 才会使用相同凭据、host-key 策略、压缩设置与代理策略懒创建第二条已认证 transport。每条使用代理的 transport 都会获得独立 socket。
+- 所有 bootstrap probe/install/status `exec` channel 都只运行在临时 transport。Backend 会在主 client 调用 `client.shell(...)` 前启动其关闭流程，底层 socket 的实际关闭可以异步完成。因此交互 PTY 是主 transport 的第一个 session channel，既能保留 OpenSSH/PAM 登录消息（例如 Debian MOTD），也能让新安装的 profile hook 在同一个首次 shell 中生效。
+- 开关关闭或 manifest 缺失/无效时不会创建临时 transport。其解密得到的 completion secret 会被丢弃，永远不会复制到 session state、状态 payload 或审计 metadata。
 - Backend 会在下载前查询已安装 binary。只有 manifest version 与 asset SHA-256、受支持 protocol、helper 内容与 profile hook 均为最新时才跳过下载；旧 binary 缺失新字段时会被视为不兼容并重装。PTY 创建前会再次读取 status 复验安装。
-- 每条侧通道命令都使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出；整个可选的 shell 打开前 ensure 另有更严格的 15 秒连接总预算。共享 deadline 到期时，backend 会中止 manifest 请求与活动 exec channel、发送 `BOOTSTRAP_ENSURE_TIMEOUT`，并立即继续创建普通 PTY。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
-- Ensure 失败或超时不会把已通过认证的 SSH 变成 shell 创建失败。Backend 会以 `disabled` 运行状态打开 PTY、报告失败，并在该 session 内忽略所有 helper 派生事件。
+- 每条侧通道命令都使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出；整个可选的 shell 打开前 ensure 对设置读取、manifest I/O、临时 proxy/SSH 建连与 exec 工作共享更严格的 15 秒总预算。共享 deadline 到期时，backend 会停止等待 proxy 准备、关闭活动 exec channel、销毁临时 client、发送 `BOOTSTRAP_ENSURE_TIMEOUT`，并立即继续创建普通 PTY。取消后才完成的预连接 proxy socket 会在返回时立即销毁。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
+- Ensure 建连失败或超时不会把有效的主 SSH 认证变成 shell 创建失败。Backend 会启动临时 transport 的关闭，以 `disabled` 运行状态打开主 PTY、报告失败，并在该 session 内忽略所有 helper 派生事件。如果主 transport 本身在 ensure 期间失败，其错误会取消临时工作，并继续通过现有 SSH 错误路径让普通 session 创建失败。
 - Go `install`/`status` 输出只用于建立安装标识与信任状态，不会直接提供 cwd、输入状态或命令生命周期数据。实时 shell 数据随后由 Go 生成的 helper 通过 OSC 777 发出，并继续受运行时 gate 约束。
 - Renderer 会把最新 `bootstrap-status`、最新 `remote-enhancement-runtime-status` 与最多 200 条远端增强调试记录分别保存，因此历史淘汰不会清除当前运行状态。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Enhancements Debug`；浮层会展示 bootstrap 状态、运行状态、helper/protocol/capability 标识，以及 bootstrap、运行态和可信 shell 事件的可选中原始 JSON。
 - 调试浮层只记录状态/事件 payload，不记录 terminal `input`、terminal `output`、密码、私钥材料或完整屏幕输出。

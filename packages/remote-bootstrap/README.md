@@ -30,28 +30,33 @@ sequenceDiagram
   participant UI as Renderer SSH Page
   participant SSH as Backend SshSessionService
   participant RB as RemoteBootstrapService
-  participant REM as Remote SSH Host
+  participant PRIMARY as Remote Host (primary transport)
+  participant AUX as Remote Host (bootstrap transport)
   participant CDN as HTTPS Manifest and Asset Host
 
   UI->>SSH: Create SSH session
-  SSH->>RB: Ensure runtime after authentication, before PTY open
+  SSH->>PRIMARY: Authenticate primary transport without opening a channel
+  SSH->>RB: Ensure runtime before PTY open
   RB->>CDN: Fetch manifest from COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL
-  RB->>REM: Probe uname, arch, and shell through bounded ssh2 exec
-  RB->>REM: Read installed cosmosh-bootstrap status
+  RB->>AUX: Lazily authenticate temporary transport
+  RB->>AUX: Probe uname, arch, and shell through bounded ssh2 exec
+  RB->>AUX: Read installed cosmosh-bootstrap status
   alt Installed contract is current
     RB-->>SSH: Return current runtime contract without download
   else Missing or stale
-    RB->>REM: Inject shell launcher and wrapper through side-channel exec
-    REM->>CDN: Download matching cosmosh-bootstrap asset
-    REM->>REM: Verify SHA-256 and run cosmosh-bootstrap install
-    RB->>REM: Re-read and validate installed status
+    RB->>AUX: Inject shell launcher and wrapper through side-channel exec
+    AUX->>CDN: Download matching cosmosh-bootstrap asset
+    AUX->>AUX: Verify SHA-256 and run cosmosh-bootstrap install
+    RB->>AUX: Re-read and validate installed status
   end
-  REM-->>RB: Emit bootstrap-status JSON lines
-  SSH->>REM: Open interactive PTY after ensure completes
+  AUX-->>RB: Emit bootstrap-status JSON lines
+  SSH->>AUX: Begin temporary transport teardown
+  SSH->>PRIMARY: Open PTY as the first session channel
+  PRIMARY-->>SSH: Login messages and helper handshake
   SSH-->>UI: Forward bootstrap and runtime status over SSH WebSocket
 ```
 
-The interactive terminal stream is separate from the bootstrap side channel. `RemoteBootstrapService` uses bounded `ssh2 exec`, parses JSON lines from stdout, logs terminal states through the audit service, and never writes installer output into the xterm stream. `SshSessionService` also places the complete optional pre-PTY ensure behind a shared 15-second budget; expiry aborts active manifest/exec I/O and opens an ordinary PTY with Remote Enhancements disabled.
+The interactive terminal transport is separate from the bootstrap side channel, not only its output stream. `SshSessionService` authenticates the primary client first, then lazily creates a temporary client only if `RemoteBootstrapService` requests a remote command. The temporary client reuses the same credential, host-key, compression, and proxy policy but receives its own proxy socket; all bounded `ssh2 exec` work stays on that client, and backend begins its teardown before the primary opens its first channel through `shell()`. Actual socket closure may complete asynchronously. This preserves OpenSSH/PAM login messages such as Debian MOTD while allowing a newly installed profile hook to load immediately. The complete optional pre-PTY ensure stays behind a shared 15-second budget; expiry stops waiting for proxy preparation, aborts active manifest/exec I/O, destroys the temporary client, and opens an ordinary PTY with Remote Enhancements disabled. Installer output is parsed as JSON lines and never enters the xterm stream.
 
 ## Directory Layout
 
@@ -244,6 +249,7 @@ Common failure codes include:
 - `umask 077` and `0700`/`0600` file modes keep bootstrap files user-private.
 - Temporary wrapper/download directories are cleaned up on exit, interrupt, and termination signals.
 - The installer does not require root and does not write outside the remote user's home/XDG paths.
+- Bootstrap exec channels are confined to a temporary SSH transport. Its decrypted completion secret is discarded, and success, failure, or timeout starts teardown before the primary client opens its interactive PTY; lifecycle guards remain attached until actual close.
 - Backend status/audit metadata should stay secret-free; the bootstrap contract never needs SSH credentials or private key material.
 
 ## Build and Test

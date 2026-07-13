@@ -18,6 +18,7 @@
     "prebuild": "pnpm --filter @cosmosh/api-contract build && pnpm --filter @cosmosh/i18n build && prisma generate",
     "build": "tsc",
     "start": "node dist/index.js",
+    "test:ssh-session": "tsx --test src/ssh/session-service.bootstrap-transport.test.ts src/ssh/session-service.remote-shell-events.test.ts src/ssh/exec.test.ts src/remote-bootstrap/service.test.ts",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\""

@@ -40,7 +40,7 @@ sequenceDiagram
 - Steps:
   1. Load server record + linked keychain encrypted credentials.
   2. Resolve trusted host fingerprints.
-  3. Open SSH shell via `ssh2.Client.shell` with server-scoped compression negotiation and a UTF-8 locale request.
+  3. Authenticate the primary SSH transport, complete optional pre-shell Remote Enhancements work on a temporary transport with the same connection policy, then open the primary shell through `ssh2.Client.shell` with a UTF-8 locale request.
   4. Write `SshLoginAudit` record:
      - `result = success` on successful session creation, with `sessionId` and `sessionStartedAt`.
      - `result = failed` on host-trust/auth/connect failures, with `failureReason`.
@@ -363,34 +363,39 @@ sequenceDiagram
   participant UI as Renderer SSH Page
   participant SSH as SshSessionService
   participant BOOT as RemoteBootstrapService
-  participant REM as Remote SSH Host
+  participant PRIMARY as Remote Host (primary transport)
+  participant AUX as Remote Host (bootstrap transport)
   participant REL as HTTPS Manifest/Asset Host
 
   UI->>SSH: Create SSH session
-  SSH->>REM: Authenticate SSH transport
+  SSH->>PRIMARY: Authenticate primary SSH transport
   SSH->>BOOT: Ensure runtime before opening PTY
   BOOT->>REL: Fetch manifest URL
-  BOOT->>REM: Probe uname, arch, and shell by bounded exec
-  BOOT->>REM: Run installed binary status
+  BOOT->>AUX: Lazily authenticate temporary transport
+  BOOT->>AUX: Probe uname, arch, and shell by bounded exec
+  BOOT->>AUX: Run installed binary status
   alt Installed contract is current
     BOOT-->>SSH: Current contract, no download
   else Missing, legacy, or stale
-    BOOT->>REM: Run injected launcher/wrapper by bounded exec
-    REM->>REL: Download matching bootstrap binary
-    REM->>REM: Verify checksum and install user-scoped files
-    BOOT->>REM: Re-run installed binary status
+    BOOT->>AUX: Run injected launcher/wrapper by bounded exec
+    AUX->>REL: Download matching bootstrap binary
+    AUX->>AUX: Verify checksum and install user-scoped files
+    BOOT->>AUX: Re-run installed binary status
     BOOT-->>SSH: Validated installed contract
   end
-  SSH->>REM: Open interactive PTY
-  REM-->>SSH: integration-ready OSC with matching contract
+  SSH->>AUX: Begin temporary transport teardown
+  SSH->>PRIMARY: Open PTY as first session channel
+  PRIMARY-->>SSH: Login messages + integration-ready OSC
   UI->>SSH: Attach /ws/ssh/{sessionId}
   SSH-->>UI: ready + bootstrap/runtime status + buffered output
 ```
 
-- Bootstrap ensure runs once after SSH authentication and before `client.shell(...)`. A newly installed profile hook therefore applies to the same first interactive shell; users do not need to reconnect for helper startup.
+- The primary SSH transport authenticates first but opens no channel before bootstrap completes. When the first remote command is required, backend lazily opens a second authenticated transport with the same credentials, host-key policy, compression setting, and proxy policy. Every proxy-backed transport receives its own socket.
+- All bootstrap probe/install/status `exec` channels run only on the temporary transport. Backend begins its teardown before the primary calls `client.shell(...)`; actual socket closure may complete asynchronously. The primary transport's first session channel is therefore the interactive PTY, preserving OpenSSH/PAM login messages such as Debian MOTD while still loading a newly installed profile hook in that same first shell.
+- Disabled gates or missing/invalid manifest data never open the temporary transport. Its decrypted completion secret is discarded and is never copied into session state, status payloads, or audit metadata.
 - Backend checks the installed binary before downloading. It skips download only when manifest version and asset SHA-256, supported protocol, helper contents, and profile hook are current. Missing fields from an older binary are incompatible and trigger reinstall. A second status read validates the installation before PTY creation.
-- Each side-channel command uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. The entire optional pre-shell ensure has a stricter 15-second connection budget. When that shared deadline expires, backend aborts the manifest request and active exec channel, emits `BOOTSTRAP_ENSURE_TIMEOUT`, and immediately continues to ordinary PTY creation. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
-- Ensure failure or timeout never turns a valid SSH authentication into a failed shell session. Backend opens the PTY with runtime state `disabled`, reports the failure, and ignores all helper-derived events for that session.
+- Each side-channel command uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. The entire optional pre-shell ensure has a stricter shared 15-second budget across settings, manifest I/O, temporary proxy/SSH connection, and exec work. Expiry stops waiting for proxy preparation, closes active exec channels, destroys the temporary client, emits `BOOTSTRAP_ENSURE_TIMEOUT`, and immediately continues to ordinary PTY creation. A preconnected proxy socket that completes after cancellation is destroyed on arrival. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
+- Ensure connection failure or timeout never turns a valid primary SSH authentication into a failed shell session. Backend begins temporary-transport teardown, opens the primary PTY with runtime state `disabled`, reports the failure, and ignores all helper-derived events for that session. If the primary transport itself fails during ensure, its error cancels temporary work and the ordinary session creation fails through the existing SSH error path.
 - Go `install`/`status` output establishes installation identity and trust state; it does not directly provide cwd, input state, or command lifecycle data. Live shell data comes later from the Go-generated helper over OSC 777 and remains subject to the runtime gate.
 - Renderer stores the latest `bootstrap-status` and latest `remote-enhancement-runtime-status` independently from the bounded 200-entry Remote Enhancements debug history. History eviction therefore cannot erase the current runtime state. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug`; selecting it opens a fixed top-right terminal overlay with bootstrap status, runtime state, helper/protocol/capability identity, and selectable raw JSON for bootstrap, runtime, and trusted shell events.
 - The debug overlay records status/event payloads only. It does not record terminal `input`, terminal `output`, passwords, private key material, or full screen output.

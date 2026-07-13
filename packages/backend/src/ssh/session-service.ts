@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
-import type { Prisma, PrismaClient } from '@prisma/client';
-import { Client, type ClientChannel, type ConnectConfig } from 'ssh2';
+import type { PrismaClient } from '@prisma/client';
+import { type Client, type ClientChannel } from 'ssh2';
 import { type RawData } from 'ws';
 
 import type { AuditEventService } from '../audit/service.js';
@@ -42,19 +42,17 @@ import {
   type TerminalClientInboundMessage,
   updateInteractiveCompletionState,
 } from '../terminal/shared.js';
-import { buildSshCompressionAlgorithms } from './compression.js';
-import { decryptSensitiveValue } from './crypto.js';
+import {
+  openSshClient,
+  type OpenSshClientResult,
+  type SshClientLifecycleMonitor,
+  type SshServerWithKeychain,
+} from './connect.js';
 import { executeBoundedSshCommand } from './exec.js';
-import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from './proxy.js';
+import type { SshProxyMetadata } from './proxy.js';
 import { type RemoteShellEventMessage, RemoteShellEventOscParser } from './remote-shell-events.js';
 
 type GetDbClient = () => PrismaClient;
-
-type SshServerWithKeychain = Prisma.SshServerGetPayload<{
-  include: {
-    keychain: true;
-  };
-}>;
 
 type CreateSshSessionInput = {
   locale: Locale;
@@ -107,12 +105,21 @@ type TrustSshFingerprintInput = {
 
 type TrustSshFingerprintResult = { type: 'success' } | { type: 'not-found' };
 
+type SshShellStreamLifecycleMonitor = {
+  /** @returns Whether the shell stream closed before session ownership completed. */
+  isClosed(): boolean;
+  /** Removes the temporary close listener after the live session listener is attached. */
+  release(): void;
+};
+
 type OpenShellResult =
   | {
       type: 'ready';
       client: Client;
       stream: ClientChannel;
       completionSecretValue: string | null;
+      lifecycleMonitor: SshClientLifecycleMonitor;
+      streamLifecycleMonitor: SshShellStreamLifecycleMonitor;
       proxyMetadata: SshProxyMetadata;
       remoteBootstrapResult: RemoteBootstrapResult;
     }
@@ -266,6 +273,37 @@ class RemoteBootstrapEnsureTimeoutError extends Error {
 }
 
 /**
+ * Normalizes an AbortSignal reason without allowing unknown values to escape.
+ *
+ * @param signal Signal that cancelled pre-shell setup.
+ * @returns Original Error reason or a stable cancellation fallback.
+ */
+const readAbortSignalError = (signal: AbortSignal): Error => {
+  const reason: unknown = signal.reason;
+  return reason instanceof Error ? reason : new Error('remote enhancement setup cancelled');
+};
+
+/**
+ * Records an early shell close until the live session installs its permanent listener.
+ *
+ * @param stream Newly opened interactive shell stream.
+ * @returns Monitor that closes the callback-to-session-registration event gap.
+ */
+const createSshShellStreamLifecycleMonitor = (stream: ClientChannel): SshShellStreamLifecycleMonitor => {
+  let closed = false;
+  const handleClose = (): void => {
+    closed = true;
+  };
+
+  stream.on('close', handleClose);
+
+  return {
+    isClosed: () => closed,
+    release: () => stream.off('close', handleClose),
+  };
+};
+
+/**
  * Awaits an operation while allowing the caller to stop waiting at a shared deadline.
  *
  * The underlying operation still receives the same signal and is expected to cancel its
@@ -277,13 +315,13 @@ class RemoteBootstrapEnsureTimeoutError extends Error {
  */
 const awaitWithAbortSignal = async <T>(operation: Promise<T>, signal: AbortSignal): Promise<T> => {
   if (signal.aborted) {
-    throw signal.reason;
+    throw readAbortSignalError(signal);
   }
 
   return await new Promise<T>((resolve, reject) => {
     const handleAbort = (): void => {
       signal.removeEventListener('abort', handleAbort);
-      reject(signal.reason);
+      reject(readAbortSignalError(signal));
     };
 
     signal.addEventListener('abort', handleAbort, { once: true });
@@ -442,13 +480,23 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       systemProxyRules: input.systemProxyRules,
       trustedFingerprintSet,
       t: i18n.t,
-      beforeShellOpen: async (client) =>
+      beforeShellOpen: async (signal) =>
         await this.ensureRemoteEnhancementsBeforeShell({
-          client,
+          openClient: async (signal) =>
+            await this.openAuthenticatedClient(server, {
+              connectTimeoutSec: input.connectTimeoutSec,
+              enableSshCompression,
+              signal,
+              systemProxyRules: input.systemProxyRules,
+              strictHostKey,
+              trustedFingerprintSet,
+              t: i18n.t,
+            }),
           serverId: server.id,
           sessionId,
           requestId: input.requestId,
           serverEnabled: remoteEnhancementsEnabled,
+          signal,
           sendStatus: (status) => pendingRemoteBootstrapStatuses.push(status),
         }),
       onOutput: (data) => {
@@ -632,23 +680,43 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       this.handleShellOutput(liveSession, chunk);
     });
 
-    shellResult.stream.on('close', () => {
+    const handleLiveStreamClose = (): void => {
       this.disposeSession(sessionId, 'ws.sshStreamClosed');
-    });
+    };
 
-    shellResult.client.on('close', () => {
+    const handleLiveClientClose = (): void => {
       this.disposeSession(sessionId, 'ws.sshConnectionClosed');
-    });
+    };
 
-    shellResult.client.on('error', (error: Error) => {
+    const handleLiveClientError = (error: Error): void => {
       this.sendServerMessage(liveSession, {
         type: 'error',
         message: error.message,
       });
       this.disposeSession(sessionId, 'ws.sshConnectionError');
-    });
+    };
 
     this.registerSession(liveSession);
+    shellResult.stream.on('close', handleLiveStreamClose);
+    shellResult.client.on('close', handleLiveClientClose);
+    shellResult.client.on('error', handleLiveClientError);
+    shellResult.lifecycleMonitor.release();
+    shellResult.streamLifecycleMonitor.release();
+
+    const guardedClientError = shellResult.lifecycleMonitor.readError();
+    if (guardedClientError) {
+      handleLiveClientError(guardedClientError);
+      return { type: 'failed', message: guardedClientError.message };
+    }
+    if (shellResult.lifecycleMonitor.isClosed()) {
+      handleLiveClientClose();
+      return { type: 'failed', message: i18n.t('ws.sshConnectionClosed') };
+    }
+    if (shellResult.streamLifecycleMonitor.isClosed()) {
+      handleLiveStreamClose();
+      return { type: 'failed', message: i18n.t('ws.sshStreamClosed') };
+    }
+
     void this.ensureRemoteCompletionCwdInitialized(liveSession);
     this.startSessionTelemetry(sessionId);
     this.scheduleHistorySync(sessionId, { immediate: true });
@@ -933,15 +1001,16 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * Bootstrap failures intentionally return a disabled runtime contract so ordinary SSH
    * can continue without accepting stale helper events.
    *
-   * @param options Authenticated SSH client, feature gates, and status sink.
+   * @param options Dedicated SSH client factory, feature gates, and status sink.
    * @returns Ready contract or fail-closed disabled state.
    */
   private async ensureRemoteEnhancementsBeforeShell(options: {
-    client: Client;
+    openClient: (signal: AbortSignal) => Promise<OpenSshClientResult>;
     serverId: string;
     sessionId: string;
     requestId?: string;
     serverEnabled: boolean;
+    signal?: AbortSignal;
     sendStatus: (status: RemoteBootstrapStatus) => void;
     ensureTimeoutMs?: number;
   }): Promise<RemoteBootstrapResult> {
@@ -962,14 +1031,109 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     };
     const abortController = new AbortController();
     const timeoutError = new RemoteBootstrapEnsureTimeoutError();
+    let didTimeout = false;
     const ensureTimeout = setTimeout(
       () => {
+        didTimeout = true;
         abortController.abort(timeoutError);
       },
       Math.max(1, options.ensureTimeoutMs ?? SSH_REMOTE_BOOTSTRAP_ENSURE_TIMEOUT_MS),
     );
     ensureTimeout.unref();
+    const handleParentAbort = (): void => {
+      if (!abortController.signal.aborted && options.signal) {
+        abortController.abort(readAbortSignalError(options.signal));
+      }
+    };
+    if (options.signal?.aborted) {
+      handleParentAbort();
+    } else {
+      options.signal?.addEventListener('abort', handleParentAbort, { once: true });
+    }
     let stage: 'settings' | 'bootstrap' = 'settings';
+    let bootstrapTransportDisposing = false;
+    const bootstrapTransport: {
+      client: Client | null;
+      lifecycleMonitor: SshClientLifecycleMonitor | null;
+      opening: Promise<Client | null> | null;
+    } = {
+      client: null,
+      lifecycleMonitor: null,
+      opening: null,
+    };
+
+    /**
+     * Cancels optional setup when its dedicated SSH transport fails.
+     *
+     * @param error Client-level transport error.
+     * @returns Nothing.
+     */
+    const handleBootstrapClientError = (error: Error): void => {
+      if (!abortController.signal.aborted) {
+        abortController.abort(error);
+      }
+    };
+
+    /**
+     * Converts a clean-but-early client close into the same cancellation path.
+     *
+     * @returns Nothing.
+     */
+    const handleBootstrapClientClose = (): void => {
+      handleBootstrapClientError(new Error('remote enhancement SSH transport closed'));
+    };
+
+    /**
+     * Lazily opens the isolated transport only when bootstrap first needs a remote command.
+     *
+     * @returns Dedicated bootstrap client, or null when its independent connection failed.
+     */
+    const getBootstrapClient = async (): Promise<Client | null> => {
+      if (bootstrapTransport.client) {
+        return bootstrapTransport.client;
+      }
+
+      bootstrapTransport.opening ??= (async () => {
+        const openResult = await options.openClient(abortController.signal);
+        if (openResult.type !== 'ready') {
+          return null;
+        }
+
+        if (abortController.signal.aborted) {
+          openResult.lifecycleMonitor.releaseAfterClose();
+          openResult.client.destroy();
+          throw readAbortSignalError(abortController.signal);
+        }
+
+        bootstrapTransport.client = openResult.client;
+        bootstrapTransport.lifecycleMonitor = openResult.lifecycleMonitor;
+        openResult.client.once('error', handleBootstrapClientError);
+        openResult.client.once('close', () => {
+          openResult.client.off('error', handleBootstrapClientError);
+          openResult.lifecycleMonitor.release();
+          if (!bootstrapTransportDisposing) {
+            handleBootstrapClientClose();
+          }
+        });
+
+        const guardedError = openResult.lifecycleMonitor.readError();
+        if (guardedError) {
+          handleBootstrapClientError(guardedError);
+          throw guardedError;
+        }
+        if (openResult.lifecycleMonitor.isClosed()) {
+          openResult.client.off('error', handleBootstrapClientError);
+          openResult.lifecycleMonitor.release();
+          const closeError = new Error('remote enhancement SSH transport closed during connection handoff');
+          handleBootstrapClientError(closeError);
+          throw closeError;
+        }
+
+        return bootstrapTransport.client;
+      })();
+
+      return await bootstrapTransport.opening;
+    };
 
     try {
       const settings = await awaitWithAbortSignal(
@@ -991,11 +1155,17 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           serverId: options.serverId,
           sessionId: options.sessionId,
           requestId: options.requestId,
-          executeCommand: async (command) =>
-            await executeBoundedSshCommand(options.client, command, {
+          executeCommand: async (command) => {
+            const client = await getBootstrapClient();
+            if (!client) {
+              return null;
+            }
+
+            return await executeBoundedSshCommand(client, command, {
               ...REMOTE_BOOTSTRAP_EXEC_OPTIONS,
               signal: abortController.signal,
-            }),
+            });
+          },
           sendStatus: (status) => {
             if (!abortController.signal.aborted) {
               options.sendStatus(status);
@@ -1006,7 +1176,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         abortController.signal,
       );
     } catch (error: unknown) {
-      if (error instanceof RemoteBootstrapEnsureTimeoutError || abortController.signal.aborted) {
+      if (error instanceof RemoteBootstrapEnsureTimeoutError || didTimeout) {
         this.remoteBootstrapService.reportStatus(statusContext, {
           type: 'bootstrap-status',
           phase: 'install',
@@ -1018,6 +1188,14 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
           state: 'disabled',
           code: 'BOOTSTRAP_ENSURE_TIMEOUT',
           message: timeoutError.message,
+        };
+      }
+
+      if (options.signal?.aborted) {
+        return {
+          state: 'disabled',
+          code: 'BOOTSTRAP_CANCELLED',
+          message: 'remote enhancement setup cancelled with the primary SSH transport',
         };
       }
 
@@ -1039,6 +1217,21 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       return { state: 'disabled', code, message };
     } finally {
       clearTimeout(ensureTimeout);
+      options.signal?.removeEventListener('abort', handleParentAbort);
+      const bootstrapClient = bootstrapTransport.client;
+      if (bootstrapClient) {
+        bootstrapTransportDisposing = true;
+        if (abortController.signal.aborted) {
+          bootstrapClient.destroy();
+        } else {
+          bootstrapClient.end();
+        }
+        if (bootstrapTransport.lifecycleMonitor?.isClosed()) {
+          bootstrapTransport.lifecycleMonitor.release();
+        }
+        bootstrapTransport.client = null;
+        bootstrapTransport.lifecycleMonitor = null;
+      }
     }
   }
 
@@ -1738,6 +1931,51 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     });
   }
 
+  /**
+   * Opens one authenticated SSH transport using the shared credential, proxy, and host-trust policy.
+   *
+   * Each invocation creates a fresh client and, when applicable, a fresh proxy socket. This is the
+   * security boundary that keeps bootstrap exec channels off the interactive terminal transport.
+   *
+   * @param server SSH server record with resolved keychain material.
+   * @param options Attempt-scoped transport policy and cancellation state.
+   * @returns Ready SSH client or a normalized connection failure.
+   */
+  private async openAuthenticatedClient(
+    server: SshServerWithKeychain,
+    options: {
+      connectTimeoutSec: number;
+      enableSshCompression: boolean;
+      signal?: AbortSignal;
+      systemProxyRules?: string;
+      strictHostKey: boolean;
+      trustedFingerprintSet: Set<string>;
+      t: I18nInstance['t'];
+    },
+  ): Promise<OpenSshClientResult> {
+    return await openSshClient(server, {
+      connectTimeoutSec: options.connectTimeoutSec,
+      db: this.getDbClient(),
+      enableSshCompression: options.enableSshCompression,
+      signal: options.signal,
+      systemProxyRules: options.systemProxyRules,
+      strictHostKey: options.strictHostKey,
+      trustedFingerprintSet: options.trustedFingerprintSet,
+      credentialEncryptionKey: this.credentialEncryptionKey,
+      t: options.t,
+    });
+  }
+
+  /**
+   * Authenticates the primary SSH transport, completes isolated pre-shell setup, then opens its PTY.
+   *
+   * The callback deliberately receives no Client. This type-level boundary guarantees that
+   * bootstrap cannot consume PAM login messages by opening an exec channel on the primary transport.
+   *
+   * @param server SSH server record with resolved keychain material.
+   * @param options Terminal dimensions, transport policy, pre-shell setup, and output sink.
+   * @returns Open interactive shell or a normalized connection failure.
+   */
   private async openShell(
     server: SshServerWithKeychain,
     options: {
@@ -1750,99 +1988,24 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       systemProxyRules?: string;
       trustedFingerprintSet: Set<string>;
       t: I18nInstance['t'];
-      beforeShellOpen: (client: Client) => Promise<RemoteBootstrapResult>;
+      beforeShellOpen: (signal: AbortSignal) => Promise<RemoteBootstrapResult>;
       onOutput: (data: string) => void;
     },
   ): Promise<OpenShellResult> {
-    const client = new Client();
-    let presentedFingerprint = '';
-
-    const connectConfig: ConnectConfig = {
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      readyTimeout: options.connectTimeoutSec * 1000,
-      keepaliveInterval: 10_000,
-      keepaliveCountMax: 3,
-      algorithms: {
-        compress: buildSshCompressionAlgorithms(options.enableSshCompression),
-      },
-      hostHash: 'sha256',
-      hostVerifier: (hashedKey: string) => {
-        presentedFingerprint = hashedKey;
-        if (!options.strictHostKey) {
-          return true;
-        }
-
-        return options.trustedFingerprintSet.has(hashedKey);
-      },
-    };
-
-    let completionSecretValue: string | null = null;
-
-    try {
-      if (server.keychain.authType === 'password' || server.keychain.authType === 'both') {
-        if (!server.keychain.passwordEncrypted) {
-          return {
-            type: 'failed',
-            message: options.t('errors.ssh.passwordNotConfigured'),
-          };
-        }
-
-        connectConfig.password = decryptSensitiveValue(server.keychain.passwordEncrypted, this.credentialEncryptionKey);
-        completionSecretValue = typeof connectConfig.password === 'string' ? connectConfig.password : null;
-      }
-
-      if (server.keychain.authType === 'key' || server.keychain.authType === 'both') {
-        if (!server.keychain.privateKeyEncrypted) {
-          return {
-            type: 'failed',
-            message: options.t('errors.ssh.privateKeyNotConfigured'),
-          };
-        }
-
-        connectConfig.privateKey = decryptSensitiveValue(
-          server.keychain.privateKeyEncrypted,
-          this.credentialEncryptionKey,
-        );
-
-        if (server.keychain.privateKeyPassphraseEncrypted) {
-          connectConfig.passphrase = decryptSensitiveValue(
-            server.keychain.privateKeyPassphraseEncrypted,
-            this.credentialEncryptionKey,
-          );
-          if (!completionSecretValue && typeof connectConfig.passphrase === 'string') {
-            completionSecretValue = connectConfig.passphrase;
-          }
-        }
-      }
-    } catch {
-      return {
-        type: 'failed',
-        message: options.t('errors.ssh.decryptCredentialsFailed'),
-      };
+    const openResult = await this.openAuthenticatedClient(server, {
+      connectTimeoutSec: options.connectTimeoutSec,
+      enableSshCompression: options.enableSshCompression,
+      systemProxyRules: options.systemProxyRules,
+      strictHostKey: options.strictHostKey,
+      trustedFingerprintSet: options.trustedFingerprintSet,
+      t: options.t,
+    });
+    if (openResult.type !== 'ready') {
+      return openResult;
     }
 
-    let proxyTransport;
-    try {
-      proxyTransport = await prepareSshProxyTransport(
-        this.getDbClient(),
-        server,
-        options.systemProxyRules,
-        options.connectTimeoutSec * 1000,
-      );
-    } catch (error: unknown) {
-      return {
-        type: 'failed',
-        message: error instanceof Error ? error.message : 'Proxy connection failed.',
-        proxyMetadata: error instanceof SshProxyConnectionError ? error.metadata : undefined,
-      };
-    }
-
-    connectConfig.readyTimeout = proxyTransport.readyTimeoutMs;
-    if (proxyTransport.socket) {
-      connectConfig.sock = proxyTransport.socket;
-    }
+    const { client, completionSecretValue, lifecycleMonitor, proxyMetadata } = openResult;
+    const bootstrapAbortController = new AbortController();
 
     return await new Promise<OpenShellResult>((resolve) => {
       let settled = false;
@@ -1853,37 +2016,74 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
         }
 
         settled = true;
+        client.off('error', handleClientError);
+        client.off('close', handleClientClose);
+        if (result.type !== 'ready') {
+          lifecycleMonitor.releaseAfterClose();
+        }
         resolve(result);
       };
 
-      client.once('ready', () => {
-        void (async () => {
-          let remoteBootstrapResult: RemoteBootstrapResult;
-          try {
-            remoteBootstrapResult = await options.beforeShellOpen(client);
-          } catch (error: unknown) {
-            remoteBootstrapResult = {
-              state: 'disabled',
-              code: 'BOOTSTRAP_UNEXPECTED_FAILURE',
-              message: error instanceof Error ? error.message : 'remote bootstrap failed',
-            };
-          }
+      const handleClientError = (error: Error): void => {
+        if (settled) {
+          return;
+        }
 
-          if (settled) {
-            return;
-          }
+        bootstrapAbortController.abort(error);
+        settle({
+          type: 'failed',
+          message: error.message,
+          proxyMetadata,
+        });
+        client.end();
+      };
 
-          const cols = clampTerminalSize(options.cols, 120, 20, 400);
-          const rows = clampTerminalSize(options.rows, 32, 10, 200);
-          const term = options.term.trim() || 'xterm-256color';
+      const handleClientClose = (): void => {
+        handleClientError(new Error('SSH connection closed before shell handoff.'));
+      };
 
+      client.once('error', handleClientError);
+      client.once('close', handleClientClose);
+
+      const guardedError = lifecycleMonitor.readError();
+      if (guardedError) {
+        handleClientError(guardedError);
+        return;
+      }
+      if (lifecycleMonitor.isClosed()) {
+        handleClientClose();
+        return;
+      }
+
+      void (async () => {
+        let remoteBootstrapResult: RemoteBootstrapResult;
+        try {
+          remoteBootstrapResult = await options.beforeShellOpen(bootstrapAbortController.signal);
+        } catch (error: unknown) {
+          remoteBootstrapResult = {
+            state: 'disabled',
+            code: 'BOOTSTRAP_UNEXPECTED_FAILURE',
+            message: error instanceof Error ? error.message : 'remote bootstrap failed',
+          };
+        }
+
+        if (settled) {
+          return;
+        }
+
+        const cols = clampTerminalSize(options.cols, 120, 20, 400);
+        const rows = clampTerminalSize(options.rows, 32, 10, 200);
+        const term = options.term.trim() || 'xterm-256color';
+
+        try {
           client.shell({ term, cols, rows }, { env: { ...REMOTE_SHELL_UTF8_ENV } }, (error, stream) => {
             if (error) {
-              client.end();
               settle({
                 type: 'failed',
                 message: options.t('errors.ssh.openShellFailed', { reason: error.message }),
+                proxyMetadata,
               });
+              client.end();
               return;
             }
 
@@ -1897,43 +2097,23 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
               options.onOutput(data);
             });
 
+            const streamLifecycleMonitor = createSshShellStreamLifecycleMonitor(stream);
+
             settle({
               type: 'ready',
               client,
               stream,
               completionSecretValue,
-              proxyMetadata: proxyTransport.metadata,
+              lifecycleMonitor,
+              streamLifecycleMonitor,
+              proxyMetadata,
               remoteBootstrapResult,
             });
           });
-        })();
-      });
-
-      client.on('error', (error: Error) => {
-        if (settled) {
-          return;
+        } catch (error: unknown) {
+          handleClientError(error instanceof Error ? error : new Error('SSH shell creation failed.'));
         }
-
-        client.end();
-
-        if (options.strictHostKey && presentedFingerprint && !options.trustedFingerprintSet.has(presentedFingerprint)) {
-          settle({
-            type: 'host-untrusted',
-            fingerprint: presentedFingerprint,
-            message: error.message,
-            proxyMetadata: proxyTransport.metadata,
-          });
-          return;
-        }
-
-        settle({
-          type: 'failed',
-          message: error.message,
-          proxyMetadata: proxyTransport.metadata,
-        });
-      });
-
-      client.connect(connectConfig);
+      })();
     });
   }
 }
