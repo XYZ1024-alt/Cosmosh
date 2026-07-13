@@ -59,7 +59,7 @@ flowchart TB
   - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务队列等 controller hooks 和共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
-  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
+  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、基于 TanStack Virtual 的视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
   - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与查找/替换 adapter，以及工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。

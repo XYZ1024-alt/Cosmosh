@@ -59,7 +59,7 @@ flowchart TB
   - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
-  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
+  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, TanStack Virtual-backed visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
   - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting and search/replace adapter, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
   - `theme`: token source used to generate CSS variable system.
