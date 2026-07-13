@@ -72,6 +72,14 @@ Implementation principles:
 - Arrow-key and forward-Tab navigation must call the virtualizer to reveal an offscreen target row before moving focus. Search updates keep the selected icon, or the first filtered icon when the selection is absent, as the active grid item.
 - Virtualization reduces mounted DOM only. Changes to icon-module loading or bundle composition remain a separate concern.
 
+### 6.2 SFTP Collection Virtualization
+
+- The SFTP directory tree and center file list use `@tanstack/react-virtual` with stable remote-path keys, fixed 30 px tree rows, fixed 34 px directory rows, and a small overscan window. The 30 px sticky directory header remains outside the logical row collection.
+- Virtualization changes mounted DOM only. `SFTP.tsx` continues to own the complete filtered/sorted entry collection, expanded tree order, selection model, keyboard navigation order, and drag/drop contracts.
+- The active roving-focus row and rows that own inline editing, an open context menu, or the native drag source stay mounted when necessary. Keyboard movement to an offscreen row must reveal it through the virtualizer before focus moves, and virtualized options/tree items must expose their logical position, collection size, and tree hierarchy to assistive technology.
+- Current-directory tree positioning uses flattened logical row geometry and preserves the existing upper-third target when the parent/current/expanded-child context does not fit in the viewport.
+- Directory marquee selection resolves intersections from the complete fixed-row model, including unmounted rows reached through edge auto-scroll. Virtualization must not weaken blank-area selection, modifier extension, drag/drop targeting, inline editing, or dirty-preview protection.
+
 ## 7. Orbit Bar Standard
 
 Terminal text selection interactions in SSH pages must follow these rules:

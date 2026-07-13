@@ -1038,6 +1038,7 @@
     "detailSelectedMany": "已选择 {count} 项。",
     "detailTitle": "详情",
     "directoryListLabel": "SFTP 目录项目",
+    "directoryTreeLabel": "SFTP 目录树",
     "downloadPathUnavailable": "无法获取本地下载路径。",
     "downloadUnsupported": "仅普通文件可以保存到本地。",
     "drag": {

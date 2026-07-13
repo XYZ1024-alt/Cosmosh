@@ -716,37 +716,6 @@ export const resolveRangeSelectionPaths = (
 };
 
 /**
- * Flattens the expanded directory tree into the exact visual row order.
- *
- * @param treeNodes Directory tree registry keyed by remote path.
- * @param rootPaths Top-level paths to render.
- * @returns Visible directory paths in keyboard navigation order.
- */
-export const flattenVisibleTreePaths = (
-  treeNodes: Record<string, TreeDirectoryNode>,
-  rootPaths: string[],
-): string[] => {
-  const visiblePaths: string[] = [];
-
-  const appendNode = (nodePath: string): void => {
-    const node = treeNodes[nodePath];
-    if (!node) {
-      return;
-    }
-
-    visiblePaths.push(node.path);
-
-    if (node.isExpanded) {
-      node.children.forEach(appendNode);
-    }
-  };
-
-  rootPaths.forEach(appendNode);
-
-  return visiblePaths;
-};
-
-/**
  * Resolves the entries affected by a toolbar or row-context action.
  *
  * @param contextEntry Row entry that opened the context menu, when available.

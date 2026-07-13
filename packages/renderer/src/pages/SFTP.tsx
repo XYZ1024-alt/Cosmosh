@@ -64,7 +64,6 @@ import {
   dedupeSftpEntries,
   filterSftpEntries,
   filterSftpEntriesByHiddenVisibility,
-  flattenVisibleTreePaths,
   formatBatchFeedback,
   formatBatchPartialFailureFeedback,
   formatSftpTabTitle,
@@ -81,6 +80,7 @@ import {
   shouldConfirmSftpDelete,
   sortSftpEntries,
 } from './sftp/sftp-utils';
+import { flattenVisibleSftpTreeRows } from './sftp/sftp-virtualization';
 import { SftpActionMenuItems } from './sftp/SftpActionMenuItems';
 import type { SftpPreviewEditorHandle } from './sftp/SftpCodeMirrorPreviewEditor';
 import { SftpDetailPanel } from './sftp/SftpDetailPanel';
@@ -90,10 +90,10 @@ import {
   SftpUploadConfirmationDialog,
   SftpUploadConflictConfirmationDialog,
 } from './sftp/SftpDialogs';
-import { SftpDirectoryPanel } from './sftp/SftpDirectoryPanel';
+import { SftpDirectoryPanel, type SftpDirectoryPanelHandle } from './sftp/SftpDirectoryPanel';
 import { SftpDropOperationMenu } from './sftp/SftpDropOperationMenu';
 import { SftpToolbar } from './sftp/SftpToolbar';
-import { SftpTreePanel } from './sftp/SftpTreePanel';
+import { SftpTreePanel, type SftpTreePanelHandle } from './sftp/SftpTreePanel';
 import { useSftpAddressInputController } from './sftp/useSftpAddressInputController';
 import { useSftpConfirmationPrompts } from './sftp/useSftpConfirmationPrompts';
 import { useSftpDirectoryListPreferences } from './sftp/useSftpDirectoryListPreferences';
@@ -173,8 +173,8 @@ const SFTP: React.FC<SFTPProps> = ({
   const previewLoadGenerationRef = React.useRef(0);
   const previewEditorRef = React.useRef<SftpPreviewEditorHandle | null>(null);
   const previewStateRef = React.useRef<SftpPreviewState | null>(null);
-  const treeRowRefs = React.useRef<Record<string, HTMLButtonElement | null>>({});
-  const fileRowRefs = React.useRef<Record<string, HTMLElement | null>>({});
+  const treePanelRef = React.useRef<SftpTreePanelHandle | null>(null);
+  const directoryPanelRef = React.useRef<SftpDirectoryPanelHandle | null>(null);
   const {
     hostFingerprintPrompt,
     deleteConfirmationPrompt,
@@ -2578,7 +2578,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const focusFileRow = React.useCallback((rowKey: string): void => {
     setActiveFileRowKey(rowKey);
-    fileRowRefs.current[rowKey]?.focus();
+    directoryPanelRef.current?.focusRow(rowKey);
   }, []);
 
   const handleFileNavigationRowKeyDown = React.useCallback(
@@ -2741,9 +2741,10 @@ const SFTP: React.FC<SFTPProps> = ({
     return breadcrumbs[0]?.path ? [breadcrumbs[0].path] : [];
   }, [breadcrumbs, treeNodes]);
 
-  const visibleTreePaths = React.useMemo(() => {
-    return flattenVisibleTreePaths(treeNodes, treeRootPaths);
+  const visibleTreeRows = React.useMemo(() => {
+    return flattenVisibleSftpTreeRows(treeNodes, treeRootPaths);
   }, [treeNodes, treeRootPaths]);
+  const visibleTreePaths = React.useMemo(() => visibleTreeRows.map((row) => row.path), [visibleTreeRows]);
 
   const resolvedActiveTreePath =
     (activeTreePath && visibleTreePaths.includes(activeTreePath) ? activeTreePath : '') ||
@@ -2753,7 +2754,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const focusTreePath = React.useCallback((nodePath: string): void => {
     setActiveTreePath(nodePath);
-    treeRowRefs.current[nodePath]?.focus();
+    treePanelRef.current?.focusPath(nodePath);
   }, []);
 
   const handleTreeRowKeyDown = React.useCallback(
@@ -2894,6 +2895,7 @@ const SFTP: React.FC<SFTPProps> = ({
         />
         <div className={sftpWorkbenchGridClassName}>
           <SftpTreePanel
+            ref={treePanelRef}
             activeDropTarget={activeDropTarget}
             currentPath={currentPath}
             renderActionMenuItems={renderSftpActionMenuItems}
@@ -2902,8 +2904,7 @@ const SFTP: React.FC<SFTPProps> = ({
             sftpShowHiddenEntries={sftpShowHiddenEntries}
             status={status}
             treeNodes={treeNodes}
-            treeRootPaths={treeRootPaths}
-            treeRowRefs={treeRowRefs}
+            visibleTreeRows={visibleTreeRows}
             onDirectoryDropTargetDragEnter={handleDirectoryDropTargetDragEnter}
             onDirectoryDropTargetDragLeave={handleDirectoryDropTargetDragLeave}
             onDirectoryDropTargetDragOver={handleDirectoryDropTargetDragOver}
@@ -2915,6 +2916,7 @@ const SFTP: React.FC<SFTPProps> = ({
             onTreeRowKeyDown={handleTreeRowKeyDown}
           />
           <SftpDirectoryPanel
+            ref={directoryPanelRef}
             activeDropTarget={activeDropTarget}
             canActivateParentDirectoryListEntry={canActivateParentDirectoryListEntry}
             clipboardMode={clipboardState?.mode}
@@ -2923,7 +2925,6 @@ const SFTP: React.FC<SFTPProps> = ({
             directoryListView={sftpDirectoryListView}
             entries={entries}
             errorMessage={errorMessage}
-            fileRowRefs={fileRowRefs}
             hasParentDirectoryListEntry={hasParentDirectoryListEntry}
             pendingCreate={pendingCreate}
             renameInput={renameInput}

@@ -1038,6 +1038,7 @@
     "detailSelectedMany": "{count} items selected.",
     "detailTitle": "Details",
     "directoryListLabel": "SFTP directory items",
+    "directoryTreeLabel": "SFTP directory tree",
     "downloadPathUnavailable": "The local download path is unavailable.",
     "downloadUnsupported": "Only regular files can be saved locally.",
     "drag": {
