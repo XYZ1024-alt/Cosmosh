@@ -240,6 +240,7 @@
     "portForwardingDeleteSuccess": "端口转发规则已删除。",
     "portForwardingDeleteTitle": "删除端口转发规则",
     "portForwardingDialogCreateTitle": "新建端口转发规则",
+    "portForwardingDialogDescription": "配置此端口转发规则的连接方向、服务器和端点。",
     "portForwardingDialogEditTitle": "编辑端口转发规则",
     "portForwardingEmpty": "未找到符合条件的端口转发规则。",
     "portForwardingFieldName": "名称",

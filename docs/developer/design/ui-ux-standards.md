@@ -144,6 +144,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 - Custom command/search controls that render option lists must expose a labeled `combobox` tied to a labeled `listbox` with stable `aria-controls`, `aria-expanded`, `aria-activedescendant`, and per-option `aria-selected`.
 - Icon-only controls must carry a localized accessible name through `aria-label`; tooltips remain visual help and must not be the only name.
+- Every dialog must pair its title with a meaningful `DialogDescription`; dense form dialogs may visually hide the description with `sr-only` when persistent helper copy would be redundant.
 - Registry-driven settings controls must connect visible labels to the rendered control with stable `htmlFor`/`id` pairs, including switches, selects, text fields, textareas, and JSON edit buttons.
 - SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
 - SFTP directory lists must support desktop-style pointer marquee selection from list whitespace and the panel padding beside the list. The marquee must use a clearly visible token-based border and fill, preview intersecting rows as selected while dragging, and continuously auto-scroll near the list's vertical edges. It must not replace entry drag-and-drop, header column dragging, or inline editing; `Ctrl`/`Cmd` extends the existing selection.
