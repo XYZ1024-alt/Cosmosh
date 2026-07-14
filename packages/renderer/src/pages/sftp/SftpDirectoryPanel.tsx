@@ -340,10 +340,20 @@ export const SftpDirectoryPanel = React.forwardRef<SftpDirectoryPanelHandle, Sft
         extractSftpVirtualRange(range, [activeRowIndex, inlineEditRowIndex, contextMenuRowIndex, draggedRowIndex]),
       [activeRowIndex, contextMenuRowIndex, draggedRowIndex, inlineEditRowIndex],
     );
+    /**
+     * Resolves a stable key without invalidating virtualizer measurements on unrelated renders.
+     *
+     * @param index Logical directory row index.
+     * @returns Remote entry key or the index fallback.
+     */
+    const getDirectoryRowKey = React.useCallback(
+      (index: number): string | number => directoryRows[index]?.key ?? index,
+      [directoryRows],
+    );
     const directoryVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
       count: directoryRows.length,
       estimateSize: () => SFTP_DIRECTORY_ROW_HEIGHT_PX,
-      getItemKey: (index) => directoryRows[index]?.key ?? index,
+      getItemKey: getDirectoryRowKey,
       getScrollElement: () => scrollContainerElement,
       overscan: SFTP_VIRTUAL_OVERSCAN_ROWS,
       rangeExtractor: extractDirectoryRowRange,

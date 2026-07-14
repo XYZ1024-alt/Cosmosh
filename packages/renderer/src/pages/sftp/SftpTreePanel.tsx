@@ -98,10 +98,20 @@ export const SftpTreePanel = React.forwardRef<SftpTreePanelHandle, SftpTreePanel
       extractSftpVirtualRange(range, [activeTreeRowIndex, contextMenuRowIndex]),
     [activeTreeRowIndex, contextMenuRowIndex],
   );
+  /**
+   * Resolves a stable key without invalidating virtualizer measurements on unrelated renders.
+   *
+   * @param index Logical tree row index.
+   * @returns Remote directory path or the index fallback.
+   */
+  const getTreeRowKey = React.useCallback(
+    (index: number): string | number => visibleTreeRows[index]?.path ?? index,
+    [visibleTreeRows],
+  );
   const treeVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
     count: visibleTreeRows.length,
     estimateSize: () => SFTP_TREE_ROW_HEIGHT_PX,
-    getItemKey: (index) => visibleTreeRows[index]?.path ?? index,
+    getItemKey: getTreeRowKey,
     getScrollElement: () => treeViewportElement,
     overscan: SFTP_VIRTUAL_OVERSCAN_ROWS,
     rangeExtractor: extractTreeRowRange,
