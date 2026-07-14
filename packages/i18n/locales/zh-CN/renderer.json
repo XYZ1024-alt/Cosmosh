@@ -1445,8 +1445,13 @@
     "websocketTransportFailed": "连接传输失败。"
   },
   "sshKeychain": {
+    "contextCopyName": "复制名称",
     "createFolderAction": "创建文件夹",
     "createTagFailed": "创建标签失败。",
+    "deleteConfirmDescription": "确认删除钥匙链“{name}”？",
+    "deleteConfirmTitle": "删除钥匙链",
+    "deleteFailed": "删除钥匙链失败。",
+    "deleteSuccess": "钥匙链已删除。",
     "editorDialogDescription": "创建或编辑可复用的 SSH 认证钥匙链。",
     "empty": "暂无可用钥匙链。",
     "folderLabel": "文件夹",

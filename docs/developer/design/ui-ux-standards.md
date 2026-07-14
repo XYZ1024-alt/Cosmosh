@@ -124,6 +124,13 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Pages with major internal categories should keep the tab strip aligned with the active category when that category changes the user's task context.
 - Home tabs in Keychains or Port Forwarding mode must show that category's localized title and matching icon; returning to SSH mode restores the standard Home title and icon.
 
+### 7.4.1 Home Entity Card Context Menus
+
+- Home entity cards must use the shared `ContextMenu` wrapper and keep the card's primary click and roving-focus behavior intact.
+- Keychain card menus expose favorite/unfavorite, copy name, edit, and delete in that order, with separators between action groups.
+- Favorite changes for keychains must use metadata-only updates. Context-menu actions must never fetch, copy, or resubmit passwords, private keys, or private-key passphrases.
+- Keychain deletion requires explicit confirmation. A rejected delete keeps the keychain visible and reports the backend error without closing the confirmation surface.
+
 ## 7.5 Plain Text Selection Context Menu
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.

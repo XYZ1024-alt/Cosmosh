@@ -1445,8 +1445,13 @@
     "websocketTransportFailed": "Connection transport failed."
   },
   "sshKeychain": {
+    "contextCopyName": "Copy Name",
     "createFolderAction": "Create Folder",
     "createTagFailed": "Failed to create tag.",
+    "deleteConfirmDescription": "Delete keychain \"{name}\"?",
+    "deleteConfirmTitle": "Delete Keychain",
+    "deleteFailed": "Failed to delete keychain.",
+    "deleteSuccess": "Keychain deleted.",
     "editorDialogDescription": "Create or edit a reusable SSH authentication keychain.",
     "empty": "No keychains available.",
     "folderLabel": "Folder",
