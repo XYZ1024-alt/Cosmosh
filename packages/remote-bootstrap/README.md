@@ -178,7 +178,7 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 
 First-phase behavior:
 
-- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line.
+- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line. Scalar prompt hooks execute behind a separate evaluation boundary, so trailing separators such as `history -a;` cannot create malformed outer syntax.
 - Zsh uses `precmd`, `preexec`, and `chpwd`, preferring `add-zsh-hook` when available so existing hook functions remain in the chain.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash only install prompt-based degraded hooks for `cwd`, `prompt-ready`, and `command-end`; they do not claim precise preexec behavior.

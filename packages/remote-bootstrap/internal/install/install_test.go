@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -79,6 +80,9 @@ func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.sh")
 	assertFileContains(t, helperPath, "__cosmosh_emit_remote_shell_event")
 	assertFileContains(t, helperPath, "PROMPT_COMMAND='__cosmosh_bash_prompt_command; __cosmosh_bash_arm_preexec'")
+	assertFileContains(t, helperPath, `__COSMOSH_BASH_PREV_PROMPT_COMMAND="$PROMPT_COMMAND"`)
+	assertFileContains(t, helperPath, `PROMPT_COMMAND='__cosmosh_bash_prompt_command; eval "$__COSMOSH_BASH_PREV_PROMPT_COMMAND"; __cosmosh_bash_arm_preexec'`)
+	assertFileNotContains(t, helperPath, `PROMPT_COMMAND="__cosmosh_bash_prompt_command; ${PROMPT_COMMAND}; __cosmosh_bash_arm_preexec"`)
 	assertFileContains(t, helperPath, "trap '__cosmosh_bash_debug_trap' DEBUG")
 	assertFileContains(t, helperPath, "command-end")
 	assertFileContains(t, helperPath, "command-start")
@@ -86,6 +90,23 @@ func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	assertFileContains(t, helperPath, `\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\"`)
 	assertFileContains(t, helperPath, `\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION`)
 	assertFileContains(t, helperPath, `\"capabilities\":$__COSMOSH_CAPABILITIES_JSON`)
+}
+
+func TestBashHelperPreservesPromptCommandWithTrailingSeparator(t *testing.T) {
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is unavailable")
+	}
+
+	helper, err := BuildHelper("bash", "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := "PROMPT_COMMAND='history -a;'\nHISTFILE=/dev/null\n" + helper + "\neval \"$PROMPT_COMMAND\"\n"
+	command := exec.Command(bashPath, "--noprofile", "--norc", "-c", script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("expected trailing prompt separator to remain valid: %v\n%s", err, output)
+	}
 }
 
 func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {

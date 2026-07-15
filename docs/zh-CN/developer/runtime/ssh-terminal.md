@@ -444,7 +444,7 @@ type RemoteShellEventMessage = {
 
 当前第一期 helper 行为：
 
-- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
+- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。标量 prompt hook 会在独立的求值边界内执行，因此 `history -a;` 这类末尾分隔符不会在外层产生错误语法。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
 - Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
 - Fish 使用 `fish_preexec`、`fish_prompt`、`fish_postexec` 与 `PWD` variable event。
 - Sh/Ash 降级为仅基于 prompt 的 `cwd`、`prompt-ready` 与 `command-end`，不承诺精准 preexec 行为。

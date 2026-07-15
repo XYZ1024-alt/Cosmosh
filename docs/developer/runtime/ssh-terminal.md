@@ -445,7 +445,7 @@ type RemoteShellEventMessage = {
 
 Current first-phase helper behavior:
 
-- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. A guarded `DEBUG` trap emits one `command-start` and one `foreground-command` per submitted command line after prompt setup finishes.
+- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. Scalar prompt hooks execute behind a separate evaluation boundary, so trailing separators such as `history -a;` cannot create malformed outer syntax. A guarded `DEBUG` trap emits one `command-start` and one `foreground-command` per submitted command line after prompt setup finishes.
 - Zsh uses `precmd`, `preexec`, and `chpwd` hooks, preferring `add-zsh-hook` when available.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash degrade to prompt-based `cwd`, `prompt-ready`, and `command-end` only; they do not claim precise preexec behavior.

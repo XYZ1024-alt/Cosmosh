@@ -168,7 +168,9 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
       ;;
     *)
       if [ -n "${PROMPT_COMMAND:-}" ]; then
-        PROMPT_COMMAND="__cosmosh_bash_prompt_command; ${PROMPT_COMMAND}; __cosmosh_bash_arm_preexec"
+        # Keep user prompt code behind its own evaluation boundary so trailing separators cannot corrupt this command list.
+        __COSMOSH_BASH_PREV_PROMPT_COMMAND="$PROMPT_COMMAND"
+        PROMPT_COMMAND='__cosmosh_bash_prompt_command; eval "$__COSMOSH_BASH_PREV_PROMPT_COMMAND"; __cosmosh_bash_arm_preexec'
       else
         PROMPT_COMMAND='__cosmosh_bash_prompt_command; __cosmosh_bash_arm_preexec'
       fi
