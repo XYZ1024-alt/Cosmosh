@@ -187,6 +187,8 @@
       "tagsFetched": "标签已加载。"
     },
     "system": {
+      "activeConnectionsClosed": "活动连接已关闭。",
+      "activeConnectionsLoaded": "活动连接已加载。",
       "backendConnectionHealthy": "后端连接正常。"
     }
   },

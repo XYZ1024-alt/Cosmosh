@@ -32,6 +32,8 @@ flowchart TB
 - **角色**：Electron 宿主进程。
 - **关键文件**：
   - `src/index.ts`：应用启动、窗口配置、IPC 处理器、后端子进程管理。
+  - `src/window-close-guard.ts`：根据 backend 持有的 SSH/SFTP 活动状态串行处理窗口关闭与应用退出决策，并对探测失败采用保守确认策略。
+  - `src/renderer-close-confirmation.ts`：绑定发送方并校验 request ID 的 Main 到 Renderer 关闭确认 broker，包含超时与 renderer 销毁处理。
   - `src/ipc/register-app-utility-ipc.ts`：特权应用工具 IPC，例如原生对话框、文件管理器集成、SFTP 临时文件创建，以及已校验的系统打开/打开方式流程。
   - `src/ipc/sftp-open-with-runtime.ts`：负责 SFTP 打开方式使用的内核锚定 Windows 系统可执行文件/库解析、OS known-folder 子进程环境，以及 macOS 打包态与开发态 helper 选择。
   - `src/ipc/register-debug-ipc.ts`：开发诊断 IPC，包括 backend 请求镜像的列表、清空与事件通道。
@@ -58,6 +60,7 @@ flowchart TB
   - `src/pages`：功能页面（`Home`、`SSH`、`SFTP`、`Settings`、`SettingsEditor`等）。Home 负责 SSH 服务器、钥匙链与端口转发管理界面。
   - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务队列等 controller hooks 和共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
+  - `src/components/CloseWindowConfirmationDialog.tsx`：为 Main 持有的活动会话关闭决策提供共享 Renderer `Dialog` 界面。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
   - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、基于 TanStack Virtual 的视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。

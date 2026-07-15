@@ -187,6 +187,8 @@
       "tagsFetched": "Tags loaded."
     },
     "system": {
+      "activeConnectionsClosed": "Active connections closed.",
+      "activeConnectionsLoaded": "Active connections loaded.",
       "backendConnectionHealthy": "Backend connection is healthy."
     }
   },

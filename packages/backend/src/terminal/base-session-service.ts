@@ -146,6 +146,15 @@ export abstract class BaseTerminalSessionService<
   }
 
   /**
+   * Returns the number of terminal sessions that still own live runtime resources.
+   *
+   * @returns Active session count.
+   */
+  public getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  /**
    * Closes a single live session by id using common API-level close reason.
    */
   public closeSession(sessionId: string): boolean {
@@ -155,6 +164,23 @@ export abstract class BaseTerminalSessionService<
 
     this.disposeSession(sessionId, 'ws.sessionClosedByApiRequest');
     return true;
+  }
+
+  /**
+   * Closes every active terminal session without stopping the WebSocket listener.
+   *
+   * @returns Number of sessions closed by this call.
+   */
+  public closeAllSessions(): number {
+    let closedCount = 0;
+
+    for (const sessionId of [...this.sessions.keys()]) {
+      if (this.closeSession(sessionId)) {
+        closedCount += 1;
+      }
+    }
+
+    return closedCount;
   }
 
   public async stop(): Promise<void> {

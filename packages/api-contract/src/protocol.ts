@@ -6,6 +6,8 @@
 export const API_PATHS = {
   health: '/api/health',
   testPing: '/api/v1/test/ping',
+  runtimeGetActiveConnections: '/api/v1/runtime/active-connections',
+  runtimeCloseActiveConnections: '/api/v1/runtime/active-connections',
   settingsGet: '/api/v1/settings',
   settingsUpdate: '/api/v1/settings',
   auditListEvents: '/api/v1/audit/events',
@@ -86,6 +88,8 @@ export const API_CODES = {
   portForwardStartFailed: 'PORT_FORWARD_START_FAILED',
   portForwardStopFailed: 'PORT_FORWARD_STOP_FAILED',
   testPingOk: 'TEST_PING_OK',
+  runtimeActiveConnectionsGetOk: 'RUNTIME_ACTIVE_CONNECTIONS_GET_OK',
+  runtimeActiveConnectionsCloseOk: 'RUNTIME_ACTIVE_CONNECTIONS_CLOSE_OK',
   localTerminalListOk: 'LOCAL_TERMINAL_LIST_OK',
   localTerminalSessionCreateOk: 'LOCAL_TERMINAL_SESSION_CREATE_OK',
   settingsGetOk: 'SETTINGS_GET_OK',

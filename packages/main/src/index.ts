@@ -5,7 +5,12 @@ import net from 'node:net';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
-import type { ApiErrorResponse, AppMenuAction } from '@cosmosh/api-contract';
+import type {
+  ApiErrorResponse,
+  ApiRuntimeActiveConnectionsCloseResponse,
+  ApiRuntimeActiveConnectionsGetResponse,
+  AppMenuAction,
+} from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
 import { createI18n, createMessages, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
 import mainEn from '@cosmosh/i18n/locales/en/main.json';
@@ -37,12 +42,14 @@ import {
   createPrivateSftpTemporaryRoot,
   SFTP_TEMP_ROOT_ENV_NAME,
 } from './ipc/sftp-temporary-root';
+import { RendererCloseConfirmationBroker } from './renderer-close-confirmation';
 import {
   getDatabaseEncryptionKey,
   getDatabasePath,
   getDatabaseSecurityInfo,
   toPrismaSqliteUrl,
 } from './security/database-encryption';
+import { type ActiveConnectionSummary, ConnectionCloseGuard, parseActiveConnectionSummary } from './window-close-guard';
 
 /**
  * Main-process singleton runtime state.
@@ -59,12 +66,29 @@ let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
 const backendRequestTraceStore = new BackendRequestTraceStore(!app.isPackaged);
+const rendererCloseConfirmationBroker = new RendererCloseConfirmationBroker({
+  onError: (stage, error) => {
+    console.error(`[close-confirmation] ${stage} failed.`, error);
+  },
+});
 
 // Consume the internal handoff before Electron creates child processes that could inherit it.
 const developmentBackendNodeExecutablePath = process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
 delete process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
 
 let isAppShutdownInProgress = false;
+let bypassConnectionCloseGuard = false;
+let allowNextMainWindowClose = false;
+
+/**
+ * Requests an immediate app quit while preserving the normal backend cleanup hook.
+ *
+ * @returns void.
+ */
+const quitWithoutConnectionWarning = (): void => {
+  bypassConnectionCloseGuard = true;
+  app.quit();
+};
 
 let appLocale = resolveLocale(process.env.COSMOSH_LOCALE, 'en');
 const mainProcessMessages = createMessages({
@@ -665,13 +689,13 @@ const showStartupFailureDialog = (error: unknown): void => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception in main process.', error);
   showStartupFailureDialog(error);
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection in main process.', reason);
   showStartupFailureDialog(reason);
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 const runCommand = async (
@@ -1243,7 +1267,7 @@ const requestBackendRaw = async (
 const requestBackend = async <TSuccess>(
   path: string,
   options: {
-    method: 'GET' | 'POST' | 'PUT';
+    method: 'DELETE' | 'GET' | 'POST' | 'PUT';
     body?: unknown;
   },
 ): Promise<TSuccess | ApiErrorResponse> => {
@@ -1271,6 +1295,75 @@ const requestBackend = async <TSuccess>(
       `Backend returned non-JSON response (${response.status}): ${response.responseText.slice(0, 180)}`,
     );
   }
+};
+
+/**
+ * Reads and validates backend-owned SSH/SFTP activity for the close guard.
+ *
+ * @returns Authoritative active connection counts.
+ */
+const readActiveConnectionSummary = async (): Promise<ActiveConnectionSummary> => {
+  const response = await requestBackend<ApiRuntimeActiveConnectionsGetResponse>(API_PATHS.runtimeGetActiveConnections, {
+    method: 'GET',
+  });
+
+  if (!response.success) {
+    throw new Error(`Backend rejected active connection query: ${response.code}`);
+  }
+
+  const summary = parseActiveConnectionSummary(response.data);
+  if (!summary) {
+    throw new Error('Backend returned invalid active connection counts.');
+  }
+
+  return summary;
+};
+
+/**
+ * Closes backend-owned SSH/SFTP sessions after the user approves closing.
+ *
+ * @returns Promise resolved after backend confirms the bulk disconnect.
+ */
+const closeActiveConnections = async (): Promise<void> => {
+  const response = await requestBackend<ApiRuntimeActiveConnectionsCloseResponse>(
+    API_PATHS.runtimeCloseActiveConnections,
+    { method: 'DELETE' },
+  );
+
+  if (!response.success) {
+    throw new Error(`Backend rejected active connection close: ${response.code}`);
+  }
+
+  if (!parseActiveConnectionSummary(response.data)) {
+    throw new Error('Backend returned invalid closed connection counts.');
+  }
+};
+
+/**
+ * Requests the shared renderer dialog while the BrowserWindow is still alive.
+ *
+ * @returns Whether the user approved the destructive close action.
+ */
+const confirmConnectionClose = async (): Promise<boolean> => {
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!targetWindow || targetWindow.webContents.isDestroyed()) {
+    return rendererCloseConfirmationBroker.requestConfirmation(null);
+  }
+
+  const { webContents } = targetWindow;
+
+  return rendererCloseConfirmationBroker.requestConfirmation({
+    webContentsId: webContents.id,
+    sendRequest: (request) => {
+      webContents.send('app:close-confirmation-request', request);
+    },
+    subscribeDestroyed: (listener) => {
+      webContents.once('destroyed', listener);
+      return () => {
+        webContents.removeListener('destroyed', listener);
+      };
+    },
+  });
 };
 
 /**
@@ -1429,6 +1522,16 @@ const createWindow = async (): Promise<void> => {
   });
   registerRendererWindowOpenPolicy(mainWindow, preloadPath, resolveTrustedRendererWindowOpenTarget(isDev));
 
+  mainWindow.on('close', (event) => {
+    if (isAppShutdownInProgress || allowNextMainWindowClose) {
+      allowNextMainWindowClose = false;
+      return;
+    }
+
+    event.preventDefault();
+    void connectionCloseGuard.requestClose('window');
+  });
+
   // Load renderer based on environment
   if (isDev) {
     await mainWindow.loadURL(`http://localhost:${resolveRendererDevPort()}`);
@@ -1450,7 +1553,7 @@ const createWindow = async (): Promise<void> => {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
-  app.quit();
+  quitWithoutConnectionWarning();
 } else {
   app.on('second-instance', (_event, commandLine, workingDirectory) => {
     void resolveWorkingDirectoryFromArgv(commandLine, workingDirectory)
@@ -1498,7 +1601,7 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('Failed to start Cosmosh application.', error);
       showStartupFailureDialog(error);
-      app.quit();
+      quitWithoutConnectionWarning();
       return;
     }
 
@@ -1509,7 +1612,7 @@ if (!hasSingleInstanceLock) {
         void createWindow().catch((error) => {
           console.error('Failed to recreate main window.', error);
           showStartupFailureDialog(error);
-          app.quit();
+          quitWithoutConnectionWarning();
         });
       }
     });
@@ -1521,6 +1624,9 @@ if (!hasSingleInstanceLock) {
 // -----------------------------------------------------------------------------
 registerAppUtilityIpcHandlers({
   getMainWindow: () => mainWindow,
+  resolveCloseConfirmation: (senderWebContentsId, response) => {
+    rendererCloseConfirmationBroker.resolveConfirmation(senderWebContentsId, response);
+  },
   getLocale: () => appLocale,
   translateMain: (key, params) => getMainI18n().t(key, params),
   setLocale: (nextLocale: string) => {
@@ -1556,45 +1662,86 @@ registerDebugIpcHandlers({
 // -----------------------------------------------------------------------------
 // Shutdown hooks
 // -----------------------------------------------------------------------------
+/**
+ * Performs one idempotent application shutdown and always releases Main-owned resources.
+ *
+ * @returns Promise resolved after Electron receives the final quit request.
+ */
+const beginAppShutdown = async (): Promise<void> => {
+  if (isAppShutdownInProgress) {
+    return;
+  }
+
+  isAppShutdownInProgress = true;
+  disableI18nHotReload?.();
+  disableI18nHotReload = null;
+
+  try {
+    await stopBackendService('electron:before-quit');
+  } catch (error: unknown) {
+    console.error('[shutdown] Failed to stop backend service.', error);
+  }
+
+  try {
+    await cleanupSftpTemporaryRoot(sftpTemporaryRootPath);
+  } catch (error: unknown) {
+    console.error('[shutdown] Failed to clean the SFTP temporary root.', error);
+  } finally {
+    sftpTemporaryRootPath = null;
+  }
+
+  app.quit();
+};
+
+const connectionCloseGuard = new ConnectionCloseGuard({
+  readActiveConnections: readActiveConnectionSummary,
+  confirmClose: () => confirmConnectionClose(),
+  closeActiveConnections,
+  onApproved: async (intent) => {
+    if (intent === 'window' && process.platform === 'darwin') {
+      const targetWindow = mainWindow;
+      if (targetWindow && !targetWindow.isDestroyed()) {
+        allowNextMainWindowClose = true;
+        targetWindow.close();
+      }
+      return;
+    }
+
+    await beginAppShutdown();
+  },
+  onError: (stage, error) => {
+    console.error(`[close-guard] ${stage} failed.`, error);
+  },
+});
+
 app.on('before-quit', (event) => {
   if (isAppShutdownInProgress) {
     return;
   }
 
   event.preventDefault();
-  isAppShutdownInProgress = true;
 
-  void (async () => {
-    disableI18nHotReload?.();
-    disableI18nHotReload = null;
-    await stopBackendService('electron:before-quit');
-    try {
-      await cleanupSftpTemporaryRoot(sftpTemporaryRootPath);
-    } finally {
-      sftpTemporaryRootPath = null;
-    }
-  })()
-    .catch((error) => {
-      console.error('[shutdown] Failed during shutdown cleanup.', error);
-    })
-    .finally(() => {
-      app.quit();
-    });
+  if (bypassConnectionCloseGuard) {
+    void beginAppShutdown();
+    return;
+  }
+
+  void connectionCloseGuard.requestClose('quit');
 });
 
 process.once('SIGINT', () => {
   console.warn('[shutdown] SIGINT received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.once('SIGTERM', () => {
   console.warn('[shutdown] SIGTERM received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.once('SIGBREAK', () => {
   console.warn('[shutdown] SIGBREAK received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 app.on('window-all-closed', () => {

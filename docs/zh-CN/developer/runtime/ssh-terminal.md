@@ -66,6 +66,8 @@ Locale 行为：
 - 传输驱动关闭：socket close/error、SSH stream close、SSH client error。
 - 释放行为：在 session 标记为 disposed 前发送 terminal `exit` 事件，再清理运行时所有权、关闭 SSH stream/client 与 WS。
 - 审计收尾：回写对应 `SshLoginAudit` 的 `sessionEndedAt` 与 `commandCount`。
+- Main 在判断窗口关闭或应用退出时，会把 SSH 会话注册表中所有尚未 disposed 的条目视为活动连接。用户确认 renderer 警告对话框后，`DELETE /api/v1/runtime/active-connections` 会在窗口销毁前通过同一服务释放路径关闭全部 SSH 会话。
+- 本地终端会话以及仅由端口转发规则持有的 SSH 传输不计入本次关闭警告。
 
 ## 2.1 连接审计与最近使用排序
 

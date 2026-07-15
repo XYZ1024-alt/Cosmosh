@@ -47,6 +47,47 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/runtime/active-connections:
+    get:
+      tags:
+        - runtime
+      summary: Get active SSH and SFTP connection counts.
+      operationId: runtimeGetActiveConnections
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      responses:
+        '200':
+          description: Active connection counts returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeActiveConnectionsGetSuccess'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    delete:
+      tags:
+        - runtime
+      summary: Close all active SSH and SFTP connections.
+      operationId: runtimeCloseActiveConnections
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+      responses:
+        '200':
+          description: Active SSH and SFTP connections closed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeActiveConnectionsCloseSuccess'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/settings:
     get:
       tags:
@@ -1915,6 +1956,56 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/TestPingData'
+    RuntimeActiveConnectionsData:
+      type: object
+      required:
+        - sshCount
+        - sftpCount
+        - totalCount
+      properties:
+        sshCount:
+          type: integer
+          minimum: 0
+        sftpCount:
+          type: integer
+          minimum: 0
+        totalCount:
+          type: integer
+          minimum: 0
+    RuntimeActiveConnectionsGetSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['RUNTIME_ACTIVE_CONNECTIONS_GET_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/RuntimeActiveConnectionsData'
+    RuntimeActiveConnectionsCloseSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['RUNTIME_ACTIVE_CONNECTIONS_CLOSE_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/RuntimeActiveConnectionsData'
     SettingsValues:
       type: object
       description: >

@@ -32,6 +32,8 @@ flowchart TB
 - **Role**: Electron host process.
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
+  - `src/window-close-guard.ts`: serialized window/app close decisions based on backend-owned SSH/SFTP activity, including conservative probe-failure handling.
+  - `src/renderer-close-confirmation.ts`: sender-bound, request-ID-validated Main-to-Renderer close confirmation broker with timeout and renderer-destruction handling.
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
   - `src/ipc/sftp-open-with-runtime.ts`: kernel-anchored Windows system executable/library resolution, OS-known-folder child environments, and packaged-versus-development macOS helper selection for SFTP Open With.
   - `src/ipc/register-debug-ipc.ts`: development diagnostics IPC, including the backend request mirror list/clear/event channels.
@@ -58,6 +60,7 @@ flowchart TB
   - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
   - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, fixed-row virtualization helpers and tests, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
+  - `src/components/CloseWindowConfirmationDialog.tsx`: shared Renderer `Dialog` presentation for Main-owned active-session close decisions.
   - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
   - `src/components/home`: home/SSH shared entity modules (card/icon rendering, TanStack Virtual-backed visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).

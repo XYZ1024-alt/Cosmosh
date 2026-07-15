@@ -38,6 +38,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/runtime/active-connections': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get active SSH and SFTP connection counts. */
+    get: operations['runtimeGetActiveConnections'];
+    put?: never;
+    post?: never;
+    /** Close all active SSH and SFTP connections. */
+    delete: operations['runtimeCloseActiveConnections'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/settings': {
     parameters: {
       query?: never;
@@ -710,6 +728,25 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['TestPingData'];
+    };
+    RuntimeActiveConnectionsData: {
+      sshCount: number;
+      sftpCount: number;
+      totalCount: number;
+    };
+    RuntimeActiveConnectionsGetSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'RUNTIME_ACTIVE_CONNECTIONS_GET_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['RuntimeActiveConnectionsData'];
+    };
+    RuntimeActiveConnectionsCloseSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'RUNTIME_ACTIVE_CONNECTIONS_CLOSE_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['RuntimeActiveConnectionsData'];
     };
     /** @description Application settings values. Property definitions, types, defaults, constraints, and enum sets are managed by the settings registry at packages/api-contract/src/settings-registry.ts. This schema is intentionally loose; runtime validation lives in code. */
     SettingsValues: {
@@ -1556,6 +1593,68 @@ export interface operations {
         };
         content: {
           'application/json': components['schemas']['TestPingSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  runtimeGetActiveConnections: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Active connection counts returned. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RuntimeActiveConnectionsGetSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  runtimeCloseActiveConnections: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Active SSH and SFTP connections closed. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['RuntimeActiveConnectionsCloseSuccess'];
         };
       };
       /** @description Authentication failed. */

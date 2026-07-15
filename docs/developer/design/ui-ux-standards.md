@@ -156,6 +156,14 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
 - SFTP directory lists must support desktop-style pointer marquee selection from list whitespace and the panel padding beside the list. The marquee must use a clearly visible token-based border and fill, preview intersecting rows as selected while dragging, and continuously auto-scroll near the list's vertical edges. It must not replace entry drag-and-drop, header column dragging, or inline editing; `Ctrl`/`Cmd` extends the existing selection.
 
+## 7.8 Renderer Window Close Guard
+
+- Main-window close and app-quit requests must check backend-owned SSH/SFTP activity before destroying the renderer.
+- Present the warning with the shared renderer `Dialog` component. Main retains lifecycle authority and sends only an opaque confirmation request after its backend activity check requires user input.
+- Use the concise title `Close window?` and description `There are still sessions in progress. Are you sure you want to close the window?`; do not expose implementation details or per-protocol counts in this dialog.
+- The safe action (`Cancel`) is the default focus and cancel action. Closing requires an explicit `Close` command.
+- Repeated close requests must share one in-flight prompt, and canceling must leave both the window and active sessions unchanged.
+
 ## 8. Compliance Checklist
 
 Before merging UI changes:

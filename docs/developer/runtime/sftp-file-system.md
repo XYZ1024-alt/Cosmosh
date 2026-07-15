@@ -125,6 +125,8 @@ Lifecycle rules:
 - `active` is currently a user-selectable setting that uses the same reconnect pipeline when the page already knows the current session expired. It does not add backend push events or polling.
 - `off` disables renderer retry. The backend still evicts closed sessions, so operations fail quickly with the session-not-found message instead of remaining pending.
 - Backend shutdown closes all registered SFTP sessions.
+- Main treats every entry still held by `SftpSessionService` as active when evaluating a window/app close. The renderer warning dialog intentionally summarizes all in-progress sessions without exposing per-protocol counts.
+- After confirmation, `DELETE /api/v1/runtime/active-connections` closes each registered SFTP SSH client before window destruction. This is required on macOS, where closing the last window does not quit the application or stop Backend.
 
 ## 5. Directory Listing And File Operations
 

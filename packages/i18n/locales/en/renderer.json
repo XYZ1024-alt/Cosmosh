@@ -80,6 +80,12 @@
     },
     "title": "Audit Logs"
   },
+  "closeWindowConfirmation": {
+    "cancel": "Cancel",
+    "confirm": "Close",
+    "description": "There are still sessions in progress. Are you sure you want to close the window?",
+    "title": "Close window?"
+  },
   "commandPalette": {
     "commands": {
       "developer": {

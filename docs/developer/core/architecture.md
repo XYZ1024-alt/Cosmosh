@@ -35,6 +35,7 @@ flowchart LR
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - CI packaging can also write `resources/remote-bootstrap/manifest-url.json` when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is provided. Packaged main reads this resource only as a fallback after the environment variable, preserving local override behavior while allowing tagged release installers and `main` build artifacts to discover their intended bootstrap manifest automatically. Unpackaged development runs fall back once more to the rolling `remote-bootstrap-dev` manifest URL, so local Remote Enhancements testing does not require per-shell setup.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
+- Owns the window/app close guard. Main prevents the initial close, queries backend-owned SSH/SFTP registries, delegates confirmation presentation to the renderer, and closes only after no activity is present or the user explicitly confirms interruption.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
   - locale header for i18n-compatible backend responses.
@@ -48,6 +49,7 @@ Development and packaging intentionally use different native targets. The Main a
 ### Backend Process (`packages/backend/src/index.ts`)
 
 - Registers idempotent graceful-shutdown flow for runtime signals and fatal process events.
+- Exposes internal-token-protected runtime connection summary/close operations used only by Main's close guard; renderer does not receive a bulk-disconnect bridge.
 - Shutdown order is explicit: stop WS session services, close HTTP listener, then disconnect Prisma/SQLite handles.
 - Windows-specific termination (`SIGBREAK`) is handled in the same path as POSIX signals to reduce stale DB lock cases.
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
@@ -97,6 +99,38 @@ sequenceDiagram
   PB->>MP: ipcRenderer.invoke('backend:ssh-close-session', sessionId)
   MP->>BE: DELETE /api/v1/ssh/sessions/{sessionId}
 ```
+
+## 3.1 Guarded Window And App Close Lifecycle
+
+```mermaid
+sequenceDiagram
+  participant OS as Window/App Close Intent
+  participant MP as Main Process
+  participant BE as Backend Runtime
+  participant RD as Renderer Dialog
+
+  OS->>MP: BrowserWindow close or app before-quit
+  MP->>MP: preventDefault + coalesce repeated requests
+  MP->>BE: GET /api/v1/runtime/active-connections
+  alt no active SSH/SFTP sessions
+    MP->>MP: continue window close or app shutdown
+  else active sessions or probe unavailable
+    MP->>RD: request localized warning (opaque requestId)
+    alt user cancels
+      RD-->>MP: confirmed=false
+    else user confirms
+      RD-->>MP: confirmed=true
+      MP->>BE: DELETE /api/v1/runtime/active-connections
+      MP->>MP: continue window close or app shutdown
+    end
+  end
+```
+
+- An active connection is an SSH or SFTP session still present in the backend service registry. Local terminals and port-forwarding runtimes are intentionally outside this warning scope.
+- Main validates non-negative, internally consistent counts before using them. A failed or malformed probe opens a generic warning instead of silently closing or permanently blocking exit.
+- Repeated title-bar, last-tab, menu, and shortcut close requests share one in-flight decision. Main binds the renderer response to both an opaque request ID and the owning `webContents`; preload validates and buffers the request until the React listener is mounted. A responsive renderer timeout resolves to the safe cancel decision, while an unavailable or destroyed renderer is allowed to exit instead of becoming permanently blocked.
+- On Windows and Linux, an approved main-window close continues through full application shutdown. On macOS, an approved window-only close disconnects SSH/SFTP sessions before destroying the window while leaving the application runtime available for activation; app quit still runs full shutdown.
+- Fatal startup/process exits bypass interactive confirmation but retain the existing backend and SFTP temporary-root cleanup path.
 
 ## 4. Security Model
 

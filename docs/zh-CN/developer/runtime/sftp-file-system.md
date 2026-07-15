@@ -125,6 +125,8 @@ sequenceDiagram
 - `active` 当前作为用户可选设置落地：当页面已经知道当前会话过期时，使用同一套重连流程。它不会新增 backend 推送事件或轮询。
 - `off` 会禁用 renderer 重试。Backend 仍会移除已关闭会话，因此操作会快速以 session-not-found 信息失败，而不是保持 pending。
 - Backend 关闭时会关闭所有已注册的 SFTP 会话。
+- Main 在判断窗口关闭或应用退出时，会把 `SftpSessionService` 仍持有的每个条目视为活动连接。Renderer 警告对话框会统一概述正在进行的会话，不展示各协议数量。
+- 用户确认后，`DELETE /api/v1/runtime/active-connections` 会在窗口销毁前关闭每个已注册 SFTP SSH client。macOS 关闭最后一个窗口不会退出应用或停止 Backend，因此该步骤是必要的。
 
 ## 5. 目录列表与文件操作
 

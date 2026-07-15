@@ -68,6 +68,8 @@ import type {
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
+  AppCloseConfirmationRequest,
+  AppCloseConfirmationResponse,
   AppMenuAction,
   BackendRequestTrace,
   SftpOpenWithApplication,
@@ -94,6 +96,8 @@ declare global {
   interface Window {
     electron?: {
       closeWindow: () => void;
+      onCloseConfirmationRequested: (listener: (request: AppCloseConfirmationRequest) => void) => () => void;
+      respondToCloseConfirmation: (response: AppCloseConfirmationResponse) => void;
       getLocale: () => Promise<string>;
       setLocale: (locale: string) => Promise<string>;
       getRuntimeUserName: () => Promise<string>;

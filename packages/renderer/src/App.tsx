@@ -1,7 +1,9 @@
+import type { AppCloseConfirmationRequest } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import React from 'react';
 
 import AppCommandPaletteHost, { type AppCommandPaletteHostHandle } from './components/AppCommandPaletteHost';
+import CloseWindowConfirmationDialog from './components/CloseWindowConfirmationDialog';
 import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
 import { listLocalTerminalProfiles } from './lib/backend';
@@ -55,7 +57,11 @@ const App: React.FC = () => {
   const [enableMainHeapSnapshotExport, setEnableMainHeapSnapshotExport] = React.useState<boolean>(() => {
     return readEnableHeapSnapshotPreference();
   });
+  const [closeConfirmationRequest, setCloseConfirmationRequest] = React.useState<AppCloseConfirmationRequest | null>(
+    null,
+  );
   const commandPaletteHostRef = React.useRef<AppCommandPaletteHostHandle | null>(null);
+  const closeConfirmationRequestRef = React.useRef<AppCloseConfirmationRequest | null>(null);
   const lastRendererNewTabShortcutAtRef = React.useRef<number>(0);
   const lastAppMenuNewTabAtRef = React.useRef<number>(0);
 
@@ -71,6 +77,20 @@ const App: React.FC = () => {
 
   const handleLastTabClose = React.useCallback(() => {
     window.electron?.closeWindow();
+  }, []);
+
+  const handleCloseConfirmationResolve = React.useCallback((confirmed: boolean): void => {
+    const request = closeConfirmationRequestRef.current;
+    if (!request) {
+      return;
+    }
+
+    closeConfirmationRequestRef.current = null;
+    setCloseConfirmationRequest(null);
+    window.electron?.respondToCloseConfirmation({
+      requestId: request.requestId,
+      confirmed,
+    });
   }, []);
 
   const {
@@ -234,6 +254,18 @@ const App: React.FC = () => {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  React.useEffect(() => {
+    const electronBridge = window.electron;
+    if (!electronBridge) {
+      return;
+    }
+
+    return electronBridge.onCloseConfirmationRequested((request) => {
+      closeConfirmationRequestRef.current = request;
+      setCloseConfirmationRequest(request);
+    });
   }, []);
 
   React.useEffect(() => {
@@ -690,6 +722,11 @@ const App: React.FC = () => {
         />
 
         <SystemPerformanceOverlay visible={showSystemMonitorOverlay} />
+
+        <CloseWindowConfirmationDialog
+          open={closeConfirmationRequest !== null}
+          onResolve={handleCloseConfirmationResolve}
+        />
       </div>
     </AppToastProvider>
   );

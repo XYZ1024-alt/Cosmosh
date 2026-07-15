@@ -1700,6 +1700,32 @@ export class SftpSessionService {
   }
 
   /**
+   * Returns the number of SFTP sessions that still own live SSH transports.
+   *
+   * @returns Active SFTP session count.
+   */
+  public getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  /**
+   * Closes every active SFTP session without stopping the service.
+   *
+   * @returns Number of sessions closed by this call.
+   */
+  public closeAllSessions(): number {
+    let closedCount = 0;
+
+    for (const sessionId of [...this.sessions.keys()]) {
+      if (this.closeSession(sessionId)) {
+        closedCount += 1;
+      }
+    }
+
+    return closedCount;
+  }
+
+  /**
    * Stops all active SFTP sessions during backend shutdown.
    *
    * @returns Promise resolved after best-effort cleanup.

@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import type {
+  AppCloseConfirmationResponse,
   SftpOpenWithApplication,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
@@ -64,6 +65,7 @@ type SftpTemporaryFileWatchRecord = {
 
 const stagedSftpUploadPaths = new Set<string>();
 const MAX_MACOS_OPEN_WITH_HELPER_OUTPUT_BYTES = 1024 * 1024;
+const MAX_CLOSE_CONFIRMATION_REQUEST_ID_LENGTH = 128;
 const MAX_SFTP_TEMPORARY_IMAGE_PREVIEW_BYTES = 128 * 1024 * 1024;
 const SFTP_TEMP_FILE_WATCH_DEBOUNCE_MS = 800;
 const SFTP_TEMPORARY_IMAGE_PREVIEW_MIME_TYPES: Readonly<Record<string, string>> = {
@@ -123,6 +125,8 @@ const buildSystemProxyTargetUrl = (request: unknown): string => {
 export type RegisterAppUtilityIpcHandlersOptions = {
   /** Returns current main window reference (if any). */
   getMainWindow: () => BrowserWindow | null;
+  /** Resolves a Main-owned close confirmation from its renderer owner. */
+  resolveCloseConfirmation: (senderWebContentsId: number, response: AppCloseConfirmationResponse) => void;
   /** Returns active locale used by main process. */
   getLocale: () => string;
   /** Translates main-process UI text using the active locale. */
@@ -148,6 +152,33 @@ export type RegisterAppUtilityIpcHandlersOptions = {
   sftpDownloadTargetAuthorizations: SftpDownloadTargetAuthorizationRegistry;
   /** Returns the canonical Main-owned SFTP temp root shared with Backend. */
   getSftpTemporaryRootPath: () => string;
+};
+
+/**
+ * Validates the renderer response before forwarding it to the Main close broker.
+ *
+ * @param value Untrusted renderer IPC payload.
+ * @returns Validated close confirmation response, or `null` when malformed.
+ */
+const parseCloseConfirmationResponse = (value: unknown): AppCloseConfirmationResponse | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.requestId !== 'string' ||
+    candidate.requestId.length === 0 ||
+    candidate.requestId.length > MAX_CLOSE_CONFIRMATION_REQUEST_ID_LENGTH ||
+    typeof candidate.confirmed !== 'boolean'
+  ) {
+    return null;
+  }
+
+  return {
+    requestId: candidate.requestId,
+    confirmed: candidate.confirmed,
+  };
 };
 
 /**
@@ -622,6 +653,15 @@ export const registerAppUtilityIpcHandlers = (options: RegisterAppUtilityIpcHand
   ipcMain.on('app:close-window', () => {
     const targetWindow = resolveTargetWindow(options);
     targetWindow?.close();
+  });
+
+  ipcMain.on('app:close-confirmation-response', (event, value: unknown) => {
+    const response = parseCloseConfirmationResponse(value);
+    if (!response) {
+      return;
+    }
+
+    options.resolveCloseConfirmation(event.sender.id, response);
   });
 
   ipcMain.handle('i18n:get-locale', () => {

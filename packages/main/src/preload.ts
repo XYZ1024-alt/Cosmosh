@@ -70,6 +70,8 @@ import type {
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
+  AppCloseConfirmationRequest,
+  AppCloseConfirmationResponse,
   AppMenuAction,
   BackendRequestTrace,
   SftpDroppedUploadLocalEntry,
@@ -89,6 +91,7 @@ const PRELOAD_APP_MENU_ACTIONS: ReadonlySet<AppMenuAction> = new Set([
   'close-right-tabs',
   'show-tab-switcher',
 ]);
+const MAX_CLOSE_CONFIRMATION_REQUEST_ID_LENGTH = 128;
 
 /**
  * Checks whether an app-menu IPC payload is safe to forward into the renderer.
@@ -152,6 +155,96 @@ const resolveDroppedSftpUploadLocalEntries = (files: unknown): SftpDroppedUpload
 const sendIpc = (channel: string, ...args: unknown[]): void => {
   ipcRenderer.send(channel, ...args);
 };
+
+const closeConfirmationListeners = new Set<(request: AppCloseConfirmationRequest) => void>();
+let bufferedCloseConfirmationRequest: AppCloseConfirmationRequest | null = null;
+
+/**
+ * Validates a Main-owned close confirmation request before renderer delivery.
+ *
+ * @param value Untrusted Main-to-preload IPC payload.
+ * @returns Validated request, or `null` when malformed.
+ */
+const parseCloseConfirmationRequest = (value: unknown): AppCloseConfirmationRequest | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const requestId = (value as Record<string, unknown>).requestId;
+  if (
+    typeof requestId !== 'string' ||
+    requestId.length === 0 ||
+    requestId.length > MAX_CLOSE_CONFIRMATION_REQUEST_ID_LENGTH
+  ) {
+    return null;
+  }
+
+  return { requestId };
+};
+
+/**
+ * Validates a renderer response before sending it across the preload boundary.
+ *
+ * @param value Renderer-provided response payload.
+ * @returns Validated response, or `null` when malformed.
+ */
+const parseCloseConfirmationResponse = (value: unknown): AppCloseConfirmationResponse | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const candidate = value as Record<string, unknown>;
+  if (
+    typeof candidate.requestId !== 'string' ||
+    candidate.requestId.length === 0 ||
+    candidate.requestId.length > MAX_CLOSE_CONFIRMATION_REQUEST_ID_LENGTH ||
+    typeof candidate.confirmed !== 'boolean'
+  ) {
+    return null;
+  }
+
+  return {
+    requestId: candidate.requestId,
+    confirmed: candidate.confirmed,
+  };
+};
+
+/**
+ * Subscribes to close confirmation requests and replays one request that arrived
+ * before the React root mounted.
+ *
+ * @param listener Renderer callback that opens the confirmation dialog.
+ * @returns Unsubscribe callback.
+ */
+const onCloseConfirmationRequested = (listener: (request: AppCloseConfirmationRequest) => void): (() => void) => {
+  closeConfirmationListeners.add(listener);
+
+  if (bufferedCloseConfirmationRequest) {
+    const request = bufferedCloseConfirmationRequest;
+    bufferedCloseConfirmationRequest = null;
+    listener(request);
+  }
+
+  return () => {
+    closeConfirmationListeners.delete(listener);
+  };
+};
+
+ipcRenderer.on('app:close-confirmation-request', (_event, value: unknown) => {
+  const request = parseCloseConfirmationRequest(value);
+  if (!request) {
+    return;
+  }
+
+  if (closeConfirmationListeners.size === 0) {
+    bufferedCloseConfirmationRequest = request;
+    return;
+  }
+
+  for (const listener of closeConfirmationListeners) {
+    listener(request);
+  }
+});
 
 /**
  * Subscribes to string payload events and returns an unsubscribe callback.
@@ -268,6 +361,13 @@ contextBridge.exposeInMainWorld('electron', {
   // ---------------------------------------------------------------------------
   closeWindow: () => {
     sendIpc('app:close-window');
+  },
+  onCloseConfirmationRequested,
+  respondToCloseConfirmation: (value: AppCloseConfirmationResponse) => {
+    const response = parseCloseConfirmationResponse(value);
+    if (response) {
+      sendIpc('app:close-confirmation-response', response);
+    }
   },
   getLocale: () => {
     return invokeIpc<string>('i18n:get-locale');

@@ -121,6 +121,26 @@ const registerTestSession = (service: SftpSessionService, session: TestSftpSessi
   internals.watchSessionTransport(session);
 };
 
+test('active session count tracks bulk SFTP session close operations', async () => {
+  const service = createTestSftpSessionService();
+  const firstSession = createTestSftpSession();
+  const secondSession = createTestSftpSession();
+  firstSession.sessionId = 'sftp-count-1';
+  secondSession.sessionId = 'sftp-count-2';
+
+  registerTestSession(service, firstSession);
+  registerTestSession(service, secondSession);
+
+  assert.equal(service.getActiveSessionCount(), 2);
+  assert.equal(service.closeAllSessions(), 2);
+  assert.equal(service.getActiveSessionCount(), 0);
+  assert.equal(firstSession.isClosed, true);
+  assert.equal(secondSession.isClosed, true);
+  assert.equal(service.closeAllSessions(), 0);
+
+  await service.stop();
+});
+
 /**
  * Creates minimal ssh2-compatible stats for upload tests.
  *

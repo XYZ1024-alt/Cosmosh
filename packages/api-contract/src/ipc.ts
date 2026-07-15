@@ -9,6 +9,21 @@ export const APP_MENU_ACTIONS = [
 
 export type AppMenuAction = (typeof APP_MENU_ACTIONS)[number];
 
+/**
+ * Main-to-renderer request to display the guarded window close confirmation.
+ */
+export type AppCloseConfirmationRequest = {
+  requestId: string;
+};
+
+/**
+ * Renderer response that resolves one guarded window close confirmation.
+ */
+export type AppCloseConfirmationResponse = {
+  requestId: string;
+  confirmed: boolean;
+};
+
 export type SystemProxyResolveRequest = {
   host: string;
   port: number;

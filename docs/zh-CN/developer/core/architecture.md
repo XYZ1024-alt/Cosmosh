@@ -35,6 +35,7 @@ flowchart LR
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
+- 持有窗口/应用关闭守卫。Main 会阻止首次关闭，查询 backend 持有的 SSH/SFTP 注册表，将确认界面委托给 renderer，并且仅在不存在活动连接或用户明确确认中断后继续关闭。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
   - 用于后端 i18n 响应的 locale header。
@@ -48,6 +49,7 @@ flowchart LR
 ### Backend 进程 (`packages/backend/src/index.ts`)
 
 - 注册幂等的优雅关闭流程，覆盖运行时信号与致命进程事件。
+- 暴露仅由 Main 关闭守卫使用、受内部 token 保护的运行时连接汇总/关闭操作；renderer 不获得批量断开 bridge。
 - 关闭顺序固定：先停 WS 会话服务，再关闭 HTTP 监听，最后断开 Prisma/SQLite 连接句柄。
 - Windows 终止信号（`SIGBREAK`）与 POSIX 信号共用同一路径，降低数据库文件锁残留概率。
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
@@ -97,6 +99,38 @@ sequenceDiagram
   PB->>MP: ipcRenderer.invoke('backend:ssh-close-session', sessionId)
   MP->>BE: DELETE /api/v1/ssh/sessions/{sessionId}
 ```
+
+## 3.1 受保护的窗口关闭与应用退出生命周期
+
+```mermaid
+sequenceDiagram
+  participant OS as Window/App Close Intent
+  participant MP as Main Process
+  participant BE as Backend Runtime
+  participant RD as Renderer Dialog
+
+  OS->>MP: BrowserWindow close or app before-quit
+  MP->>MP: preventDefault + 合并重复请求
+  MP->>BE: GET /api/v1/runtime/active-connections
+  alt 没有活动 SSH/SFTP 会话
+    MP->>MP: 继续关闭窗口或关闭应用
+  else 存在活动会话或探测不可用
+    MP->>RD: 请求本地化警告（不透明 requestId）
+    alt 用户取消
+      RD-->>MP: confirmed=false
+    else 用户确认
+      RD-->>MP: confirmed=true
+      MP->>BE: DELETE /api/v1/runtime/active-connections
+      MP->>MP: 继续关闭窗口或关闭应用
+    end
+  end
+```
+
+- “活动连接”指仍存在于 backend 服务注册表中的 SSH 或 SFTP 会话。本地终端和端口转发运行时明确不属于本次警告范围。
+- Main 会先校验计数均为非负值且总数一致，再用于关闭判断。探测失败或响应畸形时显示通用警告，不会静默关闭，也不会永久阻止退出。
+- 标题栏、最后一个标签页、菜单和快捷键产生的重复关闭请求共用一个进行中的决策。Main 会将 renderer 响应同时绑定到不透明 request ID 与所属 `webContents`；preload 负责校验请求，并在 React listener 挂载前暂存该请求。可响应 renderer 超时后按安全的取消处理；renderer 不可用或已销毁时则允许退出，避免永久阻塞。
+- Windows 与 Linux 上，获准的主窗口关闭会进入完整应用关闭流程。macOS 上，仅关闭窗口时会先断开 SSH/SFTP 会话再销毁窗口，并保留应用运行时以供重新激活；退出应用仍执行完整关闭。
+- 启动失败与致命进程退出会绕过交互确认，但继续执行既有 backend 与 SFTP 临时目录清理路径。
 
 ## 4. 安全模型
 
