@@ -159,6 +159,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 ## 7.8 Renderer Window Close Guard
 
 - Main-window close and app-quit requests must check backend-owned SSH/SFTP activity before destroying the renderer.
+- General > Behavior exposes `Ask Before Closing Window` as a switch that defaults on. Turning it off suppresses only the renderer prompt; active SSH/SFTP sessions must still be disconnected before close. If the persisted preference cannot be read, retain the default prompt.
 - Present the warning with the shared renderer `Dialog` component. Main retains lifecycle authority and sends only an opaque confirmation request after its backend activity check requires user input.
 - Use the concise title `Close window?` and description `There are still sessions in progress. Are you sure you want to close the window?`; do not expose implementation details or per-protocol counts in this dialog.
 - The safe action (`Cancel`) is the default focus and cancel action. Closing requires an explicit `Close` command.

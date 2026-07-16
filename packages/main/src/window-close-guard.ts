@@ -15,10 +15,11 @@ export type ConnectionCloseIntent = 'quit' | 'window';
 /**
  * Stage that failed while evaluating one guarded close request.
  */
-export type ConnectionCloseGuardErrorStage = 'confirmation' | 'disconnect' | 'probe';
+export type ConnectionCloseGuardErrorStage = 'confirmation' | 'disconnect' | 'preference' | 'probe';
 
 type ConnectionCloseGuardOptions = {
   readActiveConnections: () => Promise<ActiveConnectionSummary>;
+  readCloseConfirmationEnabled: () => Promise<boolean>;
   confirmClose: (input: { intent: ConnectionCloseIntent; summary: ActiveConnectionSummary | null }) => Promise<boolean>;
   closeActiveConnections: () => Promise<void>;
   onApproved: (intent: ConnectionCloseIntent) => Promise<void> | void;
@@ -114,16 +115,26 @@ export class ConnectionCloseGuard {
       return;
     }
 
-    let confirmed = false;
+    let confirmationEnabled = true;
     try {
-      confirmed = await this.options.confirmClose({ intent, summary });
+      confirmationEnabled = await this.options.readCloseConfirmationEnabled();
     } catch (error: unknown) {
-      this.options.onError('confirmation', error);
-      return;
+      // Preference failures preserve the safer default rather than silently skipping the warning.
+      this.options.onError('preference', error);
     }
 
-    if (!confirmed) {
-      return;
+    if (confirmationEnabled) {
+      let confirmed = false;
+      try {
+        confirmed = await this.options.confirmClose({ intent, summary });
+      } catch (error: unknown) {
+        this.options.onError('confirmation', error);
+        return;
+      }
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     try {

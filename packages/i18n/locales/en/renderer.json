@@ -750,6 +750,10 @@
       "userMenuDebugEntryEnabled": {
         "description": "Show the Debug entry in the user menu. Intended for development and advanced diagnostics.",
         "title": "Show Debug Entry In User Menu"
+      },
+      "windowCloseConfirmationEnabled": {
+        "description": "Show a confirmation dialog before closing a window while sessions are still in progress.",
+        "title": "Ask Before Closing Window"
       }
     },
     "loading": "Loading settings...",
@@ -878,6 +882,7 @@
       "advancedTerminal": "Advanced Terminal",
       "appearance": "Appearance",
       "autoComplete": "Auto Complete",
+      "behavior": "Behavior",
       "connection": "Connection",
       "editorDefaults": "Defaults",
       "localization": "Localization",

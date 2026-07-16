@@ -750,6 +750,10 @@
       "userMenuDebugEntryEnabled": {
         "description": "在用户菜单中显示“调试”入口。该选项面向开发和高级诊断场景。",
         "title": "在用户菜单显示调试入口"
+      },
+      "windowCloseConfirmationEnabled": {
+        "description": "关闭窗口时，若仍有正在进行的会话，则显示确认对话框。",
+        "title": "关闭窗口时询问"
       }
     },
     "loading": "正在加载设置...",
@@ -878,6 +882,7 @@
       "advancedTerminal": "高级终端配置",
       "appearance": "外观",
       "autoComplete": "自动补全",
+      "behavior": "行为",
       "connection": "连接",
       "editorDefaults": "默认值",
       "localization": "本地化",

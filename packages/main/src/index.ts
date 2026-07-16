@@ -9,6 +9,7 @@ import type {
   ApiErrorResponse,
   ApiRuntimeActiveConnectionsCloseResponse,
   ApiRuntimeActiveConnectionsGetResponse,
+  ApiSettingsGetResponse,
   AppMenuAction,
 } from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
@@ -1340,6 +1341,25 @@ const closeActiveConnections = async (): Promise<void> => {
 };
 
 /**
+ * Reads the persisted preference that controls active-session close confirmation.
+ *
+ * @returns Whether Main should ask before closing active SSH/SFTP sessions.
+ */
+const readWindowCloseConfirmationEnabled = async (): Promise<boolean> => {
+  const response = await requestBackend<ApiSettingsGetResponse>(API_PATHS.settingsGet, { method: 'GET' });
+  if (!response.success) {
+    throw new Error(`Backend rejected settings query: ${response.code}`);
+  }
+
+  const value = response.data.item.values.windowCloseConfirmationEnabled;
+  if (typeof value !== 'boolean') {
+    throw new Error('Backend returned an invalid window close confirmation preference.');
+  }
+
+  return value;
+};
+
+/**
  * Requests the shared renderer dialog while the BrowserWindow is still alive.
  *
  * @returns Whether the user approved the destructive close action.
@@ -1695,6 +1715,7 @@ const beginAppShutdown = async (): Promise<void> => {
 
 const connectionCloseGuard = new ConnectionCloseGuard({
   readActiveConnections: readActiveConnectionSummary,
+  readCloseConfirmationEnabled: readWindowCloseConfirmationEnabled,
   confirmClose: () => confirmConnectionClose(),
   closeActiveConnections,
   onApproved: async (intent) => {

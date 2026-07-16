@@ -58,6 +58,7 @@ export interface SettingsValues {
   dateFormat: 'yyyy-MM-dd' | 'yyyy/MM/dd' | 'dd/MM/yy' | 'MM/dd/yyyy' | 'MMM d, yyyy';
   timeFormat: 'HH:mm:ss' | 'HH:mm' | 'h:mm:ss a' | 'h:mm a';
   theme: 'dark' | 'light' | 'auto';
+  windowCloseConfirmationEnabled: boolean;
   showFullServerAddress: boolean;
   sshTabApplyServerVisualStyle: boolean;
   terminalAltClickMovesCursor: boolean;
@@ -158,6 +159,7 @@ export const SETTINGS_CATEGORIES = {
     labelI18nKey: 'settings.categories.general',
     sections: {
       localization: { labelI18nKey: 'settings.sections.localization' },
+      behavior: { labelI18nKey: 'settings.sections.behavior' },
     },
   },
   'account-sync': {
@@ -429,6 +431,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     commandActionId: 'settings.general.dateTime.timeFormat.set',
     searchTerms: ['time', 'format', 'clock', '12 hour', '24 hour', 'seconds'],
     options: [{ value: 'HH:mm:ss' }, { value: 'HH:mm' }, { value: 'h:mm:ss a' }, { value: 'h:mm a' }],
+  },
+  {
+    key: 'windowCloseConfirmationEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.windowCloseConfirmationEnabled.title',
+    descriptionI18nKey: 'settings.items.windowCloseConfirmationEnabled.description',
+    category: SETTINGS_CATEGORIES.general,
+    section: SETTINGS_CATEGORIES.general.sections.behavior,
+    control: 'switch',
+    path: 'general.window.closeConfirmationEnabled',
+    commandActionId: 'settings.general.window.closeConfirmation.toggle',
+    searchTerms: ['window', 'close', 'confirmation', 'prompt', 'active session', 'quit'],
   },
   {
     key: 'accountSyncEnabled',

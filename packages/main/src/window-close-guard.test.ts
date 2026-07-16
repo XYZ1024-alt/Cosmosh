@@ -21,9 +21,14 @@ test('active connection summary validation rejects malformed and inconsistent co
 test('close guard approves immediately when no SSH or SFTP connections are active', async () => {
   let confirmationCount = 0;
   let disconnectCount = 0;
+  let preferenceReadCount = 0;
   const approvedIntents: string[] = [];
   const guard = new ConnectionCloseGuard({
     readActiveConnections: async () => ({ sshCount: 0, sftpCount: 0, totalCount: 0 }),
+    readCloseConfirmationEnabled: async () => {
+      preferenceReadCount += 1;
+      return true;
+    },
     confirmClose: async () => {
       confirmationCount += 1;
       return true;
@@ -41,6 +46,7 @@ test('close guard approves immediately when no SSH or SFTP connections are activ
 
   assert.equal(confirmationCount, 0);
   assert.equal(disconnectCount, 0);
+  assert.equal(preferenceReadCount, 0);
   assert.deepEqual(approvedIntents, ['window']);
 });
 
@@ -49,6 +55,7 @@ test('close guard preserves active connections when the user cancels', async () 
   let approvedCount = 0;
   const guard = new ConnectionCloseGuard({
     readActiveConnections: async () => ({ sshCount: 1, sftpCount: 2, totalCount: 3 }),
+    readCloseConfirmationEnabled: async () => true,
     confirmClose: async ({ summary }) => {
       assert.deepEqual(summary, { sshCount: 1, sftpCount: 2, totalCount: 3 });
       return false;
@@ -72,6 +79,7 @@ test('close guard disconnects active sessions before approving the close', async
   const callOrder: string[] = [];
   const guard = new ConnectionCloseGuard({
     readActiveConnections: async () => ({ sshCount: 1, sftpCount: 1, totalCount: 2 }),
+    readCloseConfirmationEnabled: async () => true,
     confirmClose: async () => true,
     closeActiveConnections: async () => {
       callOrder.push('disconnect');
@@ -87,6 +95,54 @@ test('close guard disconnects active sessions before approving the close', async
   assert.deepEqual(callOrder, ['disconnect', 'approve:quit']);
 });
 
+test('close guard skips confirmation when the preference is disabled and still disconnects sessions', async () => {
+  const callOrder: string[] = [];
+  const guard = new ConnectionCloseGuard({
+    readActiveConnections: async () => ({ sshCount: 1, sftpCount: 0, totalCount: 1 }),
+    readCloseConfirmationEnabled: async () => false,
+    confirmClose: async () => {
+      callOrder.push('confirm');
+      return false;
+    },
+    closeActiveConnections: async () => {
+      callOrder.push('disconnect');
+    },
+    onApproved: () => {
+      callOrder.push('approve');
+    },
+    onError: () => undefined,
+  });
+
+  await guard.requestClose('window');
+
+  assert.deepEqual(callOrder, ['disconnect', 'approve']);
+});
+
+test('close guard conservatively confirms when the preference cannot be read', async () => {
+  const errorStages: ConnectionCloseGuardErrorStage[] = [];
+  let confirmationCount = 0;
+  const guard = new ConnectionCloseGuard({
+    readActiveConnections: async () => ({ sshCount: 0, sftpCount: 1, totalCount: 1 }),
+    readCloseConfirmationEnabled: async () => {
+      throw new Error('preference failed');
+    },
+    confirmClose: async () => {
+      confirmationCount += 1;
+      return false;
+    },
+    closeActiveConnections: async () => undefined,
+    onApproved: () => undefined,
+    onError: (stage) => {
+      errorStages.push(stage);
+    },
+  });
+
+  await guard.requestClose('window');
+
+  assert.equal(confirmationCount, 1);
+  assert.deepEqual(errorStages, ['preference']);
+});
+
 test('close guard warns on probe failure and still approves after a best-effort disconnect', async () => {
   const errorStages: ConnectionCloseGuardErrorStage[] = [];
   let receivedNullSummary = false;
@@ -95,6 +151,7 @@ test('close guard warns on probe failure and still approves after a best-effort 
     readActiveConnections: async () => {
       throw new Error('probe failed');
     },
+    readCloseConfirmationEnabled: async () => true,
     confirmClose: async ({ summary }) => {
       receivedNullSummary = summary === null;
       return true;
@@ -125,6 +182,7 @@ test('close guard coalesces repeated requests into the first pending decision', 
   });
   const guard = new ConnectionCloseGuard({
     readActiveConnections: async () => await probePromise,
+    readCloseConfirmationEnabled: async () => true,
     confirmClose: async () => true,
     closeActiveConnections: async () => undefined,
     onApproved: (intent) => {

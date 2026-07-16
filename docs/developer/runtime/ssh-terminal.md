@@ -67,6 +67,7 @@ Locale behavior:
 - Dispose behavior: send terminal `exit` event before marking the session disposed, then clear runtime ownership, close SSH stream/client, and close WS.
 - Audit finalization: update matching `SshLoginAudit` with `sessionEndedAt` and `commandCount`.
 - Main treats every non-disposed entry in the SSH session registry as active when evaluating a window/app close. If the user approves the renderer warning dialog, `DELETE /api/v1/runtime/active-connections` closes all SSH sessions through the same service disposal path before the window is destroyed.
+- The General > Behavior `Ask Before Closing Window` setting defaults on. When disabled, Main skips the renderer dialog but still calls the bulk-close endpoint before continuing the close; setting read failures retain the warning.
 - Local terminal sessions and SSH transports owned only by port-forwarding rules are not counted by this close warning.
 
 ## 2.1 Connection Audit and Last-Used Sorting

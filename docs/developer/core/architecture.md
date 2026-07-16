@@ -115,19 +115,26 @@ sequenceDiagram
   alt no active SSH/SFTP sessions
     MP->>MP: continue window close or app shutdown
   else active sessions or probe unavailable
-    MP->>RD: request localized warning (opaque requestId)
-    alt user cancels
-      RD-->>MP: confirmed=false
-    else user confirms
-      RD-->>MP: confirmed=true
+    MP->>BE: GET /api/v1/settings
+    alt close confirmation disabled
       MP->>BE: DELETE /api/v1/runtime/active-connections
       MP->>MP: continue window close or app shutdown
+    else confirmation enabled or preference unavailable
+      MP->>RD: request localized warning (opaque requestId)
+      alt user cancels
+        RD-->>MP: confirmed=false
+      else user confirms
+        RD-->>MP: confirmed=true
+        MP->>BE: DELETE /api/v1/runtime/active-connections
+        MP->>MP: continue window close or app shutdown
+      end
     end
   end
 ```
 
 - An active connection is an SSH or SFTP session still present in the backend service registry. Local terminals and port-forwarding runtimes are intentionally outside this warning scope.
-- Main validates non-negative, internally consistent counts before using them. A failed or malformed probe opens a generic warning instead of silently closing or permanently blocking exit.
+- `windowCloseConfirmationEnabled` is registered under General > Behavior and defaults to `true`. Main reads this persisted backend setting only when active sessions exist or the activity probe is unavailable. Disabling it skips the renderer dialog but still closes registered SSH/SFTP sessions before window or application shutdown; a preference read failure preserves the default warning behavior.
+- Main validates non-negative, internally consistent counts before using them. A failed or malformed probe follows the configured confirmation behavior instead of silently closing or permanently blocking exit.
 - Repeated title-bar, last-tab, menu, and shortcut close requests share one in-flight decision. Main binds the renderer response to both an opaque request ID and the owning `webContents`; preload validates and buffers the request until the React listener is mounted. A responsive renderer timeout resolves to the safe cancel decision, while an unavailable or destroyed renderer is allowed to exit instead of becoming permanently blocked.
 - On Windows and Linux, an approved main-window close continues through full application shutdown. On macOS, an approved window-only close disconnects SSH/SFTP sessions before destroying the window while leaving the application runtime available for activation; app quit still runs full shutdown.
 - Fatal startup/process exits bypass interactive confirmation but retain the existing backend and SFTP temporary-root cleanup path.

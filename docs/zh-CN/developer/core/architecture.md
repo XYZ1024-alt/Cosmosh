@@ -115,19 +115,26 @@ sequenceDiagram
   alt 没有活动 SSH/SFTP 会话
     MP->>MP: 继续关闭窗口或关闭应用
   else 存在活动会话或探测不可用
-    MP->>RD: 请求本地化警告（不透明 requestId）
-    alt 用户取消
-      RD-->>MP: confirmed=false
-    else 用户确认
-      RD-->>MP: confirmed=true
+    MP->>BE: GET /api/v1/settings
+    alt 已关闭关闭确认
       MP->>BE: DELETE /api/v1/runtime/active-connections
       MP->>MP: 继续关闭窗口或关闭应用
+    else 已开启确认或设置不可用
+      MP->>RD: 请求本地化警告（不透明 requestId）
+      alt 用户取消
+        RD-->>MP: confirmed=false
+      else 用户确认
+        RD-->>MP: confirmed=true
+        MP->>BE: DELETE /api/v1/runtime/active-connections
+        MP->>MP: 继续关闭窗口或关闭应用
+      end
     end
   end
 ```
 
 - “活动连接”指仍存在于 backend 服务注册表中的 SSH 或 SFTP 会话。本地终端和端口转发运行时明确不属于本次警告范围。
-- Main 会先校验计数均为非负值且总数一致，再用于关闭判断。探测失败或响应畸形时显示通用警告，不会静默关闭，也不会永久阻止退出。
+- `windowCloseConfirmationEnabled` 注册在“通用 > 行为”下，默认值为 `true`。仅当存在活动会话或活动状态探测不可用时，Main 才读取这项 backend 持久化设置。关闭该设置会跳过 renderer 对话框，但仍会在关闭窗口或应用前断开已注册的 SSH/SFTP 会话；设置读取失败时保留默认询问行为。
+- Main 会先校验计数均为非负值且总数一致，再用于关闭判断。探测失败或响应畸形时会遵循已配置的确认行为，不会静默关闭，也不会永久阻止退出。
 - 标题栏、最后一个标签页、菜单和快捷键产生的重复关闭请求共用一个进行中的决策。Main 会将 renderer 响应同时绑定到不透明 request ID 与所属 `webContents`；preload 负责校验请求，并在 React listener 挂载前暂存该请求。可响应 renderer 超时后按安全的取消处理；renderer 不可用或已销毁时则允许退出，避免永久阻塞。
 - Windows 与 Linux 上，获准的主窗口关闭会进入完整应用关闭流程。macOS 上，仅关闭窗口时会先断开 SSH/SFTP 会话再销毁窗口，并保留应用运行时以供重新激活；退出应用仍执行完整关闭。
 - 启动失败与致命进程退出会绕过交互确认，但继续执行既有 backend 与 SFTP 临时目录清理路径。
