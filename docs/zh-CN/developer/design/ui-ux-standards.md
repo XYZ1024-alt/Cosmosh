@@ -57,6 +57,13 @@ flowchart TD
 - 可复用查找/替换面板必须使用 `packages/renderer/src/components/ui` 中的 `SearchReplacePanel`。该面板由调用方受控，支持隐藏/只读/可编辑替换模式、可配置 filter toggle、匹配计数显示、紧凑密度，以及 action 级禁用/隐藏状态。具体 surface 的 adapter 负责搜索算法，并将自身状态映射到这个通用面板，而不是复制 UI。
 - CodeMirror 编辑器语法使用受 VS Code 启发的默认调色板，并通过语义 token 落地；编辑器外壳、补全、诊断、查找/替换面板与右键菜单仍沿用 Cosmosh 表面/菜单 token。
 
+### 5.1 对话框退场状态生命周期
+
+- 将 `open` 设为 `false` 只负责启动对话框退场动画；在内容离开视口前，动态标签、prompt payload 和受控字段值不得提前消失。
+- 共享对话框退场行为归属于 `packages/renderer/src/components/ui/dialog-lifecycle.ts`。`DialogContent` 与 `AlertDialogContent` 提供 `onExitComplete`，它仅在内容元素自身的 `data-state="closed"` 动画结束后执行。
+- 当 prompt 驱动的对话框 owner 会立即清空 nullable payload 时，展示内容必须通过 `useDialogExitSnapshot` 读取，并在 `onExitComplete` 中释放快照。
+- 表单与草稿状态应在 `onExitComplete` 中重置；若允许关闭期间保留状态，也可在下一次打开前初始化。不得使用写死动画时长的 timer 同步清理时机。
+
 ## 6. 交互密度规则
 
 - 布局应保持紧凑且可呼吸，优先保证信息扫描效率与高频操作效率。

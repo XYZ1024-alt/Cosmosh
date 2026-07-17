@@ -40,10 +40,11 @@ export const useCreateFolderDialog = (options: UseCreateFolderDialogOptions = {}
 
   const onOpenChange = React.useCallback((open: boolean) => {
     setIsOpen(open);
-    if (!open) {
-      openOptionsRef.current = {};
-      setFolderName('');
-    }
+  }, []);
+
+  const onExitComplete = React.useCallback((): void => {
+    openOptionsRef.current = {};
+    setFolderName('');
   }, []);
 
   const submitCreateFolder = React.useCallback(async () => {
@@ -62,7 +63,6 @@ export const useCreateFolderDialog = (options: UseCreateFolderDialogOptions = {}
       });
 
       setIsOpen(false);
-      setFolderName('');
       await options.onCreated?.(createdFolder, openOptionsRef.current);
       openOptionsRef.current = {};
     } catch (error: unknown) {
@@ -79,6 +79,7 @@ export const useCreateFolderDialog = (options: UseCreateFolderDialogOptions = {}
     folderVisual,
     openCreateFolderDialog,
     onOpenChange,
+    onExitComplete,
     setFolderName,
     setFolderVisual,
     submitCreateFolder,

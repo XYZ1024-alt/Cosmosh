@@ -57,6 +57,13 @@ Implementation principles:
 - Reusable search/replace panels must use `SearchReplacePanel` from `packages/renderer/src/components/ui`. The panel is controlled by its caller, supports hidden/readonly/editable replacement modes, configurable filter toggles, match-count display, compact density, and action-level disabled/hidden states. Surface-specific adapters own search algorithms and map their state into this generic panel instead of forking the UI.
 - CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, search/replace panels, and context menus still follow Cosmosh surface/menu tokens.
 
+### 5.1 Dialog Exit-State Lifecycle
+
+- Setting `open` to `false` starts the dialog exit animation; it must not make dynamic labels, prompt payloads, or controlled field values disappear before the content leaves the viewport.
+- Shared dialog exit behavior lives in `packages/renderer/src/components/ui/dialog-lifecycle.ts`. `DialogContent` and `AlertDialogContent` expose `onExitComplete`, which runs only after the content element's own `data-state="closed"` animation finishes.
+- Prompt-driven dialogs whose owners clear nullable payloads immediately must render through `useDialogExitSnapshot` and release that snapshot from `onExitComplete`.
+- Form and draft state should be reset from `onExitComplete`, or initialized immediately before the next open operation when retaining closed state is acceptable. Do not synchronize cleanup with hard-coded animation-duration timers.
+
 ## 6. Interaction Density Rules
 
 - Keep layout dense but breathable, prioritizing efficient scanning and frequent actions.

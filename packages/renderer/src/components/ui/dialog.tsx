@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import React from 'react';
 
 import { Button } from './button';
+import { composeDialogExitAnimationHandler } from './dialog-lifecycle';
 import { dialogStyles } from './dialog-styles';
 
 const Dialog = DialogPrimitive.Root;
@@ -25,15 +26,18 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 type DialogContentProps = React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean;
+  /** Runs after the content's closed-state animation finishes. */
+  onExitComplete?: () => void;
 };
 
 const DialogContent = React.forwardRef<React.ElementRef<typeof DialogPrimitive.Content>, DialogContentProps>(
-  ({ className, children, showCloseButton = true, ...props }, ref) => (
+  ({ className, children, showCloseButton = true, onAnimationEnd, onExitComplete, ...props }, ref) => (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         ref={ref}
         className={classNames(dialogStyles.content, className)}
+        onAnimationEnd={composeDialogExitAnimationHandler(onAnimationEnd, onExitComplete)}
         {...props}
       >
         {children}

@@ -71,6 +71,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../components/ui/dialog';
+import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1164,6 +1165,7 @@ type PortForwardRuleDialogProps = {
   servers: SshServerListItem[];
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
+  onExitComplete: () => void;
   onFormStateChange: (nextState: PortForwardRuleFormState) => void;
   onSubmit: () => void;
 };
@@ -1181,6 +1183,7 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   servers,
   isSubmitting,
   onOpenChange,
+  onExitComplete,
   onFormStateChange,
   onSubmit,
 }) => {
@@ -1197,7 +1200,10 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="max-w-[640px]">
+      <DialogContent
+        className="max-w-[640px]"
+        onExitComplete={onExitComplete}
+      >
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? t('home.portForwardingDialogCreateTitle') : t('home.portForwardingDialogEditTitle')}
@@ -1405,6 +1411,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const [isPortForwardRuleDeleting, setIsPortForwardRuleDeleting] = React.useState<boolean>(false);
   const [portForwardHostFingerprintPrompt, setPortForwardHostFingerprintPrompt] =
     React.useState<PortForwardHostFingerprintPrompt | null>(null);
+  const [exitPortForwardHostFingerprintPrompt, clearExitPortForwardHostFingerprintPrompt] = useDialogExitSnapshot(
+    portForwardHostFingerprintPrompt,
+  );
   const [isFolderActionSubmitting, setIsFolderActionSubmitting] = React.useState<boolean>(false);
   const [isServerDeleteSubmitting, setIsServerDeleteSubmitting] = React.useState<boolean>(false);
   const [isKeychainDeleteSubmitting, setIsKeychainDeleteSubmitting] = React.useState<boolean>(false);
@@ -2655,7 +2664,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsPortForwardRuleDialogOpen(false);
-      setActivePortForwardRuleDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.portForwardingSaveFailed'));
@@ -2762,7 +2770,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeletePortForwardRuleDialogOpen(false);
-      setActivePortForwardRuleDraft(null);
       await reloadHomeData();
       notifySuccess(t('home.portForwardingDeleteSuccess'));
     } catch (error: unknown) {
@@ -2838,8 +2845,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         colorKey: activeFolderDraft.colorKey,
       });
       setIsEditFolderDialogOpen(false);
-      setFolderNameInput('');
-      setActiveFolderDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.folderUpdateFailed'));
@@ -2863,7 +2868,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeleteFolderDialogOpen(false);
-      setActiveFolderDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.folderDeleteFailed'));
@@ -2885,7 +2889,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeleteServerDialogOpen(false);
-      setActiveServerDraft(null);
       await reloadHomeData();
       notifySuccess(t('home.serverDeleteSuccess'));
     } catch (error: unknown) {
@@ -2913,7 +2916,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeleteKeychainDialogOpen(false);
-      setActiveKeychainDraft(null);
       await reloadHomeData();
       notifySuccess(t('sshKeychain.deleteSuccess'));
     } catch (error: unknown) {
@@ -3444,6 +3446,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         visual={createFolderDialog.folderVisual}
         isSubmitting={createFolderDialog.isSubmitting}
         onOpenChange={createFolderDialog.onOpenChange}
+        onExitComplete={createFolderDialog.onExitComplete}
         onFolderNameChange={createFolderDialog.setFolderName}
         onVisualChange={createFolderDialog.setFolderVisual}
         onSubmit={() => {
@@ -3486,9 +3489,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         formState={portForwardRuleFormState}
         servers={servers}
         isSubmitting={isPortForwardRuleSubmitting}
-        onOpenChange={(open) => {
-          setIsPortForwardRuleDialogOpen(open);
-          if (!open) {
+        onOpenChange={setIsPortForwardRuleDialogOpen}
+        onExitComplete={() => {
+          if (!isDeletePortForwardRuleDialogOpen) {
             setActivePortForwardRuleDraft(null);
           }
         }}
@@ -3508,6 +3511,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitPortForwardHostFingerprintPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -3519,21 +3523,21 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
             <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          {portForwardHostFingerprintPrompt ? (
+          {exitPortForwardHostFingerprintPrompt ? (
             <div className="bg-home-card/70 space-y-2 rounded-lg border border-home-divider p-3 text-sm">
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
                 <span className="text-home-text font-medium">
-                  {portForwardHostFingerprintPrompt.host}:{portForwardHostFingerprintPrompt.port}
+                  {exitPortForwardHostFingerprintPrompt.host}:{exitPortForwardHostFingerprintPrompt.port}
                 </span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
-                <span className="text-home-text font-medium">{portForwardHostFingerprintPrompt.algorithm}</span>
+                <span className="text-home-text font-medium">{exitPortForwardHostFingerprintPrompt.algorithm}</span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
-                <span className="break-all font-mono text-xs">{portForwardHostFingerprintPrompt.fingerprint}</span>
+                <span className="break-all font-mono text-xs">{exitPortForwardHostFingerprintPrompt.fingerprint}</span>
               </div>
             </div>
           ) : null}
@@ -3561,7 +3565,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isEditFolderDialogOpen}
         onOpenChange={setIsEditFolderDialogOpen}
       >
-        <DialogContent>
+        <DialogContent
+          onExitComplete={() => {
+            if (!isDeleteFolderDialogOpen) {
+              setFolderNameInput('');
+              setActiveFolderDraft(null);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('home.contextEditFolder')}</DialogTitle>
             <DialogDescription>{t('home.dialogEditFolderDescription')}</DialogDescription>
@@ -3632,7 +3643,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isDeleteFolderDialogOpen}
         onOpenChange={setIsDeleteFolderDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onExitComplete={() => {
+            if (!isEditFolderDialogOpen) {
+              setFolderNameInput('');
+              setActiveFolderDraft(null);
+            }
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.contextDeleteFolder')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -3660,7 +3678,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isDeleteServerDialogOpen}
         onOpenChange={setIsDeleteServerDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onExitComplete={() => setActiveServerDraft(null)}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.dialogDeleteServerTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -3686,14 +3704,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
 
       <AlertDialog
         open={isDeleteKeychainDialogOpen}
-        onOpenChange={(open) => {
-          setIsDeleteKeychainDialogOpen(open);
-          if (!open && !isKeychainDeleteSubmitting) {
-            setActiveKeychainDraft(null);
-          }
-        }}
+        onOpenChange={setIsDeleteKeychainDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onExitComplete={() => setActiveKeychainDraft(null)}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('sshKeychain.deleteConfirmTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -3721,7 +3734,13 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isDeletePortForwardRuleDialogOpen}
         onOpenChange={setIsDeletePortForwardRuleDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onExitComplete={() => {
+            if (!isPortForwardRuleDialogOpen) {
+              setActivePortForwardRuleDraft(null);
+            }
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.portForwardingDeleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>

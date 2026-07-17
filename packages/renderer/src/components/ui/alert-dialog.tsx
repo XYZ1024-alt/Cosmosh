@@ -2,6 +2,7 @@ import * as AlertDialogPrimitive from '@radix-ui/react-alert-dialog';
 import classNames from 'classnames';
 import React from 'react';
 
+import { composeDialogExitAnimationHandler } from './dialog-lifecycle';
 import { dialogStyles } from './dialog-styles';
 import { formStyles } from './form-styles';
 
@@ -23,15 +24,21 @@ const AlertDialogOverlay = React.forwardRef<
 ));
 AlertDialogOverlay.displayName = AlertDialogPrimitive.Overlay.displayName;
 
+type AlertDialogContentProps = React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content> & {
+  /** Runs after the content's closed-state animation finishes. */
+  onExitComplete?: () => void;
+};
+
 const AlertDialogContent = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Content>
->(({ className, ...props }, ref) => (
+  AlertDialogContentProps
+>(({ className, onAnimationEnd, onExitComplete, ...props }, ref) => (
   <AlertDialogPortal>
     <AlertDialogOverlay />
     <AlertDialogPrimitive.Content
       ref={ref}
       className={classNames(dialogStyles.content, className)}
+      onAnimationEnd={composeDialogExitAnimationHandler(onAnimationEnd, onExitComplete)}
       {...props}
     />
   </AlertDialogPortal>

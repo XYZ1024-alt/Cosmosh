@@ -20,6 +20,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../components/ui/dialog';
+import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
 import { Menubar } from '../components/ui/menubar';
 import { type SearchReplaceFilterOption, SearchReplacePanel } from '../components/ui/search-replace-panel';
 import { useDateTimeFormatter } from '../lib/date-time-format';
@@ -445,6 +446,11 @@ const SSH: React.FC<SSHProps> = ({
   const [remoteEnhancementsDebugPanelOpen, setRemoteEnhancementsDebugPanelOpen] = React.useState<boolean>(false);
   const [terminalPasteWarningRequest, setTerminalPasteWarningRequest] =
     React.useState<TerminalPasteWarningRequest | null>(null);
+  const [exitHostFingerprintPrompt, clearExitHostFingerprintPrompt] = useDialogExitSnapshot(hostFingerprintPrompt);
+  const [exitTerminalPasteWarningRequest, clearExitTerminalPasteWarningRequest] =
+    useDialogExitSnapshot(terminalPasteWarningRequest);
+  const [exitTerminalClipboardPrompt, clearExitTerminalClipboardPrompt] =
+    useDialogExitSnapshot(terminalClipboardPrompt);
   /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
   const isMacOS = window.electron?.platform === 'darwin';
   /** Platform-resolved copy shortcut label shown in terminal context menus. */
@@ -1620,6 +1626,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitHostFingerprintPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1631,21 +1638,21 @@ const SSH: React.FC<SSHProps> = ({
             <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          {hostFingerprintPrompt ? (
+          {exitHostFingerprintPrompt ? (
             <div className="space-y-2 rounded-md border border-home-divider p-3 text-sm">
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
                 <span>
-                  {hostFingerprintPrompt.host}:{hostFingerprintPrompt.port}
+                  {exitHostFingerprintPrompt.host}:{exitHostFingerprintPrompt.port}
                 </span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
-                <span>{hostFingerprintPrompt.algorithm}</span>
+                <span>{exitHostFingerprintPrompt.algorithm}</span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
-                <span className="break-all">{hostFingerprintPrompt.fingerprint}</span>
+                <span className="break-all">{exitHostFingerprintPrompt.fingerprint}</span>
               </div>
             </div>
           ) : null}
@@ -1671,6 +1678,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitTerminalPasteWarningRequest}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1679,16 +1687,16 @@ const SSH: React.FC<SSHProps> = ({
         >
           <DialogHeader>
             <DialogTitle>{t('ssh.pasteWarning.title')}</DialogTitle>
-            {terminalPasteWarningRequest ? (
+            {exitTerminalPasteWarningRequest ? (
               <DialogDescription className="grid gap-1">
-                {terminalPasteWarningRequest.reasons.map((reason) => (
+                {exitTerminalPasteWarningRequest.reasons.map((reason) => (
                   <span
                     key={reason}
                     className="text-dialog-text"
                   >
                     {t(`ssh.pasteWarning.reasons.${reason}`, {
-                      count: terminalPasteWarningRequest.characterCount,
-                      threshold: terminalPasteWarningRequest.threshold,
+                      count: exitTerminalPasteWarningRequest.characterCount,
+                      threshold: exitTerminalPasteWarningRequest.threshold,
                     })}
                   </span>
                 ))}
@@ -1699,10 +1707,10 @@ const SSH: React.FC<SSHProps> = ({
             )}
           </DialogHeader>
 
-          {terminalPasteWarningRequest?.preview ? (
+          {exitTerminalPasteWarningRequest?.preview ? (
             <div className="min-w-0 max-w-full text-sm">
               <div className="text-home-text mb-1">{t('ssh.pasteWarning.previewLabel')}</div>
-              <pre className={TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME}>{terminalPasteWarningRequest.preview}</pre>
+              <pre className={TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME}>{exitTerminalPasteWarningRequest.preview}</pre>
             </div>
           ) : null}
 
@@ -1727,6 +1735,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitTerminalClipboardPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1736,27 +1745,27 @@ const SSH: React.FC<SSHProps> = ({
           <DialogHeader>
             <DialogTitle>
               {t(
-                terminalClipboardPrompt?.operation === 'read'
+                exitTerminalClipboardPrompt?.operation === 'read'
                   ? 'ssh.terminalClipboard.readPromptTitle'
                   : 'ssh.terminalClipboard.writePromptTitle',
               )}
             </DialogTitle>
             <DialogDescription>
               {t(
-                terminalClipboardPrompt?.operation === 'read'
+                exitTerminalClipboardPrompt?.operation === 'read'
                   ? 'ssh.terminalClipboard.readPromptDescription'
                   : 'ssh.terminalClipboard.writePromptDescription',
                 {
-                  source: terminalClipboardPrompt?.sourceLabel ?? t('tabs.page.ssh'),
+                  source: exitTerminalClipboardPrompt?.sourceLabel ?? t('tabs.page.ssh'),
                 },
               )}
             </DialogDescription>
           </DialogHeader>
 
-          {terminalClipboardPrompt?.operation === 'write' && terminalClipboardPrompt.preview ? (
+          {exitTerminalClipboardPrompt?.operation === 'write' && exitTerminalClipboardPrompt.preview ? (
             <div className="rounded-md border border-home-divider p-3 text-sm text-home-text-subtle">
               <div className="text-home-text mb-1">{t('ssh.terminalClipboard.previewLabel')}</div>
-              <div className="break-words">{terminalClipboardPrompt.preview}</div>
+              <div className="break-words">{exitTerminalClipboardPrompt.preview}</div>
             </div>
           ) : null}
 

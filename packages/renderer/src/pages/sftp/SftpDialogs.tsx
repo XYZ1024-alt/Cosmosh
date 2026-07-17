@@ -11,6 +11,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../../components/ui/dialog';
+import { useDialogExitSnapshot } from '../../components/ui/dialog-lifecycle';
 import { t } from '../../lib/i18n';
 import type {
   HostFingerprintPrompt,
@@ -58,6 +59,8 @@ type SftpUploadConflictConfirmationDialogProps = {
  * @returns Host fingerprint dialog.
  */
 export const SftpHostFingerprintDialog: React.FC<SftpHostFingerprintDialogProps> = ({ prompt, onResolve }) => {
+  const [exitPrompt, clearExitPrompt] = useDialogExitSnapshot(prompt);
+
   return (
     <Dialog
       open={Boolean(prompt)}
@@ -67,26 +70,26 @@ export const SftpHostFingerprintDialog: React.FC<SftpHostFingerprintDialogProps>
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onExitComplete={clearExitPrompt}>
         <DialogHeader>
           <DialogTitle>{t('ssh.hostFingerprintDialogTitle')}</DialogTitle>
           <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
         </DialogHeader>
-        {prompt ? (
+        {exitPrompt ? (
           <div className="bg-home-card/70 space-y-2 rounded-lg border border-home-divider p-3 text-sm">
             <div>
               <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
               <span className="text-home-text font-medium">
-                {prompt.host}:{prompt.port}
+                {exitPrompt.host}:{exitPrompt.port}
               </span>
             </div>
             <div>
               <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
-              <span className="text-home-text font-medium">{prompt.algorithm}</span>
+              <span className="text-home-text font-medium">{exitPrompt.algorithm}</span>
             </div>
             <div>
               <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
-              <span className="text-home-text break-all font-mono text-xs">{prompt.fingerprint}</span>
+              <span className="text-home-text break-all font-mono text-xs">{exitPrompt.fingerprint}</span>
             </div>
           </div>
         ) : null}
@@ -110,6 +113,8 @@ export const SftpHostFingerprintDialog: React.FC<SftpHostFingerprintDialogProps>
  * @returns Delete confirmation dialog.
  */
 export const SftpDeleteConfirmationDialog: React.FC<SftpDeleteConfirmationDialogProps> = ({ prompt, onResolve }) => {
+  const [exitPrompt, clearExitPrompt] = useDialogExitSnapshot(prompt);
+
   return (
     <Dialog
       open={Boolean(prompt)}
@@ -119,14 +124,14 @@ export const SftpDeleteConfirmationDialog: React.FC<SftpDeleteConfirmationDialog
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onExitComplete={clearExitPrompt}>
         <DialogHeader>
           <DialogTitle>{t('sftp.deleteConfirmTitle')}</DialogTitle>
           <DialogDescription>
-            {prompt?.entries.length === 1
-              ? t('sftp.deleteConfirmDescription', { name: prompt.entries[0]?.name ?? '' })
+            {exitPrompt?.entries.length === 1
+              ? t('sftp.deleteConfirmDescription', { name: exitPrompt.entries[0]?.name ?? '' })
               : t('sftp.deleteConfirmDescriptionMany', {
-                  count: prompt?.entries.length ?? 0,
+                  count: exitPrompt?.entries.length ?? 0,
                 })}
           </DialogDescription>
         </DialogHeader>
@@ -151,6 +156,8 @@ export const SftpDeleteConfirmationDialog: React.FC<SftpDeleteConfirmationDialog
  * @returns Upload confirmation dialog.
  */
 export const SftpUploadConfirmationDialog: React.FC<SftpUploadConfirmationDialogProps> = ({ prompt, onResolve }) => {
+  const [exitPrompt, clearExitPrompt] = useDialogExitSnapshot(prompt);
+
   return (
     <Dialog
       open={Boolean(prompt)}
@@ -160,11 +167,14 @@ export const SftpUploadConfirmationDialog: React.FC<SftpUploadConfirmationDialog
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onExitComplete={clearExitPrompt}>
         <DialogHeader>
           <DialogTitle>{t('sftp.uploadConfirmTitle')}</DialogTitle>
           <DialogDescription>
-            {t('sftp.uploadConfirmDescription', { name: prompt?.name ?? '', path: prompt?.remotePath ?? '' })}
+            {t('sftp.uploadConfirmDescription', {
+              name: exitPrompt?.name ?? '',
+              path: exitPrompt?.remotePath ?? '',
+            })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
@@ -191,6 +201,8 @@ export const SftpUploadConflictConfirmationDialog: React.FC<SftpUploadConflictCo
   prompt,
   onResolve,
 }) => {
+  const [exitPrompt, clearExitPrompt] = useDialogExitSnapshot(prompt);
+
   return (
     <Dialog
       open={Boolean(prompt)}
@@ -200,11 +212,14 @@ export const SftpUploadConflictConfirmationDialog: React.FC<SftpUploadConflictCo
         }
       }}
     >
-      <DialogContent>
+      <DialogContent onExitComplete={clearExitPrompt}>
         <DialogHeader>
           <DialogTitle>{t('sftp.uploadConflictTitle')}</DialogTitle>
           <DialogDescription>
-            {t('sftp.uploadConflictDescription', { name: prompt?.name ?? '', path: prompt?.remotePath ?? '' })}
+            {t('sftp.uploadConflictDescription', {
+              name: exitPrompt?.name ?? '',
+              path: exitPrompt?.remotePath ?? '',
+            })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
