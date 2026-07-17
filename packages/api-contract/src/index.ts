@@ -261,6 +261,8 @@ export type ApiSftpUploadFileRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['requestBody']['content']['application/json'];
 export type ApiSftpUploadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpTransferProgressResponse =
+  paths['/api/v1/sftp/transfers/{transferId}']['get']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateDirectoryRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['requestBody']['content']['application/json'];
 export type ApiSftpCreateDirectoryResponse =

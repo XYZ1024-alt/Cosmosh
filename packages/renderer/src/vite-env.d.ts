@@ -38,6 +38,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -262,6 +263,9 @@ declare global {
         sessionId: string,
         payload: ApiSftpUploadFileRequest,
       ) => Promise<ApiSftpUploadFileResponse | ApiErrorResponse>;
+      backendSftpGetTransferProgress: (
+        transferId: string,
+      ) => Promise<ApiSftpTransferProgressResponse | ApiErrorResponse>;
       backendSftpCreateDirectory: (
         sessionId: string,
         payload: ApiSftpCreateDirectoryRequest,

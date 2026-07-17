@@ -36,6 +36,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -258,6 +259,10 @@ export const uploadSftpFile = async (
   payload: ApiSftpUploadFileRequest,
 ): Promise<ApiSftpUploadFileResponse> => {
   return backendClient.uploadSftpFile(sessionId, payload);
+};
+
+export const getSftpTransferProgress = async (transferId: string): Promise<ApiSftpTransferProgressResponse> => {
+  return backendClient.getSftpTransferProgress(transferId);
 };
 
 export const createSftpDirectory = async (

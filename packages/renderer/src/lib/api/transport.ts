@@ -41,6 +41,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -202,6 +203,7 @@ export type ApiTransport = {
     sessionId: string,
     payload: ApiSftpUploadFileRequest,
   ) => Promise<ApiSftpUploadFileResponse | ApiErrorResponse>;
+  getSftpTransferProgress: (transferId: string) => Promise<ApiSftpTransferProgressResponse | ApiErrorResponse>;
   createSftpDirectory: (
     sessionId: string,
     payload: ApiSftpCreateDirectoryRequest,
@@ -411,6 +413,11 @@ const createElectronTransport = (): ApiTransport => {
     uploadSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpUploadFile(sessionId, payload)) as
         | ApiSftpUploadFileResponse
+        | ApiErrorResponse;
+    },
+    getSftpTransferProgress: async (transferId) => {
+      return (await window.electron!.backendSftpGetTransferProgress(transferId)) as
+        | ApiSftpTransferProgressResponse
         | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
@@ -653,6 +660,10 @@ const createBrowserTransport = (): ApiTransport => {
     uploadSftpFile: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpUploadFile, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpUploadFileResponse | ApiErrorResponse;
+    },
+    getSftpTransferProgress: async (transferId) => {
+      const path = replaceApiPathToken(API_PATHS.sftpGetTransferProgress, 'transferId', transferId);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpTransferProgressResponse | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpCreateDirectory, 'sessionId', sessionId);

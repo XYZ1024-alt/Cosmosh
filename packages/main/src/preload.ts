@@ -40,6 +40,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -633,6 +634,12 @@ contextBridge.exposeInMainWorld('electron', {
   },
   backendSftpUploadFile: (sessionId: string, payload: ApiSftpUploadFileRequest) => {
     return invokeIpc<ApiSftpUploadFileResponse | ApiErrorResponse>('backend:sftp-upload-file', sessionId, payload);
+  },
+  backendSftpGetTransferProgress: (transferId: string) => {
+    return invokeIpc<ApiSftpTransferProgressResponse | ApiErrorResponse>(
+      'backend:sftp-get-transfer-progress',
+      transferId,
+    );
   },
   backendSftpCreateDirectory: (sessionId: string, payload: ApiSftpCreateDirectoryRequest) => {
     return invokeIpc<ApiSftpCreateDirectoryResponse | ApiErrorResponse>(

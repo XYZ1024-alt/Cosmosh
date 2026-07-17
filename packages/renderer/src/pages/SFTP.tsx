@@ -19,6 +19,7 @@ import {
   createSftpSession,
   downloadSftpFile,
   getSftpEntryDetails,
+  getSftpTransferProgress,
   isBackendApiError,
   listSftpDirectory,
   renameSftpEntry,
@@ -55,6 +56,7 @@ import type {
   SftpOpenWithApplication,
   SftpPreviewState,
   SftpSelectionClickEvent,
+  SftpTaskContext,
   SftpWatchedOpenFile,
   TreeDirectoryNode,
 } from './sftp/sftp-types';
@@ -110,6 +112,8 @@ type SFTPProps = {
   onOpenSshAtPath: (initialPath: string) => void;
   onTabTitleChange: (title: string) => void;
 };
+
+const SFTP_TRANSFER_POLL_INTERVAL_MS = 500;
 
 /**
  * Read-only SFTP browser page bound to one renderer tab.
@@ -228,6 +232,71 @@ const SFTP: React.FC<SFTPProps> = ({
     runSftpOperation,
     runSftpReconnectTask,
   } = useSftpTaskQueue({ canUseFileActions, notifyError });
+
+  /**
+   * Runs one byte transfer while polling the backend's bounded progress record.
+   *
+   * Polling is deliberately slower than backend speed sampling so large transfers do not
+   * cause a page render for every stream chunk.
+   *
+   * @param transferId Renderer-generated transfer identifier.
+   * @param context Active task update helpers.
+   * @param operation Upload or download request to execute.
+   * @returns Operation result.
+   */
+  const runTrackedSftpTransfer = React.useCallback(async function runTrackedSftpTransferRequest<TResult>(
+    transferId: string,
+    context: Pick<SftpTaskContext, 'isCurrent' | 'update'>,
+    operation: () => Promise<TResult>,
+  ): Promise<TResult> {
+    let stopped = false;
+    let timerId: number | undefined;
+    let pendingPoll: Promise<void> | null = null;
+
+    const readProgress = async (): Promise<void> => {
+      try {
+        const response = await getSftpTransferProgress(transferId);
+        if (!context.isCurrent()) {
+          return;
+        }
+
+        context.update({
+          progress: {
+            completed: response.data.transferredBytes,
+            total: response.data.totalBytes,
+            unit: 'bytes',
+            bytesPerSecond: response.data.bytesPerSecond,
+          },
+          errorMessage: response.data.status === 'failed' ? response.data.errorMessage : undefined,
+        });
+      } catch {
+        // The final transfer request remains authoritative; progress polling is best effort.
+      }
+    };
+
+    const schedulePoll = (): void => {
+      timerId = window.setTimeout(() => {
+        pendingPoll = readProgress().finally(() => {
+          pendingPoll = null;
+          if (!stopped) {
+            schedulePoll();
+          }
+        });
+      }, SFTP_TRANSFER_POLL_INTERVAL_MS);
+    };
+
+    schedulePoll();
+    try {
+      return await operation();
+    } finally {
+      stopped = true;
+      if (timerId !== undefined) {
+        window.clearTimeout(timerId);
+      }
+      await pendingPoll;
+      await readProgress();
+    }
+  }, []);
 
   React.useEffect(() => {
     sessionIdRef.current = sessionId;
@@ -1540,7 +1609,7 @@ const SFTP: React.FC<SFTPProps> = ({
   }, []);
 
   const downloadEntryToLocalPath = React.useCallback(
-    async (entry: ApiSftpEntry, localPath: string): Promise<void> => {
+    async (entry: ApiSftpEntry, localPath: string, transferId?: string): Promise<void> => {
       if (!hasSftpSession || entry.type !== 'file') {
         throw new Error(t('sftp.downloadUnsupported'));
       }
@@ -1549,6 +1618,7 @@ const SFTP: React.FC<SFTPProps> = ({
         downloadSftpFile(activeSessionId, {
           path: entry.path,
           localPath,
+          ...(transferId ? { transferId } : {}),
         }),
       );
     },
@@ -1843,11 +1913,13 @@ const SFTP: React.FC<SFTPProps> = ({
         {
           label: t('sftp.tasks.download'),
           detail: entry.name,
-          progress: { completed: 0, total: 1 },
+          progress: { completed: 0, total: entry.size, unit: 'bytes', bytesPerSecond: 0 },
         },
         async ({ isCurrent, update }) => {
-          await downloadEntryToLocalPath(entry, localPath);
-          update({ progress: { completed: 1, total: 1 } });
+          const transferId = crypto.randomUUID();
+          await runTrackedSftpTransfer(transferId, { isCurrent, update }, () =>
+            downloadEntryToLocalPath(entry, localPath, transferId),
+          );
           if (!isCurrent()) {
             return;
           }
@@ -1861,6 +1933,7 @@ const SFTP: React.FC<SFTPProps> = ({
       notifyError,
       notifySuccess,
       resolveDefaultLocalDownloadPath,
+      runTrackedSftpTransfer,
       runSftpOperation,
       hasSftpSession,
     ],
@@ -1924,17 +1997,21 @@ const SFTP: React.FC<SFTPProps> = ({
           {
             label: t('sftp.tasks.upload'),
             detail: file.name,
-            progress: { completed: 0, total: 1 },
+            progress: { completed: 0, total: file.size, unit: 'bytes', bytesPerSecond: 0 },
           },
           async ({ isCurrent, update }) => {
+            const transferId = crypto.randomUUID();
             const uploadPayload: ApiSftpUploadFileRequest = {
               path: remotePath,
               localPath: file.localPath,
+              transferId,
             };
 
             try {
               try {
-                await runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload));
+                await runTrackedSftpTransfer(transferId, { isCurrent, update }, () =>
+                  runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload)),
+                );
               } catch (error: unknown) {
                 if (!isSftpUploadConflictError(error) || !isCurrent()) {
                   throw error;
@@ -1948,19 +2025,24 @@ const SFTP: React.FC<SFTPProps> = ({
                   modifiedAt: file.modifiedAt,
                 });
                 if (!shouldOverwrite || !isCurrent()) {
-                  update({ detail: t('sftp.tasks.uploadSkipped') });
+                  update({
+                    detail: t('sftp.tasks.uploadSkipped'),
+                    errorMessage: undefined,
+                    progress: undefined,
+                  });
                   return;
                 }
 
-                await runWithSftpReconnect((activeSessionId) =>
-                  uploadSftpFile(activeSessionId, {
-                    ...uploadPayload,
-                    overwrite: true,
-                  }),
+                await runTrackedSftpTransfer(transferId, { isCurrent, update }, () =>
+                  runWithSftpReconnect((activeSessionId) =>
+                    uploadSftpFile(activeSessionId, {
+                      ...uploadPayload,
+                      overwrite: true,
+                    }),
+                  ),
                 );
               }
 
-              update({ progress: { completed: 1, total: 1 } });
               if (!isCurrent()) {
                 return;
               }
@@ -1981,6 +2063,7 @@ const SFTP: React.FC<SFTPProps> = ({
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       requestUploadConflictConfirmation,
+      runTrackedSftpTransfer,
       runSftpOperation,
       runWithSftpReconnect,
     ],
@@ -2117,18 +2200,22 @@ const SFTP: React.FC<SFTPProps> = ({
         {
           label: t('sftp.tasks.upload'),
           detail: watchedFile.name,
-          progress: { completed: 0, total: 1 },
+          progress: { completed: 0, total: prompt.size, unit: 'bytes', bytesPerSecond: 0 },
         },
         async ({ isCurrent, update }) => {
+          const transferId = crypto.randomUUID();
           const uploadPayload: ApiSftpUploadFileRequest = {
             path: watchedFile.remotePath,
             localPath: watchedFile.localPath,
+            transferId,
             expectedSize: watchedFile.remoteSnapshot.size,
             expectedModifiedAt: watchedFile.remoteSnapshot.modifiedAt,
           };
           let response: ApiSftpUploadFileResponse;
           try {
-            response = await runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload));
+            response = await runTrackedSftpTransfer(transferId, { isCurrent, update }, () =>
+              runWithSftpReconnect((activeSessionId) => uploadSftpFile(activeSessionId, uploadPayload)),
+            );
           } catch (error: unknown) {
             if (!isSftpUploadConflictError(error) || !isCurrent()) {
               throw error;
@@ -2142,19 +2229,24 @@ const SFTP: React.FC<SFTPProps> = ({
               modifiedAt: prompt.modifiedAt,
             });
             if (!shouldOverwrite || !isCurrent()) {
-              update({ detail: t('sftp.tasks.uploadSkipped') });
+              update({
+                detail: t('sftp.tasks.uploadSkipped'),
+                errorMessage: undefined,
+                progress: undefined,
+              });
               return;
             }
 
-            response = await runWithSftpReconnect((activeSessionId) =>
-              uploadSftpFile(activeSessionId, {
-                ...uploadPayload,
-                overwrite: true,
-              }),
+            response = await runTrackedSftpTransfer(transferId, { isCurrent, update }, () =>
+              runWithSftpReconnect((activeSessionId) =>
+                uploadSftpFile(activeSessionId, {
+                  ...uploadPayload,
+                  overwrite: true,
+                }),
+              ),
             );
           }
 
-          update({ progress: { completed: 1, total: 1 } });
           if (!isCurrent()) {
             return;
           }
@@ -2183,6 +2275,7 @@ const SFTP: React.FC<SFTPProps> = ({
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       requestUploadConflictConfirmation,
+      runTrackedSftpTransfer,
       runSftpOperation,
       runWithSftpReconnect,
       setUploadConfirmationPrompt,

@@ -144,13 +144,13 @@ export const useSftpTaskQueue = ({
                   ? {
                       ...task,
                       status: 'failed',
-                      detail: message,
+                      errorMessage: message,
                       finishedAt: Date.now(),
                     }
                   : task,
               ),
             );
-            notifyError(message);
+            notifyError(t('sftp.tasks.failureFeedback', { operation: nextTask.label, reason: message }));
           } finally {
             if (taskQueueGenerationRef.current === activeGeneration) {
               scheduleTaskRetentionCleanup(nextTask.id);
@@ -184,9 +184,10 @@ export const useSftpTaskQueue = ({
       setSftpTasks((previous) => [...previous, task]);
       taskQueueRef.current.push({
         id: taskId,
+        label: options.label,
         run: async () => {
           const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
-          const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>): void => {
+          const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress' | 'errorMessage'>>): void => {
             if (!isCurrent()) {
               return;
             }

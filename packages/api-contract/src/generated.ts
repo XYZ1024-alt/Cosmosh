@@ -422,6 +422,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/transfers/{transferId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the latest progress snapshot for one active or recently completed SFTP transfer. */
+    get: operations['sftpGetTransferProgress'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}/directories': {
     parameters: {
       query?: never;
@@ -695,6 +712,7 @@ export interface components {
         | 'SSH_SESSION_NOT_FOUND'
         | 'SSH_KEYCHAIN_IN_USE'
         | 'SFTP_SESSION_NOT_FOUND'
+        | 'SFTP_TRANSFER_NOT_FOUND'
         | 'SFTP_VALIDATION_FAILED'
         | 'SFTP_OPERATION_FAILED'
         | 'SFTP_UPLOAD_CONFLICT'
@@ -1116,10 +1134,20 @@ export interface components {
     SftpDownloadFileRequest: {
       path: string;
       localPath: string;
+      /**
+       * Format: uuid
+       * @description Renderer-generated identifier used to query byte progress while the transfer is active.
+       */
+      transferId?: string;
     };
     SftpUploadFileRequest: {
       path: string;
       localPath: string;
+      /**
+       * Format: uuid
+       * @description Renderer-generated identifier used to query byte progress while the transfer is active.
+       */
+      transferId?: string;
       /**
        * Format: int64
        * @description Remote file size captured when an existing file was opened. Must be paired with expectedModifiedAt.
@@ -1286,6 +1314,27 @@ export interface components {
       localPath: string;
       /** Format: int64 */
       size: number;
+    };
+    SftpTransferProgressData: {
+      /** Format: uuid */
+      transferId: string;
+      /** @enum {string} */
+      direction: 'download' | 'upload';
+      /** @enum {string} */
+      status: 'running' | 'completed' | 'failed';
+      /** Format: int64 */
+      transferredBytes: number;
+      /** Format: int64 */
+      totalBytes: number;
+      /** Format: double */
+      bytesPerSecond: number;
+      /** Format: date-time */
+      startedAt: string;
+      /** Format: date-time */
+      updatedAt: string;
+      /** Format: date-time */
+      finishedAt?: string;
+      errorMessage?: string;
     };
     LocalTerminalProfile: {
       id: string;
@@ -1543,6 +1592,13 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpDownloadFileData'];
+    };
+    SftpTransferProgressSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_TRANSFER_PROGRESS_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpTransferProgressData'];
     };
   };
   responses: never;
@@ -3120,6 +3176,57 @@ export interface operations {
       };
       /** @description The remote target already exists or changed after it was opened. */
       409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpGetTransferProgress: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        transferId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Transfer progress snapshot. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpTransferProgressSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Transfer progress record not found or expired. */
+      404: {
         headers: {
           [name: string]: unknown;
         };

@@ -15,6 +15,7 @@ import {
   type ApiSftpListDirectoryResponse,
   type ApiSftpReadFileResponse,
   type ApiSftpRenameResponse,
+  type ApiSftpTransferProgressResponse,
   type ApiSftpUploadFileResponse,
   type ApiSftpWriteFileResponse,
   createApiSuccess,
@@ -50,6 +51,7 @@ type NormalizedSftpPathRequest = {
 type NormalizedSftpDownloadFileRequest = {
   path: string;
   localPath: string;
+  transferId?: string;
 };
 
 type NormalizedSftpUploadFileRequest = {
@@ -58,6 +60,7 @@ type NormalizedSftpUploadFileRequest = {
   expectedSize?: number;
   expectedModifiedAt?: string;
   overwrite: boolean;
+  transferId?: string;
 };
 
 type NormalizedSftpWriteFileRequest = {
@@ -95,6 +98,7 @@ type ApiSftpOperationResponse =
   | ApiSftpUploadFileResponse;
 
 const MAX_SFTP_ENTRY_DETAILS_PATHS = 200;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const isSftpEntryType = (value: unknown): value is SftpEntryType => {
   return value === 'directory' || value === 'file' || value === 'symlink' || value === 'other';
@@ -226,10 +230,18 @@ const parseSftpDownloadFileRequest = (payload: unknown): ValidationResult<Normal
     };
   }
 
+  const transferId = normalizeOptionalString(payload.transferId);
+  if (payload.transferId !== undefined && (!transferId || !UUID_PATTERN.test(transferId))) {
+    return {
+      error: buildValidationError('errors.validation.invalidPayload', 'transferId must be a UUID.'),
+    };
+  }
+
   return {
     value: {
       path: requestedPath,
       localPath,
+      ...(transferId ? { transferId } : {}),
     },
   };
 };
@@ -258,6 +270,13 @@ const parseSftpUploadFileRequest = (payload: unknown): ValidationResult<Normaliz
   if (!localPath) {
     return {
       error: buildValidationError('errors.sftp.localPathRequired', 'localPath is required.'),
+    };
+  }
+
+  const transferId = normalizeOptionalString(payload.transferId);
+  if (payload.transferId !== undefined && (!transferId || !UUID_PATTERN.test(transferId))) {
+    return {
+      error: buildValidationError('errors.validation.invalidPayload', 'transferId must be a UUID.'),
     };
   }
 
@@ -302,6 +321,7 @@ const parseSftpUploadFileRequest = (payload: unknown): ValidationResult<Normaliz
       expectedSize,
       expectedModifiedAt,
       overwrite: payload.overwrite === true,
+      ...(transferId ? { transferId } : {}),
     },
   };
 };
@@ -914,7 +934,12 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
       return c.json(buildValidationFailureResponse(t, parsed.error), 400);
     }
 
-    const result = await context.sftpSessionService.downloadFile(sessionId, parsed.value.path, parsed.value.localPath);
+    const result = await context.sftpSessionService.downloadFile(
+      sessionId,
+      parsed.value.path,
+      parsed.value.localPath,
+      parsed.value.transferId,
+    );
     if (result.type === 'not-found') {
       return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
     }
@@ -962,6 +987,7 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
         : undefined,
       {
         overwrite: parsed.value.overwrite,
+        transferId: parsed.value.transferId,
       },
     );
     if (result.type === 'not-found') {
@@ -988,6 +1014,26 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
       },
     });
 
+    return c.json(payload);
+  });
+
+  app.get(API_PATHS.sftpGetTransferProgress.replace('{transferId}', ':transferId'), (c) => {
+    const t = getTranslator(c);
+    const transferId = c.req.param('transferId')?.trim();
+    if (!transferId || !UUID_PATTERN.test(transferId)) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.validation.invalidPayload')), 400);
+    }
+
+    const progress = context.sftpSessionService.getTransferProgress(transferId);
+    if (!progress) {
+      return c.json(buildErrorPayload(API_CODES.sftpTransferNotFound, t('errors.sftp.transferNotFound')), 404);
+    }
+
+    const payload: ApiSftpTransferProgressResponse = createApiSuccess({
+      code: API_CODES.sftpTransferProgressOk,
+      message: t('success.sftp.transferProgressRead'),
+      data: progress,
+    });
     return c.json(payload);
   });
 

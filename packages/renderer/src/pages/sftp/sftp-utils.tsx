@@ -283,7 +283,7 @@ export const formatFileSize = (size: number): string => {
   }
 
   if (size < 1024) {
-    return `${size} B`;
+    return `${Math.round(size)} B`;
   }
 
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -786,6 +786,20 @@ export const formatBatchPartialFailureFeedback = (summary: {
 export const formatSftpTaskProgressLabel = (progress?: SftpTaskProgress): string => {
   if (!progress) {
     return t('sftp.tasks.progressIndeterminate');
+  }
+
+  if (progress.unit === 'bytes') {
+    const completed = formatFileSize(progress.completed);
+    const total = formatFileSize(progress.total);
+    if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) {
+      return t('sftp.tasks.progressBytesWithSpeed', {
+        completed,
+        speed: formatFileSize(progress.bytesPerSecond),
+        total,
+      });
+    }
+
+    return t('sftp.tasks.progressBytes', { completed, total });
   }
 
   return t('sftp.tasks.progressCount', {

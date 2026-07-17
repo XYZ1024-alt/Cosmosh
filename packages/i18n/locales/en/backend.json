@@ -78,7 +78,8 @@
       "sessionCreateFailedNoReason": "Failed to create SFTP session.",
       "sessionIdRequired": "Session ID was not provided.",
       "sessionNotFound": "SFTP session was not found or has expired.",
-      "sourceTargetRequired": "Source path and target path were not provided."
+      "sourceTargetRequired": "Source path and target path were not provided.",
+      "transferNotFound": "SFTP transfer progress was not found or has expired."
     },
     "ssh": {
       "decryptCredentialsFailed": "Unable to decrypt SSH credentials. Re-save this server's credentials.",
@@ -171,7 +172,8 @@
       "fileRead": "File read.",
       "fileUploaded": "File uploaded.",
       "fileWritten": "File saved.",
-      "sessionCreated": "Session created."
+      "sessionCreated": "Session created.",
+      "transferProgressRead": "Transfer progress loaded."
     },
     "ssh": {
       "folderCreated": "Folder created.",

@@ -272,7 +272,34 @@ flowchart LR
   WS2 --> XT2[xterm.js write]
 ```
 
-### 6.3 Failure Boundary Model
+### 6.3 SFTP Transfer Progress Data Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer Task Queue
+  participant PB as Preload Bridge
+  participant MP as Main IPC
+  participant BE as Backend SFTP Service
+  participant FS as Local/Remote Stream
+
+  UI->>PB: upload/download(payload + transferId)
+  PB->>MP: invoke final transfer request
+  MP->>BE: POST upload/download
+  BE->>FS: pipeline through byte-counting Transform
+  loop every 500 ms while request is pending
+    UI->>PB: get progress(transferId)
+    PB->>MP: backend:sftp-get-transfer-progress
+    MP->>BE: GET /api/v1/sftp/transfers/{transferId}
+    BE-->>UI: bytes + total + rolling speed + status
+  end
+  BE-->>UI: final success or stable API error
+```
+
+- File bytes stay on the existing backend stream path; only bounded progress metadata crosses HTTP and IPC.
+- Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
+- This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
+
+### 6.4 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.

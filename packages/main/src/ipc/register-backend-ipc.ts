@@ -40,6 +40,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -71,7 +72,7 @@ import type {
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
-import { API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
+import { API_CODES, API_PATHS, appendApiQueryParams, replaceApiPathToken } from '@cosmosh/api-contract';
 import { ipcMain } from 'electron';
 
 import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
@@ -437,14 +438,37 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       payload: ApiSftpDownloadFileRequest,
     ): Promise<ApiSftpDownloadFileResponse | ApiErrorResponse> => {
       const path = replaceApiPathToken(API_PATHS.sftpDownloadFile, 'sessionId', sessionId);
-      const localPath = options.sftpDownloadTargetAuthorizations.consume(event.sender.id, payload.localPath);
-      return options.requestBackend<ApiSftpDownloadFileResponse>(path, {
-        method: 'POST',
-        body: {
-          ...payload,
-          localPath,
-        },
-      });
+      const ownerWebContentsId = event.sender.id;
+      const localPath = payload.transferId
+        ? options.sftpDownloadTargetAuthorizations.consumeForTransfer(
+            ownerWebContentsId,
+            payload.localPath,
+            payload.transferId,
+          )
+        : options.sftpDownloadTargetAuthorizations.consume(ownerWebContentsId, payload.localPath);
+
+      try {
+        const response = await options.requestBackend<ApiSftpDownloadFileResponse>(path, {
+          method: 'POST',
+          body: {
+            ...payload,
+            localPath,
+          },
+        });
+        if (payload.transferId) {
+          if (response.code === API_CODES.sftpSessionNotFound) {
+            options.sftpDownloadTargetAuthorizations.allowTransferRetry(ownerWebContentsId, payload.transferId);
+          } else {
+            options.sftpDownloadTargetAuthorizations.completeTransfer(ownerWebContentsId, payload.transferId);
+          }
+        }
+        return response;
+      } catch (error: unknown) {
+        if (payload.transferId) {
+          options.sftpDownloadTargetAuthorizations.completeTransfer(ownerWebContentsId, payload.transferId);
+        }
+        throw error;
+      }
     },
   );
 
@@ -459,6 +483,16 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
       return options.requestBackend<ApiSftpUploadFileResponse>(path, {
         method: 'POST',
         body: payload,
+      });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-get-transfer-progress',
+    async (_event, transferId: string): Promise<ApiSftpTransferProgressResponse | ApiErrorResponse> => {
+      const path = replaceApiPathToken(API_PATHS.sftpGetTransferProgress, 'transferId', transferId);
+      return options.requestBackend<ApiSftpTransferProgressResponse>(path, {
+        method: 'GET',
       });
     },
   );

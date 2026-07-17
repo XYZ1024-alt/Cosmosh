@@ -1220,6 +1220,45 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/transfers/{transferId}:
+    get:
+      tags:
+        - sftp
+      summary: Read the latest progress snapshot for one active or recently completed SFTP transfer.
+      operationId: sftpGetTransferProgress
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: transferId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Transfer progress snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpTransferProgressSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Transfer progress record not found or expired.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}/directories:
     post:
       tags:
@@ -1894,6 +1933,7 @@ components:
                   'SSH_SESSION_NOT_FOUND',
                   'SSH_KEYCHAIN_IN_USE',
                   'SFTP_SESSION_NOT_FOUND',
+                  'SFTP_TRANSFER_NOT_FOUND',
                   'SFTP_VALIDATION_FAILED',
                   'SFTP_OPERATION_FAILED',
                   'SFTP_UPLOAD_CONFLICT',
@@ -2938,6 +2978,10 @@ components:
         localPath:
           type: string
           minLength: 1
+        transferId:
+          type: string
+          format: uuid
+          description: Renderer-generated identifier used to query byte progress while the transfer is active.
     SftpUploadFileRequest:
       type: object
       required:
@@ -2950,6 +2994,10 @@ components:
         localPath:
           type: string
           minLength: 1
+        transferId:
+          type: string
+          format: uuid
+          description: Renderer-generated identifier used to query byte progress while the transfer is active.
         expectedSize:
           type: integer
           format: int64
@@ -3341,6 +3389,50 @@ components:
         size:
           type: integer
           format: int64
+    SftpTransferProgressData:
+      type: object
+      required:
+        - transferId
+        - direction
+        - status
+        - transferredBytes
+        - totalBytes
+        - bytesPerSecond
+        - startedAt
+        - updatedAt
+      properties:
+        transferId:
+          type: string
+          format: uuid
+        direction:
+          type: string
+          enum: ['download', 'upload']
+        status:
+          type: string
+          enum: ['running', 'completed', 'failed']
+        transferredBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        totalBytes:
+          type: integer
+          format: int64
+          minimum: 0
+        bytesPerSecond:
+          type: number
+          format: double
+          minimum: 0
+        startedAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        errorMessage:
+          type: string
     LocalTerminalProfile:
       type: object
       required:
@@ -3973,3 +4065,20 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpDownloadFileData'
+    SftpTransferProgressSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_TRANSFER_PROGRESS_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpTransferProgressData'

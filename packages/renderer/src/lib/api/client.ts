@@ -37,6 +37,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -123,6 +124,7 @@ export type BackendClient = {
   writeSftpFile: (sessionId: string, payload: ApiSftpWriteFileRequest) => Promise<ApiSftpWriteFileResponse>;
   downloadSftpFile: (sessionId: string, payload: ApiSftpDownloadFileRequest) => Promise<ApiSftpDownloadFileResponse>;
   uploadSftpFile: (sessionId: string, payload: ApiSftpUploadFileRequest) => Promise<ApiSftpUploadFileResponse>;
+  getSftpTransferProgress: (transferId: string) => Promise<ApiSftpTransferProgressResponse>;
   createSftpDirectory: (
     sessionId: string,
     payload: ApiSftpCreateDirectoryRequest,
@@ -489,6 +491,9 @@ export const createBackendClient = (): BackendClient => {
     },
     uploadSftpFile: async (sessionId, requestPayload) => {
       return unwrapApiResponse(await transport.uploadSftpFile(sessionId, requestPayload));
+    },
+    getSftpTransferProgress: async (transferId) => {
+      return unwrapApiResponse(await transport.getSftpTransferProgress(transferId));
     },
     createSftpDirectory: async (sessionId, requestPayload) => {
       return unwrapApiResponse(await transport.createSftpDirectory(sessionId, requestPayload));

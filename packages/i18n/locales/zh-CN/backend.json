@@ -78,7 +78,8 @@
       "sessionCreateFailedNoReason": "创建会话失败。",
       "sessionIdRequired": "未提供会话编号。",
       "sessionNotFound": "未找到 SFTP 会话，或该会话已过期。",
-      "sourceTargetRequired": "未提供源路径和目标路径。"
+      "sourceTargetRequired": "未提供源路径和目标路径。",
+      "transferNotFound": "未找到 SFTP 传输进度，或该记录已过期。"
     },
     "ssh": {
       "decryptCredentialsFailed": "SSH 凭据解密失败。请重新保存该服务器凭据。",
@@ -171,7 +172,8 @@
       "fileRead": "文件已读取。",
       "fileUploaded": "文件已上传。",
       "fileWritten": "文件已保存。",
-      "sessionCreated": "会话已创建。"
+      "sessionCreated": "会话已创建。",
+      "transferProgressRead": "已读取传输进度。"
     },
     "ssh": {
       "folderCreated": "文件夹已创建。",

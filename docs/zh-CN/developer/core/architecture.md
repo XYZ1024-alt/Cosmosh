@@ -272,7 +272,34 @@ flowchart LR
   WS2 --> XT2[xterm.js write]
 ```
 
-### 6.3 失败边界模型
+### 6.3 SFTP 传输进度数据流
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer 任务队列
+  participant PB as Preload Bridge
+  participant MP as Main IPC
+  participant BE as Backend SFTP Service
+  participant FS as 本地/远程流
+
+  UI->>PB: 上传/下载(payload + transferId)
+  PB->>MP: invoke 最终传输请求
+  MP->>BE: POST upload/download
+  BE->>FS: 经过字节计数 Transform 的 pipeline
+  loop 请求等待期间每 500 ms
+    UI->>PB: get progress(transferId)
+    PB->>MP: backend:sftp-get-transfer-progress
+    MP->>BE: GET /api/v1/sftp/transfers/{transferId}
+    BE-->>UI: 已传输字节 + 总量 + 滚动速度 + 状态
+  end
+  BE-->>UI: 最终成功或稳定 API 错误
+```
+
+- 文件字节继续沿既有 backend 流路径传输；HTTP 与 IPC 只传递有界进度元数据。
+- Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
+- 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
+
+### 6.4 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。

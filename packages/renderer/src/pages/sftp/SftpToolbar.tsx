@@ -309,7 +309,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
           </Tooltip>
           <DropdownMenuContent
             horizontalAlign="right"
-            className="w-[320px]"
+            className="w-96 max-w-[calc(100vw-1rem)]"
           >
             <DropdownMenuSlot className="px-2 py-2">
               <div className="flex h-7 items-center justify-between gap-3 px-1">
@@ -327,7 +327,9 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                   const progressPercent =
                     task.progress && task.progress.total > 0
                       ? Math.min(100, Math.round((task.progress.completed / task.progress.total) * 100))
-                      : undefined;
+                      : task.status === 'success' && task.progress?.total === 0
+                        ? 100
+                        : undefined;
 
                   return (
                     <div
@@ -349,11 +351,16 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-header-text">{task.label}</div>
                           <div className="mt-0.5 truncate text-xs text-header-text-muted">{task.detail}</div>
+                          {task.errorMessage ? (
+                            <div className="mt-1 line-clamp-2 break-words text-xs text-form-message-error">
+                              {task.errorMessage}
+                            </div>
+                          ) : null}
                         </div>
                         <span className="shrink-0 self-start text-xs text-header-text-muted">
                           {t(`sftp.tasks.status.${task.status}`)}
                         </span>
-                        <div className="col-span-2 col-start-2 flex items-center gap-2">
+                        <div className="col-span-2 col-start-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
                           <div
                             role="progressbar"
                             aria-label={task.label}
@@ -371,9 +378,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                               style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
                             />
                           </div>
-                          <span className="w-9 shrink-0 text-right text-xs text-header-text-muted">
-                            {progressLabel}
+                          <span className="min-w-9 shrink-0 text-right text-xs text-header-text-muted">
+                            {progressPercent === undefined ? '...' : `${progressPercent}%`}
                           </span>
+                          <span className="col-span-2 truncate text-xs text-header-text-muted">{progressLabel}</span>
                         </div>
                       </div>
                     </div>
