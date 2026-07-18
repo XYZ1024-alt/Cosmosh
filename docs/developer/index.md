@@ -8,6 +8,7 @@ This section is the engineering source of truth for Cosmosh implementation and g
 flowchart TD
   A[Project Map] --> B[Architecture]
   B --> C[IPC Protocol]
+  B --> K[Release Security]
   B --> D[SSH Terminal]
   B --> H[Local-First Audit Events]
   B --> G[Database Security]
@@ -22,6 +23,7 @@ flowchart TD
 - Core
   - [Project Map](./core/project-map.md)
   - [Architecture](./core/architecture.md)
+  - [Release Security](./core/release-security.md)
   - [IPC Protocol](./core/ipc-protocol.md)
 - Runtime
   - [SSH Terminal](./runtime/ssh-terminal.md)
@@ -36,6 +38,7 @@ flowchart TD
 ## Task-Oriented Entry Points
 
 - Adding a new runtime feature: start from [Project Map](./core/project-map.md), then [Architecture](./core/architecture.md), then [IPC Protocol](./core/ipc-protocol.md).
+- Changing CI packaging, signing, provenance, or release controls: follow [Release Security](./core/release-security.md) and keep the channel boundary explicit.
 - Updating SSH behavior: read [SSH Terminal](./runtime/ssh-terminal.md) and align protocol notes in [IPC Protocol](./core/ipc-protocol.md).
 - Updating SSH port forwarding: read [SSH Port Forwarding](./runtime/port-forwarding.md), then verify IPC coverage in [IPC Protocol](./core/ipc-protocol.md).
 - Reviewing security-sensitive action traces: read [Local-First Audit Events](./runtime/audit-events.md), then verify bridge coverage in [IPC Protocol](./core/ipc-protocol.md).

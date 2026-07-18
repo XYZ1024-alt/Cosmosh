@@ -2,8 +2,9 @@ package install
 
 import (
 	"bytes"
-	"encoding/base64"
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,13 +19,11 @@ func TestRunInstallsUserScopedFiles(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
 	stdout := bytes.Buffer{}
 	err := Run(Options{
-		Shell:            "sh",
-		Version:          "1.2.3",
-		HelperPayloadB64: payload,
-		Stdout:           &stdout,
+		Shell:   "sh",
+		Version: "1.2.3",
+		Stdout:  &stdout,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -47,12 +46,10 @@ func TestRunInstallsBashProfile(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
 	err := Run(Options{
-		Shell:            "bash",
-		Version:          "1.2.3",
-		HelperPayloadB64: payload,
-		Stdout:           &bytes.Buffer{},
+		Shell:   "bash",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -71,12 +68,10 @@ func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte(posixHelperPayload("bash")))
 	err := Run(Options{
-		Shell:            "bash",
-		Version:          "1.2.3",
-		HelperPayloadB64: payload,
-		Stdout:           &bytes.Buffer{},
+		Shell:   "bash",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -84,11 +79,34 @@ func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 
 	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.sh")
 	assertFileContains(t, helperPath, "__cosmosh_emit_remote_shell_event")
-	assertFileContains(t, helperPath, "PROMPT_COMMAND='__cosmosh_bash_prompt_command'")
+	assertFileContains(t, helperPath, "PROMPT_COMMAND='__cosmosh_bash_prompt_command; __cosmosh_bash_arm_preexec'")
+	assertFileContains(t, helperPath, `__COSMOSH_BASH_PREV_PROMPT_COMMAND="$PROMPT_COMMAND"`)
+	assertFileContains(t, helperPath, `PROMPT_COMMAND='__cosmosh_bash_prompt_command; eval "$__COSMOSH_BASH_PREV_PROMPT_COMMAND"; __cosmosh_bash_arm_preexec'`)
+	assertFileNotContains(t, helperPath, `PROMPT_COMMAND="__cosmosh_bash_prompt_command; ${PROMPT_COMMAND}; __cosmosh_bash_arm_preexec"`)
 	assertFileContains(t, helperPath, "trap '__cosmosh_bash_debug_trap' DEBUG")
 	assertFileContains(t, helperPath, "command-end")
 	assertFileContains(t, helperPath, "command-start")
 	assertFileContains(t, helperPath, "foreground-command")
+	assertFileContains(t, helperPath, `\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\"`)
+	assertFileContains(t, helperPath, `\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION`)
+	assertFileContains(t, helperPath, `\"capabilities\":$__COSMOSH_CAPABILITIES_JSON`)
+}
+
+func TestBashHelperPreservesPromptCommandWithTrailingSeparator(t *testing.T) {
+	bashPath, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("bash is unavailable")
+	}
+
+	helper, err := BuildHelper("bash", "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := "PROMPT_COMMAND='history -a;'\nHISTFILE=/dev/null\n" + helper + "\neval \"$PROMPT_COMMAND\"\n"
+	command := exec.Command(bashPath, "--noprofile", "--norc", "-c", script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("expected trailing prompt separator to remain valid: %v\n%s", err, output)
+	}
 }
 
 func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {
@@ -100,12 +118,10 @@ func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte(posixHelperPayload("zsh")))
 	err := Run(Options{
-		Shell:            "zsh",
-		Version:          "1.2.3",
-		HelperPayloadB64: payload,
-		Stdout:           &bytes.Buffer{},
+		Shell:   "zsh",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -129,12 +145,10 @@ func TestRunInstallsFishRemoteShellHelperHooks(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte(fishHelperPayload()))
 	err := Run(Options{
-		Shell:            "fish",
-		Version:          "1.2.3",
-		HelperPayloadB64: payload,
-		Stdout:           &bytes.Buffer{},
+		Shell:   "fish",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -161,12 +175,10 @@ func TestRunInstallsShAshDegradedPromptHooks(t *testing.T) {
 			t.Setenv("XDG_DATA_HOME", dataDir)
 			t.Setenv("XDG_CONFIG_HOME", configDir)
 
-			payload := base64.StdEncoding.EncodeToString([]byte(posixHelperPayload(shell)))
 			err := Run(Options{
-				Shell:            shell,
-				Version:          "1.2.3",
-				HelperPayloadB64: payload,
-				Stdout:           &bytes.Buffer{},
+				Shell:   shell,
+				Version: "1.2.3",
+				Stdout:  &bytes.Buffer{},
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -175,7 +187,8 @@ func TestRunInstallsShAshDegradedPromptHooks(t *testing.T) {
 			helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.sh")
 			assertFileContains(t, helperPath, "PS1='$(__cosmosh_prompt_ready")
 			assertFileContains(t, helperPath, "command-end")
-			assertFileNotContains(t, helperPath, "command-start")
+			assertFileContains(t, helperPath, `__COSMOSH_CAPABILITIES_JSON='["cwd","command-end","prompt-ready"]'`)
+			assertFileNotContains(t, helperPath, `__cosmosh_emit_command_start "$1"`)
 		})
 	}
 }
@@ -189,8 +202,7 @@ func TestRunSkipsCurrentInstall(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
-	options := Options{Shell: "sh", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}}
+	options := Options{Shell: "sh", Version: "1.2.3", Stdout: &bytes.Buffer{}}
 	if err := Run(options); err != nil {
 		t.Fatal(err)
 	}
@@ -215,8 +227,7 @@ func TestRunRepairsMissingPosixProfileHook(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
-	options := Options{Shell: "sh", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}}
+	options := Options{Shell: "sh", Version: "1.2.3", Stdout: &bytes.Buffer{}}
 	if err := Run(options); err != nil {
 		t.Fatal(err)
 	}
@@ -253,8 +264,7 @@ func TestRunPreservesExistingProfileContentOutsideMarkerBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload := base64.StdEncoding.EncodeToString([]byte(posixHelperPayload("bash")))
-	err := Run(Options{Shell: "bash", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}})
+	err := Run(Options{Shell: "bash", Version: "1.2.3", Stdout: &bytes.Buffer{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,8 +284,7 @@ func TestRunRepairsMissingFishProfileHook(t *testing.T) {
 	t.Setenv("XDG_DATA_HOME", dataDir)
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 
-	payload := base64.StdEncoding.EncodeToString([]byte("set -gx COSMOSH_BOOTSTRAP_READY 1\n"))
-	options := Options{Shell: "fish", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &bytes.Buffer{}}
+	options := Options{Shell: "fish", Version: "1.2.3", Stdout: &bytes.Buffer{}}
 	if err := Run(options); err != nil {
 		t.Fatal(err)
 	}
@@ -298,6 +307,73 @@ func TestRunRepairsMissingFishProfileHook(t *testing.T) {
 	assertFileContains(t, profilePath, "set -gx PATH")
 }
 
+func TestRunRepairsTamperedHelper(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	options := Options{Shell: "bash", Version: "1.2.3", Stdout: &bytes.Buffer{}}
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.sh")
+	if err := os.WriteFile(helperPath, []byte("stale helper\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := bytes.Buffer{}
+	options.Stdout = &stdout
+	if err := Run(options); err != nil {
+		t.Fatal(err)
+	}
+
+	if strings.Contains(stdout.String(), `"state":"skipped"`) {
+		t.Fatalf("expected helper repair instead of skipped status, got %s", stdout.String())
+	}
+	assertFileContains(t, helperPath, "__COSMOSH_HELPER_VERSION='1.2.3'")
+}
+
+func TestStatusReportsValidatedRuntimeContract(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	if err := Run(Options{Shell: "bash", Version: "1.2.3", Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout := bytes.Buffer{}
+	if err := Status(&stdout, "bash"); err != nil {
+		t.Fatal(err)
+	}
+
+	status := InstallationStatus{}
+	if err := json.Unmarshal(stdout.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Installed || !status.HelperCurrent || !status.ProfileCurrent {
+		t.Fatalf("expected current installation status, got %+v", status)
+	}
+	if status.Version != "1.2.3" || status.ProtocolVersion != RemoteShellProtocolVersion {
+		t.Fatalf("expected versioned protocol status, got %+v", status)
+	}
+	if len(status.BinarySHA256) != 64 {
+		t.Fatalf("expected installed binary sha256, got %+v", status)
+	}
+	if !containsString(status.Capabilities, "foreground-command") {
+		t.Fatalf("expected foreground-command capability, got %+v", status.Capabilities)
+	}
+}
+
 func TestRunDoesNotWriteVersionWhenProfileUpdateFails(t *testing.T) {
 	homeDir := t.TempDir()
 	dataDir := filepath.Join(homeDir, "data")
@@ -311,9 +387,8 @@ func TestRunDoesNotWriteVersionWhenProfileUpdateFails(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	payload := base64.StdEncoding.EncodeToString([]byte("export COSMOSH_BOOTSTRAP_READY=1\n"))
 	stdout := bytes.Buffer{}
-	err := Run(Options{Shell: "sh", Version: "1.2.3", HelperPayloadB64: payload, Stdout: &stdout})
+	err := Run(Options{Shell: "sh", Version: "1.2.3", Stdout: &stdout})
 	if err == nil {
 		t.Fatal("expected profile update failure")
 	}
@@ -337,16 +412,15 @@ func TestReplaceMarkedBlockIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestRunRejectsInvalidPayload(t *testing.T) {
+func TestRunRejectsInvalidVersion(t *testing.T) {
 	stdout := bytes.Buffer{}
 	err := Run(Options{
-		Shell:            "sh",
-		Version:          "1.2.3",
-		HelperPayloadB64: "not-base64",
-		Stdout:           &stdout,
+		Shell:   "sh",
+		Version: "invalid version",
+		Stdout:  &stdout,
 	})
 	if err == nil {
-		t.Fatal("expected invalid payload error")
+		t.Fatal("expected invalid version error")
 	}
 
 	if !strings.Contains(stdout.String(), `"code":"INVALID_OPTIONS"`) {
@@ -388,17 +462,12 @@ func assertFileNotExists(t *testing.T, path string) {
 	}
 }
 
-func posixHelperPayload(shell string) string {
-	if shell == "zsh" {
-		return "__cosmosh_emit_remote_shell_event() { :; }\nadd-zsh-hook precmd __cosmosh_zsh_precmd\nadd-zsh-hook chpwd __cosmosh_zsh_chpwd\nadd-zsh-hook preexec __cosmosh_zsh_preexec\n# command-start\n# foreground-command\n# command-end\n"
-	}
-	if shell == "bash" {
-		return "__cosmosh_emit_remote_shell_event() { :; }\nPROMPT_COMMAND='__cosmosh_bash_prompt_command'\ntrap '__cosmosh_bash_debug_trap' DEBUG\n# command-start\n# foreground-command\n# command-end\n"
+func containsString(values []string, expected string) bool {
+	for _, value := range values {
+		if value == expected {
+			return true
+		}
 	}
 
-	return "__cosmosh_emit_remote_shell_event() { :; }\nPS1='$(__cosmosh_prompt_ready \"$?\")'$PS1\n# command-end\n"
-}
-
-func fishHelperPayload() string {
-	return "__cosmosh_emit_remote_shell_event\nfunction __cosmosh_on_preexec --on-event fish_preexec\nend\nfunction __cosmosh_on_prompt --on-event fish_prompt\nend\nfunction __cosmosh_on_postexec --on-event fish_postexec\nend\nfunction __cosmosh_on_pwd --on-variable PWD\nend\n# command-start\n# foreground-command\n"
+	return false
 }

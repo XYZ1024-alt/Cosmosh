@@ -40,7 +40,7 @@ sequenceDiagram
 - 步骤：
   1. 读取 server 记录与其关联 keychain 的加密凭据。
   2. 解析可信主机指纹。
-  3. 使用服务器作用域的压缩协商配置，并携带 UTF-8 locale 请求，通过 `ssh2.Client.shell` 打开 SSH shell。
+  3. 认证主 SSH transport，使用相同连接策略的临时 transport 完成可选的 shell 打开前远端增强工作，再携带 UTF-8 locale 请求通过 `ssh2.Client.shell` 打开主 shell。
   4. 写入 `SshLoginAudit` 记录：
      - 会话创建成功时写入 `result = success`，并记录 `sessionId` 与 `sessionStartedAt`。
      - 主机信任/认证/连接失败时写入 `result = failed`，并记录 `failureReason`。
@@ -109,6 +109,8 @@ Locale 行为：
 - `history`：仅历史快照推送，用于即时 UI 同步。
 - `completion-response`：当前命令 token 的排序补全候选。
 - `bootstrap-status`：backend 侧通道安装器返回的远端 bootstrap 探测、下载、安装与失败状态。
+- `remote-enhancement-runtime-status`：backend 持有的 `pending`、`active` 或 `disabled` 信任状态，以及已校验 helper 契约。
+- `remote-shell-event`：仅通过 active 运行时 gate 转发的 helper shell 状态。
 - `pong`：ping 响应。
 - `error`：协议/运行时错误。
 - `exit`：会话关闭与原因。
@@ -335,12 +337,12 @@ flowchart LR
 
 ## 8. 远端增强运行时
 
-远端增强是用于主机感知 SSH 能力的可选运行时层，例如 OS/发行版检测、未来 SFTP helper、命令快捷嗅探与补全支持。v1 只验证并维护远端 bootstrap 安装路径；后续能力应继续挂在相同 gate 之后，并复用同一用户级远端 helper 边界。
+远端增强是用于主机感知 SSH 能力的可选运行时层，例如 OS/发行版检测、未来 SFTP helper、命令快捷嗅探与补全支持。当前阶段会维护版本化 helper 契约，并提供有界的 cwd/命令生命周期事件；后续能力必须继续挂在相同 gate 之后，并复用同一用户级远端 helper 边界。
 
 ### 8.1 归属与开关
 
-- `packages/backend/src/remote-bootstrap/service.ts` 负责运行时编排。它会获取 manifest、探测远端主机、注入 shell wrapper、解析 JSON-line 状态并写入审计事件。
-- `packages/remote-bootstrap` 负责 Go 安装器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
+- `packages/backend/src/remote-bootstrap/service.ts` 负责交互 shell 打开前的编排。它会获取 manifest、探测远端主机、读取已安装状态，仅在需要时注入下载 wrapper，复验安装结果，返回可信运行时契约，解析 JSON-line 状态并写入审计事件。
+- `packages/remote-bootstrap` 负责 Go 安装器、helper 生成器、OSC 协议/能力声明、已安装状态校验器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
 - 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此在用户未关闭任一开关前，部署级启用条件由 manifest URL 控制。
 - 任一开关关闭时，backend 不会执行任何远端命令，会忽略此前已安装 helper 发出的运行期 shell OSC 事件，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
 - Backend 需要 manifest URL 才会加载 bootstrap manifest。`COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 是最高优先级 override。未打包的开发运行会默认使用滚动的 `remote-bootstrap-dev` manifest，因此本地开发无需每次设置 shell 环境变量也能测试远端增强。CI 打包也可以在 app 打包前生成 `remote-bootstrap/manifest-url.json`，让安装包无需用户手动配置环境变量即可发现 GitHub 托管的 manifest。正式 tag release 指向同版本 GitHub Release；`main` push 构建指向 `remote-bootstrap-dev`；分支名包含 `remote-bootstrap` 的 push 构建和手动 workflow dispatch 可以指向分支专用临时 prerelease，例如 `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`。普通 PR 与 feature branch 构建默认不写入 packaged URL。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
@@ -363,24 +365,41 @@ sequenceDiagram
   participant UI as Renderer SSH Page
   participant SSH as SshSessionService
   participant BOOT as RemoteBootstrapService
-  participant REM as Remote SSH Host
+  participant PRIMARY as Remote Host (primary transport)
+  participant AUX as Remote Host (bootstrap transport)
   participant REL as HTTPS Manifest/Asset Host
 
-  UI->>SSH: Attach /ws/ssh/{sessionId}
-  SSH-->>UI: ready + buffered terminal output
-  SSH->>BOOT: startRemoteBootstrap(session)
+  UI->>SSH: Create SSH session
+  SSH->>PRIMARY: Authenticate primary SSH transport
+  SSH->>BOOT: Ensure runtime before opening PTY
   BOOT->>REL: Fetch manifest URL
-  BOOT->>REM: Probe uname, arch, and shell by bounded exec
-  BOOT->>REM: Run injected launcher/wrapper by bounded exec
-  REM->>REL: Download matching bootstrap binary
-  REM->>REM: Verify checksum and install user-scoped files
-  REM-->>BOOT: bootstrap-status JSON lines
-  BOOT-->>UI: bootstrap-status WS events
+  BOOT->>AUX: Lazily authenticate temporary transport
+  BOOT->>AUX: Probe uname, arch, and shell by bounded exec
+  BOOT->>AUX: Run installed binary status
+  alt Installed contract is current
+    BOOT-->>SSH: Current contract, no download
+  else Missing, legacy, or stale
+    BOOT->>AUX: Run injected launcher/wrapper by bounded exec
+    AUX->>REL: Download matching bootstrap binary
+    AUX->>AUX: Verify checksum and install user-scoped files
+    BOOT->>AUX: Re-run installed binary status
+    BOOT-->>SSH: Validated installed contract
+  end
+  SSH->>AUX: Begin temporary transport teardown
+  SSH->>PRIMARY: Open PTY as first session channel
+  PRIMARY-->>SSH: Login messages + integration-ready OSC
+  UI->>SSH: Attach /ws/ssh/{sessionId}
+  SSH-->>UI: ready + bootstrap/runtime status + buffered output
 ```
 
-- Bootstrap 会在首次 WebSocket attach 后启动，并且每个 SSH session 只启动一次。
-- 侧通道使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
-- Renderer 会保存最新 `bootstrap-status` 以及当前 session 尝试内的 Remote Enhancements 调试事件历史。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Enhancements Debug`；选择后会在终端右上角打开固定浮层，展示最新 bootstrap phase/state/code/message/version，以及当前 session 尝试中收到的每条 bootstrap 状态和远端 shell 事件原始 JSON payload，内容可选中。
+- 主 SSH transport 会先完成认证，但在 bootstrap 结束前不创建任何 channel。第一次真正需要远端命令时，backend 才会使用相同凭据、host-key 策略、压缩设置与代理策略懒创建第二条已认证 transport。每条使用代理的 transport 都会获得独立 socket。
+- 所有 bootstrap probe/install/status `exec` channel 都只运行在临时 transport。Backend 会在主 client 调用 `client.shell(...)` 前启动其关闭流程，底层 socket 的实际关闭可以异步完成。因此交互 PTY 是主 transport 的第一个 session channel，既能保留 OpenSSH/PAM 登录消息（例如 Debian MOTD），也能让新安装的 profile hook 在同一个首次 shell 中生效。
+- 开关关闭或 manifest 缺失/无效时不会创建临时 transport。其解密得到的 completion secret 会被丢弃，永远不会复制到 session state、状态 payload 或审计 metadata。
+- Backend 会在下载前查询已安装 binary。只有 manifest version 与 asset SHA-256、受支持 protocol、helper 内容与 profile hook 均为最新时才跳过下载；旧 binary 缺失新字段时会被视为不兼容并重装。PTY 创建前会再次读取 status 复验安装。
+- 每条侧通道命令都使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出；整个可选的 shell 打开前 ensure 对设置读取、manifest I/O、临时 proxy/SSH 建连与 exec 工作共享更严格的 15 秒总预算。共享 deadline 到期时，backend 会停止等待 proxy 准备、关闭活动 exec channel、销毁临时 client、发送 `BOOTSTRAP_ENSURE_TIMEOUT`，并立即继续创建普通 PTY。取消后才完成的预连接 proxy socket 会在返回时立即销毁。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
+- Ensure 建连失败或超时不会把有效的主 SSH 认证变成 shell 创建失败。Backend 会启动临时 transport 的关闭，以 `disabled` 运行状态打开主 PTY、报告失败，并在该 session 内忽略所有 helper 派生事件。如果主 transport 本身在 ensure 期间失败，其错误会取消临时工作，并继续通过现有 SSH 错误路径让普通 session 创建失败。
+- Go `install`/`status` 输出只用于建立安装标识与信任状态，不会直接提供 cwd、输入状态或命令生命周期数据。实时 shell 数据随后由 Go 生成的 helper 通过 OSC 777 发出，并继续受运行时 gate 约束。
+- Renderer 会把最新 `bootstrap-status`、最新 `remote-enhancement-runtime-status` 与最多 200 条远端增强调试记录分别保存，因此历史淘汰不会清除当前运行状态。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Enhancements Debug`；浮层会展示 bootstrap 状态、运行状态、helper/protocol/capability 标识，以及 bootstrap、运行态和可信 shell 事件的可选中原始 JSON。
 - 调试浮层只记录状态/事件 payload，不记录 terminal `input`、terminal `output`、密码、私钥材料或完整屏幕输出。
 - Terminal `ready`、`output`、telemetry、history、completion 与 shell-state 消息都与 bootstrap 进度彼此独立。
 
@@ -395,7 +414,8 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend 解析规则：
 
 - `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
-- 合法 Cosmosh OSC 会从可见终端输出中剥离，解码、规范化后，仅在当前 live session 启用了 Remote Enhancements 时以 `remote-shell-event` 转发给 renderer。
+- Cosmosh OSC 会从可见终端输出中剥离并解码，但只有 backend 运行时 gate 进入 `active` 后，事件才会应用并转发。
+- Gate 只有在交互 shell 打开前 status 校验成功后才以 `pending` 开始；匹配的 `integration-ready` 会将其切换为 `active`。如果 10 秒内没有收到有效握手，则以 `HELPER_HANDSHAKE_TIMEOUT` 切换为 `disabled`；任何 shell、helper version、protocol version 或 capability 不匹配也会切换为 `disabled` 并清空 helper 派生状态。
 - 非 Cosmosh OSC 与普通 ANSI 输出保持可见且不变。
 - 非法 JSON、非法事件形状以及超过 8 KiB 的 payload 会被丢弃，不会导致 session 崩溃。
 - 支持 SSH chunk 切分；未完成的 OSC 数据会缓冲到 BEL 或 ST 结束符到来。
@@ -413,6 +433,9 @@ type RemoteShellEventMessage = {
     | 'command-end'
     | 'foreground-command';
   shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+  helperVersion: string;
+  protocolVersion: number;
+  capabilities: string[];
   cwd?: string;
   command?: string;
   exitCode?: number;
@@ -424,7 +447,7 @@ type RemoteShellEventMessage = {
 
 当前第一期 helper 行为：
 
-- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
+- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。标量 prompt hook 会在独立的求值边界内执行，因此 `history -a;` 这类末尾分隔符不会在外层产生错误语法。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
 - Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
 - Fish 使用 `fish_preexec`、`fish_prompt`、`fish_postexec` 与 `PWD` variable event。
 - Sh/Ash 降级为仅基于 prompt 的 `cwd`、`prompt-ready` 与 `command-end`，不承诺精准 preexec 行为。
@@ -433,6 +456,7 @@ type RemoteShellEventMessage = {
 
 Backend 状态模型：
 
+- 每个 session 都持有明确的 `pending`、`active` 或 `disabled` 增强运行状态、PTY 创建前校验得到的契约，以及会在激活、禁用或 session 销毁时清理的握手 timer。
 - 每个 `SshLiveSession` 保存 `remoteShellReady`、`remoteShellCwd`、`remoteShellForegroundCommand`、`lastRemoteCommand`、`lastExitCode` 与 `lastCommandDurationMs`。
 - `remoteShellCwd` 是 path completion 的优先 cwd 来源；现有 exec probe 与 renderer hint 仍作为 fallback。
 - 收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`；这能覆盖短命令、长时间前台进程以及未知 TUI/REPL 程序，不需要维护命令白名单。
@@ -467,7 +491,7 @@ Backend 状态模型：
 - 注入的 wrapper 会把所有 manifest 字段作为已引用的数据处理，永远不把它们当作可执行 shell source，然后使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
 - `cosmosh-wrappergen` 会在渲染 shell source 之前独立校验 manifest `version` 字符集、asset URL 必须为 HTTPS，且 SHA-256 必须为小写 hex。
 - `scripts/build-remote-bootstrap-release.mjs` 会编译 `cosmosh-remote-bootstrap-linux-amd64` 与 `cosmosh-remote-bootstrap-linux-arm64`，计算 SHA-256，并写入被 git ignore 的 `packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json`。CI 可以覆盖下载 tag/base URL 与 manifest `version`，因此即使用固定 GitHub release tag，也可以发布类似 `dev-<commit-sha>` 的 manifest version。
-- 正式 tag release CI 会把 helper assets 与 manifest 上传到同 tag 的 draft GitHub Release，并把该 tag 的 manifest URL 打进 app。`cosmosh-remote-bootstrap-*` 前缀是故意的，用来和 release 页面上的用户可见 app 安装包区分开。
+- 正式 tag release CI 会把 helper assets 与 manifest 和桌面端安装包一起暂存，校验完整资产清单、生成校验和与 provenance attestations，然后才把 bundle 上传到同 tag 的 draft GitHub Release，并把该 tag 的 manifest URL 打进 app。`cosmosh-remote-bootstrap-*` 前缀是故意的，用来和 release 页面上的用户可见 app 安装包区分开。
 - `build-main` CI 总是验证 Go package 与 manifest 生成路径。在 `push` 到 `main` 时，独立的写权限 job 会重新编译 helper assets，用 `--clobber` 发布到固定 prerelease tag `remote-bootstrap-dev`，并把 `https://github.com/<repo>/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json` 打进 main 构建产物。在 `push` 到任意分支名包含 `remote-bootstrap` 的分支，或手动 `workflow_dispatch` 且 `publishRemoteBootstrap=true` 时，同一个 job 会发布到分支专用 prerelease tag `remote-bootstrap-branch-<sanitized-branch>`，并把这个 manifest URL 打进该分支构建产物。这些分支 prerelease 是临时内部测试桶，PR 合并或废弃后可以删除。普通分支和 PR 默认只验证构建链路，除非维护者显式选择发布路径。
 
 ### 8.4 远端要求与安装文件
@@ -501,7 +525,7 @@ Backend 状态模型：
 | Sh/Ash hook | `~/.profile` 内的 Cosmosh marker block |
 | Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` 或 `~/.config/fish/conf.d/cosmosh.fish` |
 
-安装器具备幂等性。当已安装 version、binary、helper 与 shell hook 均为最新时会发送 `skipped`。如果 version 与文件已存在但 profile hook 缺失，则会修复 hook 而不是跳过。Version marker 只会在文件安装与 profile 更新均成功后写入。
+安装器具备幂等性。只有已安装 version、binary 精确内容、Go 生成的 helper 精确内容与 shell hook 均为最新时才会发送 `skipped`。Profile hook 或 helper 被删除/修改时会修复安装，而不是跳过。Version marker 只会在文件安装与 profile 更新均成功后写入。`status` 会报告 `installed`、`version`、`binarySha256`、`protocolVersion`、`capabilities`、`helperCurrent`、`profileCurrent` 与解析后的路径。
 
 ### 8.5 安全与失败模型
 
@@ -510,6 +534,7 @@ Backend 状态模型：
 - 缺少 `mktemp`、`base64`、下载器、hash 工具或目标 shell 时，会明确上报 `bootstrap-status` 失败，而不是静默降级。
 - Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh marker block 内更新内容。不要求 root，也不写全局路径。
 - Bootstrap 审计 metadata 只记录状态，不得包含 secret。SSH 凭据、私钥与终端输入都不属于该契约。
+- Bootstrap/设置/manifest/安装失败会对增强数据 fail closed，但对已认证的普通 SSH shell fail open。只有本次 ensure 成功且 live helper 握手与其契约匹配时，先前安装的 helper 才可能被消费。
 
 常见状态码：
 
@@ -526,6 +551,10 @@ Backend 状态模型：
 | `DOWNLOADER_NOT_FOUND` | 远端既没有 `curl` 也没有 `wget`。 |
 | `HASH_TOOL_NOT_FOUND` | 远端既没有 `sha256sum` 也没有 `shasum`。 |
 | `CHECKSUM_MISMATCH` | 下载得到的 binary 与 manifest SHA-256 不匹配。 |
+| `BOOTSTRAP_ENSURE_TIMEOUT` | 完整的可选 shell 打开前 ensure 超过 15 秒；活动侧通道工作会被取消，并继续创建普通 PTY。 |
+| `INSTALLATION_NOT_CURRENT` | 安装后 status 与所选 version 或受支持运行时契约不匹配。 |
+| `HELPER_HANDSHAKE_TIMEOUT` | PTY 创建后 10 秒内未收到有效 `integration-ready`；运行期 helper 数据已禁用。 |
+| `HELPER_CONTRACT_MISMATCH` | Live `integration-ready` 或后续 helper 事件与交互 shell 打开前的契约不匹配；运行时数据已禁用。 |
 | `FILE_INSTALL_FAILED` | 安装器无法创建或复制用户级文件。 |
 | `PROFILE_UPDATE_FAILED` | 安装器无法更新目标 shell profile hook。 |
 | `VERSION_WRITE_FAILED` | 安装器无法写入最终 version marker。 |

@@ -4,10 +4,16 @@ import React from 'react';
 
 import { Button } from '../../components/ui/button';
 import { t } from '../../lib/i18n';
-import type { RemoteBootstrapStatus, RemoteEnhancementsDebugEvent, RemoteShellEvent } from './ssh-types';
+import type {
+  RemoteBootstrapStatus,
+  RemoteEnhancementRuntimeStatus,
+  RemoteEnhancementsDebugEvent,
+  RemoteShellEvent,
+} from './ssh-types';
 
 type RemoteEnhancementsDebugPanelProps = {
   latestStatus: RemoteBootstrapStatus | null;
+  runtimeStatus: RemoteEnhancementRuntimeStatus | null;
   events: RemoteEnhancementsDebugEvent[];
   formatTime: (value: string | number | Date, fallback?: string) => string;
   onClose: () => void;
@@ -64,6 +70,16 @@ const readRemoteShellEventLabel = (event: RemoteShellEvent['event']): string => 
 };
 
 /**
+ * Reads the localized backend runtime gate state.
+ *
+ * @param state Runtime gate state.
+ * @returns Localized state label.
+ */
+const readRuntimeStateLabel = (state: RemoteEnhancementRuntimeStatus['state']): string => {
+  return t(`ssh.remoteEnhancementRuntimeStates.${state}`);
+};
+
+/**
  * Maps bootstrap state to the same semantic text colors used by the status strip.
  *
  * @param state Latest bootstrap state, when available.
@@ -82,6 +98,24 @@ const resolveStatusTextColor = (state: RemoteBootstrapStatus['state'] | undefine
 };
 
 /**
+ * Maps runtime trust state to semantic diagnostic colors.
+ *
+ * @param state Current runtime gate state.
+ * @returns Tailwind utility class for the state text.
+ */
+const resolveRuntimeTextColor = (state: RemoteEnhancementRuntimeStatus['state'] | undefined): string => {
+  if (state === 'disabled') {
+    return 'text-form-message-error';
+  }
+
+  if (state === 'active') {
+    return 'text-status-good';
+  }
+
+  return 'text-home-text';
+};
+
+/**
  * Renders a compact event summary for the debug list header.
  *
  * @param payload Remote enhancement event payload.
@@ -92,14 +126,19 @@ const renderEventSummary = (payload: RemoteEnhancementsDebugEvent['payload']): s
     return `${readBootstrapPhaseLabel(payload.phase)} / ${readBootstrapStateLabel(payload.state)}`;
   }
 
+  if (payload.type === 'remote-enhancement-runtime-status') {
+    return readRuntimeStateLabel(payload.state);
+  }
+
   return `${payload.shell} / ${readRemoteShellEventLabel(payload.event)}`;
 };
 
 /**
  * Renders the fixed in-terminal debug inspector for Remote Enhancements events.
  *
- * @param props Latest bootstrap status, event history, formatter and close callback.
+ * @param props Latest bootstrap/runtime status, event history, formatter and close callback.
  * @param props.latestStatus Most recent bootstrap status event.
+ * @param props.runtimeStatus Most recent backend runtime gate status.
  * @param props.events Bootstrap status and shell events received in this session attempt.
  * @param props.formatTime Shared application time formatter.
  * @param props.onClose Callback used to hide the panel.
@@ -107,6 +146,7 @@ const renderEventSummary = (payload: RemoteEnhancementsDebugEvent['payload']): s
  */
 export const RemoteEnhancementsDebugPanel: React.FC<RemoteEnhancementsDebugPanelProps> = ({
   latestStatus,
+  runtimeStatus,
   events,
   formatTime,
   onClose,
@@ -140,9 +180,29 @@ export const RemoteEnhancementsDebugPanel: React.FC<RemoteEnhancementsDebugPanel
             {latestStatus ? readBootstrapStateLabel(latestStatus.state) : t('ssh.remoteEnhancementsDebug.emptyValue')}
           </dd>
 
+          <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.runtimeState')}</dt>
+          <dd className={classNames('min-w-0 truncate', resolveRuntimeTextColor(runtimeStatus?.state))}>
+            {runtimeStatus ? readRuntimeStateLabel(runtimeStatus.state) : t('ssh.remoteEnhancementsDebug.emptyValue')}
+          </dd>
+
+          <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.helperVersion')}</dt>
+          <dd className="min-w-0 truncate font-mono">
+            {runtimeStatus?.helperVersion ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
+          </dd>
+
+          <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.protocolVersion')}</dt>
+          <dd className="min-w-0 truncate font-mono">
+            {runtimeStatus?.protocolVersion ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
+          </dd>
+
+          <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.capabilities')}</dt>
+          <dd className="min-w-0 break-words font-mono">
+            {runtimeStatus?.capabilities?.join(', ') ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
+          </dd>
+
           <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.code')}</dt>
           <dd className="min-w-0 truncate font-mono">
-            {latestStatus?.code ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
+            {runtimeStatus?.code ?? latestStatus?.code ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
           </dd>
 
           <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.version')}</dt>
@@ -152,7 +212,7 @@ export const RemoteEnhancementsDebugPanel: React.FC<RemoteEnhancementsDebugPanel
 
           <dt className="text-home-text-subtle">{t('ssh.remoteEnhancementsDebug.message')}</dt>
           <dd className="min-w-0 break-words">
-            {latestStatus?.message ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
+            {runtimeStatus?.message ?? latestStatus?.message ?? t('ssh.remoteEnhancementsDebug.emptyValue')}
           </dd>
         </dl>
 

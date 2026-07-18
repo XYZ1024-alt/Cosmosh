@@ -1355,20 +1355,29 @@
     "proxyUrlHint": "支持 HTTP、HTTPS CONNECT 和 SOCKS5 代理 URL，也支持在 URL 中携带凭据。",
     "proxyUrlLabel": "自定义代理 URL",
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
+    "remoteEnhancementRuntimeStates": {
+      "active": "已启用",
+      "disabled": "已停用",
+      "pending": "等待握手"
+    },
     "remoteEnhancements": "远端增强",
     "remoteEnhancementsDebug": {
+      "capabilities": "能力",
       "close": "关闭远端增强调试",
       "code": "代码",
       "emptyEvents": "本次会话尝试还没有收到远端增强事件。",
       "emptyValue": "-",
       "events": "事件",
+      "helperVersion": "帮助程序版本",
       "latestPhase": "Bootstrap 阶段",
       "latestState": "Bootstrap 状态",
       "message": "消息",
+      "protocolVersion": "协议版本",
+      "runtimeState": "运行状态",
       "title": "远端增强调试",
       "version": "版本"
     },
-    "remoteEnhancementsTooltip": "启用后，如果全局远端增强已开启，该服务器连接后可运行 Cosmosh 远端增强帮助程序。",
+    "remoteEnhancementsTooltip": "启用后，如果全局远端增强已开启，连接该服务器时会检查并准备 Cosmosh 远端增强帮助程序。",
     "remoteShellEvents": {
       "command-end": "命令结束",
       "command-start": "命令开始",

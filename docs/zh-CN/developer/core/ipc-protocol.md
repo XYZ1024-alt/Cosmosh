@@ -167,7 +167,8 @@ SFTP batch payload 由 OpenAPI 生成，并由 renderer、main IPC proxy 与 bac
   - `ready`、`output`、`telemetry`、`history`、`pong`、`error`、`exit`
   - `completion-response`，包含 `requestId`、`replacePrefixLength` 与排序后的候选 `items`
   - `bootstrap-status`，用于侧通道 Remote Bootstrap 安装/探测状态
-  - `remote-shell-event`，用于已安装 helper 通过 OSC 777 发出的运行期 shell 状态
+  - `remote-enhancement-runtime-status`，包含 backend 持有的状态（`pending`、`active` 或 `disabled`），以及可选 `helperVersion`、`protocolVersion`、`capabilities`、`code` 与 `message`
+  - `remote-shell-event`，用于已安装 helper 通过 OSC 777 发出的运行期 shell 状态；每条事件都必须包含 `helperVersion`、整数 `protocolVersion`、`capabilities`、`shell`、`event` 与 `timestamp`
 
 补全候选契约说明：
 
@@ -178,7 +179,8 @@ SFTP batch payload 由 OpenAPI 生成，并由 renderer、main IPC proxy 与 bac
 当前实现说明：
 
 - 补全消息在 `SshSessionService` 与 `LocalTerminalSessionService` 中处理，输入规范化由 `terminal/shared.ts` 统一，排序引擎由 `terminal/completion/engine.ts` 共享。
-- `remote-shell-event` 仅用于 SSH session，不会出现在 local-terminal session。Payload 承载 shell、cwd、命令结束 exit code、duration 与 timestamp 等状态字段；不得承载密码、secret、完整终端输出或任意大 payload。Backend 会将每个解码后的 OSC payload 限制在 8 KiB，并在 renderer xterm 输出前剥离合法 Cosmosh OSC。
+- `remote-enhancement-runtime-status` 与 `remote-shell-event` 仅用于 SSH session，不会出现在 local-terminal session。交互 shell 打开前的 Bootstrap ensure 成功后，运行时以 `pending` 开始；10 秒内到达且匹配的 `integration-ready` 会切换为 `active`。Ensure 失败、`BOOTSTRAP_ENSURE_TIMEOUT`、`HELPER_HANDSHAKE_TIMEOUT` 或 live 契约不匹配都会切换为 `disabled`。Renderer 会把最新运行状态与有界事件历史分别保存，并且只能将其用于诊断，不得据此重建 backend helper 状态。
+- `remote-shell-event` 还可以携带 cwd、清洗后的可执行命令名、命令结束 exit code、duration 或 command ID。不得承载密码、secret、完整终端输出、完整命令行或任意大 payload。Backend 要求事件契约与交互 shell 打开前的 Go Bootstrap status 匹配，将每个解码后的 OSC payload 限制在 8 KiB，并在 renderer xterm 输出前剥离 Cosmosh OSC。缺少 version/protocol/capability 字段的旧事件会被丢弃。
 
 ### 3.5 Main 持有的活动连接契约
 

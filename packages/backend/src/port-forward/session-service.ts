@@ -319,6 +319,7 @@ export class PortForwardSessionService {
       }
     } catch (error: unknown) {
       const message = this.resolveErrorMessage(error, i18n.t('errors.portForward.startFailedNoReason'));
+      openResult.lifecycleMonitor.releaseAfterClose();
       await this.disposeRuntimeState(runtimeState);
       await this.persistStartFailure(rule.id, message);
       this.logStartFailure(rule, input.requestId, message, openResult.proxyMetadata);
@@ -326,30 +327,52 @@ export class PortForwardSessionService {
     }
 
     this.activeRules.set(rule.id, runtimeState);
-    const updatedRule = await db.portForwardRule.update({
-      where: {
-        id: rule.id,
-      },
-      data: {
-        lastStartedAt: runtimeState.startedAt,
-        lastFailureMessage: null,
-      },
-      include: {
-        server: {
-          include: {
-            keychain: true,
+    let updatedRule: PortForwardRuleWithServer;
+    try {
+      updatedRule = await db.portForwardRule.update({
+        where: {
+          id: rule.id,
+        },
+        data: {
+          lastStartedAt: runtimeState.startedAt,
+          lastFailureMessage: null,
+        },
+        include: {
+          server: {
+            include: {
+              keychain: true,
+            },
           },
         },
-      },
-    });
+      });
+    } catch (error: unknown) {
+      this.activeRules.delete(rule.id);
+      openResult.lifecycleMonitor.releaseAfterClose();
+      await this.disposeRuntimeState(runtimeState);
+      throw error;
+    }
 
-    openResult.client.on('close', () => {
+    const handleClientClose = (): void => {
       void this.handleUnexpectedClose(rule.id, i18n.t('errors.portForward.sshConnectionClosed'));
-    });
+    };
 
-    openResult.client.on('error', (error) => {
+    const handleClientError = (error: Error): void => {
       void this.handleUnexpectedClose(rule.id, error.message);
-    });
+    };
+
+    openResult.client.on('close', handleClientClose);
+    openResult.client.on('error', handleClientError);
+    openResult.lifecycleMonitor.release();
+
+    const guardedClientError = openResult.lifecycleMonitor.readError();
+    const guardedFailureMessage =
+      guardedClientError?.message ??
+      (openResult.lifecycleMonitor.isClosed() ? i18n.t('errors.portForward.sshConnectionClosed') : null);
+    if (guardedFailureMessage) {
+      await this.handleUnexpectedClose(rule.id, guardedFailureMessage);
+      this.logStartFailure(rule, input.requestId, guardedFailureMessage, openResult.proxyMetadata);
+      return { type: 'failed', message: guardedFailureMessage };
+    }
 
     this.logAuditEvent({
       category: 'port-forward',

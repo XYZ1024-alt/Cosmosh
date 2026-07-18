@@ -1,13 +1,16 @@
 package install
 
 import (
-	"encoding/base64"
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -17,12 +20,27 @@ const (
 	markerEnd      = "# <<< cosmosh bootstrap <<<"
 )
 
+var versionPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
+
 // Options contains immutable install command inputs.
 type Options struct {
-	Shell            string
-	Version          string
-	HelperPayloadB64 string
-	Stdout           io.Writer
+	Shell   string
+	Version string
+	Stdout  io.Writer
+}
+
+// InstallationStatus describes whether the installed runtime matches this bootstrap binary.
+type InstallationStatus struct {
+	Installed       bool     `json:"installed"`
+	Version         string   `json:"version,omitempty"`
+	ProtocolVersion int      `json:"protocolVersion"`
+	Capabilities    []string `json:"capabilities"`
+	HelperCurrent   bool     `json:"helperCurrent"`
+	ProfileCurrent  bool     `json:"profileCurrent"`
+	BinarySHA256    string   `json:"binarySha256,omitempty"`
+	BinaryPath      string   `json:"binaryPath"`
+	HelperPath      string   `json:"helperPath"`
+	ProfilePath     string   `json:"profilePath"`
 }
 
 type statusLine struct {
@@ -80,34 +98,42 @@ func Run(options Options) error {
 	return nil
 }
 
-// Status prints the resolved user-scope bootstrap paths.
+// Status prints the installed runtime state validated by this bootstrap binary.
 func Status(stdout io.Writer, shell string) error {
 	resolvedPaths, err := resolvePaths(shell)
 	if err != nil {
 		return err
 	}
 
-	payload := map[string]string{
-		"binaryPath":  resolvedPaths.binaryPath,
-		"helperPath":  resolvedPaths.helperPath,
-		"profilePath": resolvedPaths.profilePath,
+	versionBytes, versionErr := os.ReadFile(resolvedPaths.versionPath)
+	version := ""
+	if versionErr == nil {
+		version = strings.TrimSpace(string(versionBytes))
+	}
+
+	options := Options{Shell: shell, Version: version}
+	helperCurrent := version != "" && helperMatches(options, resolvedPaths)
+	profileCurrent := version != "" && profileHasCurrentHook(options, resolvedPaths)
+	binarySHA256, binaryErr := fileSHA256(resolvedPaths.binaryPath)
+	payload := InstallationStatus{
+		Installed:       binaryErr == nil && version != "" && helperCurrent && profileCurrent,
+		Version:         version,
+		ProtocolVersion: RemoteShellProtocolVersion,
+		Capabilities:    HelperCapabilities(shell),
+		HelperCurrent:   helperCurrent,
+		ProfileCurrent:  profileCurrent,
+		BinarySHA256:    binarySHA256,
+		BinaryPath:      resolvedPaths.binaryPath,
+		HelperPath:      resolvedPaths.helperPath,
+		ProfilePath:     resolvedPaths.profilePath,
 	}
 
 	return json.NewEncoder(stdout).Encode(payload)
 }
 
 func validateOptions(options Options) error {
-	if options.Version == "" {
-		return errors.New("version is required")
-	}
-
-	if options.HelperPayloadB64 == "" {
-		return errors.New("helper payload is required")
-	}
-
-	_, err := base64.StdEncoding.DecodeString(options.HelperPayloadB64)
-	if err != nil {
-		return fmt.Errorf("helper payload must be base64: %w", err)
+	if !versionPattern.MatchString(options.Version) {
+		return errors.New("version must contain only letters, numbers, dot, underscore, plus, or hyphen")
 	}
 
 	return validateShell(options.Shell)
@@ -151,13 +177,22 @@ func isCurrentInstallation(options Options, resolvedPaths paths) bool {
 		return false
 	}
 
-	for _, requiredPath := range []string{resolvedPaths.binaryPath, resolvedPaths.helperPath} {
-		if _, err := os.Stat(requiredPath); err != nil {
-			return false
-		}
+	currentBinary, err := os.Executable()
+	if err != nil || !filesEqual(currentBinary, resolvedPaths.binaryPath) {
+		return false
 	}
 
-	return profileHasCurrentHook(options, resolvedPaths)
+	return helperMatches(options, resolvedPaths) && profileHasCurrentHook(options, resolvedPaths)
+}
+
+func helperMatches(options Options, resolvedPaths paths) bool {
+	expected, err := BuildHelper(options.Shell, options.Version)
+	if err != nil {
+		return false
+	}
+
+	actual, err := os.ReadFile(resolvedPaths.helperPath)
+	return err == nil && string(actual) == expected
 }
 
 func profileHasCurrentHook(options Options, resolvedPaths paths) bool {
@@ -194,12 +229,12 @@ func installFiles(options Options, resolvedPaths paths) error {
 		return err
 	}
 
-	helperBytes, err := base64.StdEncoding.DecodeString(options.HelperPayloadB64)
+	helper, err := BuildHelper(options.Shell, options.Version)
 	if err != nil {
 		return err
 	}
 
-	if err := os.WriteFile(resolvedPaths.helperPath, helperBytes, 0o600); err != nil {
+	if err := os.WriteFile(resolvedPaths.helperPath, []byte(helper), 0o600); err != nil {
 		return err
 	}
 
@@ -274,6 +309,30 @@ func copyFile(sourcePath string, targetPath string, mode os.FileMode) error {
 
 	_, err = io.Copy(target, source)
 	return err
+}
+
+func filesEqual(firstPath string, secondPath string) bool {
+	first, err := os.ReadFile(firstPath)
+	if err != nil {
+		return false
+	}
+	second, err := os.ReadFile(secondPath)
+	return err == nil && bytes.Equal(first, second)
+}
+
+func fileSHA256(path string) (string, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 func envOrDefault(name string, fallback string) string {

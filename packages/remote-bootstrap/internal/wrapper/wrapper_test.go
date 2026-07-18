@@ -14,13 +14,12 @@ const adversarialAssetURL = "https://downloads.example.test/cosmosh%20bootstrap$
 
 func validConfig(shell string) Config {
 	return Config{
-		Shell:            shell,
-		TargetOS:         "linux",
-		TargetArch:       "amd64",
-		Version:          "1.2.3",
-		AssetURL:         "https://downloads.example.test/cosmosh-bootstrap",
-		SHA256:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		HelperPayloadB64: "ZXhwb3J0IENPU01PU0hfQk9PVFNUUkFQX0VOQUJMRUQ9MQo=",
+		Shell:      shell,
+		TargetOS:   "linux",
+		TargetArch: "amd64",
+		Version:    "1.2.3",
+		AssetURL:   "https://downloads.example.test/cosmosh-bootstrap",
+		SHA256:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
 	}
 }
 
@@ -33,6 +32,7 @@ func TestGeneratePosixWrapper(t *testing.T) {
 	assertContains(t, script, "set -eu")
 	assertContains(t, script, "sha256sum -c -")
 	assertContains(t, script, "install --shell \"$cosmosh_shell\"")
+	assertNotContains(t, script, "helper-payload-b64")
 	assertContains(t, script, "\"type\":\"bootstrap-status\"")
 }
 
@@ -44,6 +44,7 @@ func TestGenerateBashWrapper(t *testing.T) {
 
 	assertContains(t, script, "set -eu")
 	assertContains(t, script, "install --shell \"$cosmosh_shell\"")
+	assertNotContains(t, script, "helper-payload-b64")
 	assertContains(t, script, "\"type\":\"bootstrap-status\"")
 }
 
@@ -56,6 +57,7 @@ func TestGenerateFishWrapper(t *testing.T) {
 	assertContains(t, script, "function cosmosh_phase")
 	assertContains(t, script, "command -q curl")
 	assertContains(t, script, "install --shell \"$cosmosh_shell\"")
+	assertNotContains(t, script, "helper-payload-b64")
 	assertContains(t, script, "\"type\":\"bootstrap-status\"")
 }
 

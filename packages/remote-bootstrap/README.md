@@ -1,18 +1,19 @@
 # Cosmosh Remote Bootstrap
 
-`packages/remote-bootstrap` contains the Go tooling that Cosmosh can install on a remote SSH host to prepare future Remote Enhancements. It is intentionally small, user-scoped, and shell-aware: the backend orchestrates when bootstrap should run, while this package owns the remote installer binary and the shell wrapper contract used to fetch and run that binary safely.
+`packages/remote-bootstrap` contains the Go tooling that Cosmosh installs on a remote SSH host for Remote Enhancements. It is intentionally user-scoped and shell-aware: the backend orchestrates when bootstrap should run, while this package owns the remote installer binary, generated shell helper, runtime protocol version, capability declarations, and the shell wrapper contract used to fetch and run that binary safely.
 
-The module exists so Cosmosh can add remote-side capabilities without pushing privileged files, modifying global system state, or mixing bootstrap output into the interactive terminal stream. In v1, the installed helper is deliberately thin. It proves the installation path, keeps a versioned bootstrap binary available under the remote user's profile, and gives later runtime work a controlled place to add host-local helper behavior.
+The module exists so Cosmosh can add remote-side capabilities without pushing privileged files, modifying global system state, or mixing bootstrap output into the interactive terminal stream. The installed helper emits a deliberately bounded shell-state contract and gives later runtime work a controlled place to add host-local behavior.
 
 ## What This Module Does
 
 - Builds `cosmosh-bootstrap`, the binary downloaded and executed on the remote host.
 - Builds `cosmosh-wrappergen`, a CLI that renders shell-specific wrappers for release and diagnostic workflows.
 - Installs the current bootstrap binary into user-scoped XDG paths.
-- Writes a small shell helper and wires it into the user's shell startup file.
+- Generates a versioned shell helper in Go and wires it into the user's shell startup file.
 - Emits line-delimited `bootstrap-status` JSON so the backend can forward progress over the SSH WebSocket.
 - Installs first-phase shell integration hooks that can emit runtime shell state over Cosmosh OSC 777 from the interactive PTY.
-- Keeps installation idempotent by comparing the installed version, binary, helper, and shell hook before rewriting files.
+- Reports installed version, binary SHA-256, protocol, capabilities, helper integrity, and profile-hook integrity through `status`.
+- Keeps installation idempotent by comparing the installed version, exact binary/helper contents, and shell hook before rewriting files.
 
 ## What This Module Does Not Do
 
@@ -29,21 +30,33 @@ sequenceDiagram
   participant UI as Renderer SSH Page
   participant SSH as Backend SshSessionService
   participant RB as RemoteBootstrapService
-  participant REM as Remote SSH Host
+  participant PRIMARY as Remote Host (primary transport)
+  participant AUX as Remote Host (bootstrap transport)
   participant CDN as HTTPS Manifest and Asset Host
 
-  UI->>SSH: Attach SSH WebSocket
-  SSH->>RB: Start once when global and server gates allow
+  UI->>SSH: Create SSH session
+  SSH->>PRIMARY: Authenticate primary transport without opening a channel
+  SSH->>RB: Ensure runtime before PTY open
   RB->>CDN: Fetch manifest from COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL
-  RB->>REM: Probe uname, arch, and shell through bounded ssh2 exec
-  RB->>REM: Inject shell launcher and wrapper through side-channel exec
-  REM->>CDN: Download matching cosmosh-bootstrap asset
-  REM->>REM: Verify SHA-256 and run cosmosh-bootstrap install
-  REM-->>RB: Emit bootstrap-status JSON lines
-  RB-->>UI: Forward bootstrap-status over SSH WebSocket
+  RB->>AUX: Lazily authenticate temporary transport
+  RB->>AUX: Probe uname, arch, and shell through bounded ssh2 exec
+  RB->>AUX: Read installed cosmosh-bootstrap status
+  alt Installed contract is current
+    RB-->>SSH: Return current runtime contract without download
+  else Missing or stale
+    RB->>AUX: Inject shell launcher and wrapper through side-channel exec
+    AUX->>CDN: Download matching cosmosh-bootstrap asset
+    AUX->>AUX: Verify SHA-256 and run cosmosh-bootstrap install
+    RB->>AUX: Re-read and validate installed status
+  end
+  AUX-->>RB: Emit bootstrap-status JSON lines
+  SSH->>AUX: Begin temporary transport teardown
+  SSH->>PRIMARY: Open PTY as the first session channel
+  PRIMARY-->>SSH: Login messages and helper handshake
+  SSH-->>UI: Forward bootstrap and runtime status over SSH WebSocket
 ```
 
-The interactive terminal stream is separate from the bootstrap side channel. `RemoteBootstrapService` uses bounded `ssh2 exec`, parses JSON lines from stdout, logs terminal states through the audit service, and never writes installer output into the xterm stream.
+The interactive terminal transport is separate from the bootstrap side channel, not only its output stream. `SshSessionService` authenticates the primary client first, then lazily creates a temporary client only if `RemoteBootstrapService` requests a remote command. The temporary client reuses the same credential, host-key, compression, and proxy policy but receives its own proxy socket; all bounded `ssh2 exec` work stays on that client, and backend begins its teardown before the primary opens its first channel through `shell()`. Actual socket closure may complete asynchronously. This preserves OpenSSH/PAM login messages such as Debian MOTD while allowing a newly installed profile hook to load immediately. The complete optional pre-PTY ensure stays behind a shared 15-second budget; expiry stops waiting for proxy preparation, aborts active manifest/exec I/O, destroys the temporary client, and opens an ordinary PTY with Remote Enhancements disabled. Installer output is parsed as JSON lines and never enters the xterm stream.
 
 ## Directory Layout
 
@@ -56,6 +69,7 @@ packages/remote-bootstrap/
       main.go
   internal/
     install/
+      helper.go
       install.go
       install_test.go
     wrapper/
@@ -66,7 +80,7 @@ packages/remote-bootstrap/
 
 - `cmd/cosmosh-bootstrap`: command entry point for remote installation and status inspection.
 - `cmd/cosmosh-wrappergen`: command entry point for rendering shell wrapper source.
-- `internal/install`: validates install inputs, resolves user-scoped paths, copies the bootstrap binary, writes helpers, updates profile hooks, and emits status lines.
+- `internal/install`: owns helper generation and the OSC protocol contract, validates install inputs, resolves user-scoped paths, copies the bootstrap binary, updates profile hooks, validates installed state, and emits status lines.
 - `internal/wrapper`: validates manifest-derived wrapper inputs and renders POSIX or fish shell source with shell-safe quoting.
 
 ## Supported Targets
@@ -164,10 +178,12 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 
 First-phase behavior:
 
-- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line.
+- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line. Scalar prompt hooks execute behind a separate evaluation boundary, so trailing separators such as `history -a;` cannot create malformed outer syntax.
 - Zsh uses `precmd`, `preexec`, and `chpwd`, preferring `add-zsh-hook` when available so existing hook functions remain in the chain.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
 - Sh/Ash only install prompt-based degraded hooks for `cwd`, `prompt-ready`, and `command-end`; they do not claim precise preexec behavior.
+
+Every event includes `helperVersion`, integer `protocolVersion`, and the helper's bounded `capabilities` list. The backend accepts no helper event until an `integration-ready` event matches the exact contract returned by `cosmosh-bootstrap status` before the interactive shell was opened.
 
 The helper must not capture passwords, private keys, terminal line buffers, full screen output, or native shell completion lists. `command-start` and `foreground-command` are emitted for every submitted command that can be reduced to an executable name, and they carry only that sanitized executable name, not the full submitted command line or arguments.
 
@@ -176,11 +192,13 @@ The helper must not capture passwords, private keys, terminal line buffers, full
 `cosmosh-bootstrap install` returns `skipped` when all of these are already current:
 
 - `.version` matches the requested version.
-- The installed binary exists.
-- The shell helper exists.
+- The installed binary exactly matches the executing installer.
+- The shell helper exactly matches the Go-generated helper for that shell and version.
 - The expected shell profile hook exists.
 
 If the version and files exist but the profile hook was removed or edited, the installer repairs the hook instead of skipping. The version marker is written only after files and profile updates succeed, which prevents a failed profile write from being mistaken for a complete install.
+
+Before downloading an asset, backend invokes the installed binary's `status --shell <shell>` command. Download is skipped only when the reported version and binary SHA-256 match the selected manifest asset and the protocol, helper, and profile checks are current. Missing fields from an older binary are treated as incompatible and trigger reinstall. After install, backend reads `status` again before it allows the interactive shell to start.
 
 ## Status Output
 
@@ -194,6 +212,12 @@ All machine-readable progress is emitted as one JSON object per line:
 ```
 
 Supported phases are `probe`, `manifest`, `download`, `install`, and `verify`. Supported states are `started`, `ok`, `skipped`, and `failed`.
+
+`cosmosh-bootstrap status` emits one separate JSON object describing the installed runtime contract:
+
+```json
+{"installed":true,"version":"1.2.3","protocolVersion":1,"capabilities":["cwd","command-start","command-end","foreground-command","prompt-ready"],"helperCurrent":true,"profileCurrent":true,"binarySha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","binaryPath":"/home/user/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap","helperPath":"/home/user/.config/cosmosh/bootstrap/helper.sh","profilePath":"/home/user/.bashrc"}
+```
 
 Common failure codes include:
 
@@ -209,6 +233,8 @@ Common failure codes include:
 | `DOWNLOADER_NOT_FOUND` | Remote host provides neither `curl` nor `wget`. |
 | `HASH_TOOL_NOT_FOUND` | Remote host provides neither `sha256sum` nor `shasum`. |
 | `CHECKSUM_MISMATCH` | Downloaded binary hash does not match the manifest. |
+| `BOOTSTRAP_ENSURE_TIMEOUT` | Backend's complete optional pre-PTY ensure exceeded 15 seconds and ordinary SSH continued. |
+| `HELPER_HANDSHAKE_TIMEOUT` | The installed helper did not complete a valid runtime handshake within 10 seconds after PTY creation. |
 | `FILE_INSTALL_FAILED` | Installer could not create/copy user-scoped files. |
 | `PROFILE_UPDATE_FAILED` | Installer could not update the target shell profile hook. |
 | `VERSION_WRITE_FAILED` | Installer could not write the final version marker. |
@@ -223,6 +249,7 @@ Common failure codes include:
 - `umask 077` and `0700`/`0600` file modes keep bootstrap files user-private.
 - Temporary wrapper/download directories are cleaned up on exit, interrupt, and termination signals.
 - The installer does not require root and does not write outside the remote user's home/XDG paths.
+- Bootstrap exec channels are confined to a temporary SSH transport. Its decrypted completion secret is discarded, and success, failure, or timeout starts teardown before the primary client opens its interactive PTY; lifecycle guards remain attached until actual close.
 - Backend status/audit metadata should stay secret-free; the bootstrap contract never needs SSH credentials or private key material.
 
 ## Build and Test
@@ -239,7 +266,7 @@ Build the remote installer for Linux targets:
 node ../../scripts/build-remote-bootstrap-release.mjs
 ```
 
-The CI/release helper writes git-ignored files under `dist/`: `cosmosh-remote-bootstrap-linux-amd64`, `cosmosh-remote-bootstrap-linux-arm64`, and `cosmosh-remote-bootstrap-manifest.json`. Tagged releases publish those files to the versioned GitHub Release. `main` branch builds publish the same file names to the fixed `remote-bootstrap-dev` prerelease with a manifest version such as `dev-<commit-sha>`. Pushed branches whose name contains `remote-bootstrap` and manual workflow dispatch runs can publish branch-scoped temporary prereleases for end-to-end package testing; ordinary PR and feature-branch CI runs use the script for compilation and manifest validation only.
+The CI/release helper writes git-ignored files under `dist/`: `cosmosh-remote-bootstrap-linux-amd64`, `cosmosh-remote-bootstrap-linux-arm64`, and `cosmosh-remote-bootstrap-manifest.json`. Tagged release jobs stage those files as short-lived workflow artifacts, then the single release writer uploads them with the desktop packages after inventory, checksum, and provenance validation. `main` branch builds publish the same file names to the fixed `remote-bootstrap-dev` prerelease with a manifest version such as `dev-<commit-sha>`. Pushed branches whose name contains `remote-bootstrap` and manual workflow dispatch runs can publish branch-scoped temporary prereleases for end-to-end package testing; ordinary PR and feature-branch CI runs use the script for compilation and manifest validation only. The rolling channels remain intentionally replaceable, while versioned release assets are mutable only during draft assembly; see [Release Security](../../docs/developer/core/release-security.md).
 
 Render a wrapper for inspection:
 
@@ -250,11 +277,10 @@ go run ./cmd/cosmosh-wrappergen \
   --arch amd64 \
   --version 1.2.3 \
   --asset-url https://downloads.example.test/cosmosh-remote-bootstrap-linux-amd64 \
-  --sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
-  --helper-payload-b64 ZXhwb3J0IENPU01PU0hfQk9PVFNUUkFQX1JFQURZPTEK
+  --sha256 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 ```
 
-Inspect resolved install paths without writing files:
+Inspect installed runtime state and resolved paths without writing files:
 
 ```sh
 go run ./cmd/cosmosh-bootstrap status --shell sh
@@ -267,8 +293,7 @@ tmp_home="$(mktemp -d)"
 HOME="$tmp_home" XDG_DATA_HOME="$tmp_home/data" XDG_CONFIG_HOME="$tmp_home/config" \
   go run ./cmd/cosmosh-bootstrap install \
     --shell sh \
-    --version 0.0.0-dev \
-    --helper-payload-b64 ZXhwb3J0IENPU01PU0hfQk9PVFNUUkFQX1JFQURZPTEK
+    --version 0.0.0-dev
 ```
 
 ## Adding a Remote Enhancement
@@ -277,9 +302,10 @@ Use this checklist when expanding the remote helper:
 
 1. Keep the remote behavior user-scoped and non-root.
 2. Add or update tests in `internal/install` or `internal/wrapper`.
-3. Preserve the `bootstrap-status` JSON-line contract.
-4. Keep manifest fields validated and shell-quoted before execution.
-5. Update `docs/developer/runtime/ssh-terminal.md` and the Chinese mirror under `docs/zh-CN/`.
-6. Update `docs/developer/core/project-map.md` if ownership or placement changes.
+3. Increment `RemoteShellProtocolVersion` for incompatible event-shape changes and keep status/event capability declarations synchronized.
+4. Preserve the `bootstrap-status` JSON-line contract.
+5. Keep manifest fields validated and shell-quoted before execution.
+6. Update `docs/developer/runtime/ssh-terminal.md` and the Chinese mirror under `docs/zh-CN/`.
+7. Update `docs/developer/core/project-map.md` if ownership or placement changes.
 
 The backend TypeScript orchestration and this Go package must stay in lockstep. If a wrapper field, status phase, status code, or installed path changes in one layer, update the other layer and the documentation in the same change set.
