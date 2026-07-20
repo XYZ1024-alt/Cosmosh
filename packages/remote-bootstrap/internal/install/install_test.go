@@ -211,7 +211,9 @@ func TestBashHelperPreservesPreviousCommandStatusForUserPromptHook(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	script := "PROMPT_COMMAND='__observed_status=$?'\n" + helper + "\nfalse\neval \"$PROMPT_COMMAND\"\ntest \"$__observed_status\" -eq 1\n"
+	// Force event emission without a PTY so the test covers Bash dynamic-scope collisions
+	// between the prompt wrapper and the shared event serializer.
+	script := "PROMPT_COMMAND='__observed_status=$?'\n__COSMOSH_CAPTURED_PROMPT_EVENT=1\n" + helper + "\nfalse\neval \"$PROMPT_COMMAND\"\ntest \"$__observed_status\" -eq 1\n"
 	command := exec.Command(bashPath, "--noprofile", "--norc", "-s")
 	command.Stdin = strings.NewReader(script)
 	if output, err := command.CombinedOutput(); err != nil {

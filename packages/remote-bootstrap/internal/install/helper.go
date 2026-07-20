@@ -203,10 +203,10 @@ __cosmosh_prompt_ready_for_ps1() {
 
 const bashHelperHooks = `
 __cosmosh_bash_prompt_command() {
-  local __cosmosh_status=$?
+  local __cosmosh_bash_prompt_status=$?
   __COSMOSH_BASH_PREEXEC_READY=0
-  __cosmosh_prompt_ready "$__cosmosh_status"
-  return "$__cosmosh_status"
+  __cosmosh_prompt_ready "$__cosmosh_bash_prompt_status"
+  return "$__cosmosh_bash_prompt_status"
 }
 
 __cosmosh_bash_arm_preexec() {
