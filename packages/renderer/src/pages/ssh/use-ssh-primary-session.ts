@@ -8,6 +8,7 @@ import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { resolveConnectMode, withResolvedSnapshot } from '../../lib/ssh-connection-intent';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
+import { clearTerminalCommandMarkers } from './ssh-command-markers';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import {
   resolveTerminalTargetFromIntent,
@@ -66,6 +67,7 @@ type UseSshPrimarySessionParams = {
   setSessionTargetReady: (ready: boolean) => void;
   handlePaneServerMessage: (paneId: string, terminal: Terminal, payload: ServerInboundMessage) => void;
   recordPaneInputCommandMarker: (paneId: string, inputData: string) => void;
+  refreshCommandTimeline: () => void;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -124,6 +126,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setSessionTargetReady,
     handlePaneServerMessage,
     recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
@@ -261,11 +264,27 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       socket: null,
       sessionId: null,
       sessionType: null,
+      pendingCommandMarkers: [],
       commandMarkers: [],
+      refreshCommandTimeline,
       reconnect: () => undefined,
       dispose: () => undefined,
     };
     paneRuntimeMapRef.current.set(paneId, paneRuntime);
+    refreshCommandTimeline();
+
+    /**
+     * Refreshes declarative timeline geometry only while this pane owns markers.
+     *
+     * @returns Nothing.
+     */
+    const refreshRuntimeCommandTimeline = (): void => {
+      if (paneRuntime.pendingCommandMarkers.length === 0 && paneRuntime.commandMarkers.length === 0) {
+        return;
+      }
+
+      refreshCommandTimeline();
+    };
 
     const isStaleAttempt = (attemptId: number): boolean => {
       return disposed || attemptId !== connectAttemptId;
@@ -526,6 +545,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     });
     const disposeSelectionScroll = terminal.onScroll(() => {
       refreshSelectionAnchor();
+      refreshRuntimeCommandTimeline();
     });
     const disposeSelectionRender = terminal.onRender(() => {
       if (!terminal.hasSelection()) {
@@ -533,6 +553,10 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       }
 
       refreshSelectionAnchor();
+    });
+    const disposeCommandTimelineWrite = terminal.onWriteParsed(refreshRuntimeCommandTimeline);
+    const disposeCommandTimelineBuffer = terminal.buffer.onBufferChange(() => {
+      refreshRuntimeCommandTimeline();
     });
     const handleWindowResize = (): void => {
       refreshSelectionAnchor();
@@ -616,12 +640,16 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       paneRuntime.sessionId = null;
       paneRuntime.sessionType = null;
       paneRuntime.reconnect = () => undefined;
+      clearTerminalCommandMarkers(paneRuntime);
+      paneRuntime.refreshCommandTimeline = () => undefined;
       selectionPointerClientXRef.current = null;
       clearSelectionOverlay();
       disposeTerminalInput.dispose();
       disposeSelectionChange.dispose();
       disposeSelectionScroll.dispose();
       disposeSelectionRender.dispose();
+      disposeCommandTimelineWrite.dispose();
+      disposeCommandTimelineBuffer.dispose();
       containerElement.removeEventListener('pointerup', trackPointerPosition);
       containerElement.removeEventListener('mouseup', trackPointerPosition);
       containerElement.removeEventListener('keydown', handleAutocompleteKeyDown, true);
@@ -653,6 +681,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     primaryWebglAddonRuntimeRef,
     paneRuntimeMapRef,
     recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     refreshSelectionAnchor,
     resetPaneState,
     requestHostFingerprintTrust,

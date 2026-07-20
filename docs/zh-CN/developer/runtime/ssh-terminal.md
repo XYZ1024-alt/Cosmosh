@@ -329,7 +329,14 @@ flowchart LR
 - Orbit Bar 与依赖选区的终端右键菜单动作会优先通过 xterm `getSelectionPosition()` 解析选区几何，只有不可用时才回退到 DOM selection blocks。这保证 `WebglAddon` canvas 渲染下 Orbit Bar 定位与`联网搜索`启用状态仍然可用。
 - Orbit Bar 与终端右键菜单可以将选中的远程目录交给 SFTP 打开。该动作仅在 SSH 服务器会话中，对显式 POSIX 风格路径（`/path`、`~/path`、`./path`、`../path` 或 `file:///path`）启用。点号相对路径只使用来源 pane 的可信 helper cwd；缺少可信绝对 cwd 时继续采用原有严格规则。裸相对路径仍保持禁用。
 - 从选区在 SFTP 中打开目录时，即使同一服务器已经存在其他 SFTP 标签页，也始终会用该 `initialPath` 创建新的 SFTP 标签页，且不会替换当前 SSH 终端标签页。
-- `上一条命令`与`下一条命令`会导航活动 pane 持有的 xterm marker。可信 `command-start` 会提升匹配的本地 Enter marker，并附加 command id 与生命周期 metadata；远端增强不可用时继续使用本地 marker fallback。
+
+## 6.3 可信命令时间线
+
+- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，SSH pane 右侧才会显示窄命令时间线。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 时间线。
+- 用户按 Enter 时先记录隐藏的 pane-local xterm 输入 marker。可信 `command-start` 会在此前终端输出完成解析后消费最早的待确认 marker，记录输出起始行，并从 xterm 行重建完整的已显示命令。Helper 发出的已清洗可执行文件名只作为生命周期 metadata，绝不会替代界面中的完整输入。`command-end` 负责记录输出结束行。
+- 轨道中的命令线等间距排列。每条线宽使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素；悬浮显示完整原始命令，点击定位到命令输入行，顶部/底部箭头在不循环的前提下移动到上一条/下一条；最接近视口中心的 marker 高亮为当前命令。
+- 完整命令字符串只保存在 renderer 内存中，绝不持久化、记录日志、发送、加入 telemetry，也不复制到远端增强调试记录。信任丢失、重连/重置、pane 释放或 xterm scrollback 回收都会同时释放 marker 与命令文本，因此条目只属于当前 pane、当前连接与 normal buffer 仍保留的 scrollback。
+- Alternate-screen 程序会隐藏时间线控件但保留轨道宽度，避免进入/退出 TUI 时改变 PTY 列数。Primary 与 secondary runtime 都会在 write 解析完成、滚动、buffer 切换和 marker 释放后刷新模型。
 
 ## 7. 开发排查清单
 
@@ -407,6 +414,7 @@ sequenceDiagram
 - Ensure 建连失败或超时不会把有效的主 SSH 认证变成 shell 创建失败。Backend 会启动临时 transport 的关闭，以 `disabled` 运行状态打开主 PTY、报告失败，并在该 session 内忽略所有 helper 派生事件。如果主 transport 本身在 ensure 期间失败，其错误会取消临时工作，并继续通过现有 SSH 错误路径让普通 session 创建失败。
 - Go `install`/`status` 输出只用于建立安装标识与信任状态，不会直接提供 cwd、输入状态或命令生命周期数据。实时 shell 数据随后由 Go 生成的 helper 通过 OSC 777 发出，并继续受运行时 gate 约束。
 - Renderer 会为每个 pane 分别保存 bootstrap 状态、运行时信任状态、可信 cwd/line state、telemetry、生命周期状态与最多 200 条远端增强调试记录。启用 Settings `remoteEnhancementsDebugEnabled` 后，终端右键菜单会显示来源 pane 的`远端增强调试`；浮层跟随活动 pane，绝不会用 primary pane 数据代替。
+- Renderer 只会在可信 `command-start` 到达后，从自身已渲染的 xterm 行重建完整命令时间线标签；helper 事件 payload 仍然只携带已清洗的可执行文件名。时间线标签不会进入调试历史或传输协议。
 - 调试浮层只记录状态/事件 payload，不记录 terminal `input`、terminal `output`、密码、私钥材料或完整屏幕输出。
 - Terminal `ready`、`output`、telemetry、history、completion 与 shell-state 消息都与 bootstrap 进度彼此独立。
 

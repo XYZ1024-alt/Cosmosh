@@ -67,6 +67,11 @@
   --color-ssh-card-bg-terminal: #0f0f0f;
   --color-ssh-terminal: #cccccc;
   --color-ssh-terminal-split-divider: #2a2a2a;
+  --color-ssh-terminal-command-timeline-marker: #687180;
+  --color-ssh-terminal-command-timeline-marker-hover: #c4cad4;
+  --color-ssh-terminal-command-timeline-marker-active: #3b9eff;
+  --color-ssh-terminal-command-timeline-control: #8d97a6;
+  --color-ssh-terminal-command-timeline-control-hover: #eeeeee;
   --color-syntax-attribute: #9cdcfe;
   --color-syntax-comment: #6a9955;
   --color-syntax-definition: #dcdcaa;
@@ -188,6 +193,11 @@
   --color-windows-system-menu-symbol: #111827;
   --color-ssh-card-bg: #ffffff;
   --color-ssh-terminal-split-divider: #d9dde6;
+  --color-ssh-terminal-command-timeline-marker: #8a94a3;
+  --color-ssh-terminal-command-timeline-marker-hover: #3e4a5b;
+  --color-ssh-terminal-command-timeline-marker-active: #1473e6;
+  --color-ssh-terminal-command-timeline-control: #697586;
+  --color-ssh-terminal-command-timeline-control-hover: #111827;
   --color-syntax-attribute: #0451a5;
   --color-syntax-comment: #008000;
   --color-syntax-definition: #795e26;
@@ -311,6 +321,11 @@
     --color-windows-system-menu-symbol: #111827;
     --color-ssh-card-bg: #ffffff;
     --color-ssh-terminal-split-divider: #d9dde6;
+    --color-ssh-terminal-command-timeline-marker: #8a94a3;
+    --color-ssh-terminal-command-timeline-marker-hover: #3e4a5b;
+    --color-ssh-terminal-command-timeline-marker-active: #1473e6;
+    --color-ssh-terminal-command-timeline-control: #697586;
+    --color-ssh-terminal-command-timeline-control-hover: #111827;
     --color-syntax-attribute: #0451a5;
     --color-syntax-comment: #008000;
     --color-syntax-definition: #795e26;

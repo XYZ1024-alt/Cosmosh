@@ -329,7 +329,14 @@ Notes:
 - Orbit Bar and selection-dependent terminal context-menu actions resolve selection geometry from xterm `getSelectionPosition()` first, with DOM selection blocks only as fallback. This keeps `WebglAddon` canvas rendering compatible with Orbit Bar placement and `Search Online` enablement.
 - Orbit Bar and the terminal context menu can hand off a selected remote directory to SFTP. The action is available only for SSH-server sessions and explicit POSIX-like paths (`/path`, `~/path`, `./path`, `../path`, or `file:///path`). Dot-relative paths use only the source pane's trusted helper cwd; without a trusted absolute cwd they retain the previous strict behavior. Bare relative names remain disabled.
 - Opening a selected directory in SFTP always creates a new SFTP tab with that `initialPath`, even when another SFTP tab for the same server already exists, and does not replace the active SSH terminal tab.
-- `Previous Command` and `Next Command` navigate xterm markers owned by the active pane. Trusted `command-start` events promote matching local Enter markers and attach command id/lifecycle metadata; the local marker remains the fallback when enhancements are unavailable.
+
+## 6.3 Trusted Command Timeline
+
+- Each SSH pane exposes a narrow command timeline on its right edge only while that pane's authenticated Remote Enhancements runtime is active and advertises `command-start`. Ordinary SSH, local terminals, disabled helpers, failed handshakes, and helpers without that capability do not get a fallback timeline.
+- Pressing Enter records a hidden pane-local xterm input marker. A trusted `command-start` consumes the oldest pending marker only after earlier terminal output has been parsed, records the output-start row, and reconstructs the complete displayed command from xterm rows. The helper's sanitized executable remains lifecycle metadata and never replaces the displayed input. `command-end` records the output-end row.
+- Commands are equally spaced in the rail. Each line uses `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS pixels, hover reveals the complete original command, clicking reveals its input row, and the top/bottom chevrons move to the bounded previous/next item without wrapping. The marker nearest the viewport center is highlighted as current.
+- Full command strings stay in renderer memory only. They are never persisted, logged, sent, added to telemetry, or copied into Remote Enhancements diagnostics. Trust loss, reconnect/reset, pane disposal, or xterm scrollback disposal releases both markers and command text; entries therefore belong only to the current pane, current connection, and retained normal-buffer scrollback.
+- Alternate-screen programs hide the timeline controls while retaining rail width, preventing TUI entry/exit from changing PTY columns. Primary and secondary runtimes refresh the model after parsed writes, scrolling, buffer changes, and marker disposal.
 
 ## 7. Developer Debug Checklist
 
@@ -407,6 +414,7 @@ sequenceDiagram
 - Ensure connection failure or timeout never turns a valid primary SSH authentication into a failed shell session. Backend begins temporary-transport teardown, opens the primary PTY with runtime state `disabled`, reports the failure, and ignores all helper-derived events for that session. If the primary transport itself fails during ensure, its error cancels temporary work and the ordinary session creation fails through the existing SSH error path.
 - Go `install`/`status` output establishes installation identity and trust state; it does not directly provide cwd, input state, or command lifecycle data. Live shell data comes later from the Go-generated helper over OSC 777 and remains subject to the runtime gate.
 - Renderer stores bootstrap status, runtime trust state, trusted cwd/line state, telemetry, lifecycle state, and a bounded 200-entry Remote Enhancements debug history independently for every pane. When Settings `remoteEnhancementsDebugEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug` for the source pane; its overlay follows the active pane and never substitutes primary-pane data.
+- Renderer reconstructs full command timeline labels only from its own rendered xterm rows after trusted `command-start`; helper event payloads continue to carry only the sanitized executable. Timeline labels never enter the debug history or transport protocol.
 - The debug overlay records status/event payloads only. It does not record terminal `input`, terminal `output`, passwords, private key material, or full screen output.
 - Terminal `ready`, `output`, telemetry, history, completion, and shell-state messages remain independent from bootstrap progress.
 

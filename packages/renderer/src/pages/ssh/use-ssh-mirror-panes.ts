@@ -4,6 +4,7 @@ import React from 'react';
 
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
+import { clearTerminalCommandMarkers } from './ssh-command-markers';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import type { ResolvedTerminalTarget, ServerInboundMessage, TerminalPaneRuntime } from './ssh-types';
 import { applyTerminalRuntimeOptions, reconcileSecondaryPaneRuntimes, sendClientMessage } from './ssh-utils';
@@ -53,6 +54,7 @@ type UseSshMirrorPanesParams = {
     payload: ServerInboundMessage,
   ) => void;
   recordPaneInputCommandMarker: (paneId: string, inputData: string) => void;
+  refreshCommandTimeline: () => void;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -101,6 +103,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     setPaneTransportState,
     handlePaneServerMessage,
     recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     requestHostFingerprintTrust,
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
@@ -182,11 +185,29 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         socket: null,
         sessionId: null,
         sessionType: null,
+        pendingCommandMarkers: [],
         commandMarkers: [],
+        refreshCommandTimeline,
         reconnect: () => undefined,
         dispose: () => undefined,
       };
       paneRuntimeMapRef.current.set(paneId, runtime);
+      refreshCommandTimeline();
+      let disposed = false;
+      let connectAttemptId = 0;
+
+      /**
+       * Refreshes declarative timeline geometry only while this pane owns markers.
+       *
+       * @returns Nothing.
+       */
+      const refreshRuntimeCommandTimeline = (): void => {
+        if (runtime.pendingCommandMarkers.length === 0 && runtime.commandMarkers.length === 0) {
+          return;
+        }
+
+        refreshCommandTimeline();
+      };
 
       try {
         fitAddon.fit();
@@ -238,6 +259,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         if (activePaneIdRef.current === paneId) {
           refreshSelectionAnchor();
         }
+        refreshRuntimeCommandTimeline();
       });
       const disposeSelectionRender = terminal.onRender(() => {
         if (!terminal.hasSelection()) {
@@ -248,15 +270,38 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           refreshSelectionAnchor();
         }
       });
+      const disposeCommandTimelineWrite = terminal.onWriteParsed(refreshRuntimeCommandTimeline);
+      const disposeCommandTimelineBuffer = terminal.buffer.onBufferChange(() => {
+        refreshRuntimeCommandTimeline();
+      });
+
+      // The timeline rail can change pane width without resizing the outer SSH
+      // workbench, so secondary panes observe their own xterm host geometry.
+      const paneResizeObserver = new ResizeObserver(() => {
+        if (disposed) {
+          return;
+        }
+
+        try {
+          fitAddon.fit();
+          if (runtime.socket?.readyState === WebSocket.OPEN) {
+            sendClientMessage(runtime.socket, {
+              type: 'resize',
+              cols: Math.max(20, terminal.cols || 120),
+              rows: Math.max(10, terminal.rows || 30),
+            });
+          }
+        } catch {
+          // Ignore fit races while the timeline rail changes pane geometry.
+        }
+      });
+      paneResizeObserver.observe(containerElement);
 
       containerElement.addEventListener('pointerup', trackPointerPosition);
       containerElement.addEventListener('mouseup', trackPointerPosition);
       containerElement.addEventListener('keydown', handleAutocompleteKeyDown, true);
       containerElement.addEventListener('mousedown', handleSetActivePane, true);
       containerElement.addEventListener('contextmenu', handleSetActivePane, true);
-
-      let disposed = false;
-      let connectAttemptId = 0;
 
       /**
        * Closes the current transport while preserving the pane's xterm instance.
@@ -440,6 +485,8 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         connectAttemptId += 1;
         closeRuntimeSession();
         runtime.reconnect = () => undefined;
+        clearTerminalCommandMarkers(runtime);
+        runtime.refreshCommandTimeline = () => undefined;
         if (paneRuntimeMapRef.current.get(paneId) === runtime) {
           paneRuntimeMapRef.current.delete(paneId);
         }
@@ -447,6 +494,9 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         disposeSelectionChange.dispose();
         disposeSelectionScroll.dispose();
         disposeSelectionRender.dispose();
+        disposeCommandTimelineWrite.dispose();
+        disposeCommandTimelineBuffer.dispose();
+        paneResizeObserver.disconnect();
         containerElement.removeEventListener('pointerup', trackPointerPosition);
         containerElement.removeEventListener('mouseup', trackPointerPosition);
         containerElement.removeEventListener('keydown', handleAutocompleteKeyDown, true);
@@ -495,6 +545,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
     recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     resetPaneState,
     sessionTargetReady,
     setPaneTransportState,
