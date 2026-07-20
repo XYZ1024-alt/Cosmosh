@@ -121,7 +121,8 @@ Locale 行为：
 - 每次 SSH 会话建立后，后端都会执行远端 history 探测并解析为标准化命令列表。
 - 远端历史来源按兼容顺序探测（shell 内建 + 常见历史文件），覆盖 Bash/Zsh/Fish/Ksh/Ash 等格式，并在可用时兼容 PowerShell PSReadLine 历史。
 - 运行时 REPL 专用历史（例如 `.node_repl_history`）会被排除，不作为 shell 命令历史聚合来源。
-- 当渲染层发送的 `input` 包含提交字符（`\r` / `\n`）时，后端会以“延迟 + 节流”策略触发 history 刷新，避免过度抓取。
+- 当已激活的可信 helper 声明 `command-start` 时，backend 将每个唯一 `commandId` 作为命令计数与延迟 history 刷新的权威触发源。重复生命周期事件不会重复计数。
+- 只有 session 不具备已激活的结构化命令生命周期时，原始 `input` 中的提交字符（`\r` / `\n`）才触发既有的“延迟 + 节流”history 刷新，为禁用或降级 helper 保留保守 fallback。
 - history 与 telemetry 解耦：telemetry 仍为定时采样，history 可通过 `history` 事件即时推送。
 - `SSH.tsx` 的删除操作会发送 `history-delete`，后端会以 best-effort 方式清理远端历史文件后再执行同步。
 
@@ -131,6 +132,8 @@ Locale 行为：
 - 当 xterm 处于 alternate screen buffer（例如 `vim`、`less`、`top`）时，渲染层会门控关闭补全，避免 shell 补全劫持编辑器/TUI 的按键处理。
 - 渲染层默认会抑制“空输入”补全（没有实际命令文本时不请求候选）；仅在明确的密钥提示流程中允许空前缀请求。
 - 渲染层会基于 xterm 输入事件维护“按 pane 隔离”的本地命令前缀影子状态，使输入触发补全无需等待远端 shell 回显即可计算请求前缀。
+- 补全请求、输出 echo 唤醒、密码提示触发、响应与浮层锚点都携带明确 pane id。来自非活动 pane 或旧 request id 的响应会被丢弃。
+- 当可信 `line-state` metadata 可用时，renderer 使用 `lineLength`、`cursorIndex` 与 `promptGeneration` 校准重建出的前缀。只有重建长度与 prompt generation 一致时才采用可信 cursor，否则保留保守的 xterm/本地 shadow 结果。Helper 永远不发送 line buffer 本身。
 - 当用户通过 readline/history 控制序列（例如 `ArrowUp`/`ArrowDown`/`Ctrl+P` 召回历史命令）导航后，渲染层会把下一段本地输入 shadow 视为增量后缀，并在发送补全请求前与 xterm 已渲染的命令行合并。这样继续输入时，`echo 1` 这类已召回命令仍会保留在补全前缀中。
 - 命令起点边界识别不再依赖固定 prompt token 列表。渲染层会先按光标附近 shell 语义解析命令段边界（引号 + `;`、`&&`、`||`、`|` 等分隔符），再执行 prompt 边界裁剪。
 - prompt 解析支持用户配置：`terminalAutoCompletePromptRegex`（设置 > 终端 > 自动补全）。配置后将优先使用该正则覆盖默认 prompt 裁剪；留空或正则无效时回退到内置启发式策略。
@@ -225,11 +228,12 @@ flowchart LR
 
 - attach 超时：30 秒。
 - 任意 socket close/error 都会让 UI 进入失败状态。
-- 重试为 **手动**（`SSH.tsx` 的 retry 按钮），本质是创建新会话。
+- `SSH.tsx` 的 retry 按钮提供手动重试，并且只作用于活动 pane。其临时 target-readiness 状态变化不会销毁或重连同级 pane runtime。
 - 重试严格绑定到当前 tab 最近一次成功解析的目标快照，不会重新读取全局“当前选择”。
 - 若首次连接在快照落库前失败，手动重试会回退到该 tab 的最新 intent 重新解析。
 - 每次连接都有 attempt identity（`attemptId`），并带有过期结果丢弃与可取消的连接前异步流程。
 - 隐藏 tab 不会触发新的连接副作用，只有 active tab 允许发起连接。
+- 启用 `sshReconnectOnFocus` 后，重新激活标签页会重连所有没有 connecting/open socket 的失败 pane。延迟创建标签页第一次激活时始终启动 primary pane，不受该偏好开关影响。
 - 当前尚未实现自动指数退避重连。
 
 ### 推荐下一步（规划中）
@@ -314,16 +318,18 @@ flowchart LR
 - 当 SSH tab 变为 active 时，renderer 会把键盘焦点恢复到当前激活的 xterm 实例，让切换 tab 后的输入直接落到终端里。
 - 当前实现最多同时展示 4 个终端窗格。
 - 每个分屏窗格会针对同一已解析目标（同一 SSH 服务器/本地 profile）独立创建后端终端会话，从而支持独立输入输出。
-- 镜像窗格在重试场景下始终复用主窗格的目标快照语义，避免会话目标漂移。
+- Secondary pane 在重试场景下始终复用 primary pane 的目标快照语义，避免会话目标漂移。
 - 新增分屏窗格从空白视口启动，仅接入并展示该窗格自己的会话流，避免来自其他窗格的陈旧缓冲内容串入。
-- 关闭窗格会释放该窗格自身 session/socket，其他窗格会继续运行。
+- 每个 pane 独立持有 xterm、WebSocket、backend session、transport 状态、telemetry、补全状态、远端增强信任状态、cwd、line state、调试历史与命令 marker。Primary 与 secondary 消息经过同一条 pane-aware reducer。
+- 关闭任意 pane 只释放该 pane 的 socket/backend session，并保持其余 pane id 与运行时不变。关闭原始 primary 不会通过重命名其它 pane 来转移归属。
 - 补全弹层锚点必须始终基于当前激活窗格容器计算，主窗格容器 ref 在重渲染时不能覆盖镜像窗格的激活几何信息。
 - 终端内文本搜索由主窗格与镜像窗格统一加载 xterm `SearchAddon` 实现。右键`查找...`会以纯查找模式打开共享 `SearchReplacePanel`，提供可配置筛选开关（`区分大小写` / `匹配正则表达式`）以及紧凑的上一个/下一个导航动作，在当前激活窗格中跳转并高亮匹配结果。
 - 当搜索词清空或关闭搜索面板时，会主动清理搜索高亮装饰，避免陈旧搜索标记在退出搜索后持续占用额外内存。
 - Orbit Bar 在搜索全流程中保持抑制（包括空搜索词状态和 ESC 关闭路径），避免搜索高亮期间重新弹出选区动作条。
 - Orbit Bar 与依赖选区的终端右键菜单动作会优先通过 xterm `getSelectionPosition()` 解析选区几何，只有不可用时才回退到 DOM selection blocks。这保证 `WebglAddon` canvas 渲染下 Orbit Bar 定位与`联网搜索`启用状态仍然可用。
-- Orbit Bar 与终端右键菜单可以将选中的远程目录交给 SFTP 打开。该动作仅在 SSH 服务器会话中，对显式 POSIX 风格路径（`/path`、`~/path`、`./path`、`../path` 或 `file:///path`）启用；裸相对名称保持禁用，因为 SSH shell 当前目录不会与 SFTP 标签页共享。
+- Orbit Bar 与终端右键菜单可以将选中的远程目录交给 SFTP 打开。该动作仅在 SSH 服务器会话中，对显式 POSIX 风格路径（`/path`、`~/path`、`./path`、`../path` 或 `file:///path`）启用。点号相对路径只使用来源 pane 的可信 helper cwd；缺少可信绝对 cwd 时继续采用原有严格规则。裸相对路径仍保持禁用。
 - 从选区在 SFTP 中打开目录时，即使同一服务器已经存在其他 SFTP 标签页，也始终会用该 `initialPath` 创建新的 SFTP 标签页，且不会替换当前 SSH 终端标签页。
+- `上一条命令`与`下一条命令`会导航活动 pane 持有的 xterm marker。可信 `command-start` 会提升匹配的本地 Enter marker，并附加 command id 与生命周期 metadata；远端增强不可用时继续使用本地 marker fallback。
 
 ## 7. 开发排查清单
 
@@ -343,7 +349,7 @@ flowchart LR
 
 - `packages/backend/src/remote-bootstrap/service.ts` 负责交互 shell 打开前的编排。它会获取 manifest、探测远端主机、读取已安装状态，仅在需要时注入下载 wrapper，复验安装结果，返回可信运行时契约，解析 JSON-line 状态并写入审计事件。
 - `packages/remote-bootstrap` 负责 Go 安装器、helper 生成器、OSC 协议/能力声明、已安装状态校验器与 wrapper 渲染器。模块级构建、测试、路径和安全说明见 `packages/remote-bootstrap/README.md`。
-- 只有 Settings `remoteEnhancementsEnabled` 为 true 且 SSH server 记录 `remoteEnhancementsEnabled` 为 true 时，该功能才启用。两者默认均为 true，因此在用户未关闭任一开关前，部署级启用条件由 manifest URL 控制。
+- 最终门控为`全局设置 && 持久化服务器字段 && 请求 override !== false`。请求字段只能进一步关闭：过期的 renderer 快照不能重新启用当前数据库记录已关闭的服务器。全局设置与持久化服务器字段默认均为 true，因此在用户未关闭任一门控前，部署级启用条件由 manifest URL 控制。
 - 任一开关关闭时，backend 不会执行任何远端命令，会忽略此前已安装 helper 发出的运行期 shell OSC 事件，并会发送 code 为 `REMOTE_ENHANCEMENTS_DISABLED` 的 skipped `bootstrap-status`。
 - Backend 需要 manifest URL 才会加载 bootstrap manifest。`COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 是最高优先级 override。未打包的开发运行会默认使用滚动的 `remote-bootstrap-dev` manifest，因此本地开发无需每次设置 shell 环境变量也能测试远端增强。CI 打包也可以在 app 打包前生成 `remote-bootstrap/manifest-url.json`，让安装包无需用户手动配置环境变量即可发现 GitHub 托管的 manifest。正式 tag release 指向同版本 GitHub Release；`main` push 构建指向 `remote-bootstrap-dev`；分支名包含 `remote-bootstrap` 的 push 构建和手动 workflow dispatch 可以指向分支专用临时 prerelease，例如 `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`。普通 PR 与 feature branch 构建默认不写入 packaged URL。远端增强启用但缺少配置时，不会执行远端 probe 或任何其它远端命令，只会明确上报 `MANIFEST_URL_NOT_CONFIGURED`。
 
@@ -396,10 +402,11 @@ sequenceDiagram
 - 所有 bootstrap probe/install/status `exec` channel 都只运行在临时 transport。Backend 会在主 client 调用 `client.shell(...)` 前启动其关闭流程，底层 socket 的实际关闭可以异步完成。因此交互 PTY 是主 transport 的第一个 session channel，既能保留 OpenSSH/PAM 登录消息（例如 Debian MOTD），也能让新安装的 profile hook 在同一个首次 shell 中生效。
 - 开关关闭或 manifest 缺失/无效时不会创建临时 transport。其解密得到的 completion secret 会被丢弃，永远不会复制到 session state、状态 payload 或审计 metadata。
 - Backend 会在下载前查询已安装 binary。只有 manifest version 与 asset SHA-256、受支持 protocol、helper 内容与 profile hook 均为最新时才跳过下载；旧 binary 缺失新字段时会被视为不兼容并重装。PTY 创建前会再次读取 status 复验安装。
+- 校验成功的 manifest 会缓存五分钟，并由并发 session 共享同一个 in-flight 加载。失败结果不会缓存。取消单个 session 只会停止该 session 的等待，不会取消其它 session 正在等待的共享 manifest 请求。
 - 每条侧通道命令都使用 `ssh2 exec`，并受 `REMOTE_BOOTSTRAP_EXEC_OPTIONS` 限制：60 秒、256 KiB 输出；整个可选的 shell 打开前 ensure 对设置读取、manifest I/O、临时 proxy/SSH 建连与 exec 工作共享更严格的 15 秒总预算。共享 deadline 到期时，backend 会停止等待 proxy 准备、关闭活动 exec channel、销毁临时 client、发送 `BOOTSTRAP_ENSURE_TIMEOUT`，并立即继续创建普通 PTY。取消后才完成的预连接 proxy socket 会在返回时立即销毁。安装器输出按 JSON lines 解析，永远不会写入交互式终端流。
 - Ensure 建连失败或超时不会把有效的主 SSH 认证变成 shell 创建失败。Backend 会启动临时 transport 的关闭，以 `disabled` 运行状态打开主 PTY、报告失败，并在该 session 内忽略所有 helper 派生事件。如果主 transport 本身在 ensure 期间失败，其错误会取消临时工作，并继续通过现有 SSH 错误路径让普通 session 创建失败。
 - Go `install`/`status` 输出只用于建立安装标识与信任状态，不会直接提供 cwd、输入状态或命令生命周期数据。实时 shell 数据随后由 Go 生成的 helper 通过 OSC 777 发出，并继续受运行时 gate 约束。
-- Renderer 会把最新 `bootstrap-status`、最新 `remote-enhancement-runtime-status` 与最多 200 条远端增强调试记录分别保存，因此历史淘汰不会清除当前运行状态。启用 Settings `userMenuDebugEntryEnabled` 后，终端右键菜单会显示 `Remote Enhancements Debug`；浮层会展示 bootstrap 状态、运行状态、helper/protocol/capability 标识，以及 bootstrap、运行态和可信 shell 事件的可选中原始 JSON。
+- Renderer 会为每个 pane 分别保存 bootstrap 状态、运行时信任状态、可信 cwd/line state、telemetry、生命周期状态与最多 200 条远端增强调试记录。启用 Settings `remoteEnhancementsDebugEnabled` 后，终端右键菜单会显示来源 pane 的`远端增强调试`；浮层跟随活动 pane，绝不会用 primary pane 数据代替。
 - 调试浮层只记录状态/事件 payload，不记录 terminal `input`、terminal `output`、密码、私钥材料或完整屏幕输出。
 - Terminal `ready`、`output`、telemetry、history、completion 与 shell-state 消息都与 bootstrap 进度彼此独立。
 
@@ -416,9 +423,10 @@ Backend 解析规则：
 - `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
 - Cosmosh OSC 会从可见终端输出中剥离并解码，但只有 backend 运行时 gate 进入 `active` 后，事件才会应用并转发。
 - Gate 只有在交互 shell 打开前 status 校验成功后才以 `pending` 开始；匹配的 `integration-ready` 会将其切换为 `active`。如果 10 秒内没有收到有效握手，则以 `HELPER_HANDSHAKE_TIMEOUT` 切换为 `disabled`；任何 shell、helper version、protocol version 或 capability 不匹配也会切换为 `disabled` 并清空 helper 派生状态。
-- 非 Cosmosh OSC 与普通 ANSI 输出保持可见且不变。
+- 非 Cosmosh OSC 与普通 ANSI 输出会保持可见、原样流式透传，包括跨 SSH chunk 拆分的序列。
 - 非法 JSON、非法事件形状以及超过 8 KiB 的 payload 会被丢弃，不会导致 session 崩溃。
 - 支持 SSH chunk 切分；未完成的 OSC 数据会缓冲到 BEL 或 ST 结束符到来。
+- 协议常量及 Backend/Renderer 使用的 discriminated message union 统一来自 `packages/api-contract/src/terminal-protocol.ts`。当前 helper 协议版本为 v2。
 
 服务端到 renderer payload：
 
@@ -431,7 +439,8 @@ type RemoteShellEventMessage = {
     | 'cwd'
     | 'command-start'
     | 'command-end'
-    | 'foreground-command';
+    | 'foreground-command'
+    | 'line-state';
   shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
   helperVersion: string;
   protocolVersion: number;
@@ -441,25 +450,32 @@ type RemoteShellEventMessage = {
   exitCode?: number;
   durationMs?: number;
   commandId?: string;
+  promptGeneration?: number;
+  lineLength?: number;
+  cursorIndex?: number;
   timestamp: number;
 };
 ```
 
+共享 TypeScript 类型实际是 discriminated union，而不是上面的可选字段简图。`cwd` 必须包含解码后的绝对 cwd；命令事件必须包含有界、已清洗的可执行命令名与 `commandId`；`command-end` 还必须包含 `exitCode` 和 `durationMs`；`line-state` 必须包含 `lineLength`、`cursorIndex` 与 `promptGeneration`。事件名不在精确 capability 集合中时会被拒绝。动态 cwd/command 字符串在 helper JSON envelope 内使用规范 Base64 字段，避免 tab、换行、引号或反斜杠破坏 JSON。
+
 当前第一期 helper 行为：
 
-- Bash 使用 `PROMPT_COMMAND`，保留已有 prompt hook，并在之后发送 `cwd`、`prompt-ready` 和上一轮 prompt 的 `command-end` exit code。标量 prompt hook 会在独立的求值边界内执行，因此 `history -a;` 这类末尾分隔符不会在外层产生错误语法。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
-- Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，优先使用可用的 `add-zsh-hook`。
+- Bash 使用 `PROMPT_COMMAND` 保留已有 prompt hook，随后发送 `cwd`、`prompt-ready`，以及带匹配 command id、exit code 和 duration 的 `command-end`。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
+- Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，并通过 `line-pre-redraw` 提供 line length/cursor 校准。只有所有必需 hook 都注册成功后 helper 才进入 ready。
 - Fish 使用 `fish_preexec`、`fish_prompt`、`fish_postexec` 与 `PWD` variable event。
-- Sh/Ash 降级为仅基于 prompt 的 `cwd`、`prompt-ready` 与 `command-end`，不承诺精准 preexec 行为。
+- Sh/Ash 安装 prompt-capture fallback，并且只声明 `cwd` 与 `prompt-ready`；不声明命令生命周期支持。
+- 所有 shell 都只在其声明的 hook 集合成功安装后发送 `integration-ready`。非交互 shell 不发送 OSC 事件。
 - 对所有可提取出可执行命令名的已提交命令，helper 都会发送 `command-start` 与 `foreground-command`；事件只携带经过清洗的可执行命令名（例如 `vim`），不携带完整命令行或参数。
-- 第一期刻意不发送完整命令文本、line-buffer 状态、密码输入或原生 shell completion 列表。
+- Helper 刻意不发送完整命令文本、line-buffer 内容、密码输入或原生 shell completion 列表。Zsh `line-state` 只包含数值长度/cursor metadata。
 
 Backend 状态模型：
 
 - 每个 session 都持有明确的 `pending`、`active` 或 `disabled` 增强运行状态、PTY 创建前校验得到的契约，以及会在激活、禁用或 session 销毁时清理的握手 timer。
-- 每个 `SshLiveSession` 保存 `remoteShellReady`、`remoteShellCwd`、`remoteShellForegroundCommand`、`lastRemoteCommand`、`lastExitCode` 与 `lastCommandDurationMs`。
+- 每个 `SshLiveSession` 保存可信 cwd/foreground 状态，以及最近的 command id、清洗后可执行命令名、exit code 与 duration。唯一的结构化 `command-start` 驱动命令计数与 history 刷新；只有该 capability 不可用时才以原始 Enter 解析作为 fallback。
 - `remoteShellCwd` 是 path completion 的优先 cwd 来源；现有 exec probe 与 renderer hint 仍作为 fallback。
-- 收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`；这能覆盖短命令、长时间前台进程以及未知 TUI/REPL 程序，不需要维护命令白名单。
+- 收到 `foreground-command` 并设置 `remoteShellForegroundCommand` 后，backend 会返回空 completion response，直到下一个 `prompt-ready`；`command-end` 不会提前清除抑制状态。这能覆盖短命令、长时间前台进程以及未知 TUI/REPL 程序，不需要维护命令白名单。
+- Backend 信任状态离开 `active` 时，renderer 会立即清除可信 cwd/line 校准；使用 `line-state` 校准补全前还会校验 prompt generation。命令生命周期事件同时维护 pane-local xterm 导航 marker。
 - 密码提示与可复用 secret suggestion 继续由本地 backend 基于输出检测；shell hook 永远不捕获密码输入。
 
 ### 8.3 Manifest 与资产契约
@@ -487,7 +503,7 @@ Backend 状态模型：
 - `version` 只能包含字母、数字、`.`、`_`、`+` 或 `-`。
 - `assets` 必须非空。
 - 每个 manifest asset 都必须包含 HTTPS `url` 与 64 位小写 `sha256`；任一 asset 格式错误都会让整个 manifest 无效，确保被污染的发布元数据明确失败。
-- v1 只为 Linux `amd64` 与 `arm64` 远端选择 asset。
+- 当前目标矩阵只为 Linux `amd64` 与 `arm64` 远端选择 asset。
 - 注入的 wrapper 会把所有 manifest 字段作为已引用的数据处理，永远不把它们当作可执行 shell source，然后使用 `curl` 或 `wget` 下载 binary，通过 `sha256sum` 或 `shasum` 校验后执行 `cosmosh-bootstrap install`。
 - `cosmosh-wrappergen` 会在渲染 shell source 之前独立校验 manifest `version` 字符集、asset URL 必须为 HTTPS，且 SHA-256 必须为小写 hex。
 - `scripts/build-remote-bootstrap-release.mjs` 会编译 `cosmosh-remote-bootstrap-linux-amd64` 与 `cosmosh-remote-bootstrap-linux-arm64`，计算 SHA-256，并写入被 git ignore 的 `packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json`。CI 可以覆盖下载 tag/base URL 与 manifest `version`，因此即使用固定 GitHub release tag，也可以发布类似 `dev-<commit-sha>` 的 manifest version。
@@ -520,17 +536,17 @@ Backend 状态模型：
 | Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` 或 `~/.local/share/cosmosh/bootstrap/bin/.version` |
 | POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` 或 `~/.config/cosmosh/bootstrap/helper.sh` |
 | Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` 或 `~/.config/cosmosh/bootstrap/helper.fish` |
-| Bash hook | `~/.bashrc` 内的 Cosmosh marker block |
+| Bash hooks | `~/.bashrc`，以及当前 login profile（优先 `~/.bash_profile`，其次 `~/.bash_login`，否则 `~/.profile`）内的 Cosmosh marker block |
 | Zsh hook | `~/.zshrc` 内的 Cosmosh marker block |
 | Sh/Ash hook | `~/.profile` 内的 Cosmosh marker block |
 | Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` 或 `~/.config/fish/conf.d/cosmosh.fish` |
 
-安装器具备幂等性。只有已安装 version、binary 精确内容、Go 生成的 helper 精确内容与 shell hook 均为最新时才会发送 `skipped`。Profile hook 或 helper 被删除/修改时会修复安装，而不是跳过。Version marker 只会在文件安装与 profile 更新均成功后写入。`status` 会报告 `installed`、`version`、`binarySha256`、`protocolVersion`、`capabilities`、`helperCurrent`、`profileCurrent` 与解析后的路径。
+安装器具备幂等性。只有已安装 version、binary 精确内容、Go 生成的 helper 精确内容与所有必需 shell hook 均为最新时才会发送 `skipped`。Bash login-profile block 会检查 `BASH_VERSION`，因此由 Dash 读取的通用 `.profile` 不会加载 Bash helper。Binary/helper/version/profile 都采用原子替换；已有 profile 权限与符号链接目标会被保留。Version marker 只会在所有文件安装与 profile 更新成功后写入。`status` 同时报告兼容字段 `profilePath` 与完整 `profilePaths` 集合。
 
 ### 8.5 安全与失败模型
 
 - Wrapper 文件与 bootstrap 工作目录通过 `mktemp` 在 `${TMPDIR:-/tmp}` 下创建，使用受限权限并在退出时清理。
-- 远端 wrapper 使用 `umask 077`；安装器目录/binary 使用 `0700`，helper/profile 写入在适用处使用 `0600`。
+- 远端 wrapper 使用 `umask 077`；安装器目录/binary 使用 `0700`，新 helper/profile 在适用处使用 `0600`。原子替换已有 profile 时保留原模式。
 - 缺少 `mktemp`、`base64`、下载器、hash 工具或目标 shell 时，会明确上报 `bootstrap-status` 失败，而不是静默降级。
 - Go 安装器只在远端用户的 XDG 路径下持久化文件，并且只在 shell profile 的 Cosmosh marker block 内更新内容。不要求 root，也不写全局路径。
 - Bootstrap 审计 metadata 只记录状态，不得包含 secret。SSH 凭据、私钥与终端输入都不属于该契约。

@@ -1,5 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 
+import type {
+  RemoteEnhancementRuntimeStatus,
+  RemoteShellCapability,
+  RemoteShellEventMessage,
+  SshTerminalServerMessage,
+} from '@cosmosh/api-contract';
 import type { PrismaClient } from '@prisma/client';
 import { type Client, type ClientChannel } from 'ssh2';
 import { type RawData } from 'ws';
@@ -50,7 +56,7 @@ import {
 } from './connect.js';
 import { executeBoundedSshCommand } from './exec.js';
 import type { SshProxyMetadata } from './proxy.js';
-import { type RemoteShellEventMessage, RemoteShellEventOscParser } from './remote-shell-events.js';
+import { RemoteShellEventOscParser } from './remote-shell-events.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -135,67 +141,9 @@ type OpenShellResult =
       proxyMetadata?: SshProxyMetadata;
     };
 
-type ServerOutboundMessage =
-  | {
-      type: 'ready';
-    }
-  | {
-      type: 'output';
-      data: string;
-    }
-  | {
-      type: 'error';
-      message: string;
-    }
-  | {
-      type: 'exit';
-      reason: string;
-    }
-  | {
-      type: 'pong';
-    }
-  | {
-      type: 'telemetry';
-      cpuUsagePercent: number | null;
-      memoryUsedBytes: number | null;
-      memoryTotalBytes: number | null;
-      networkRxBytesPerSec: number | null;
-      networkTxBytesPerSec: number | null;
-      recentCommands: string[];
-    }
-  | {
-      type: 'history';
-      recentCommands: string[];
-    }
-  | {
-      type: 'completion-response';
-      requestId: string;
-      replacePrefixLength: number;
-      items: Array<{
-        id: string;
-        label: string;
-        insertText: string;
-        detail: string | null;
-        source: 'history' | 'inshellisense' | 'runtime';
-        kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
-        score: number;
-      }>;
-    }
-  | RemoteShellEventMessage
-  | RemoteBootstrapStatus
-  | RemoteEnhancementRuntimeStatus;
+type ServerOutboundMessage = SshTerminalServerMessage;
 
-type RemoteEnhancementRuntimeState = 'pending' | 'active' | 'disabled';
-
-type RemoteEnhancementRuntimeStatus = {
-  type: 'remote-enhancement-runtime-status';
-  state: RemoteEnhancementRuntimeState;
-  helperVersion?: string;
-  protocolVersion?: number;
-  capabilities?: string[];
-  code?: string;
-  message?: string;
-};
+type RemoteEnhancementRuntimeState = RemoteEnhancementRuntimeStatus['state'];
 
 type SshLiveSession = TerminalManagedSessionBase & {
   serverId: string;
@@ -229,6 +177,7 @@ type SshLiveSession = TerminalManagedSessionBase & {
   remoteShellCwd: string | null;
   remoteShellForegroundCommand: string | null;
   lastRemoteCommand: string | null;
+  lastRemoteCommandId: string | null;
   lastExitCode: number | null;
   lastCommandDurationMs: number | null;
   pendingRemoteBootstrapStatuses: RemoteBootstrapStatus[];
@@ -354,6 +303,37 @@ const remoteBootstrapDisabledStatus = (): RemoteBootstrapStatus => {
 };
 
 /**
+ * Resolves the persisted server gate with a disable-only session override.
+ *
+ * Renderer snapshots may be stale, so a request can narrow the persisted setting but
+ * can never re-enable a server that the current database record has disabled.
+ *
+ * @param persistedEnabled Current server setting read by Backend.
+ * @param requestedEnabled Optional session request override.
+ * @returns True only when the persisted gate is enabled and the request did not disable it.
+ */
+export const resolveRemoteEnhancementsSessionGate = (
+  persistedEnabled: boolean,
+  requestedEnabled: boolean | undefined,
+): boolean => {
+  return persistedEnabled && requestedEnabled !== false;
+};
+
+/**
+ * Resolves whether helper command-start events are authoritative for one session.
+ *
+ * @param runtimeState Current trusted helper runtime state.
+ * @param capabilities Installed helper capabilities, when available.
+ * @returns `true` only after activation with structured command-start support.
+ */
+export const usesStructuredRemoteCommandLifecycle = (
+  runtimeState: RemoteEnhancementRuntimeState,
+  capabilities: readonly RemoteShellCapability[] | null | undefined,
+): boolean => {
+  return runtimeState === 'active' && Boolean(capabilities?.includes('command-start'));
+};
+
+/**
  * Verifies that an OSC event came from the exact helper contract validated pre-shell.
  *
  * @param event Parsed helper event.
@@ -445,7 +425,10 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const trustedFingerprintSet = new Set(trustedKeys.map((item) => item.fingerprint));
     const strictHostKey = input.strictHostKey ?? server.strictHostKey;
     const enableSshCompression = input.enableSshCompression ?? server.enableSshCompression;
-    const remoteEnhancementsEnabled = input.remoteEnhancementsEnabled ?? server.remoteEnhancementsEnabled;
+    const remoteEnhancementsEnabled = resolveRemoteEnhancementsSessionGate(
+      server.remoteEnhancementsEnabled,
+      input.remoteEnhancementsEnabled,
+    );
     const sessionId = randomUUID();
     const pendingRemoteBootstrapStatuses: RemoteBootstrapStatus[] = [];
     const pendingOutput: string[] = [];
@@ -654,6 +637,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       remoteShellCwd: null,
       remoteShellForegroundCommand: null,
       lastRemoteCommand: null,
+      lastRemoteCommandId: null,
       lastExitCode: null,
       lastCommandDurationMs: null,
       pendingRemoteBootstrapStatuses,
@@ -978,6 +962,11 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
     if (event.event === 'command-start' && event.command) {
       session.lastRemoteCommand = event.command;
+      if (session.lastRemoteCommandId !== event.commandId) {
+        session.lastRemoteCommandId = event.commandId;
+        session.commandCount += 1;
+        this.scheduleHistorySync(session.sessionId);
+      }
       return;
     }
 
@@ -991,7 +980,6 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       if (event.durationMs !== undefined) {
         session.lastCommandDurationMs = event.durationMs;
       }
-      session.remoteShellForegroundCommand = null;
     }
   }
 
@@ -1321,6 +1309,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     session.remoteShellCwd = null;
     session.remoteShellForegroundCommand = null;
     session.lastRemoteCommand = null;
+    session.lastRemoteCommandId = null;
     session.lastExitCode = null;
     session.lastCommandDurationMs = null;
     this.sendRemoteEnhancementRuntimeStatus(session);
@@ -1359,7 +1348,11 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       session.completionRecentCommands = interactiveState.recentCommands;
       session.completionPromptState = updatePromptStateFromInput(session.completionPromptState, message.data);
 
-      if (/\r|\n/.test(message.data)) {
+      const usesStructuredCommandLifecycle = usesStructuredRemoteCommandLifecycle(
+        session.remoteEnhancementsRuntimeState,
+        session.remoteEnhancementsRuntimeContract?.capabilities,
+      );
+      if (/\r|\n/.test(message.data) && !usesStructuredCommandLifecycle) {
         const submittedInputCount = message.data.split(/\r\n|[\r\n]/).length - 1;
         session.commandCount += Math.max(1, submittedInputCount);
         this.scheduleHistorySync(session.sessionId);

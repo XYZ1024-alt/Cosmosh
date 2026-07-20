@@ -7,9 +7,17 @@ const ESCAPE = '\u001b';
 const BELL = '\u0007';
 const RUNTIME_CONTRACT = {
   helperVersion: '1.2.3',
-  protocolVersion: 1,
+  protocolVersion: 2,
   capabilities: ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'],
 };
+
+/**
+ * Encodes one dynamic helper field without relying on JSON string escaping.
+ *
+ * @param value UTF-8 field value.
+ * @returns Canonical base64 representation.
+ */
+const encodeField = (value: string): string => Buffer.from(value, 'utf8').toString('base64');
 
 /**
  * Encodes one remote shell event payload in the OSC 777 transport format.
@@ -28,14 +36,14 @@ test('parser strips one or more Cosmosh OSC events from visible output', () => {
     ...RUNTIME_CONTRACT,
     event: 'cwd',
     shell: 'zsh',
-    cwd: '/tmp',
+    cwdBase64: encodeField('/tmp\tworkspace'),
     timestamp: 1_717_000_000_000,
   };
   const secondEvent = {
     ...RUNTIME_CONTRACT,
     event: 'command-end',
     shell: 'zsh',
-    command: 'false',
+    commandBase64: encodeField('false'),
     exitCode: 1,
     durationMs: 42,
     commandId: 'cmd-1',
@@ -48,11 +56,22 @@ test('parser strips one or more Cosmosh OSC events from visible output', () => {
   assert.deepEqual(result.events, [
     {
       type: 'remote-shell-event',
-      ...firstEvent,
+      ...RUNTIME_CONTRACT,
+      event: 'cwd',
+      shell: 'zsh',
+      cwd: '/tmp\tworkspace',
+      timestamp: 1_717_000_000_000,
     },
     {
       type: 'remote-shell-event',
-      ...secondEvent,
+      ...RUNTIME_CONTRACT,
+      event: 'command-end',
+      shell: 'zsh',
+      command: 'false',
+      exitCode: 1,
+      durationMs: 42,
+      commandId: 'cmd-1',
+      timestamp: 1_717_000_000_100,
     },
   ]);
 });
@@ -72,7 +91,6 @@ test('parser decodes Cosmosh OSC split across chunks', () => {
     ...RUNTIME_CONTRACT,
     event: 'prompt-ready',
     shell: 'bash',
-    cwd: '/home/dev',
     timestamp: 1_717_000_000_000,
   });
   const first = parser.parse(`left${sequence.slice(0, 16)}`);
@@ -87,7 +105,6 @@ test('parser decodes Cosmosh OSC split across chunks', () => {
       ...RUNTIME_CONTRACT,
       event: 'prompt-ready',
       shell: 'bash',
-      cwd: '/home/dev',
       timestamp: 1_717_000_000_000,
     },
   ]);
@@ -108,7 +125,7 @@ test('parser drops legacy helper events without a runtime contract', () => {
     encodeCosmoshOsc({
       event: 'cwd',
       shell: 'bash',
-      cwd: '/legacy',
+      cwdBase64: encodeField('/legacy'),
       timestamp: 1_717_000_000_000,
     }),
   );
@@ -126,11 +143,22 @@ test('parser drops oversized Cosmosh payloads until sequence terminator', () => 
   assert.deepEqual(result.events, []);
 });
 
-test('parser can flush an incomplete nonterminated sequence as visible output on teardown', () => {
+test('parser streams non-Cosmosh OSC without retaining its unbounded payload', () => {
   const parser = new RemoteShellEventOscParser();
-  const result = parser.parse(`before${ESCAPE}]0;title`);
+  const nonterminatedOsc = `${ESCAPE}]0;${'x'.repeat(256 * 1024)}`;
+  const result = parser.parse(`before${nonterminatedOsc}`);
+
+  assert.equal(result.output, `before${nonterminatedOsc}`);
+  assert.deepEqual(result.events, []);
+  assert.equal(parser.flush(), '');
+});
+
+test('parser flushes an incomplete prefix that may still belong to Cosmosh', () => {
+  const parser = new RemoteShellEventOscParser();
+  const candidate = `${ESCAPE}]777;cos`;
+  const result = parser.parse(`before${candidate}`);
 
   assert.equal(result.output, 'before');
   assert.deepEqual(result.events, []);
-  assert.equal(parser.flush(), `${ESCAPE}]0;title`);
+  assert.equal(parser.flush(), candidate);
 });

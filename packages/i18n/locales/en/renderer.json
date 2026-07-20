@@ -439,6 +439,10 @@
         "description": "Set clipboard access for local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "remoteEnhancementsDebugEnabled": {
+        "description": "Show pane-specific bootstrap and shell integration diagnostics in SSH terminal menus.",
+        "title": "Remote Enhancements Debug"
+      },
       "remoteEnhancementsEnabled": {
         "description": "Allow Cosmosh to install remote enhancement helpers for SSH sessions. Turning this off may degrade or disable some terminal features.",
         "title": "Remote Enhancements"
@@ -1273,10 +1277,12 @@
     "contextMenuCopy": "Copy",
     "contextMenuCopyAsHtml": "Copy as HTML",
     "contextMenuFind": "Find...",
+    "contextMenuNextCommand": "Next Command",
     "contextMenuOpenDirectoryInSftp": "Open Directory in SFTP",
     "contextMenuOpenLink": "Open Link",
     "contextMenuOpenRemoteEnhancementsDebug": "Open Remote Enhancements Debug",
     "contextMenuPaste": "Paste",
+    "contextMenuPreviousCommand": "Previous Command",
     "contextMenuSearchOnline": "Search Online",
     "contextMenuSelectAll": "Select All",
     "contextMenuSplitTerminal": "Split Terminal",

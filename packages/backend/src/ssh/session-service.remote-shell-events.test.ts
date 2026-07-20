@@ -1,18 +1,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { RemoteShellCapability } from '@cosmosh/api-contract';
+
 import type { RemoteBootstrapResult, RemoteBootstrapStatus } from '../remote-bootstrap/service.js';
 import type { OpenSshClientResult } from './connect.js';
 import type { RemoteShellEventMessage } from './remote-shell-events.js';
-import { SshSessionService } from './session-service.js';
+import {
+  resolveRemoteEnhancementsSessionGate,
+  SshSessionService,
+  usesStructuredRemoteCommandLifecycle,
+} from './session-service.js';
 
 type RemoteShellEventSessionHarness = {
+  sessionId: string;
   remoteEnhancementsRuntimeState: 'pending' | 'active' | 'disabled';
   remoteEnhancementsRuntimeContract: {
     shell: 'bash';
     helperVersion: string;
     protocolVersion: number;
-    capabilities: string[];
+    capabilities: RemoteShellCapability[];
   } | null;
   remoteEnhancementsRuntimeCode: string | null;
   remoteEnhancementsRuntimeMessage: string | null;
@@ -24,13 +31,16 @@ type RemoteShellEventSessionHarness = {
   remoteShellCwd: string | null;
   remoteShellForegroundCommand: string | null;
   lastRemoteCommand: string | null;
+  lastRemoteCommandId: string | null;
   lastExitCode: number | null;
   lastCommandDurationMs: number | null;
+  commandCount: number;
   socket: null;
   disposed: boolean;
 };
 
 type RemoteShellEventServiceHarness = {
+  applyRemoteShellEventState(session: RemoteShellEventSessionHarness, event: RemoteShellEventMessage): void;
   disableRemoteEnhancementsRuntime(session: RemoteShellEventSessionHarness, code: string, message: string): void;
   handleRemoteShellEvent(session: RemoteShellEventSessionHarness, event: RemoteShellEventMessage): void;
   flushPendingRemoteShellEvents(session: RemoteShellEventSessionHarness): void;
@@ -59,11 +69,12 @@ type RemoteBootstrapEnsureServiceHarness = {
 const createSessionHarness = (
   overrides: Partial<RemoteShellEventSessionHarness> = {},
 ): RemoteShellEventSessionHarness => ({
+  sessionId: 'session-1',
   remoteEnhancementsRuntimeState: 'disabled',
   remoteEnhancementsRuntimeContract: {
     shell: 'bash',
     helperVersion: '1.2.3',
-    protocolVersion: 1,
+    protocolVersion: 2,
     capabilities: ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'],
   },
   remoteEnhancementsRuntimeCode: null,
@@ -76,8 +87,10 @@ const createSessionHarness = (
   remoteShellCwd: null,
   remoteShellForegroundCommand: null,
   lastRemoteCommand: null,
+  lastRemoteCommandId: null,
   lastExitCode: null,
   lastCommandDurationMs: null,
+  commandCount: 0,
   socket: null,
   disposed: false,
   ...overrides,
@@ -89,16 +102,33 @@ const createSessionHarness = (
  * @param overrides Event field overrides for the specific test case.
  * @returns Remote shell event message.
  */
-const createRemoteShellEvent = (overrides: Partial<RemoteShellEventMessage> = {}): RemoteShellEventMessage => ({
-  type: 'remote-shell-event',
-  event: 'cwd',
-  shell: 'bash',
-  helperVersion: '1.2.3',
-  protocolVersion: 1,
-  capabilities: ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'],
-  cwd: '/root',
-  timestamp: 1_783_172_312_000,
-  ...overrides,
+const createRemoteShellEvent = (overrides: Partial<RemoteShellEventMessage> = {}): RemoteShellEventMessage => {
+  return {
+    type: 'remote-shell-event',
+    event: 'cwd',
+    shell: 'bash',
+    helperVersion: '1.2.3',
+    protocolVersion: 2,
+    capabilities: ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'],
+    cwd: '/root',
+    timestamp: 1_783_172_312_000,
+    ...overrides,
+  } as RemoteShellEventMessage;
+};
+
+test('session request can disable but cannot override a persisted Remote Enhancements opt-out', () => {
+  assert.equal(resolveRemoteEnhancementsSessionGate(true, undefined), true);
+  assert.equal(resolveRemoteEnhancementsSessionGate(true, true), true);
+  assert.equal(resolveRemoteEnhancementsSessionGate(true, false), false);
+  assert.equal(resolveRemoteEnhancementsSessionGate(false, undefined), false);
+  assert.equal(resolveRemoteEnhancementsSessionGate(false, true), false);
+});
+
+test('structured command lifecycle becomes authoritative only after matching capability activation', () => {
+  assert.equal(usesStructuredRemoteCommandLifecycle('pending', ['command-start']), false);
+  assert.equal(usesStructuredRemoteCommandLifecycle('disabled', ['command-start']), false);
+  assert.equal(usesStructuredRemoteCommandLifecycle('active', ['cwd', 'prompt-ready']), false);
+  assert.equal(usesStructuredRemoteCommandLifecycle('active', ['command-start', 'command-end']), true);
 });
 
 test('SshSessionService ignores remote shell events while the runtime is disabled', () => {
@@ -136,12 +166,14 @@ test('SshSessionService activates only after a matching integration-ready handsh
 
   serviceHarness.handleRemoteShellEvent(
     session,
-    createRemoteShellEvent({ event: 'integration-ready', cwd: '/home/dev' }),
+    createRemoteShellEvent({ event: 'integration-ready', cwd: undefined }),
   );
 
   assert.equal(session.remoteEnhancementsRuntimeState, 'active');
   assert.equal(session.remoteEnhancementsHandshakeTimeout, null);
   assert.equal(session.remoteShellReady, true);
+
+  serviceHarness.handleRemoteShellEvent(session, createRemoteShellEvent({ cwd: '/home/dev' }));
   assert.equal(session.remoteShellCwd, '/home/dev');
 });
 
@@ -199,6 +231,72 @@ test('SshSessionService resets remote shell state when Remote Enhancements runti
   assert.equal(session.lastRemoteCommand, null);
   assert.equal(session.lastExitCode, null);
   assert.equal(session.lastCommandDurationMs, null);
+});
+
+test('SshSessionService suppresses completion through command-end until the next prompt-ready event', () => {
+  const serviceHarness = SshSessionService.prototype as unknown as RemoteShellEventServiceHarness;
+  const session = createSessionHarness({ remoteEnhancementsRuntimeState: 'active' });
+
+  serviceHarness.handleRemoteShellEvent(
+    session,
+    createRemoteShellEvent({
+      event: 'foreground-command',
+      command: 'vim',
+      commandId: 'cmd-1',
+      cwd: undefined,
+    }),
+  );
+  serviceHarness.handleRemoteShellEvent(
+    session,
+    createRemoteShellEvent({
+      event: 'command-end',
+      command: 'vim',
+      commandId: 'cmd-1',
+      cwd: undefined,
+      exitCode: 0,
+      durationMs: 20,
+    }),
+  );
+
+  assert.equal(session.remoteShellForegroundCommand, 'vim');
+
+  serviceHarness.handleRemoteShellEvent(session, createRemoteShellEvent({ event: 'prompt-ready', cwd: undefined }));
+  assert.equal(session.remoteShellForegroundCommand, null);
+});
+
+test('SshSessionService counts and refreshes each structured command id exactly once', () => {
+  const serviceHarness = SshSessionService.prototype as unknown as RemoteShellEventServiceHarness;
+  const session = createSessionHarness({ remoteEnhancementsRuntimeState: 'active' });
+  const scheduledSessionIds: string[] = [];
+  const serviceContext = {
+    scheduleHistorySync: (sessionId: string): void => {
+      scheduledSessionIds.push(sessionId);
+    },
+  };
+  const firstCommand = createRemoteShellEvent({
+    event: 'command-start',
+    command: 'git',
+    commandId: 'cmd-1',
+    cwd: undefined,
+  });
+
+  serviceHarness.applyRemoteShellEventState.call(serviceContext, session, firstCommand);
+  serviceHarness.applyRemoteShellEventState.call(serviceContext, session, firstCommand);
+  serviceHarness.applyRemoteShellEventState.call(
+    serviceContext,
+    session,
+    createRemoteShellEvent({
+      event: 'command-start',
+      command: 'pwd',
+      commandId: 'cmd-2',
+      cwd: undefined,
+    }),
+  );
+
+  assert.equal(session.commandCount, 2);
+  assert.equal(session.lastRemoteCommandId, 'cmd-2');
+  assert.equal(session.lastRemoteCommand, 'pwd');
+  assert.deepEqual(scheduledSessionIds, ['session-1', 'session-1']);
 });
 
 test('SshSessionService stops waiting when the optional bootstrap exceeds its total connection budget', async () => {

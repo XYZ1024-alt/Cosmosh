@@ -2294,6 +2294,12 @@ components:
         - username
         - keychainId
         - authType
+        - strictHostKey
+        - enableSshCompression
+        - remoteEnhancementsEnabled
+        - disableCharacterWidthCompatibilityMode
+        - terminalClipboardAccess
+        - proxyMode
         - hasPassword
         - hasPrivateKey
         - createdAt

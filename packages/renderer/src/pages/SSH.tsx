@@ -186,7 +186,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
-  const userMenuDebugEntryEnabled = settingsValues.userMenuDebugEntryEnabled;
+  const remoteEnhancementsDebugEnabled = settingsValues.remoteEnhancementsDebugEnabled;
   const terminalWebLinksSettings = React.useMemo(
     () => ({
       enabled: terminalWebLinksEnabled,
@@ -406,6 +406,8 @@ const SSH: React.FC<SSHProps> = ({
       remoteBootstrapStatus,
       remoteEnhancementRuntimeStatus,
       remoteEnhancementsDebugEvents,
+      trustedCwd,
+      canNavigateCommands,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -427,6 +429,7 @@ const SSH: React.FC<SSHProps> = ({
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
+      navigateToCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,
       setPaneContainerElement,
@@ -501,12 +504,12 @@ const SSH: React.FC<SSHProps> = ({
 
   React.useEffect(() => {
     const isRemoteSshSession = connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
-    if (userMenuDebugEntryEnabled && isRemoteSshSession) {
+    if (remoteEnhancementsDebugEnabled && isRemoteSshSession) {
       return;
     }
 
     setRemoteEnhancementsDebugPanelOpen(false);
-  }, [connectionIntent.lastResolvedSnapshot, userMenuDebugEntryEnabled]);
+  }, [connectionIntent.lastResolvedSnapshot, remoteEnhancementsDebugEnabled]);
 
   React.useEffect(() => {
     const startupCommand = connectionIntent.startupCommand?.trim();
@@ -706,7 +709,7 @@ const SSH: React.FC<SSHProps> = ({
    */
   const openSelectionDirectoryInSftp = React.useCallback(
     (selectionText: string): void => {
-      const directoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+      const directoryPath = resolveSftpDirectoryPathFromSelection(selectionText, trustedCwd);
       const serverSnapshot = connectionIntent.lastResolvedSnapshot;
 
       if (!directoryPath || serverSnapshot?.type !== 'ssh-server' || !onOpenDirectoryInSFTP) {
@@ -717,7 +720,7 @@ const SSH: React.FC<SSHProps> = ({
       onOpenDirectoryInSFTP(serverSnapshot.serverId, serverSnapshot.serverName, directoryPath);
       dismissSelectionBar();
     },
-    [connectionIntent.lastResolvedSnapshot, dismissSelectionBar, notifyWarning, onOpenDirectoryInSFTP],
+    [connectionIntent.lastResolvedSnapshot, dismissSelectionBar, notifyWarning, onOpenDirectoryInSFTP, trustedCwd],
   );
 
   // ---------------------------------------------------------------------------
@@ -1355,13 +1358,13 @@ const SSH: React.FC<SSHProps> = ({
 
   const selectionText = selectionAnchor?.selectionText ?? '';
   const selectionLink = resolveSelectionLink(selectionText);
-  const selectedSftpDirectoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+  const selectedSftpDirectoryPath = resolveSftpDirectoryPathFromSelection(selectionText, trustedCwd);
   const canOpenSelectionDirectoryInSftp =
     Boolean(selectedSftpDirectoryPath) &&
     connectionIntent.lastResolvedSnapshot?.type === 'ssh-server' &&
     Boolean(onOpenDirectoryInSFTP);
   const canShowRemoteEnhancementsDebug =
-    userMenuDebugEntryEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+    remoteEnhancementsDebugEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
   const remoteEnhancementsDebugContextMenuLabel = remoteEnhancementsDebugPanelOpen
     ? t('ssh.contextMenuCloseRemoteEnhancementsDebug')
     : t('ssh.contextMenuOpenRemoteEnhancementsDebug');
@@ -1415,6 +1418,8 @@ const SSH: React.FC<SSHProps> = ({
           pasteShortcutLabel={terminalPasteShortcutLabel}
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
+          previousCommandLabel={t('ssh.contextMenuPreviousCommand')}
+          nextCommandLabel={t('ssh.contextMenuNextCommand')}
           rightClickAction={terminalRightClickAction}
           remoteEnhancementsDebugLabel={
             canShowRemoteEnhancementsDebug ? remoteEnhancementsDebugContextMenuLabel : undefined
@@ -1422,6 +1427,7 @@ const SSH: React.FC<SSHProps> = ({
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
+          canNavigateCommands={canNavigateCommands}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
@@ -1456,6 +1462,10 @@ const SSH: React.FC<SSHProps> = ({
           onClearTerminal={(paneId) => {
             activatePane(paneId);
             handleContextMenuClearTerminal();
+          }}
+          onNavigateCommand={(paneId, direction) => {
+            activatePane(paneId);
+            navigateToCommand(direction);
           }}
           onSplitPane={(paneId) => {
             activatePane(paneId);
