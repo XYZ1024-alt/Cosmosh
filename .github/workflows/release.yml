@@ -6,29 +6,87 @@ on:
       - "v*"
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  create-release:
-    runs-on: ubuntu-latest
+  resolve-release-policy:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    outputs:
+      windows-signing-policy: ${{ steps.policy.outputs.windows-signing-policy }}
     steps:
-      - uses: actions/checkout@v6
-      - name: Create draft release
-        uses: softprops/action-gh-release@v2
+      - name: Resolve Windows signing policy
+        id: policy
+        env:
+          REQUESTED_POLICY: ${{ vars.COSMOSH_WINDOWS_SIGNING_POLICY || 'audit' }}
+        shell: bash
+        run: |
+          case "${REQUESTED_POLICY}" in
+            audit|enforce)
+              echo "windows-signing-policy=${REQUESTED_POLICY}" >> "${GITHUB_OUTPUT}"
+              ;;
+            *)
+              echo "Unsupported COSMOSH_WINDOWS_SIGNING_POLICY: ${REQUESTED_POLICY}" >&2
+              exit 1
+              ;;
+          esac
+
+  build-remote-bootstrap:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          draft: true
-          generate_release_notes: true
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/remote-bootstrap/go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Test remote bootstrap package
+        working-directory: packages/remote-bootstrap
+        run: go test ./...
+      - name: Build remote bootstrap release assets
+        env:
+          COSMOSH_REMOTE_BOOTSTRAP_RELEASE_TAG: ${{ github.ref_name }}
+        run: node scripts/build-remote-bootstrap-release.mjs
+      - name: Stage remote bootstrap release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-remote-bootstrap
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-linux-amd64
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-linux-arm64
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json
 
   build-release:
-    needs: create-release
+    needs: resolve-release-policy
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-22.04, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            platform: linux
+          - os: windows-latest
+            platform: windows
+          - os: macos-latest
+            platform: macos
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22"
       - name: Setup pnpm
@@ -38,10 +96,171 @@ jobs:
           pnpm --version
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-      - name: Build and publish
+      - name: Build release artifacts
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.os == 'ubuntu-22.04' && '1' || '0' }}
+          COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/cosmosh-remote-bootstrap-manifest.json
+          COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.platform == 'linux' && '1' || '0' }}
           COSMOSH_MAX_GLIBC_VERSION: 2.35
-          COSMOSH_REQUIRED_PRISMA_TARGETS: ${{ matrix.os == 'ubuntu-22.04' && 'debian-openssl-1.1.x,debian-openssl-3.0.x' || '' }}
+          COSMOSH_REQUIRED_PRISMA_TARGETS: ${{ matrix.platform == 'linux' && 'debian-openssl-1.1.x,debian-openssl-3.0.x' || '' }}
         run: pnpm --filter @cosmosh/main build
+      - name: Audit Windows Authenticode signatures
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        env:
+          COSMOSH_WINDOWS_EXPECTED_PUBLISHER: ${{ vars.COSMOSH_WINDOWS_EXPECTED_PUBLISHER || '' }}
+          COSMOSH_WINDOWS_SIGNING_POLICY: ${{ needs.resolve-release-policy.outputs.windows-signing-policy }}
+        run: >-
+          ./scripts/verify-windows-release-signatures.ps1
+          -Policy $env:COSMOSH_WINDOWS_SIGNING_POLICY
+          -ReleaseDirectory ./packages/main/release
+          -ExpectedPublisher "$env:COSMOSH_WINDOWS_EXPECTED_PUBLISHER"
+      - name: Stage Windows release assets
+        if: matrix.platform == 'windows'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-windows
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: packages/main/release/*.exe
+      - name: Stage Linux release assets
+        if: matrix.platform == 'linux'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-linux
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            packages/main/release/*.AppImage
+            packages/main/release/*.deb
+      - name: Stage macOS release assets
+        if: matrix.platform == 'macos'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-macos
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            packages/main/release/*.dmg
+            packages/main/release/*.zip
+
+  assemble-release:
+    needs: [build-remote-bootstrap, build-release]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Download staged release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+          digest-mismatch: error
+      - name: Validate inventory and generate SHA256SUMS
+        run: node scripts/prepare-release-assets.mjs release-assets
+      - name: Stage assembled release bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-bundle
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: release-assets/*
+
+  attest-release:
+    needs: assemble-release
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    steps:
+      - name: Download assembled release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-bundle
+          path: release-assets
+          digest-mismatch: error
+      - name: Attest release build provenance
+        uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release-assets/*
+
+  publish-draft:
+    needs: [resolve-release-policy, attest-release]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    environment: release
+    permissions:
+      contents: write
+    env:
+      COSMOSH_WINDOWS_SIGNING_POLICY: ${{ needs.resolve-release-policy.outputs.windows-signing-policy }}
+    steps:
+      - name: Download assembled release bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: release-bundle
+          path: release-assets
+          digest-mismatch: error
+      - name: Prepare draft metadata
+        id: metadata
+        shell: bash
+        run: |
+          case "${COSMOSH_WINDOWS_SIGNING_POLICY}" in
+            audit)
+              title="[UNSIGNED - DO NOT PUBLISH] Cosmosh ${GITHUB_REF_NAME}"
+              warning="This draft was built with COSMOSH_WINDOWS_SIGNING_POLICY=audit. Its Windows assets are not approved for public release, and macOS signing/notarization is not enforced."
+              ;;
+            enforce)
+              title="Cosmosh ${GITHUB_REF_NAME}"
+              warning="Windows Authenticode signature, timestamp, and publisher enforcement passed before this draft was created. macOS signing/notarization is not enforced."
+              ;;
+            *)
+              echo "Unsupported COSMOSH_WINDOWS_SIGNING_POLICY: ${COSMOSH_WINDOWS_SIGNING_POLICY}" >&2
+              exit 1
+              ;;
+          esac
+          {
+            echo "title=${title}"
+            echo "warning=${warning}"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Create or update draft release
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TITLE: ${{ steps.metadata.outputs.title }}
+          RELEASE_WARNING: ${{ steps.metadata.outputs.warning }}
+        shell: bash
+        run: |
+          existing_state="$(gh release view "${GITHUB_REF_NAME}" --json isDraft --jq '.isDraft' 2>/dev/null || true)"
+          if [[ -n "${existing_state}" && "${existing_state}" != "true" ]]; then
+            echo "Refusing to modify published release ${GITHUB_REF_NAME}." >&2
+            exit 1
+          fi
+
+          if [[ "${existing_state}" == "true" ]]; then
+            gh release edit "${GITHUB_REF_NAME}" \
+              --draft \
+              --title "${RELEASE_TITLE}" \
+              --notes "${RELEASE_WARNING}"
+          else
+            gh release create "${GITHUB_REF_NAME}" \
+              --draft \
+              --verify-tag \
+              --generate-notes \
+              --title "${RELEASE_TITLE}" \
+              --notes "${RELEASE_WARNING}"
+          fi
+
+          gh release upload "${GITHUB_REF_NAME}" release-assets/* --clobber

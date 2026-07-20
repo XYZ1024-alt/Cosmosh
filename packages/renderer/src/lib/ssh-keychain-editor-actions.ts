@@ -5,6 +5,8 @@ import { isEntityColorKey } from './entity-visuals';
 import type { KeychainFormState, SshAuthType, SshKeychainListItem } from './ssh-keychain-editor-shared';
 import { createServerEditorTag } from './ssh-server-editor-actions';
 
+export { buildKeychainMetadataUpdatePayload } from './ssh-keychain-editor-shared';
+
 type SshTag = components['schemas']['SshTag'];
 
 type CreateKeychainEditorTagParams = {

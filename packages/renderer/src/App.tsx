@@ -1,11 +1,11 @@
+import type { AppCloseConfirmationRequest } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { X } from 'lucide-react';
 import React from 'react';
 
 import AppCommandPaletteHost, { type AppCommandPaletteHostHandle } from './components/AppCommandPaletteHost';
+import CloseWindowConfirmationDialog from './components/CloseWindowConfirmationDialog';
 import SystemPerformanceOverlay from './components/debug/SystemPerformanceOverlay';
 import Header from './components/header/Header';
-import { CommandPalette, type CommandPaletteItem } from './components/ui/command-palette';
 import { listLocalTerminalProfiles } from './lib/backend';
 import {
   readEnableHeapSnapshotPreference,
@@ -13,18 +13,15 @@ import {
   writeEnableHeapSnapshotPreference,
   writeShowSystemMonitorOverlayPreference,
 } from './lib/debug-tools';
-import { getEntityColorClassName } from './lib/entity-visuals';
 import { requestOpenLocalTerminalList } from './lib/home-target';
 import { t } from './lib/i18n';
 import { useSettingsValue } from './lib/settings-store';
 import { createSshConnectionIntent, toLocalTerminalTargetId } from './lib/ssh-connection-intent';
-import { renderTabIconByKey } from './lib/tab-icon';
 import { AppToastProvider } from './lib/toast';
-import { resolvePageDefaults, useTabs } from './lib/useTabs';
+import { useTabs } from './lib/useTabs';
 import Home from './pages/Home';
-import type { TabIconKey, TabItem } from './types/tabs';
+import type { TabIconKey } from './types/tabs';
 
-const ComponentsField = React.lazy(() => import('./pages/ComponentsField'));
 const AuditLogs = React.lazy(() => import('./pages/AuditLogs'));
 const Debug = React.lazy(() => import('./pages/Debug'));
 const Settings = React.lazy(() => import('./pages/Settings'));
@@ -51,203 +48,20 @@ const pageLoadingFallback = (
   />
 );
 
-type TabSwitcherOverlayProps = {
-  tabs: TabItem[];
-  activeTabId: string;
-  applySshServerVisualStyle: boolean;
-  onCloseTab: (tabId: string) => void;
-  onCommitTab: (tabId: string) => void;
-  openSignal: number;
-};
-
-const TabSwitcherOverlay: React.FC<TabSwitcherOverlayProps> = ({
-  tabs,
-  activeTabId,
-  applySshServerVisualStyle,
-  onCloseTab,
-  onCommitTab,
-  openSignal,
-}) => {
-  const [isOpen, setIsOpen] = React.useState<boolean>(false);
-  const [targetTabId, setTargetTabId] = React.useState<string>('');
-  const modifierKeyName = 'Control';
-
-  const closeSwitcher = React.useCallback(() => {
-    setIsOpen(false);
-    setTargetTabId('');
-  }, []);
-
-  const moveTarget = React.useCallback(
-    (direction: -1 | 1) => {
-      if (tabs.length === 0) {
-        return;
-      }
-
-      const baseTabId = targetTabId || activeTabId;
-      const baseIndex = tabs.findIndex((tab) => tab.id === baseTabId);
-      const normalizedBaseIndex = baseIndex < 0 ? (direction > 0 ? 0 : tabs.length - 1) : baseIndex;
-      const nextIndex = (normalizedBaseIndex + direction + tabs.length) % tabs.length;
-      const nextTabId = tabs[nextIndex]?.id;
-      if (nextTabId) {
-        setTargetTabId(nextTabId);
-      }
-    },
-    [activeTabId, tabs, targetTabId],
-  );
-
-  const commitTarget = React.useCallback(() => {
-    if (targetTabId) {
-      onCommitTab(targetTabId);
-    }
-  }, [onCommitTab, targetTabId]);
-
-  React.useEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    if (!tabs.some((tab) => tab.id === targetTabId)) {
-      setTargetTabId(activeTabId);
-    }
-  }, [activeTabId, isOpen, tabs, targetTabId]);
-
-  React.useEffect(() => {
-    if (openSignal <= 0 || tabs.length === 0) {
-      return;
-    }
-
-    setIsOpen(true);
-    setTargetTabId(activeTabId);
-  }, [activeTabId, openSignal, tabs.length]);
-
-  React.useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent): void => {
-      const hasModifier = event.ctrlKey;
-      if (!hasModifier || event.key !== 'Tab') {
-        return;
-      }
-
-      if (tabs.length === 0) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-
-      if (!isOpen) {
-        setIsOpen(true);
-      }
-
-      moveTarget(event.shiftKey ? -1 : 1);
-    };
-
-    const handleKeyUp = (event: KeyboardEvent): void => {
-      if (!isOpen || event.key !== modifierKeyName) {
-        return;
-      }
-
-      event.preventDefault();
-      event.stopPropagation();
-      commitTarget();
-      closeSwitcher();
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    window.addEventListener('keyup', handleKeyUp, true);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown, true);
-      window.removeEventListener('keyup', handleKeyUp, true);
-    };
-  }, [closeSwitcher, commitTarget, isOpen, modifierKeyName, moveTarget, tabs.length]);
-
-  const items = React.useMemo<CommandPaletteItem[]>(() => {
-    return tabs.map((tab) => {
-      const shouldApplySshTabVisual =
-        applySshServerVisualStyle && (tab.page === 'ssh' || tab.page === 'sftp') && Boolean(tab.iconColorKey);
-
-      return {
-        key: tab.id,
-        title: tab.title,
-        subtitle: (() => {
-          const pageLabel = resolvePageDefaults(tab.page).title;
-          return pageLabel === tab.title ? undefined : pageLabel;
-        })(),
-        icon: renderTabIconByKey(tab.iconKey, tab.iconColorKey, !shouldApplySshTabVisual),
-        rowClassName: shouldApplySshTabVisual ? getEntityColorClassName(tab.iconColorKey!) : undefined,
-        actions: tab.closable
-          ? [
-              {
-                key: `${tab.id}-close`,
-                icon: <X className="h-3.5 w-3.5" />,
-                tooltip: t('tabs.closeCurrent'),
-                onSelect: () => {
-                  onCloseTab(tab.id);
-                },
-              },
-            ]
-          : undefined,
-        onSelect: () => {
-          onCommitTab(tab.id);
-          closeSwitcher();
-        },
-      };
-    });
-  }, [applySshServerVisualStyle, closeSwitcher, onCloseTab, onCommitTab, tabs]);
-
-  const activeIndex = React.useMemo(() => {
-    if (items.length === 0) {
-      return 0;
-    }
-
-    const targetIndex = items.findIndex((item) => item.key === targetTabId);
-    if (targetIndex >= 0) {
-      return targetIndex;
-    }
-
-    const currentActiveIndex = items.findIndex((item) => item.key === activeTabId);
-    return currentActiveIndex >= 0 ? currentActiveIndex : 0;
-  }, [activeTabId, items, targetTabId]);
-
-  return (
-    <CommandPalette
-      closeOnEsc
-      showInput={false}
-      open={isOpen}
-      query=""
-      placeholder={t('tabs.switcherPlaceholder')}
-      emptyText={t('tabs.switcherEmpty')}
-      items={items}
-      metadataLayout="inline"
-      activeIndex={activeIndex}
-      onActiveIndexChange={(index) => {
-        const targetItem = items[index];
-        if (targetItem) {
-          setTargetTabId(targetItem.key);
-        }
-      }}
-      onOpenChange={(open) => {
-        if (!open) {
-          closeSwitcher();
-        }
-      }}
-      onQueryChange={() => {}}
-    />
-  );
-};
-
 const App: React.FC = () => {
   const terminalContextLaunchBehavior = useSettingsValue('terminalContextLaunchBehavior');
   const defaultLocalTerminalProfile = useSettingsValue('defaultLocalTerminalProfile');
-  const applySshServerVisualStyle = useSettingsValue('sshTabApplyServerVisualStyle');
   const [showSystemMonitorOverlay, setShowSystemMonitorOverlay] = React.useState<boolean>(() => {
     return readShowSystemMonitorOverlayPreference();
   });
   const [enableMainHeapSnapshotExport, setEnableMainHeapSnapshotExport] = React.useState<boolean>(() => {
     return readEnableHeapSnapshotPreference();
   });
-  const [tabSwitcherOpenSignal, setTabSwitcherOpenSignal] = React.useState<number>(0);
+  const [closeConfirmationRequest, setCloseConfirmationRequest] = React.useState<AppCloseConfirmationRequest | null>(
+    null,
+  );
   const commandPaletteHostRef = React.useRef<AppCommandPaletteHostHandle | null>(null);
+  const closeConfirmationRequestRef = React.useRef<AppCloseConfirmationRequest | null>(null);
   const lastRendererNewTabShortcutAtRef = React.useRef<number>(0);
   const lastAppMenuNewTabAtRef = React.useRef<number>(0);
 
@@ -263,6 +77,20 @@ const App: React.FC = () => {
 
   const handleLastTabClose = React.useCallback(() => {
     window.electron?.closeWindow();
+  }, []);
+
+  const handleCloseConfirmationResolve = React.useCallback((confirmed: boolean): void => {
+    const request = closeConfirmationRequestRef.current;
+    if (!request) {
+      return;
+    }
+
+    closeConfirmationRequestRef.current = null;
+    setCloseConfirmationRequest(null);
+    window.electron?.respondToCloseConfirmation({
+      requestId: request.requestId,
+      confirmed,
+    });
   }, []);
 
   const {
@@ -430,6 +258,18 @@ const App: React.FC = () => {
 
   React.useEffect(() => {
     const electronBridge = window.electron;
+    if (!electronBridge) {
+      return;
+    }
+
+    return electronBridge.onCloseConfirmationRequested((request) => {
+      closeConfirmationRequestRef.current = request;
+      setCloseConfirmationRequest(request);
+    });
+  }, []);
+
+  React.useEffect(() => {
+    const electronBridge = window.electron;
     if (!electronBridge || hasCheckedInitialPendingLaunchWorkingDirectory) {
       return;
     }
@@ -484,7 +324,7 @@ const App: React.FC = () => {
           break;
         }
         case 'show-tab-switcher': {
-          setTabSwitcherOpenSignal((previous) => previous + 1);
+          commandPaletteHostRef.current?.openTabSwitcher();
           break;
         }
         default: {
@@ -782,11 +622,6 @@ const App: React.FC = () => {
                   <SettingsEditor initialSettingKey={tab.state?.settingsEditorSettingKey} />
                 </React.Suspense>
               )}
-              {tab.page === 'components-field' && (
-                <React.Suspense fallback={pageLoadingFallback}>
-                  <ComponentsField />
-                </React.Suspense>
-              )}
               {tab.page === 'debug' && (
                 <React.Suspense fallback={pageLoadingFallback}>
                   <Debug
@@ -808,11 +643,6 @@ const App: React.FC = () => {
                       openInNewTab
                         ? addTab('settings-editor', undefined, { insertAfterTabId: tab.id })
                         : openPageInTab(tab.id, 'settings-editor')
-                    }
-                    onOpenComponentsField={(openInNewTab) =>
-                      openInNewTab
-                        ? addTab('components-field', undefined, { insertAfterTabId: tab.id })
-                        : openPageInTab(tab.id, 'components-field')
                     }
                     onRenameTab={(title) => updateTab(tab.id, { title })}
                     onChangeIcon={(iconKey) => updateTab(tab.id, { iconKey })}
@@ -891,16 +721,12 @@ const App: React.FC = () => {
           onEnableMainHeapSnapshotExportChange={handleEnableMainHeapSnapshotExportChange}
         />
 
-        <TabSwitcherOverlay
-          tabs={tabs}
-          activeTabId={activeTabId}
-          applySshServerVisualStyle={applySshServerVisualStyle}
-          openSignal={tabSwitcherOpenSignal}
-          onCloseTab={closeTab}
-          onCommitTab={setActiveTabId}
-        />
-
         <SystemPerformanceOverlay visible={showSystemMonitorOverlay} />
+
+        <CloseWindowConfirmationDialog
+          open={closeConfirmationRequest !== null}
+          onResolve={handleCloseConfirmationResolve}
+        />
       </div>
     </AppToastProvider>
   );

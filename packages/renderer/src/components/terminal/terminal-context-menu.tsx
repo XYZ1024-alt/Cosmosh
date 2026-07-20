@@ -1,5 +1,6 @@
 import { DEFAULT_TERMINAL_RIGHT_CLICK_ACTION, type TerminalRightClickAction } from '@cosmosh/api-contract';
 import {
+  Bug,
   ClipboardPaste,
   Copy,
   Eraser,
@@ -55,6 +56,8 @@ type TerminalContextMenuProps = {
   splitTerminalLabel?: string;
   /** Label for the "Close Terminal" menu item. */
   closeTerminalLabel?: string;
+  /** Label for the Remote Enhancements debug panel toggle. */
+  remoteEnhancementsDebugLabel?: string;
   /** Whether split action is available for the current pane. */
   canSplitTerminal?: boolean;
   /** Whether close action is available for the current pane. */
@@ -78,6 +81,7 @@ type TerminalContextMenuProps = {
   onClearTerminal: () => void;
   onSplitTerminal?: () => void;
   onCloseTerminal?: () => void;
+  onToggleRemoteEnhancementsDebug?: () => void;
   children: React.ReactNode;
 };
 
@@ -98,6 +102,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   clearTerminalShortcutLabel,
   splitTerminalLabel,
   closeTerminalLabel,
+  remoteEnhancementsDebugLabel,
   canSplitTerminal = false,
   canCloseTerminal = false,
   canOpenDirectoryInSftp = false,
@@ -112,6 +117,7 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   onClearTerminal,
   onSplitTerminal,
   onCloseTerminal,
+  onToggleRemoteEnhancementsDebug,
   children,
 }) => {
   const triggerHostRef = React.useRef<HTMLDivElement | null>(null);
@@ -357,6 +363,18 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
           >
             {closeTerminalLabel}
           </ContextMenuItem>
+        ) : null}
+
+        {remoteEnhancementsDebugLabel && onToggleRemoteEnhancementsDebug ? (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              icon={Bug}
+              onSelect={onToggleRemoteEnhancementsDebug}
+            >
+              {remoteEnhancementsDebugLabel}
+            </ContextMenuItem>
+          </>
         ) : null}
       </ContextMenuContent>
     </ContextMenu>

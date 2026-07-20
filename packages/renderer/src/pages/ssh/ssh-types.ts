@@ -99,12 +99,56 @@ export type ServerInboundMessage =
       version?: string;
       code?: string;
       message?: string;
+    }
+  | {
+      type: 'remote-shell-event';
+      event: 'integration-ready' | 'prompt-ready' | 'cwd' | 'command-start' | 'command-end' | 'foreground-command';
+      shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
+      helperVersion: string;
+      protocolVersion: number;
+      capabilities: string[];
+      cwd?: string;
+      command?: string;
+      exitCode?: number;
+      durationMs?: number;
+      commandId?: string;
+      timestamp: number;
+    }
+  | {
+      type: 'remote-enhancement-runtime-status';
+      state: 'pending' | 'active' | 'disabled';
+      helperVersion?: string;
+      protocolVersion?: number;
+      capabilities?: string[];
+      code?: string;
+      message?: string;
     };
 
 /**
  * Latest remote bootstrap status surfaced by backend side-channel installation.
  */
 export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'bootstrap-status' }>;
+
+/**
+ * Remote shell status event emitted by the installed shell helper over OSC 777.
+ */
+export type RemoteShellEvent = Extract<ServerInboundMessage, { type: 'remote-shell-event' }>;
+
+/**
+ * Backend-owned trust state for the installed remote enhancement runtime.
+ */
+export type RemoteEnhancementRuntimeStatus = Extract<
+  ServerInboundMessage,
+  { type: 'remote-enhancement-runtime-status' }
+>;
+
+/**
+ * Timestamped remote enhancement event retained for SSH debug inspection.
+ */
+export type RemoteEnhancementsDebugEvent = {
+  receivedAt: number;
+  payload: RemoteBootstrapStatus | RemoteShellEvent | RemoteEnhancementRuntimeStatus;
+};
 
 /**
  * Aggregated telemetry state rendered in SSH sidebar cards.

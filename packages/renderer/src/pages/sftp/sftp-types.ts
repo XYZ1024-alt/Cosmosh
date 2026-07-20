@@ -268,11 +268,13 @@ export type InlineEditMenuAction = () => void | Promise<void>;
 export type SftpTaskStatus = 'queued' | 'running' | 'success' | 'failed';
 
 /**
- * Coarse task progress shown in the SFTP toolbar task list.
+ * Task progress shown in the SFTP toolbar task list.
  */
 export type SftpTaskProgress = {
   completed: number;
   total: number;
+  unit?: 'count' | 'bytes';
+  bytesPerSecond?: number;
 };
 
 /**
@@ -287,6 +289,7 @@ export type SftpTaskState = {
   startedAt?: number;
   finishedAt?: number;
   progress?: SftpTaskProgress;
+  errorMessage?: string;
 };
 
 /**
@@ -304,7 +307,7 @@ export type SftpTaskOptions = {
 export type SftpTaskContext = {
   taskId: string;
   isCurrent: () => boolean;
-  update: (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>) => void;
+  update: (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress' | 'errorMessage'>>) => void;
 };
 
 /**
@@ -312,6 +315,7 @@ export type SftpTaskContext = {
  */
 export type SftpQueuedTask = {
   id: string;
+  label: string;
   run: () => Promise<void>;
 };
 

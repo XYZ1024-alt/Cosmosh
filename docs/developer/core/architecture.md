@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(SQLCipher via Prisma adapter)]
 ```
 
 ## 2. Main ↔ Renderer Responsibilities
@@ -28,23 +28,35 @@ flowchart LR
 - Starts BrowserWindow and backend warmup in parallel during app bootstrap.
 - Keeps a single in-flight backend startup promise to deduplicate concurrent startup triggers.
 - Main-process backend proxy requests now ensure backend readiness before forwarding HTTP calls.
-- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh.
+- In development startup, main uses an incremental preflight (`packages/main/scripts/dev-preflight.cjs`) and skips `@cosmosh/api-contract` / `@cosmosh/i18n` rebuilds when outputs are fresh. The same lifecycle probes the SQLCipher native binding under the system Node runtime and rebuilds it only when the current ABI is incompatible.
 - Development profiles are managed by `pnpm dev:profile` (`scripts/dev-profile.mjs`). When a profile is selected or passed through `COSMOSH_DEV_PROFILE`, main applies it before window/backend startup so Electron `userData`, the SQLite file, and backend-only secret storage all resolve under `.cosmosh/dev-profiles/<name>/`.
-- Main launches backend with a runtime-only non-watch command (`dev:runtime`) to avoid duplicate `predev` rebuilds and reduce sustained CPU noise on laptops.
+- `packages/main/scripts/dev-main.cjs` runs under the workspace system Node, compiles Main, and passes that canonical Node executable to Electron through the development-only `COSMOSH_DEV_NODE_EXEC_PATH` handoff.
+- Main launches the development backend directly with the validated system Node executable and `tsx`, avoiding both package-script orphan processes and Electron-versus-Node native ABI conflicts. Packaged Main continues to launch the synchronized backend with Electron's `process.execPath` plus `ELECTRON_RUN_AS_NODE=1`.
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
+- CI packaging can also write `resources/remote-bootstrap/manifest-url.json` when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is provided. Packaged main reads this resource only as a fallback after the environment variable, preserving local override behavior while allowing tagged release installers and `main` build artifacts to discover their intended bootstrap manifest automatically. Unpackaged development runs fall back once more to the rolling `remote-bootstrap-dev` manifest URL, so local Remote Enhancements testing does not require per-shell setup.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
+- Owns the window/app close guard. Main prevents the initial close, queries backend-owned SSH/SFTP registries, delegates confirmation presentation to the renderer, and closes only after no activity is present or the user explicitly confirms interruption.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
   - locale header for i18n-compatible backend responses.
 
+#### Development Backend Runtime Boundary
+
+The development launcher owns the system Node executable handoff because it runs before Electron replaces `process.execPath`. Main accepts only an absolute path that resolves to a canonical regular file, requires the POSIX executable bits where applicable, rejects the Electron host executable itself, and removes the handoff variable before spawning Backend. This value is development orchestration metadata, not part of the Backend environment contract.
+
+Development and packaging intentionally use different native targets. The Main and standalone Backend `predev` lifecycles, plus Backend `predb:init`, invoke `ensure-sqlcipher-native.cjs --runtime=node --if-needed`; packaging invokes the same script without arguments to force an Electron-targeted release rebuild. Both paths open and close an in-memory database under the selected runtime after building; a failed probe aborts before Backend startup or packaged-runtime synchronization. On Windows, all Cosmosh processes using the shared binding must be closed before switching targets because a loaded `.node` file cannot be replaced.
+
 ### Backend Process (`packages/backend/src/index.ts`)
 
 - Registers idempotent graceful-shutdown flow for runtime signals and fatal process events.
+- Exposes internal-token-protected runtime connection summary/close operations used only by Main's close guard; renderer does not receive a bulk-disconnect bridge.
 - Shutdown order is explicit: stop WS session services, close HTTP listener, then disconnect Prisma/SQLite handles.
 - Windows-specific termination (`SIGBREAK`) is handled in the same path as POSIX signals to reduce stale DB lock cases.
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
-- SSH session attach can start the Remote Enhancements bootstrap side-channel through `RemoteBootstrapService` when global and server-level gates plus `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` allow it. Backend owns manifest loading, remote probing, side-channel execution, status forwarding, and audit logging; `packages/remote-bootstrap` owns the downloaded user-scoped Go installer. The side-channel uses bounded `ssh2 exec`, never writes installer output into the interactive terminal stream, and emits structured `bootstrap-status` WS events.
+- After the primary SSH transport authenticates and before it opens the interactive PTY, `SshSessionService` runs the Remote Enhancements ensure flow through `RemoteBootstrapService` when global and server-level gates allow it. Remote commands use a lazily opened temporary SSH transport with the same credential, host-trust, compression, and proxy policy; graceful teardown of that transport begins before the primary calls `shell()`. The primary transport therefore never opens a bootstrap `exec` channel, preserving server login messages while still allowing a newly installed profile hook to load in the first interactive shell. Backend owns manifest loading, remote probing, installed-status validation, conditional download orchestration, status forwarding, runtime event gating, and audit logging; `packages/remote-bootstrap` owns the downloaded user-scoped Go installer plus the generated helper's protocol/capability contract. The manifest URL comes from `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` first, then the packaged CI resource when present, then the development-only `remote-bootstrap-dev` default for unpackaged runs. Tagged release packages point to a versioned release manifest; `main` packages point to the fixed `remote-bootstrap-dev` prerelease manifest; pushed branches whose name contains `remote-bootstrap` can point to branch-scoped temporary prerelease manifests for end-to-end CI testing. A current installed contract skips asset download; an ensure failure starts temporary-transport teardown, disables enhancement data for that session, and does not prevent the already-authenticated primary transport from opening an ordinary shell.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
+- Production constructs Prisma with `PrismaSqlCipherAdapterFactory`; the factory loads the `better-sqlite3-multiple-ciphers` native binding into Prisma's better-sqlite3 adapter and applies the database key before exposing the connection. Schema migrations and business queries therefore share one keyed SQLCipher connection path.
+- A canonical plaintext SQLite header triggers a one-time copy/rekey/verify/replace migration. Unknown or wrong-key files fail without plaintext fallback, and fixed migration artifacts allow interrupted rename windows to recover on the next startup.
 - Simple Prisma `ALTER TABLE ... ADD COLUMN` migrations are reconciled against live SQLite table metadata before execution. If a column already exists but `_prisma_migrations` lacks the row, startup records the migration as applied instead of re-running duplicate DDL; non-simple migration drift still fails fast.
 - Schema sync is fail-fast: backend startup stops when required tables still cannot be reconciled after runtime migration execution, preventing partial/undefined API behavior.
 - Migration ledger metadata is stored in Prisma-compatible `_prisma_migrations` format to keep a future path open for native `prisma migrate deploy/resolve` workflows.
@@ -59,7 +71,7 @@ flowchart LR
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 - SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
 - Hidden tabs are rendered but cannot start new SSH connect side effects; connect flow is active-tab gated.
-- Renderer consumes backend `bootstrap-status` messages for Remote Enhancements observability, but SSH sidebar does not render a dedicated Remote Enhancements card in v1.
+- Renderer consumes backend `bootstrap-status`, `remote-enhancement-runtime-status`, and trusted `remote-shell-event` messages for Remote Enhancements observability, but SSH sidebar does not render a dedicated Remote Enhancements card in v1.
 
 ## 3. IPC Lifecycle (Current)
 
@@ -87,6 +99,45 @@ sequenceDiagram
   PB->>MP: ipcRenderer.invoke('backend:ssh-close-session', sessionId)
   MP->>BE: DELETE /api/v1/ssh/sessions/{sessionId}
 ```
+
+## 3.1 Guarded Window And App Close Lifecycle
+
+```mermaid
+sequenceDiagram
+  participant OS as Window/App Close Intent
+  participant MP as Main Process
+  participant BE as Backend Runtime
+  participant RD as Renderer Dialog
+
+  OS->>MP: BrowserWindow close or app before-quit
+  MP->>MP: preventDefault + coalesce repeated requests
+  MP->>BE: GET /api/v1/runtime/active-connections
+  alt no active SSH/SFTP sessions
+    MP->>MP: continue window close or app shutdown
+  else active sessions or probe unavailable
+    MP->>BE: GET /api/v1/settings
+    alt close confirmation disabled
+      MP->>BE: DELETE /api/v1/runtime/active-connections
+      MP->>MP: continue window close or app shutdown
+    else confirmation enabled or preference unavailable
+      MP->>RD: request localized warning (opaque requestId)
+      alt user cancels
+        RD-->>MP: confirmed=false
+      else user confirms
+        RD-->>MP: confirmed=true
+        MP->>BE: DELETE /api/v1/runtime/active-connections
+        MP->>MP: continue window close or app shutdown
+      end
+    end
+  end
+```
+
+- An active connection is an SSH or SFTP session still present in the backend service registry. Local terminals and port-forwarding runtimes are intentionally outside this warning scope.
+- `windowCloseConfirmationEnabled` is registered under General > Behavior and defaults to `true`. Main reads this persisted backend setting only when active sessions exist or the activity probe is unavailable. Disabling it skips the renderer dialog but still closes registered SSH/SFTP sessions before window or application shutdown; a preference read failure preserves the default warning behavior.
+- Main validates non-negative, internally consistent counts before using them. A failed or malformed probe follows the configured confirmation behavior instead of silently closing or permanently blocking exit.
+- Repeated title-bar, last-tab, menu, and shortcut close requests share one in-flight decision. Main binds the renderer response to both an opaque request ID and the owning `webContents`; preload validates and buffers the request until the React listener is mounted. A responsive renderer timeout resolves to the safe cancel decision, while an unavailable or destroyed renderer is allowed to exit instead of becoming permanently blocked.
+- On Windows and Linux, an approved main-window close continues through full application shutdown. On macOS, an approved window-only close disconnects SSH/SFTP sessions before destroying the window while leaving the application runtime available for activation; app quit still runs full shutdown.
+- Fatal startup/process exits bypass interactive confirmation but retain the existing backend and SFTP temporary-root cleanup path.
 
 ## 4. Security Model
 
@@ -118,13 +169,24 @@ sequenceDiagram
 - Token mismatch or stale session causes immediate close (`1008`).
 - Session attach timeout is enforced (30 seconds) to avoid orphaned resources.
 
+### Release Supply-Chain Boundary
+
+- Ordinary CI and rolling remote-bootstrap channels remain separate from versioned public releases. The rolling `remote-bootstrap-dev` and `remote-bootstrap-branch-*` assets are intentionally replaceable; tagged applications use only their exact versioned manifest URL.
+- GitHub Actions are pinned to full commit SHAs and updated through reviewed Dependabot pull requests. Build jobs are repository read-only and stage short-lived workflow artifacts; only the final release job can create or update a draft.
+- Formal release assembly validates the complete platform inventory, writes `SHA256SUMS`, creates GitHub provenance attestations, and refuses to modify a release after publication.
+- Windows signing is currently policy-gated. `audit` permits a visibly marked unsigned draft for pipeline validation, while `enforce` requires valid Authenticode signatures, timestamps, and the configured publisher identity before draft creation.
+- Draft mutability is intentional. Repository-side immutable releases, a protected `release` environment, and a `v*` tag ruleset complete the boundary before the first public release. See [Release Security](./release-security.md) for the operating contract and remaining setup.
+
 ## 5. Runtime Capabilities
 
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
-- SSH sessions now run user-scoped Remote Enhancements bootstrap installation after first WS attach when Settings `remoteEnhancementsEnabled`, the server record `remoteEnhancementsEnabled`, and `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` allow it. Disabled gates emit `REMOTE_ENHANCEMENTS_DISABLED`; missing manifest configuration remains an explicit failed bootstrap status before any remote probe. The Go installer writes only remote user XDG/home files and shell profile hooks; see `packages/remote-bootstrap/README.md` for the module contract.
+- SSH sessions ensure the user-scoped Remote Enhancements runtime after primary transport authentication and before PTY creation when Settings `remoteEnhancementsEnabled`, the server record `remoteEnhancementsEnabled`, and a manifest URL allow it. The first remote command lazily opens a separate bootstrap transport; all probe/install/status `exec` channels stay there, and its teardown begins before `shell()` becomes the primary transport's first session channel. This optional pre-shell path has a shared 15-second budget across settings, manifest I/O, bootstrap transport/proxy connection, and exec work. Expiry cancels active work, destroys the temporary client, and opens an ordinary PTY with code `BOOTSTRAP_ENSURE_TIMEOUT`. Disabled gates emit `REMOTE_ENHANCEMENTS_DISABLED`; missing manifest configuration remains an explicit failed bootstrap status before any bootstrap transport or remote probe is opened. The installed Go binary is queried first; matching version, manifest asset SHA-256, protocol, helper, and profile state skips download, while missing or legacy status triggers reinstall and post-install verification. Tagged release installers, `main` build artifacts, and opted-in remote-bootstrap branch builds can provide the default manifest URL through the packaged `remote-bootstrap/manifest-url.json` resource, while `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` remains the explicit override. Unpackaged development runs use `remote-bootstrap-dev` when neither override nor packaged resource is present. Ordinary PR and branch builds do not package a default manifest URL. The Go installer writes only remote user XDG/home files and shell profile hooks; see `packages/remote-bootstrap/README.md` for the module contract.
+
+- Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption. Missing the deadline yields `HELPER_HANDSHAKE_TIMEOUT`. Every OSC event must match the pre-shell helper version, protocol version, shell, and capability set. Manifest/install/settings failure, legacy events without contract fields, a missing handshake, or a runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored.
+- Renderer keeps the latest backend runtime status independently from its bounded 200-entry diagnostic history, so long sessions retain authoritative current diagnostics after older events are evicted.
 - SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
-- SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With; macOS uses the packaged NSWorkspace helper; Linux omits Open With.
+- SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With, resolves the PowerShell primary route and rundll32/shell32 fallback independently from the kernel-owned `GLOBALROOT\SystemRoot\System32` namespace instead of inherited environment/PATH/CWD values, and enriches the primary child environment through Windows known-folder APIs. A blocked or unavailable PowerShell route cannot prevent the validated rundll32 fallback from running with a kernel-anchored minimal environment. Packaged macOS runs accept only the compiled NSWorkspace helper under `process.resourcesPath`; repository binary/source fallbacks are development-only and unavailable when `app.isPackaged` is true. Linux omits Open With.
 - SFTP directory upload/download, chmod, byte-level transfer progress/cancellation, richer transfer queues, and SSH terminal session reuse remain planned follow-up work.
 
 ## 5.1 SSH Port Forwarding Runtime (Implemented)
@@ -202,7 +264,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -221,7 +283,34 @@ flowchart LR
   WS2 --> XT2[xterm.js write]
 ```
 
-### 6.3 Failure Boundary Model
+### 6.3 SFTP Transfer Progress Data Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer Task Queue
+  participant PB as Preload Bridge
+  participant MP as Main IPC
+  participant BE as Backend SFTP Service
+  participant FS as Local/Remote Stream
+
+  UI->>PB: upload/download(payload + transferId)
+  PB->>MP: invoke final transfer request
+  MP->>BE: POST upload/download
+  BE->>FS: pipeline through byte-counting Transform
+  loop every 500 ms while request is pending
+    UI->>PB: get progress(transferId)
+    PB->>MP: backend:sftp-get-transfer-progress
+    MP->>BE: GET /api/v1/sftp/transfers/{transferId}
+    BE-->>UI: bytes + total + rolling speed + status
+  end
+  BE-->>UI: final success or stable API error
+```
+
+- File bytes stay on the existing backend stream path; only bounded progress metadata crosses HTTP and IPC.
+- Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
+- This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
+
+### 6.4 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.
@@ -333,29 +422,37 @@ Handling principle:
 - Session runtime must guard against stale attach state.
 - Renderer should treat reload as a new lifecycle and re-establish state explicitly.
 
-### 8.4 Unreadable SQLite File During Startup
+### 8.4 Production Database Encryption and Recovery
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: Try SQLCipher bootstrap
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: fail startup with DB_PRAGMA_FAILED
+  BE->>DB: Inspect file header
+  alt Canonical plaintext SQLite
+    BE->>DB: checkpoint + copy + rekey encrypted copy
+    BE->>DB: integrity/schema verification + atomic promotion
+  else Encrypted database
+    BE->>DB: verify SQLCipher key and integrity
+  end
+  BE->>DB: connect Prisma through keyed SQLCipher adapter
+  DB-->>BE: ready or explicit migration/key error
+  BE-->>MAIN: continue only with encrypted storage
 ```
 
 Handling principle:
 
-- Production uses strict mode: SQLCipher/Prisma incompatibility fails fast and must be fixed operationally.
+- Production has no plaintext Prisma fallback. Only a canonical plaintext header enters the one-time migration; unknown/corrupt files and incorrect keys fail without rotating key material.
+- Migration keeps the source authoritative until an encrypted copy passes integrity and schema-count checks. Fixed `.sqlcipher-migration` and `.plaintext-backup` artifacts support restart recovery across rename interruptions. An encrypted temp that fails verification is preserved with its plaintext backup and causes startup to fail; recovery never rotates the database key by silently restoring and re-encrypting with an unverified key.
 
 ### 8.5 Startup Schema Upgrade Path
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as SQLCipher via Prisma adapter
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: apply PRAGMA + pending Prisma migration.sql files

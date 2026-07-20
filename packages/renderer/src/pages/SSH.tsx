@@ -3,14 +3,13 @@ import './ssh/terminal-image-layer.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
-import { ChevronDown, ChevronsDown, ChevronsUp, ChevronUp, RefreshCw, ScanSearch, TextSelect } from 'lucide-react';
+import { CaseSensitive, RefreshCw, Regex } from 'lucide-react';
 import React from 'react';
 
 import { TerminalAutocompleteMenu } from '../components/terminal/terminal-autocomplete-menu';
 import { TerminalSelectionBar } from '../components/terminal/terminal-selection-bar';
 import { TerminalTextDropZone } from '../components/terminal/terminal-text-drop-zone';
 import { Button } from '../components/ui/button';
-import { CommandPalette } from '../components/ui/command-palette';
 import {
   Dialog,
   DialogContent,
@@ -21,13 +20,16 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../components/ui/dialog';
+import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
 import { Menubar } from '../components/ui/menubar';
-import { Toggle } from '../components/ui/toggle';
+import { type SearchReplaceFilterOption, SearchReplacePanel } from '../components/ui/search-replace-panel';
+import { useDateTimeFormatter } from '../lib/date-time-format';
 import { t } from '../lib/i18n';
 import { useSettingsValues } from '../lib/settings-store';
 import { useToast } from '../lib/toast-context';
 import { useTerminalTextDropZone } from '../lib/use-terminal-text-drop-zone';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../types/tabs';
+import { RemoteEnhancementsDebugPanel } from './ssh/RemoteEnhancementsDebugPanel';
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import {
   createTerminalPasteWarningRequest,
@@ -133,6 +135,7 @@ const SSH: React.FC<SSHProps> = ({
   onTabVisualChange,
 }) => {
   const { error: notifyError, info: notifyInfo, success: notifySuccess, warning: notifyWarning } = useToast();
+  const { formatTime } = useDateTimeFormatter();
   const settingsValues = useSettingsValues();
 
   // Derive terminal-relevant settings from the centralized store.
@@ -183,6 +186,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
+  const userMenuDebugEntryEnabled = settingsValues.userMenuDebugEntryEnabled;
   const terminalWebLinksSettings = React.useMemo(
     () => ({
       enabled: terminalWebLinksEnabled,
@@ -399,6 +403,9 @@ const SSH: React.FC<SSHProps> = ({
       connectionState,
       connectionError,
       telemetryState,
+      remoteBootstrapStatus,
+      remoteEnhancementRuntimeStatus,
+      remoteEnhancementsDebugEvents,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -436,8 +443,15 @@ const SSH: React.FC<SSHProps> = ({
   const [terminalSearchQuery, setTerminalSearchQuery] = React.useState<string>('');
   const [terminalSearchCaseSensitive, setTerminalSearchCaseSensitive] = React.useState<boolean>(false);
   const [terminalSearchRegex, setTerminalSearchRegex] = React.useState<boolean>(false);
+  const terminalSearchInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [remoteEnhancementsDebugPanelOpen, setRemoteEnhancementsDebugPanelOpen] = React.useState<boolean>(false);
   const [terminalPasteWarningRequest, setTerminalPasteWarningRequest] =
     React.useState<TerminalPasteWarningRequest | null>(null);
+  const [exitHostFingerprintPrompt, clearExitHostFingerprintPrompt] = useDialogExitSnapshot(hostFingerprintPrompt);
+  const [exitTerminalPasteWarningRequest, clearExitTerminalPasteWarningRequest] =
+    useDialogExitSnapshot(terminalPasteWarningRequest);
+  const [exitTerminalClipboardPrompt, clearExitTerminalClipboardPrompt] =
+    useDialogExitSnapshot(terminalClipboardPrompt);
   /** Detects macOS so find uses the correct modifier path (Meta vs Ctrl). */
   const isMacOS = window.electron?.platform === 'darwin';
   /** Platform-resolved copy shortcut label shown in terminal context menus. */
@@ -484,6 +498,15 @@ const SSH: React.FC<SSHProps> = ({
   React.useEffect(() => {
     terminalPaneIdsRef.current = terminalPaneIds;
   }, [terminalPaneIds]);
+
+  React.useEffect(() => {
+    const isRemoteSshSession = connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+    if (userMenuDebugEntryEnabled && isRemoteSshSession) {
+      return;
+    }
+
+    setRemoteEnhancementsDebugPanelOpen(false);
+  }, [connectionIntent.lastResolvedSnapshot, userMenuDebugEntryEnabled]);
 
   React.useEffect(() => {
     const startupCommand = connectionIntent.startupCommand?.trim();
@@ -807,12 +830,12 @@ const SSH: React.FC<SSHProps> = ({
   }, [getSelectionText, openSelectionDirectoryInSftp]);
 
   /**
-   * Opens in-terminal search palette and optionally seeds query text.
+   * Opens in-terminal search panel and optionally seeds query text.
    *
    * @param seedQuery Optional initial query from selection/context menu.
    * @returns Nothing.
    */
-  const openTerminalSearchPalette = React.useCallback(
+  const openTerminalSearchPanel = React.useCallback(
     (seedQuery?: string): void => {
       if (seedQuery && seedQuery.trim()) {
         setTerminalSearchQuery(seedQuery);
@@ -825,8 +848,8 @@ const SSH: React.FC<SSHProps> = ({
   );
 
   const handleSelectionBarFind = React.useCallback(() => {
-    openTerminalSearchPalette(selectionAnchor?.selectionText);
-  }, [openTerminalSearchPalette, selectionAnchor]);
+    openTerminalSearchPanel(selectionAnchor?.selectionText);
+  }, [openTerminalSearchPanel, selectionAnchor]);
 
   /**
    * Executes one in-terminal search action.
@@ -907,7 +930,7 @@ const SSH: React.FC<SSHProps> = ({
   const handleContextMenuFind = React.useCallback(() => {
     const seedQuery = getSelectionText();
     // Defer opening via macrotask so Radix context-menu focus restoration has
-    // completed first; this keeps focus on the find palette input.
+    // completed first; this keeps focus on the find panel input.
     if (deferredFindOpenTimeoutRef.current !== null) {
       window.clearTimeout(deferredFindOpenTimeoutRef.current);
     }
@@ -915,9 +938,9 @@ const SSH: React.FC<SSHProps> = ({
     deferredFindOpenTimeoutRef.current = window.setTimeout(() => {
       // Clear ref first so cleanup logic remains source-of-truth for pending timer state.
       deferredFindOpenTimeoutRef.current = null;
-      openTerminalSearchPalette(seedQuery);
+      openTerminalSearchPanel(seedQuery);
     }, 0);
-  }, [getSelectionText, openTerminalSearchPalette]);
+  }, [getSelectionText, openTerminalSearchPanel]);
 
   const handleContextMenuSelectAll = React.useCallback(() => {
     selectAll();
@@ -930,7 +953,7 @@ const SSH: React.FC<SSHProps> = ({
 
   /**
    * Keeps query-driven search responsive by debouncing first-match jump with
-   * `TERMINAL_SEARCH_DEBOUNCE_MS` while users are typing in the palette input.
+   * `TERMINAL_SEARCH_DEBOUNCE_MS` while users are typing in the search input.
    */
   React.useEffect(() => {
     const normalizedQuery = terminalSearchQuery.trim();
@@ -955,7 +978,7 @@ const SSH: React.FC<SSHProps> = ({
   }, [runTerminalSearch, terminalSearchAutoKeyPrefix, terminalSearchOpen, terminalSearchQuery]);
 
   /**
-   * Clears search highlights when query is empty or palette is closed.
+   * Clears search highlights when query is empty or the search panel is closed.
    */
   React.useEffect(() => {
     const hasQuery = terminalSearchQuery.trim().length > 0;
@@ -965,6 +988,23 @@ const SSH: React.FC<SSHProps> = ({
 
     clearActiveTerminalSearch();
   }, [clearActiveTerminalSearch, terminalSearchOpen, terminalSearchQuery]);
+
+  /**
+   * Focuses the terminal search input after the shared panel mounts.
+   */
+  React.useEffect(() => {
+    if (!terminalSearchOpen) {
+      return;
+    }
+
+    const focusFrame = window.requestAnimationFrame(() => {
+      terminalSearchInputRef.current?.select();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+    };
+  }, [terminalSearchOpen]);
 
   /**
    * Registers Cmd/Ctrl+Shift+F shortcut to open in-terminal search for the active SSH page.
@@ -990,7 +1030,7 @@ const SSH: React.FC<SSHProps> = ({
 
       event.preventDefault();
       event.stopPropagation();
-      openTerminalSearchPalette(getSelectionText());
+      openTerminalSearchPanel(getSelectionText());
     };
 
     window.addEventListener('keydown', handleSearchShortcut, true);
@@ -1005,7 +1045,7 @@ const SSH: React.FC<SSHProps> = ({
     isEditableKeyboardTarget,
     isTerminalKeyboardCaptureTarget,
     isTerminalKeyboardTarget,
-    openTerminalSearchPalette,
+    openTerminalSearchPanel,
   ]);
 
   /**
@@ -1237,70 +1277,73 @@ const SSH: React.FC<SSHProps> = ({
   }, [notifyWarning]);
 
   const handleTerminalSearchPrevious = React.useCallback(() => {
+    if (!terminalSearchQuery.trim()) {
+      return;
+    }
+
     runTerminalSearch('previous');
-  }, [runTerminalSearch]);
+  }, [runTerminalSearch, terminalSearchQuery]);
 
   const handleTerminalSearchNext = React.useCallback(() => {
+    if (!terminalSearchQuery.trim()) {
+      return;
+    }
+
     runTerminalSearch('next');
-  }, [runTerminalSearch]);
+  }, [runTerminalSearch, terminalSearchQuery]);
 
-  const handleTerminalSearchFirst = React.useCallback(() => {
-    runTerminalSearch('first');
-  }, [runTerminalSearch]);
+  const handleTerminalSearchClose = React.useCallback(() => {
+    setTerminalSearchOpen(false);
+    setTerminalSearchQuery('');
+    focusActiveTerminal();
+  }, [focusActiveTerminal]);
 
-  const handleTerminalSearchLast = React.useCallback(() => {
-    runTerminalSearch('last');
-  }, [runTerminalSearch]);
+  const handleTerminalSearchPanelKeyDown = React.useCallback<React.KeyboardEventHandler<HTMLDivElement>>(
+    (event) => {
+      if (!(event.target instanceof HTMLInputElement) || event.target.name !== 'search') {
+        return;
+      }
 
-  const terminalSearchFooter = (
-    <div className="flex w-full items-center gap-2">
-      <div className="flex items-center gap-1.5">
-        <Toggle
-          pressed={terminalSearchCaseSensitive}
-          onPressedChange={setTerminalSearchCaseSensitive}
-        >
-          <TextSelect className="h-4 w-4" />
-          {t('ssh.terminalSearchCaseSensitive')}
-        </Toggle>
-        <Toggle
-          pressed={terminalSearchRegex}
-          onPressedChange={setTerminalSearchRegex}
-        >
-          <ScanSearch className="h-4 w-4" />
-          {t('ssh.terminalSearchRegex')}
-        </Toggle>
-      </div>
-      <div className="ml-auto flex items-center gap-1">
-        <Button
-          aria-label={t('ssh.terminalSearchFirst')}
-          variant="ghostIcon"
-          onClick={handleTerminalSearchFirst}
-        >
-          <ChevronsUp className="h-4 w-4" />
-        </Button>
-        <Button
-          aria-label={t('ssh.terminalSearchPrevious')}
-          variant="ghostIcon"
-          onClick={handleTerminalSearchPrevious}
-        >
-          <ChevronUp className="h-4 w-4" />
-        </Button>
-        <Button
-          aria-label={t('ssh.terminalSearchNext')}
-          variant="ghostIcon"
-          onClick={handleTerminalSearchNext}
-        >
-          <ChevronDown className="h-4 w-4" />
-        </Button>
-        <Button
-          aria-label={t('ssh.terminalSearchLast')}
-          variant="ghostIcon"
-          onClick={handleTerminalSearchLast}
-        >
-          <ChevronsDown className="h-4 w-4" />
-        </Button>
-      </div>
-    </div>
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        handleTerminalSearchPrevious();
+        return;
+      }
+
+      if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        handleTerminalSearchNext();
+      }
+    },
+    [handleTerminalSearchNext, handleTerminalSearchPrevious],
+  );
+
+  const terminalSearchFilters = React.useMemo<SearchReplaceFilterOption[]>(
+    () => [
+      {
+        icon: CaseSensitive,
+        id: 'caseSensitive',
+        label: () => t('ssh.terminalSearchCaseSensitive'),
+        onPressedChange: setTerminalSearchCaseSensitive,
+        pressed: terminalSearchCaseSensitive,
+      },
+      {
+        icon: Regex,
+        id: 'regex',
+        label: () => t('ssh.terminalSearchRegex'),
+        onPressedChange: setTerminalSearchRegex,
+        pressed: terminalSearchRegex,
+      },
+    ],
+    [terminalSearchCaseSensitive, terminalSearchRegex],
+  );
+
+  const handleToggleRemoteEnhancementsDebugPanel = React.useCallback(
+    (paneId: string) => {
+      activatePane(paneId);
+      setRemoteEnhancementsDebugPanelOpen((previous) => !previous);
+    },
+    [activatePane],
   );
 
   const handleTerminalTextDrop = React.useCallback(
@@ -1317,6 +1360,11 @@ const SSH: React.FC<SSHProps> = ({
     Boolean(selectedSftpDirectoryPath) &&
     connectionIntent.lastResolvedSnapshot?.type === 'ssh-server' &&
     Boolean(onOpenDirectoryInSFTP);
+  const canShowRemoteEnhancementsDebug =
+    userMenuDebugEntryEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+  const remoteEnhancementsDebugContextMenuLabel = remoteEnhancementsDebugPanelOpen
+    ? t('ssh.contextMenuCloseRemoteEnhancementsDebug')
+    : t('ssh.contextMenuOpenRemoteEnhancementsDebug');
   const selectionBarSearchLabel = selectionLink ? t('ssh.selectionBarOpenLink') : t('ssh.selectionBarSearch');
   const contextMenuSearchLabel = selectionLink ? t('ssh.contextMenuOpenLink') : t('ssh.contextMenuSearchOnline');
 
@@ -1344,6 +1392,7 @@ const SSH: React.FC<SSHProps> = ({
   // Card style
   const cardStyle = 'bg-ssh-card-bg-terminal h-full w-full flex-1 overflow-hidden rounded-[18px] p-1';
   const shouldSuppressOrbitBar = terminalSearchOpen;
+  const canNavigateTerminalSearch = terminalSearchQuery.trim().length > 0;
 
   return (
     <div
@@ -1355,7 +1404,7 @@ const SSH: React.FC<SSHProps> = ({
       onDrop={handleWrapperDrop}
     >
       {/* SSH */}
-      <div className={classNames(cardStyle, 'min-w-0')}>
+      <div className={classNames(cardStyle, 'relative min-w-0')}>
         <SSHTerminalPaneLayout
           terminalPaneIds={terminalPaneIds}
           activePaneId={activePaneId}
@@ -1367,6 +1416,9 @@ const SSH: React.FC<SSHProps> = ({
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
           rightClickAction={terminalRightClickAction}
+          remoteEnhancementsDebugLabel={
+            canShowRemoteEnhancementsDebug ? remoteEnhancementsDebugContextMenuLabel : undefined
+          }
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
@@ -1413,7 +1465,20 @@ const SSH: React.FC<SSHProps> = ({
             activatePane(paneId);
             closePane(paneId);
           }}
+          onToggleRemoteEnhancementsDebug={
+            canShowRemoteEnhancementsDebug ? handleToggleRemoteEnhancementsDebugPanel : undefined
+          }
         />
+
+        {remoteEnhancementsDebugPanelOpen ? (
+          <RemoteEnhancementsDebugPanel
+            latestStatus={remoteBootstrapStatus}
+            runtimeStatus={remoteEnhancementRuntimeStatus}
+            events={remoteEnhancementsDebugEvents}
+            formatTime={formatTime}
+            onClose={() => setRemoteEnhancementsDebugPanelOpen(false)}
+          />
+        ) : null}
       </div>
 
       <TerminalAutocompleteMenu
@@ -1432,25 +1497,36 @@ const SSH: React.FC<SSHProps> = ({
         onItemSelect={acceptAutocompleteAtIndex}
       />
 
-      {connectionState === 'connected' ? (
-        <CommandPalette
-          closeOnEsc
-          hideItemList
-          open={terminalSearchOpen}
-          query={terminalSearchQuery}
-          placeholder={t('ssh.terminalSearchPlaceholder')}
-          items={[]}
-          footer={terminalSearchFooter}
-          onInputArrowUp={handleTerminalSearchPrevious}
-          onInputArrowDown={handleTerminalSearchNext}
-          onOpenChange={(open) => {
-            setTerminalSearchOpen(open);
-            if (!open) {
-              setTerminalSearchQuery('');
-            }
-          }}
-          onQueryChange={setTerminalSearchQuery}
-        />
+      {connectionState === 'connected' && terminalSearchOpen ? (
+        <div className="pointer-events-auto fixed left-1/2 top-[50px] z-40 -translate-x-1/2">
+          <SearchReplacePanel
+            compact
+            actionState={{
+              findNext: {
+                disabled: !canNavigateTerminalSearch,
+                label: () => t('ssh.terminalSearchNext'),
+              },
+              findPrevious: {
+                disabled: !canNavigateTerminalSearch,
+                label: () => t('ssh.terminalSearchPrevious'),
+              },
+            }}
+            className="!w-[min(560px,calc(100vw-32px))]"
+            filters={terminalSearchFilters}
+            replaceMode="hidden"
+            replaceValue=""
+            searchInputRef={terminalSearchInputRef}
+            searchPlaceholder={() => t('ssh.terminalSearchPlaceholder')}
+            searchValue={terminalSearchQuery}
+            showMatchCount={false}
+            onClose={handleTerminalSearchClose}
+            onFindNext={handleTerminalSearchNext}
+            onFindPrevious={handleTerminalSearchPrevious}
+            onPanelKeyDown={handleTerminalSearchPanelKeyDown}
+            onReplaceChange={() => undefined}
+            onSearchChange={setTerminalSearchQuery}
+          />
+        </div>
       ) : null}
 
       {connectionState === 'connected' &&
@@ -1552,6 +1628,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitHostFingerprintPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1563,21 +1640,21 @@ const SSH: React.FC<SSHProps> = ({
             <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          {hostFingerprintPrompt ? (
+          {exitHostFingerprintPrompt ? (
             <div className="space-y-2 rounded-md border border-home-divider p-3 text-sm">
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
                 <span>
-                  {hostFingerprintPrompt.host}:{hostFingerprintPrompt.port}
+                  {exitHostFingerprintPrompt.host}:{exitHostFingerprintPrompt.port}
                 </span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
-                <span>{hostFingerprintPrompt.algorithm}</span>
+                <span>{exitHostFingerprintPrompt.algorithm}</span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
-                <span className="break-all">{hostFingerprintPrompt.fingerprint}</span>
+                <span className="break-all">{exitHostFingerprintPrompt.fingerprint}</span>
               </div>
             </div>
           ) : null}
@@ -1603,6 +1680,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitTerminalPasteWarningRequest}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1611,16 +1689,16 @@ const SSH: React.FC<SSHProps> = ({
         >
           <DialogHeader>
             <DialogTitle>{t('ssh.pasteWarning.title')}</DialogTitle>
-            {terminalPasteWarningRequest ? (
+            {exitTerminalPasteWarningRequest ? (
               <DialogDescription className="grid gap-1">
-                {terminalPasteWarningRequest.reasons.map((reason) => (
+                {exitTerminalPasteWarningRequest.reasons.map((reason) => (
                   <span
                     key={reason}
                     className="text-dialog-text"
                   >
                     {t(`ssh.pasteWarning.reasons.${reason}`, {
-                      count: terminalPasteWarningRequest.characterCount,
-                      threshold: terminalPasteWarningRequest.threshold,
+                      count: exitTerminalPasteWarningRequest.characterCount,
+                      threshold: exitTerminalPasteWarningRequest.threshold,
                     })}
                   </span>
                 ))}
@@ -1631,10 +1709,10 @@ const SSH: React.FC<SSHProps> = ({
             )}
           </DialogHeader>
 
-          {terminalPasteWarningRequest?.preview ? (
+          {exitTerminalPasteWarningRequest?.preview ? (
             <div className="min-w-0 max-w-full text-sm">
               <div className="text-home-text mb-1">{t('ssh.pasteWarning.previewLabel')}</div>
-              <pre className={TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME}>{terminalPasteWarningRequest.preview}</pre>
+              <pre className={TERMINAL_PASTE_WARNING_PREVIEW_CLASS_NAME}>{exitTerminalPasteWarningRequest.preview}</pre>
             </div>
           ) : null}
 
@@ -1659,6 +1737,7 @@ const SSH: React.FC<SSHProps> = ({
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitTerminalClipboardPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -1668,27 +1747,27 @@ const SSH: React.FC<SSHProps> = ({
           <DialogHeader>
             <DialogTitle>
               {t(
-                terminalClipboardPrompt?.operation === 'read'
+                exitTerminalClipboardPrompt?.operation === 'read'
                   ? 'ssh.terminalClipboard.readPromptTitle'
                   : 'ssh.terminalClipboard.writePromptTitle',
               )}
             </DialogTitle>
             <DialogDescription>
               {t(
-                terminalClipboardPrompt?.operation === 'read'
+                exitTerminalClipboardPrompt?.operation === 'read'
                   ? 'ssh.terminalClipboard.readPromptDescription'
                   : 'ssh.terminalClipboard.writePromptDescription',
                 {
-                  source: terminalClipboardPrompt?.sourceLabel ?? t('tabs.page.ssh'),
+                  source: exitTerminalClipboardPrompt?.sourceLabel ?? t('tabs.page.ssh'),
                 },
               )}
             </DialogDescription>
           </DialogHeader>
 
-          {terminalClipboardPrompt?.operation === 'write' && terminalClipboardPrompt.preview ? (
+          {exitTerminalClipboardPrompt?.operation === 'write' && exitTerminalClipboardPrompt.preview ? (
             <div className="rounded-md border border-home-divider p-3 text-sm text-home-text-subtle">
               <div className="text-home-text mb-1">{t('ssh.terminalClipboard.previewLabel')}</div>
-              <div className="break-words">{terminalClipboardPrompt.preview}</div>
+              <div className="break-words">{exitTerminalClipboardPrompt.preview}</div>
             </div>
           ) : null}
 

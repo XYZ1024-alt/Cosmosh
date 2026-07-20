@@ -12,6 +12,8 @@ import {
   MAX_TERMINAL_PANES,
   type MirrorPaneRuntime,
   type RemoteBootstrapStatus,
+  type RemoteEnhancementRuntimeStatus,
+  type RemoteEnhancementsDebugEvent,
   type ResolvedTerminalTarget,
   type SshTelemetryState,
   type TerminalAutocompleteAnchor,
@@ -206,6 +208,8 @@ export type SshCoreState = {
   connectionError: string;
   telemetryState: SshTelemetryState;
   remoteBootstrapStatus: RemoteBootstrapStatus | null;
+  remoteEnhancementRuntimeStatus: RemoteEnhancementRuntimeStatus | null;
+  remoteEnhancementsDebugEvents: RemoteEnhancementsDebugEvent[];
   hostFingerprintPrompt: HostFingerprintPrompt | null;
   canSplitTerminal: boolean;
   selectionAnchor: TerminalSelectionAnchor | null;
@@ -543,6 +547,11 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const [connectionError, setConnectionError] = React.useState<string>('');
   const [telemetryState, setTelemetryState] = React.useState<SshTelemetryState>(DEFAULT_TELEMETRY_STATE);
   const [remoteBootstrapStatus, setRemoteBootstrapStatus] = React.useState<RemoteBootstrapStatus | null>(null);
+  const [remoteEnhancementRuntimeStatus, setRemoteEnhancementRuntimeStatus] =
+    React.useState<RemoteEnhancementRuntimeStatus | null>(null);
+  const [remoteEnhancementsDebugEvents, setRemoteEnhancementsDebugEvents] = React.useState<
+    RemoteEnhancementsDebugEvent[]
+  >([]);
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
 
   React.useEffect(() => {
@@ -901,6 +910,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
+    setRemoteEnhancementRuntimeStatus,
+    setRemoteEnhancementsDebugEvents,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     setActivePane: activatePane,
     refreshSelectionAnchor,
@@ -1235,6 +1246,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       connectionError,
       telemetryState,
       remoteBootstrapStatus,
+      remoteEnhancementRuntimeStatus,
+      remoteEnhancementsDebugEvents,
       hostFingerprintPrompt,
       canSplitTerminal: terminalPaneIds.length < MAX_TERMINAL_PANES,
       selectionAnchor,

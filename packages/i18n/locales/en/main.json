@@ -17,13 +17,13 @@
       "startMenu": "Create a &Start Menu shortcut"
     },
     "uninstallPage": {
-      "deleteData": "Also &delete user data from AppData (this action cannot be undone)",
-      "description": "Uninstalling {productName} will remove all application files.\n\nYou can optionally also delete your personal data (settings, known hosts, SSH keys, etc.) stored in AppData."
+      "deleteData": "Also &delete usage data (this action cannot be undone)",
+      "description": "Select this option to delete {productName} usage data stored on this computer, such as settings, added hosts, and SSH keys."
     },
     "windowsIntegrationPage": {
       "contextMenu": "Add Open terminal in Cosmosh to folder right-click menu",
       "label": "Windows integration (optional):",
-      "terminalApp": "Register Cosmosh as a terminal launcher app (App Paths)"
+      "terminalApp": "Register Cosmosh with Terminal"
     },
     "windowsShell": {
       "openTerminal": "Open terminal in Cosmosh"

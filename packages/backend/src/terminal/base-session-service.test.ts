@@ -181,6 +181,22 @@ test('pending output buffer enforces hard caps and tracks dropped chunks', async
   }
 });
 
+test('active session count tracks bulk terminal session close operations', async () => {
+  const service = new MockTerminalService();
+
+  try {
+    service.addSession(createMockSession('session-count-1'));
+    service.addSession(createMockSession('session-count-2'));
+
+    assert.equal(service.getActiveSessionCount(), 2);
+    assert.equal(service.closeAllSessions(), 2);
+    assert.equal(service.getActiveSessionCount(), 0);
+    assert.equal(service.closeAllSessions(), 0);
+  } finally {
+    await service.stop();
+  }
+});
+
 test('WebSocket session path decoding rejects malformed percent-encoding', () => {
   assert.equal(resolveTerminalWebSocketSessionId('/ws/test/session-1', '/ws/test/'), 'session-1');
   assert.equal(resolveTerminalWebSocketSessionId('/ws/test/%', '/ws/test/'), null);

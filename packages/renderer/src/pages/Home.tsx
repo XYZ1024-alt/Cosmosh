@@ -71,6 +71,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../components/ui/dialog';
+import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,6 +94,7 @@ import {
   createPortForwardRule,
   createSshTag,
   deletePortForwardRule,
+  deleteSshKeychain,
   deleteSshServer,
   listLocalTerminalProfiles,
   listPortForwardRules,
@@ -104,6 +106,7 @@ import {
   stopPortForwardRule,
   trustSshFingerprint,
   updatePortForwardRule,
+  updateSshKeychain,
   updateSshServer,
 } from '../lib/backend';
 import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } from '../lib/entity-visuals';
@@ -118,6 +121,7 @@ import {
 import { resolveServerAddressForDisplay } from '../lib/server-address';
 import { resolveSystemProxyRulesForServer } from '../lib/server-proxy';
 import { useSettingsValue } from '../lib/settings-store';
+import { buildKeychainMetadataUpdatePayload } from '../lib/ssh-keychain-editor-actions';
 import {
   filterSharedKeychains,
   type KeychainEditorInitialFormState,
@@ -153,6 +157,7 @@ type SshServerListItem = components['schemas']['SshServerListItem'];
 type PortForwardRuleListItem = components['schemas']['PortForwardRuleListItem'];
 type PortForwardRuleType = components['schemas']['PortForwardRuleType'];
 type SshFolder = components['schemas']['SshFolder'];
+type SshTag = components['schemas']['SshTag'];
 type HomeMode = 'ssh' | 'keychains' | 'portForwarding';
 type QuickFilter = 'none' | 'recent' | 'favorite';
 type GroupMode = 'none' | 'lastUsed' | 'tag';
@@ -328,6 +333,30 @@ const resolveHomeModeTabVisual = (mode: HomeMode): { title: string; iconKey: Tab
  * and should never be displayed in user-facing tag lists or groups.
  */
 const isFavoriteTag = (tagName: string): boolean => tagName.toLowerCase().includes('favorite');
+
+/**
+ * Resolves the tag ids for the next favorite state shared by Home entities.
+ * The internal favorite tag is created lazily so servers and keychains use one
+ * canonical tag without exposing it in user-facing tag groups.
+ *
+ * @param currentTags Tags currently assigned to the entity.
+ * @returns Tag ids with the favorite state toggled.
+ */
+const resolveNextFavoriteTagIds = async (currentTags: SshTag[]): Promise<string[]> => {
+  if (currentTags.some((tag) => isFavoriteTag(tag.name))) {
+    return currentTags.filter((tag) => !isFavoriteTag(tag.name)).map((tag) => tag.id);
+  }
+
+  const tagsResponse = await listSshTags();
+  let favoriteTag = tagsResponse.data.items.find((tag) => tag.name.toLowerCase() === 'favorite');
+
+  if (!favoriteTag) {
+    const createResponse = await createSshTag({ name: 'favorite' });
+    favoriteTag = createResponse.data.item;
+  }
+
+  return [...currentTags.map((tag) => tag.id), favoriteTag.id];
+};
 
 /**
  * Returns the localized count label for the active home mode.
@@ -585,7 +614,10 @@ type HomeKeychainsContentProps = {
   groups: KeychainGroup[];
   gridIndexMap: Map<string, number>;
   gridNavigation: HomeGridNavigation;
+  onToggleFavorite: (keychain: SshKeychainListItem) => void;
+  onCopyKeychainName: (keychainName: string) => void;
   onEditKeychain: (keychainId: string) => void;
+  onDeleteKeychain: (keychainId: string, keychainName: string) => void;
 };
 
 /**
@@ -595,14 +627,20 @@ type HomeKeychainsContentProps = {
  * @param props.groups Grouped keychain rows.
  * @param props.gridIndexMap Map from rendered row key to keyboard navigation index.
  * @param props.gridNavigation Keyboard navigation helpers for keychain cards.
+ * @param props.onToggleFavorite Callback fired when a keychain's favorite state changes.
+ * @param props.onCopyKeychainName Callback fired when a keychain name is copied.
  * @param props.onEditKeychain Callback fired when a keychain card is selected.
+ * @param props.onDeleteKeychain Callback fired when keychain deletion is requested.
  * @returns Keychain card grid.
  */
 const HomeKeychainsContent: React.FC<HomeKeychainsContentProps> = ({
   groups,
   gridIndexMap,
   gridNavigation,
+  onToggleFavorite,
+  onCopyKeychainName,
   onEditKeychain,
+  onDeleteKeychain,
 }) => {
   return (
     <div className="space-y-4 pb-2">
@@ -614,23 +652,55 @@ const HomeKeychainsContent: React.FC<HomeKeychainsContentProps> = ({
               const keychainEntryKey = `${group.key}:${keychain.id}`;
               const keychainEntryIndex = gridIndexMap.get(keychainEntryKey) ?? 0;
               const colorKey = isEntityColorKey(keychain.colorKey) ? keychain.colorKey : 'emerald';
+              const isFavorite = isKeychainFavorite(keychain);
 
               return (
-                <EntityCard
-                  key={keychainEntryKey}
-                  {...gridNavigation.getItemProps(keychainEntryIndex)}
-                  layout="grid"
-                  title={keychain.name}
-                  subtitle={t('sshKeychain.visibilityShared')}
-                  icon={createEntityIconNode(
-                    {
-                      iconKey: keychain.iconKey,
-                      colorKey,
-                    },
-                    keychain.name,
-                  )}
-                  onClick={() => onEditKeychain(keychain.id)}
-                />
+                <ContextMenu key={keychainEntryKey}>
+                  <ContextMenuTrigger className="block">
+                    <EntityCard
+                      {...gridNavigation.getItemProps(keychainEntryIndex)}
+                      layout="grid"
+                      title={keychain.name}
+                      subtitle={t('sshKeychain.visibilityShared')}
+                      icon={createEntityIconNode(
+                        {
+                          iconKey: keychain.iconKey,
+                          colorKey,
+                        },
+                        keychain.name,
+                      )}
+                      onClick={() => onEditKeychain(keychain.id)}
+                    />
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      icon={isFavorite ? StarOff : Star}
+                      onSelect={() => onToggleFavorite(keychain)}
+                    >
+                      {isFavorite ? t('home.contextUnfavorite') : t('home.contextFavorite')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      icon={Copy}
+                      onSelect={() => onCopyKeychainName(keychain.name)}
+                    >
+                      {t('sshKeychain.contextCopyName')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      icon={Pencil}
+                      onSelect={() => onEditKeychain(keychain.id)}
+                    >
+                      {t('home.contextEdit')}
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      icon={Trash2}
+                      onSelect={() => onDeleteKeychain(keychain.id, keychain.name)}
+                    >
+                      {t('home.contextDelete')}
+                    </ContextMenuItem>
+                  </ContextMenuContent>
+                </ContextMenu>
               );
             })}
           </div>
@@ -1095,6 +1165,7 @@ type PortForwardRuleDialogProps = {
   servers: SshServerListItem[];
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
+  onExitComplete: () => void;
   onFormStateChange: (nextState: PortForwardRuleFormState) => void;
   onSubmit: () => void;
 };
@@ -1112,6 +1183,7 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   servers,
   isSubmitting,
   onOpenChange,
+  onExitComplete,
   onFormStateChange,
   onSubmit,
 }) => {
@@ -1128,11 +1200,15 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent className="max-w-[640px]">
+      <DialogContent
+        className="max-w-[640px]"
+        onExitComplete={onExitComplete}
+      >
         <DialogHeader>
           <DialogTitle>
             {mode === 'create' ? t('home.portForwardingDialogCreateTitle') : t('home.portForwardingDialogEditTitle')}
           </DialogTitle>
+          <DialogDescription className="sr-only">{t('home.portForwardingDialogDescription')}</DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
@@ -1312,6 +1388,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const [isEditFolderDialogOpen, setIsEditFolderDialogOpen] = React.useState<boolean>(false);
   const [isDeleteFolderDialogOpen, setIsDeleteFolderDialogOpen] = React.useState<boolean>(false);
   const [isDeleteServerDialogOpen, setIsDeleteServerDialogOpen] = React.useState<boolean>(false);
+  const [isDeleteKeychainDialogOpen, setIsDeleteKeychainDialogOpen] = React.useState<boolean>(false);
   const [folderNameInput, setFolderNameInput] = React.useState<string>('');
   const [activeFolderDraft, setActiveFolderDraft] = React.useState<{
     id: string;
@@ -1320,6 +1397,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
     colorKey: EntityColorKey;
   } | null>(null);
   const [activeServerDraft, setActiveServerDraft] = React.useState<{ id: string; name: string } | null>(null);
+  const [activeKeychainDraft, setActiveKeychainDraft] = React.useState<{ id: string; name: string } | null>(null);
   const [activePortForwardRuleDraft, setActivePortForwardRuleDraft] = React.useState<PortForwardRuleListItem | null>(
     null,
   );
@@ -1333,8 +1411,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const [isPortForwardRuleDeleting, setIsPortForwardRuleDeleting] = React.useState<boolean>(false);
   const [portForwardHostFingerprintPrompt, setPortForwardHostFingerprintPrompt] =
     React.useState<PortForwardHostFingerprintPrompt | null>(null);
+  const [exitPortForwardHostFingerprintPrompt, clearExitPortForwardHostFingerprintPrompt] = useDialogExitSnapshot(
+    portForwardHostFingerprintPrompt,
+  );
   const [isFolderActionSubmitting, setIsFolderActionSubmitting] = React.useState<boolean>(false);
   const [isServerDeleteSubmitting, setIsServerDeleteSubmitting] = React.useState<boolean>(false);
+  const [isKeychainDeleteSubmitting, setIsKeychainDeleteSubmitting] = React.useState<boolean>(false);
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
@@ -2582,7 +2664,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsPortForwardRuleDialogOpen(false);
-      setActivePortForwardRuleDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.portForwardingSaveFailed'));
@@ -2689,7 +2770,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeletePortForwardRuleDialogOpen(false);
-      setActivePortForwardRuleDraft(null);
       await reloadHomeData();
       notifySuccess(t('home.portForwardingDeleteSuccess'));
     } catch (error: unknown) {
@@ -2735,6 +2815,18 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
     setIsDeleteServerDialogOpen(true);
   }, []);
 
+  /**
+   * Opens the destructive confirmation for a specific keychain.
+   *
+   * @param keychainId Keychain identifier selected from the card menu.
+   * @param keychainName Keychain name shown in the confirmation copy.
+   * @returns Nothing.
+   */
+  const openDeleteKeychainDialog = React.useCallback((keychainId: string, keychainName: string): void => {
+    setActiveKeychainDraft({ id: keychainId, name: keychainName });
+    setIsDeleteKeychainDialogOpen(true);
+  }, []);
+
   const submitEditFolder = React.useCallback(async () => {
     if (!activeFolderDraft) {
       return;
@@ -2753,8 +2845,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         colorKey: activeFolderDraft.colorKey,
       });
       setIsEditFolderDialogOpen(false);
-      setFolderNameInput('');
-      setActiveFolderDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.folderUpdateFailed'));
@@ -2778,7 +2868,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeleteFolderDialogOpen(false);
-      setActiveFolderDraft(null);
       await reloadHomeData();
     } catch (error: unknown) {
       notifyError(error instanceof Error ? error.message : t('home.folderDeleteFailed'));
@@ -2800,7 +2889,6 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       }
 
       setIsDeleteServerDialogOpen(false);
-      setActiveServerDraft(null);
       await reloadHomeData();
       notifySuccess(t('home.serverDeleteSuccess'));
     } catch (error: unknown) {
@@ -2809,6 +2897,33 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       setIsServerDeleteSubmitting(false);
     }
   }, [activeServerDraft, notifyError, notifySuccess, reloadHomeData]);
+
+  /**
+   * Deletes the confirmed keychain and keeps the confirmation open when the backend rejects the request.
+   *
+   * @returns Resolves after the delete attempt and any required Home refresh complete.
+   */
+  const submitDeleteKeychain = React.useCallback(async (): Promise<void> => {
+    if (!activeKeychainDraft) {
+      return;
+    }
+
+    setIsKeychainDeleteSubmitting(true);
+    try {
+      const deleted = await deleteSshKeychain(activeKeychainDraft.id);
+      if (!deleted.success) {
+        throw new Error(t('sshKeychain.deleteFailed'));
+      }
+
+      setIsDeleteKeychainDialogOpen(false);
+      await reloadHomeData();
+      notifySuccess(t('sshKeychain.deleteSuccess'));
+    } catch (error: unknown) {
+      notifyError(error instanceof Error ? error.message : t('sshKeychain.deleteFailed'));
+    } finally {
+      setIsKeychainDeleteSubmitting(false);
+    }
+  }, [activeKeychainDraft, notifyError, notifySuccess, reloadHomeData]);
 
   const handleAssignServerToFolder = React.useCallback(
     async (serverId: string, folderId: string) => {
@@ -2847,39 +2962,41 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
    * Toggles the favorite status of a server.
    * - If the server is not favorited, finds or creates a "favorite" tag and assigns it.
    * - If the server is already favorited, removes the favorite tag from the server.
+   *
+   * @param server Server whose favorite state should change.
+   * @returns Resolves after the favorite update and Home refresh complete.
    */
-  const handleToggleFavorite = React.useCallback(
+  const handleToggleServerFavorite = React.useCallback(
     async (server: SshServerListItem) => {
       try {
-        const currentTags = server.tags ?? [];
-        const isFavorite = isServerFavorite(server);
-
-        let newTagIds: string[];
-
-        if (isFavorite) {
-          /* Remove all tags whose name matches the favorite pattern */
-          newTagIds = currentTags.filter((tag) => !isFavoriteTag(tag.name)).map((tag) => tag.id);
-        } else {
-          /* Resolve or create the "favorite" tag, then append its ID */
-          const tagsResponse = await listSshTags();
-          let favoriteTag = tagsResponse.data.items.find((tag) => tag.name.toLowerCase() === 'favorite');
-
-          if (!favoriteTag) {
-            const createResponse = await createSshTag({ name: 'favorite' });
-            favoriteTag = createResponse.data.item;
-          }
-
-          newTagIds = [...currentTags.map((tag) => tag.id), favoriteTag.id];
-        }
-
-        await updateSshServer(server.id, buildServerUpdatePayload(server, { tagIds: newTagIds }));
+        const nextTagIds = await resolveNextFavoriteTagIds(server.tags ?? []);
+        await updateSshServer(server.id, buildServerUpdatePayload(server, { tagIds: nextTagIds }));
 
         await reloadHomeData();
       } catch (error: unknown) {
         notifyError(error instanceof Error ? error.message : t('home.contextFavoriteFailed'));
       }
     },
-    [buildServerUpdatePayload, isServerFavorite, notifyError, reloadHomeData],
+    [buildServerUpdatePayload, notifyError, reloadHomeData],
+  );
+
+  /**
+   * Toggles a keychain favorite tag through a metadata-only update.
+   *
+   * @param keychain Keychain whose favorite state should change.
+   * @returns Resolves after the favorite update and Home refresh complete.
+   */
+  const handleToggleKeychainFavorite = React.useCallback(
+    async (keychain: SshKeychainListItem): Promise<void> => {
+      try {
+        const nextTagIds = await resolveNextFavoriteTagIds(keychain.tags ?? []);
+        await updateSshKeychain(keychain.id, buildKeychainMetadataUpdatePayload(keychain, nextTagIds));
+        await reloadHomeData();
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('home.contextFavoriteFailed'));
+      }
+    },
+    [notifyError, reloadHomeData],
   );
 
   const handleHomeModeChange = React.useCallback(
@@ -3248,7 +3365,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
                     groups={groupedKeychains}
                     gridIndexMap={keychainGridIndexMap}
                     gridNavigation={keychainGridNavigation}
+                    onToggleFavorite={(keychain) => {
+                      void handleToggleKeychainFavorite(keychain);
+                    }}
+                    onCopyKeychainName={(keychainName) => {
+                      void handleCopyToClipboard(keychainName);
+                    }}
                     onEditKeychain={openEditKeychainDialog}
+                    onDeleteKeychain={openDeleteKeychainDialog}
                   />
                 ) : (
                   <HomeSshContent
@@ -3272,7 +3396,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
                     onSetDraggingServerId={setDraggingServerId}
                     onSetDragOverFolderId={setDragOverFolderId}
                     onToggleFavorite={(server) => {
-                      void handleToggleFavorite(server);
+                      void handleToggleServerFavorite(server);
                     }}
                     onCopyToClipboard={(value) => {
                       void handleCopyToClipboard(value);
@@ -3322,6 +3446,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         visual={createFolderDialog.folderVisual}
         isSubmitting={createFolderDialog.isSubmitting}
         onOpenChange={createFolderDialog.onOpenChange}
+        onExitComplete={createFolderDialog.onExitComplete}
         onFolderNameChange={createFolderDialog.setFolderName}
         onVisualChange={createFolderDialog.setFolderVisual}
         onSubmit={() => {
@@ -3364,9 +3489,9 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         formState={portForwardRuleFormState}
         servers={servers}
         isSubmitting={isPortForwardRuleSubmitting}
-        onOpenChange={(open) => {
-          setIsPortForwardRuleDialogOpen(open);
-          if (!open) {
+        onOpenChange={setIsPortForwardRuleDialogOpen}
+        onExitComplete={() => {
+          if (!isDeletePortForwardRuleDialogOpen) {
             setActivePortForwardRuleDraft(null);
           }
         }}
@@ -3386,6 +3511,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       >
         <DialogContent
           showCloseButton={false}
+          onExitComplete={clearExitPortForwardHostFingerprintPrompt}
           onInteractOutside={(event) => event.preventDefault()}
           onEscapeKeyDown={(event) => {
             event.preventDefault();
@@ -3397,21 +3523,21 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
             <DialogDescription>{t('ssh.hostFingerprintDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          {portForwardHostFingerprintPrompt ? (
+          {exitPortForwardHostFingerprintPrompt ? (
             <div className="bg-home-card/70 space-y-2 rounded-lg border border-home-divider p-3 text-sm">
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogHost')}: </span>
                 <span className="text-home-text font-medium">
-                  {portForwardHostFingerprintPrompt.host}:{portForwardHostFingerprintPrompt.port}
+                  {exitPortForwardHostFingerprintPrompt.host}:{exitPortForwardHostFingerprintPrompt.port}
                 </span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogAlgorithm')}: </span>
-                <span className="text-home-text font-medium">{portForwardHostFingerprintPrompt.algorithm}</span>
+                <span className="text-home-text font-medium">{exitPortForwardHostFingerprintPrompt.algorithm}</span>
               </div>
               <div>
                 <span className="text-home-text-subtle">{t('ssh.hostFingerprintDialogFingerprint')}: </span>
-                <span className="break-all font-mono text-xs">{portForwardHostFingerprintPrompt.fingerprint}</span>
+                <span className="break-all font-mono text-xs">{exitPortForwardHostFingerprintPrompt.fingerprint}</span>
               </div>
             </div>
           ) : null}
@@ -3439,7 +3565,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isEditFolderDialogOpen}
         onOpenChange={setIsEditFolderDialogOpen}
       >
-        <DialogContent>
+        <DialogContent
+          onExitComplete={() => {
+            if (!isDeleteFolderDialogOpen) {
+              setFolderNameInput('');
+              setActiveFolderDraft(null);
+            }
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{t('home.contextEditFolder')}</DialogTitle>
             <DialogDescription>{t('home.dialogEditFolderDescription')}</DialogDescription>
@@ -3510,7 +3643,14 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isDeleteFolderDialogOpen}
         onOpenChange={setIsDeleteFolderDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onExitComplete={() => {
+            if (!isEditFolderDialogOpen) {
+              setFolderNameInput('');
+              setActiveFolderDraft(null);
+            }
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.contextDeleteFolder')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -3538,7 +3678,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         open={isDeleteServerDialogOpen}
         onOpenChange={setIsDeleteServerDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent onExitComplete={() => setActiveServerDraft(null)}>
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.dialogDeleteServerTitle')}</AlertDialogTitle>
             <AlertDialogDescription>
@@ -3563,10 +3703,44 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       </AlertDialog>
 
       <AlertDialog
+        open={isDeleteKeychainDialogOpen}
+        onOpenChange={setIsDeleteKeychainDialogOpen}
+      >
+        <AlertDialogContent onExitComplete={() => setActiveKeychainDraft(null)}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('sshKeychain.deleteConfirmTitle')}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t('sshKeychain.deleteConfirmDescription', { name: activeKeychainDraft?.name ?? '' })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancelButton disabled={isKeychainDeleteSubmitting}>
+              {t('home.actionCancel')}
+            </AlertDialogCancelButton>
+            <AlertDialogActionButton
+              disabled={isKeychainDeleteSubmitting}
+              onClick={(event) => {
+                event.preventDefault();
+                void submitDeleteKeychain();
+              }}
+            >
+              {t('home.contextDelete')}
+            </AlertDialogActionButton>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
         open={isDeletePortForwardRuleDialogOpen}
         onOpenChange={setIsDeletePortForwardRuleDialogOpen}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onExitComplete={() => {
+            if (!isPortForwardRuleDialogOpen) {
+              setActivePortForwardRuleDraft(null);
+            }
+          }}
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>{t('home.portForwardingDeleteTitle')}</AlertDialogTitle>
             <AlertDialogDescription>

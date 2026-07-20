@@ -7,7 +7,7 @@ This page explains how Cosmosh protects local database data today, why Linux may
 Think of Cosmosh database protection as a 2-step lock:
 
 1. **Database key generation / recovery** (done in Electron Main process).
-2. **Database encryption/decryption usage** (done in Backend process through `COSMOSH_DB_ENCRYPTION_KEY`).
+2. **Database page encryption/decryption** (done in Backend through a Prisma driver adapter backed by the SQLCipher native binding).
 
 Main process decides where the real key comes from:
 
@@ -20,7 +20,7 @@ Backend does not invent a key in production. It expects the resolved key from Ma
 
 ### 2.1 What this model protects
 
-- Reduces risk of plaintext database exposure at rest.
+- Encrypts production database pages at rest instead of only protecting the database key.
 - Avoids directly storing raw database encryption keys in plain config in production mode.
 - Keeps key bootstrap logic in Main process instead of Renderer.
 
@@ -54,7 +54,25 @@ If backend does not receive this key in production, it fails fast with `[db:key]
 
 - Database schema is owned by Prisma workflows (`prisma db push` in dev, migrations in packaged/prod pipelines).
 - Backend startup validates required tables and fails fast if schema is missing, instead of creating tables via runtime hand-written SQL.
-- In strict production mode, SQLCipher/Prisma unreadable-file errors are not auto-recovered by decrypting/resetting local files; startup fails with explicit diagnostics so operators can fix the root cause.
+- Production Prisma clients use `PrismaSqlCipherAdapterFactory` from `packages/backend/src/db/sqlcipher.ts`. It composes Prisma's `@prisma/adapter-better-sqlite3` query/transaction contract with the native binding from `better-sqlite3-multiple-ciphers`.
+- The adapter applies `cipher` and `key` before returning the connection to Prisma, then reads `sqlite_master` through that same keyed connection. SQLCipher is therefore the actual Prisma storage path, not a separate preflight connection.
+- First-run migrations execute through the keyed adapter. After schema convergence, Backend rejects an empty file or a file exposing the plaintext `SQLite format 3\0` header.
+- The SQLCipher native driver is mandatory in production. Missing/incompatible bindings or incorrect keys fail startup; there is no production plaintext Prisma fallback.
+
+### 3.4 One-time legacy plaintext migration
+
+Production startup recognizes only the canonical plaintext SQLite header as eligible for automatic migration. Unknown, corrupt, or encrypted files with an incorrect key are never treated as plaintext.
+
+Migration sequence:
+
+1. Checkpoint the plaintext WAL and switch the source to `journal_mode=DELETE`.
+2. Copy the checkpointed source to `<database>.sqlcipher-migration`.
+3. Apply SQLCipher `rekey` only to the copy.
+4. Verify the encrypted copy with the resolved key, `integrity_check`, and source/destination schema table counts.
+5. Rename the source to `<database>.plaintext-backup`, promote the verified encrypted copy, and verify the promoted database again.
+6. Delete the temporary plaintext backup after successful promotion.
+
+The fixed temporary/backup names make both rename interruption windows recoverable on the next startup. Before the encrypted copy verifies, the original plaintext database remains authoritative. If an interrupted encrypted temp cannot be verified, recovery preserves both artifacts and fails fast because it cannot safely distinguish corruption from an incorrect key; retrying with the original key can still promote the verified temp. Migration failures use `DB_SQLCIPHER_MIGRATION_FAILED`; SQLCipher/key/bootstrap failures use `DB_SQLCIPHER_BOOTSTRAP_FAILED`.
 
 ## 4. Preferred Path: Electron `safeStorage`
 
@@ -74,7 +92,8 @@ Important behavior:
 - Stored value is encrypted blob, not plaintext key.
 - Decryption is bound to OS secure storage availability.
 - Main process performs encryption/decryption; renderer is not used for this path.
-- If decryption or secure persistence fails at runtime, Main now attempts fallback resolver instead of failing immediately.
+- If decryption succeeds and a plaintext emergency fallback field is present from an older or broken write path, Main removes that plaintext field as best-effort cleanup.
+- If decryption or secure persistence fails at runtime, Main attempts fallback resolver instead of writing a plaintext emergency key while `safeStorage` is available.
 
 ## 5. Fallback Path: Master Password Mode (When `safeStorage` Is Unavailable or Fails)
 
@@ -126,15 +145,16 @@ If hash check fails, startup throws:
 
 ### 5.4 Emergency fallback key path
 
-To avoid startup dead-end when both `safeStorage` and master-password fallback are unavailable, Main now persists an emergency local fallback key:
+To avoid startup dead-end only when `safeStorage` is unavailable, Main may persist an emergency local fallback key:
 
 - `emergencyFallbackDbMasterKey?: string`
 
 Runtime behavior:
 
-1. If emergency fallback key exists, use it directly.
-2. If master-password fallback succeeds, persist emergency fallback key for future non-interactive recovery.
-3. If no DB file exists and fallback resolver fails, auto-provision a new emergency fallback key for first-run startup.
+1. If `safeStorage` is unavailable and an emergency fallback key exists, use it directly.
+2. If `safeStorage` is unavailable and master-password fallback succeeds, persist emergency fallback key for future non-interactive recovery.
+3. If `safeStorage` is unavailable, no DB file exists, and fallback resolver fails, auto-provision a new emergency fallback key for first-run startup.
+4. If `safeStorage` is available, newly generated or recovered keys are persisted only as `encryptedDbMasterKey`. Main does not newly write a plaintext emergency fallback key in this mode.
 
 If an existing DB file already exists and neither `safeStorage` nor fallback materials can recover old key material, startup still fails fast with explicit error to avoid silent data lockout.
 
@@ -144,7 +164,8 @@ If fallback successfully resolves a key while `safeStorage` is available again, 
 
 1. Encrypt the resolved fallback key with `safeStorage`.
 2. Persist it into `security.config.json` as `encryptedDbMasterKey`.
-3. Continue startup using the same recovered key.
+3. Remove `emergencyFallbackDbMasterKey` from the config.
+4. Continue startup using the same recovered key.
 
 This avoids accidental key rotation and keeps previously encrypted database data readable after recovery.
 
@@ -187,7 +208,7 @@ Fields:
 - `encryptedDbMasterKey?: string`
   - Base64 encoded encrypted payload from `safeStorage` path.
 - `emergencyFallbackDbMasterKey?: string`
-  - Plaintext emergency fallback key used for availability-first recovery when `safeStorage` and password resolver are unavailable.
+  - Plaintext emergency fallback key used only for availability-first recovery while `safeStorage` is unavailable.
 - `masterPasswordHash?: string`
   - Hex hash used only in fallback verification.
 - `masterPasswordSalt?: string`
@@ -195,11 +216,23 @@ Fields:
 
 Notes:
 
-- File can contain both safeStorage and fallback fields during transitions.
+- File can temporarily contain both safeStorage and fallback fields during recovery, but the `safeStorage` path removes plaintext emergency material after secure key resolution succeeds.
 - Fallback fields are required only when `safeStorage` is unavailable.
-- Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again.
+- Emergency fallback key can be used to repopulate `encryptedDbMasterKey` after `safeStorage` becomes available again, then it is removed.
 
-## 6.1 Prisma Engine Target Compatibility (Linux Packaging)
+## 6.1 Prisma and SQLCipher Runtime Packaging
+
+Packaged production runtime must include all parts of the single encrypted connection path:
+
+- `@prisma/adapter-better-sqlite3` and `@prisma/driver-adapter-utils` at the same version as `@prisma/client`.
+- The `better-sqlite3` JavaScript wrapper required by Prisma's adapter.
+- The filtered `better-sqlite3-multiple-ciphers/build/Release/better_sqlite3.node` native binding.
+
+`packages/main/scripts/sync-backend-runtime.cjs` recursively copies the adapter dependencies and separately preserves only the required SQLCipher native binding from the multi-cipher package.
+
+The native binding has two explicit build targets. Development Main and standalone Backend commands run Backend under the workspace system Node, so their startup lifecycles probe that runtime and rebuild only after an ABI mismatch. Packaging always rebuilds for the exact installed Electron version before runtime synchronization. Every successful rebuild must pass an in-memory database open/close probe under its target runtime; file existence alone is not accepted as compatibility evidence. On Windows, stop processes using the current binding before switching targets because the loaded native file is locked.
+
+Prisma Client, Prisma CLI, both adapter packages, and `better-sqlite3-multiple-ciphers` are pinned as one tested compatibility tuple. Upgrade them deliberately and rerun the encrypted reconnect, incorrect-key, plaintext-migration, and packaged-runtime tests on every supported platform before changing that tuple.
 
 To avoid backend startup failures such as `Prisma Client could not locate the Query Engine` on target machines, Linux packaging must include these Prisma Linux targets:
 
@@ -273,9 +306,21 @@ In desktop runtime, developers can inspect these diagnostics directly in Setting
 - Meaning: main process did not successfully resolve key.
 - Next step: inspect main-process earlier logs for safeStorage/fallback failure reason.
 
+### Symptom: `DB_SQLCIPHER_MIGRATION_FAILED`
+
+- Meaning: a recognized plaintext SQLite database could not be checkpointed, encrypted, verified, or atomically promoted.
+- Next step: preserve the primary database plus `.sqlcipher-migration` / `.plaintext-backup` artifacts and inspect the nested cause before retrying.
+
+### Symptom: `file is not a database` after SQLCipher key application
+
+- Meaning: the file is encrypted with another key, corrupt, or not a recognized plaintext SQLite database.
+- Next step: verify `security.config.json` and OS secure-storage identity. Do not delete or regenerate key material automatically.
+
 ## 10. Related Source Files
 
 - `packages/main/src/security/database-encryption.ts`
 - `packages/main/src/index.ts`
 - `packages/backend/src/db/prisma.ts`
+- `packages/backend/src/db/sqlcipher.ts`
+- `packages/backend/src/db/sqlcipher.test.ts`
 - `docs/developer/core/architecture.md`

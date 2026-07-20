@@ -6,6 +6,8 @@
 export const API_PATHS = {
   health: '/api/health',
   testPing: '/api/v1/test/ping',
+  runtimeGetActiveConnections: '/api/v1/runtime/active-connections',
+  runtimeCloseActiveConnections: '/api/v1/runtime/active-connections',
   settingsGet: '/api/v1/settings',
   settingsUpdate: '/api/v1/settings',
   auditListEvents: '/api/v1/audit/events',
@@ -36,6 +38,7 @@ export const API_PATHS = {
   sftpWriteFile: '/api/v1/sftp/sessions/{sessionId}/file',
   sftpDownloadFile: '/api/v1/sftp/sessions/{sessionId}/download',
   sftpUploadFile: '/api/v1/sftp/sessions/{sessionId}/upload',
+  sftpGetTransferProgress: '/api/v1/sftp/transfers/{transferId}',
   sftpCreateDirectory: '/api/v1/sftp/sessions/{sessionId}/directories',
   sftpCreateFile: '/api/v1/sftp/sessions/{sessionId}/files',
   sftpRenameEntry: '/api/v1/sftp/sessions/{sessionId}/rename',
@@ -73,6 +76,7 @@ export const API_CODES = {
   sshSessionNotFound: 'SSH_SESSION_NOT_FOUND',
   sshKeychainInUse: 'SSH_KEYCHAIN_IN_USE',
   sftpSessionNotFound: 'SFTP_SESSION_NOT_FOUND',
+  sftpTransferNotFound: 'SFTP_TRANSFER_NOT_FOUND',
   sftpValidationFailed: 'SFTP_VALIDATION_FAILED',
   sftpOperationFailed: 'SFTP_OPERATION_FAILED',
   sftpUploadConflict: 'SFTP_UPLOAD_CONFLICT',
@@ -86,6 +90,8 @@ export const API_CODES = {
   portForwardStartFailed: 'PORT_FORWARD_START_FAILED',
   portForwardStopFailed: 'PORT_FORWARD_STOP_FAILED',
   testPingOk: 'TEST_PING_OK',
+  runtimeActiveConnectionsGetOk: 'RUNTIME_ACTIVE_CONNECTIONS_GET_OK',
+  runtimeActiveConnectionsCloseOk: 'RUNTIME_ACTIVE_CONNECTIONS_CLOSE_OK',
   localTerminalListOk: 'LOCAL_TERMINAL_LIST_OK',
   localTerminalSessionCreateOk: 'LOCAL_TERMINAL_SESSION_CREATE_OK',
   settingsGetOk: 'SETTINGS_GET_OK',
@@ -117,6 +123,7 @@ export const API_CODES = {
   sftpEntryDetailsOk: 'SFTP_ENTRY_DETAILS_OK',
   sftpOperationOk: 'SFTP_OPERATION_OK',
   sftpFileReadOk: 'SFTP_FILE_READ_OK',
+  sftpTransferProgressOk: 'SFTP_TRANSFER_PROGRESS_OK',
 } as const;
 
 export const API_CAPABILITIES = ['ssh', 'sftp', 'port-forward'] as const;

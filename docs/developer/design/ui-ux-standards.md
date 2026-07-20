@@ -54,7 +54,15 @@ Implementation principles:
 - Scroll affordances inside menu wrappers must stay outside normal item flow; showing or hiding up/down indicators must not reserve blank rows, resize the active viewport, or shift the current scroll position. Overlay affordances must carry a tokenized surface background and backdrop blur so translucent menus do not reveal items underneath.
 - Menu single-choice/radio items must use the shared leading checkmark indicator, matching checkbox/menu selection affordances instead of dot markers.
 - Third-party editor overlays that cannot use Radix wrappers, such as CodeMirror autocomplete and info tooltips, must still use the shared menu/tooltip token rhythm: `bg-bg-subtle`, `shadow-menu-content` or `shadow-soft`, 4px panel gutters, 6px/10px item padding, `rounded-lg` panels, `rounded-md` items, and `bg-menu-control-hover` for hover/selection.
-- CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, and context menus still follow Cosmosh surface/menu tokens.
+- Reusable search/replace panels must use `SearchReplacePanel` from `packages/renderer/src/components/ui`. The panel is controlled by its caller, supports hidden/readonly/editable replacement modes, configurable filter toggles, match-count display, compact density, and action-level disabled/hidden states. Surface-specific adapters own search algorithms and map their state into this generic panel instead of forking the UI.
+- CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, search/replace panels, and context menus still follow Cosmosh surface/menu tokens.
+
+### 5.1 Dialog Exit-State Lifecycle
+
+- Setting `open` to `false` starts the dialog exit animation; it must not make dynamic labels, prompt payloads, or controlled field values disappear before the content leaves the viewport.
+- Shared dialog exit behavior lives in `packages/renderer/src/components/ui/dialog-lifecycle.ts`. `DialogContent` and `AlertDialogContent` expose `onExitComplete`, which runs only after the content element's own `data-state="closed"` animation finishes.
+- Prompt-driven dialogs whose owners clear nullable payloads immediately must render through `useDialogExitSnapshot` and release that snapshot from `onExitComplete`.
+- Form and draft state should be reset from `onExitComplete`, or initialized immediately before the next open operation when retaining closed state is acceptable. Do not synchronize cleanup with hard-coded animation-duration timers.
 
 ## 6. Interaction Density Rules
 
@@ -62,6 +70,22 @@ Implementation principles:
 - Maintain consistent control rhythm and spacing within each feature surface.
 - Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
+
+### 6.1 Entity Visual Picker Virtualization
+
+- `EntityVisualPicker` uses `@tanstack/react-virtual` to keep the full Lucide icon catalog searchable while mounting only visible fixed-grid rows plus a small overscan window.
+- The virtual grid preserves the established eight-column, 32 px icon-button rhythm and 4 px gap; virtualization must not resize or shift the picker while scrolling.
+- TanStack Virtual owns range calculation, total scroll size, overscan, and row scrolling. Feature code owns search, selection, keyboard semantics, and focus restoration; do not add a parallel manual windowing algorithm.
+- Arrow-key and forward-Tab navigation must call the virtualizer to reveal an offscreen target row before moving focus. Search updates keep the selected icon, or the first filtered icon when the selection is absent, as the active grid item.
+- Virtualization reduces mounted DOM only. Changes to icon-module loading or bundle composition remain a separate concern.
+
+### 6.2 SFTP Collection Virtualization
+
+- The SFTP directory tree and center file list use `@tanstack/react-virtual` with stable remote-path keys, fixed 30 px tree rows, fixed 34 px directory rows, and a small overscan window. The 30 px sticky directory header remains outside the logical row collection.
+- Virtualization changes mounted DOM only. `SFTP.tsx` continues to own the complete filtered/sorted entry collection, expanded tree order, selection model, keyboard navigation order, and drag/drop contracts.
+- The active roving-focus row and rows that own inline editing, an open context menu, or the native drag source stay mounted when necessary. Keyboard movement to an offscreen row must reveal it through the virtualizer before focus moves, and virtualized options/tree items must expose their logical position, collection size, and tree hierarchy to assistive technology.
+- Current-directory tree positioning uses flattened logical row geometry and preserves the existing upper-third target when the parent/current/expanded-child context does not fit in the viewport.
+- Directory marquee selection resolves intersections from the complete fixed-row model, including unmounted rows reached through edge auto-scroll. Virtualization must not weaken blank-area selection, modifier extension, drag/drop targeting, inline editing, or dirty-preview protection.
 
 ## 7. Orbit Bar Standard
 
@@ -107,6 +131,13 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Pages with major internal categories should keep the tab strip aligned with the active category when that category changes the user's task context.
 - Home tabs in Keychains or Port Forwarding mode must show that category's localized title and matching icon; returning to SSH mode restores the standard Home title and icon.
 
+### 7.4.1 Home Entity Card Context Menus
+
+- Home entity cards must use the shared `ContextMenu` wrapper and keep the card's primary click and roving-focus behavior intact.
+- Keychain card menus expose favorite/unfavorite, copy name, edit, and delete in that order, with separators between action groups.
+- Favorite changes for keychains must use metadata-only updates. Context-menu actions must never fetch, copy, or resubmit passwords, private keys, or private-key passphrases.
+- Keychain deletion requires explicit confirmation. A rejected delete keeps the keychain visible and reports the backend error without closing the confirmation surface.
+
 ## 7.5 Plain Text Selection Context Menu
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.
@@ -117,6 +148,8 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 ## 7.6 Command Palette Keyboard Focus
 
+- The global quick-pick overlay is shared by the command palette and tab switcher: a query starting with `>` shows commands, while a query without `>` shows the tab list.
+- Command-palette shortcuts must open the shared overlay with the `>` prefix already present; `Ctrl+Tab` must open the same overlay in tab-list mode and only the real held `Ctrl+Tab` flow may commit on Control key release.
 - When a command palette displays its search input, the input owns navigation keys even if a mouse click or nested control focus temporarily moves DOM focus to a list action or footer control.
 - Arrow navigation and palette-close shortcuts from non-text-entry descendants must first restore focus to the input, then run the same handler path used by the input.
 - Nested buttons must keep their normal activation semantics; focus handoff should not convert every descendant key into a command selection.
@@ -125,8 +158,26 @@ Terminal text selection interactions in SSH pages must follow these rules:
 
 - Custom command/search controls that render option lists must expose a labeled `combobox` tied to a labeled `listbox` with stable `aria-controls`, `aria-expanded`, `aria-activedescendant`, and per-option `aria-selected`.
 - Icon-only controls must carry a localized accessible name through `aria-label`; tooltips remain visual help and must not be the only name.
+- Every dialog must pair its title with a meaningful `DialogDescription`; dense form dialogs may visually hide the description with `sr-only` when persistent helper copy would be redundant.
 - Registry-driven settings controls must connect visible labels to the rendered control with stable `htmlFor`/`id` pairs, including switches, selects, text fields, textareas, and JSON edit buttons.
 - SFTP directory rows that support roving focus or selection must use `listbox`/`option` semantics and keep `aria-selected` aligned with entry selection instead of mixing selectable rows with `role="button"`.
+- SFTP directory lists must support desktop-style pointer marquee selection from list whitespace and the panel padding beside the list. The marquee must use a clearly visible token-based border and fill, preview intersecting rows as selected while dragging, and continuously auto-scroll near the list's vertical edges. It must not replace entry drag-and-drop, header column dragging, or inline editing; `Ctrl`/`Cmd` extends the existing selection.
+
+## 7.8 Renderer Window Close Guard
+
+- Main-window close and app-quit requests must check backend-owned SSH/SFTP activity before destroying the renderer.
+- General > Behavior exposes `Ask Before Closing Window` as a switch that defaults on. Turning it off suppresses only the renderer prompt; active SSH/SFTP sessions must still be disconnected before close. If the persisted preference cannot be read, retain the default prompt.
+- Present the warning with the shared renderer `Dialog` component. Main retains lifecycle authority and sends only an opaque confirmation request after its backend activity check requires user input.
+- Use the concise title `Close window?` and description `There are still sessions in progress. Are you sure you want to close the window?`; do not expose implementation details or per-protocol counts in this dialog.
+- The safe action (`Cancel`) is the default focus and cancel action. Closing requires an explicit `Close` command.
+- Repeated close requests must share one in-flight prompt, and canceling must leave both the window and active sessions unchanged.
+
+## 7.9 SFTP Transfer Task Feedback
+
+- Reuse the existing tab-local toolbar task menu for upload/download progress; do not introduce a floating transfer window, page banner, or modal for routine progress.
+- Running byte transfers show a stable progress bar, percentage, transferred/total size, and current speed. Polling updates should be throttled so stream chunks do not directly drive React renders.
+- Failed tasks keep the original operation label and file detail, add a localized backend reason in the semantic error color, and raise the shared error toast. Error text must wrap within the dense task surface without resizing the toolbar trigger.
+- Recent terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
 
 ## 8. Compliance Checklist
 

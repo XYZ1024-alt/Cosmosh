@@ -21,22 +21,25 @@
 - 当选中文本看起来像链接（任何URL scheme，包括自定义scheme）时，Orbit Bar 会显示“打开链接”，联网搜索仍遵循设置中的搜索引擎配置。
 - 如不需要 Orbit Bar，可在“设置 > 终端”中关闭。
 
-## 标签页切换
+## Quick Pick、命令与标签页切换
 
-- 按 Ctrl+Tab（macOS 也使用 Control+Tab）打开标签页切换器。
+- 按 Ctrl+Tab（macOS 也使用 Control+Tab）以标签页列表模式打开共享 quick-pick 浮层。
 - 持续按住 Ctrl/Control 时，连续按 Tab 可向后轮换目标标签页。
 - 按住 Shift 再按 Tab 可反向轮换。
-- 切换器打开后，可使用上/下方向键预览目标标签页。
+- quick-pick 浮层打开后，可使用上/下方向键预览目标标签页。
 - 松开 Ctrl/Control 后会跳转到当前选中的目标标签页。
-- 在切换器中用鼠标点击标签页会立即跳转，即使 Ctrl/Control 仍按住也会生效。
+- 在 quick-pick 浮层中用鼠标点击标签页会立即跳转，即使 Ctrl/Control 仍按住也会生效。
+- 输入普通文本可筛选已打开的标签页。
+- 输入`>`可将同一浮层切换到命令模式。
 - 标签条加号和 Header 用户菜单入口始终在标签条末尾打开新标签页。
 - 右键点击标签页并选择“在右侧新建标签页”，可在该标签页右侧立即创建新标签页。
 - 从当前标签页内部打开的新标签页（例如 SFTP 或设置编辑器后续入口）会在来源标签页右侧打开。
 
 ## 命令面板
 
-- 在 Windows/Linux 使用 Ctrl+Shift+P，在 macOS 使用 Cmd+Shift+P，可全局唤起命令面板。
+- 在 Windows/Linux 使用 Ctrl+Shift+P，在 macOS 使用 Cmd+Shift+P，可全局打开已输入`>`的共享 quick-pick 浮层。
 - 即使终端或输入框处于焦点状态，该快捷键也可用。
+- 删除开头的`>`可从命令切回标签页列表。
 - 可用于新建标签页、切换标签页、关闭当前标签页、关闭右侧标签页、跳转到设置搜索，以及打开已保存资源。
 - 资源命令包括`SSH: <server name> (<host>)`、`SFTP: <server name> (<host>)`、`Server: <server name> (<host>)`、`Keychain: <keychain name>`和`Forward: <forward name>`。
 - 服务器主机文本遵循“显示完整服务器地址”设置，因此命令标题中也会保持脱敏地址。

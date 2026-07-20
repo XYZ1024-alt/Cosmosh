@@ -1013,9 +1013,6 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                 <h1 className="text-home-text ps-2 text-[24px] font-semibold">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
                 </h1>
-                {isSearchMode ? (
-                  <p className="ps-2 text-sm text-home-text-subtle">{`${t('settings.query')}: "${search.trim()}"`}</p>
-                ) : null}
               </div>
 
               {!isAutoSaveEnabled ? (

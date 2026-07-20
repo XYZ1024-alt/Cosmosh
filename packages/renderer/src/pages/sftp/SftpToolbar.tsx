@@ -50,6 +50,7 @@ import type { InputContextMenuItem } from '../../components/ui/input-context-men
 import { Menubar, MenubarSeparator } from '../../components/ui/menubar';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { t } from '../../lib/i18n';
+import type { SftpDirectoryDropEventHandler, SftpDirectoryDropTarget } from './sftp-drag-drop';
 import type {
   AddressBreadcrumbRenderState,
   NavigationHistoryControlOptions,
@@ -65,6 +66,8 @@ import { SftpDirectoryViewMenuItems } from './SftpDirectoryViewMenuItems';
  * Props for the SFTP toolbar.
  */
 type SftpToolbarProps = {
+  activeDropTarget: SftpDirectoryDropTarget | null;
+  addressPath: string;
   addressBreadcrumbRenderState: AddressBreadcrumbRenderState;
   addressInputContextMenuItems: InputContextMenuItem[];
   addressInputRef: React.RefObject<HTMLInputElement | null>;
@@ -79,6 +82,7 @@ type SftpToolbarProps = {
   hasSelection: boolean;
   hasSingleSelection: boolean;
   isAddressInputEditing: boolean;
+  isAddressLoading: boolean;
   isBusy: boolean;
   isRefreshingDirectory: boolean;
   parentPath?: string;
@@ -101,6 +105,10 @@ type SftpToolbarProps = {
   isBreadcrumbLoading: (breadcrumbPath: string) => boolean;
   keepAddressInputDuringContextMenu: () => void;
   onAddressInputPointerDown: (event: React.PointerEvent<HTMLInputElement>) => void;
+  onDirectoryDropTargetDragEnter: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragLeave: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDragOver: SftpDirectoryDropEventHandler;
+  onDirectoryDropTargetDrop: SftpDirectoryDropEventHandler;
   onAuxiliarySidebarModeChange: (mode: SftpAuxiliarySidebarMode) => Promise<void>;
   onBeginCreateEntry: (type: 'file' | 'directory') => void;
   onBeginRenameEntry: (entry: ApiSftpEntry) => void;
@@ -146,6 +154,8 @@ type SftpToolbarProps = {
  * @returns SFTP toolbar.
  */
 export const SftpToolbar: React.FC<SftpToolbarProps> = ({
+  activeDropTarget,
+  addressPath,
   addressBreadcrumbRenderState,
   addressInputContextMenuItems,
   addressInputRef,
@@ -164,6 +174,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   hasSelection,
   hasSingleSelection,
   isAddressInputEditing,
+  isAddressLoading,
   isBreadcrumbLoading,
   isBusy,
   isPreviewDirty,
@@ -172,6 +183,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   keepAddressInputDuringContextMenu,
   navigationIndex,
   onAddressInputPointerDown,
+  onDirectoryDropTargetDragEnter,
+  onDirectoryDropTargetDragLeave,
+  onDirectoryDropTargetDragOver,
+  onDirectoryDropTargetDrop,
   onAuxiliarySidebarModeChange,
   onBeginCreateEntry,
   onBeginRenameEntry,
@@ -294,7 +309,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
           </Tooltip>
           <DropdownMenuContent
             horizontalAlign="right"
-            className="w-[320px]"
+            className="w-96 max-w-[calc(100vw-1rem)]"
           >
             <DropdownMenuSlot className="px-2 py-2">
               <div className="flex h-7 items-center justify-between gap-3 px-1">
@@ -312,7 +327,9 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                   const progressPercent =
                     task.progress && task.progress.total > 0
                       ? Math.min(100, Math.round((task.progress.completed / task.progress.total) * 100))
-                      : undefined;
+                      : task.status === 'success' && task.progress?.total === 0
+                        ? 100
+                        : undefined;
 
                   return (
                     <div
@@ -334,11 +351,16 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-sm text-header-text">{task.label}</div>
                           <div className="mt-0.5 truncate text-xs text-header-text-muted">{task.detail}</div>
+                          {task.errorMessage ? (
+                            <div className="mt-1 line-clamp-2 break-words text-xs text-form-message-error">
+                              {task.errorMessage}
+                            </div>
+                          ) : null}
                         </div>
                         <span className="shrink-0 self-start text-xs text-header-text-muted">
                           {t(`sftp.tasks.status.${task.status}`)}
                         </span>
-                        <div className="col-span-2 col-start-2 flex items-center gap-2">
+                        <div className="col-span-2 col-start-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
                           <div
                             role="progressbar"
                             aria-label={task.label}
@@ -356,9 +378,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                               style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
                             />
                           </div>
-                          <span className="w-9 shrink-0 text-right text-xs text-header-text-muted">
-                            {progressLabel}
+                          <span className="min-w-9 shrink-0 text-right text-xs text-header-text-muted">
+                            {progressPercent === undefined ? '...' : `${progressPercent}%`}
                           </span>
+                          <span className="col-span-2 truncate text-xs text-header-text-muted">{progressLabel}</span>
                         </div>
                       </div>
                     </div>
@@ -425,12 +448,15 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
           <MenubarSeparator vertical />
 
           <SftpAddressControl
+            activeDropTarget={activeDropTarget}
+            addressPath={addressPath}
             addressBreadcrumbRenderState={addressBreadcrumbRenderState}
             addressInputContextMenuItems={addressInputContextMenuItems}
             addressInputRef={addressInputRef}
             currentPath={currentPath}
             getBreadcrumbDirectories={getBreadcrumbDirectories}
             isAddressInputEditing={isAddressInputEditing}
+            isAddressLoading={isAddressLoading}
             isBreadcrumbLoading={isBreadcrumbLoading}
             isBusy={isBusy}
             keepAddressInputDuringContextMenu={keepAddressInputDuringContextMenu}
@@ -439,6 +465,10 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
             sftpShowAddressAsText={sftpShowAddressAsText}
             onAddressInputPointerDown={onAddressInputPointerDown}
             onCopyCurrentPath={onCopyCurrentPath}
+            onDirectoryDropTargetDragEnter={onDirectoryDropTargetDragEnter}
+            onDirectoryDropTargetDragLeave={onDirectoryDropTargetDragLeave}
+            onDirectoryDropTargetDragOver={onDirectoryDropTargetDragOver}
+            onDirectoryDropTargetDrop={onDirectoryDropTargetDrop}
             onEditCurrentPath={onEditCurrentPath}
             onNavigateToPath={onNavigateToPath}
             onPathInputBlur={onPathInputBlur}

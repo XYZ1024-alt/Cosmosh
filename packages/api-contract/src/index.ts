@@ -4,6 +4,8 @@ export { appendApiQueryParams, replaceApiPathToken, resolveApiPath } from './htt
 export type { ApiPathParams, ApiQueryParams } from './http';
 export { APP_MENU_ACTIONS, isAppMenuAction } from './ipc';
 export type {
+  AppCloseConfirmationRequest,
+  AppCloseConfirmationResponse,
   AppMenuAction,
   BackendRequestTrace,
   BackendRequestTraceBody,
@@ -12,9 +14,12 @@ export type {
   SystemProxyResolveRequest,
   SystemProxyResolveResult,
   SftpOpenWithApplication,
+  SftpDroppedUploadLocalEntry,
   SftpTemporaryFileWatchChange,
   SftpUploadFileSelection,
   SftpUploadLocalFile,
+  SftpUploadRejectedLocalEntry,
+  SftpUploadRejectedLocalEntryReason,
 } from './ipc';
 export {
   GLOBAL_SERVER_PROXY_MODES,
@@ -150,6 +155,11 @@ export type ApiSettingsUpdateResponse = ApiSuccessBase & {
 
 export type ApiErrorResponse = components['schemas']['ApiError'];
 export type ApiTestPingResponse = paths['/api/v1/test/ping']['get']['responses']['200']['content']['application/json'];
+export type ApiRuntimeActiveConnectionsData = components['schemas']['RuntimeActiveConnectionsData'];
+export type ApiRuntimeActiveConnectionsGetResponse =
+  paths['/api/v1/runtime/active-connections']['get']['responses']['200']['content']['application/json'];
+export type ApiRuntimeActiveConnectionsCloseResponse =
+  paths['/api/v1/runtime/active-connections']['delete']['responses']['200']['content']['application/json'];
 export type ApiAuditEventListQuery = paths['/api/v1/audit/events']['get']['parameters']['query'];
 export type ApiAuditEventListResponse =
   paths['/api/v1/audit/events']['get']['responses']['200']['content']['application/json'];
@@ -251,6 +261,8 @@ export type ApiSftpUploadFileRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['requestBody']['content']['application/json'];
 export type ApiSftpUploadFileResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/upload']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpTransferProgressResponse =
+  paths['/api/v1/sftp/transfers/{transferId}']['get']['responses']['200']['content']['application/json'];
 export type ApiSftpCreateDirectoryRequest =
   paths['/api/v1/sftp/sessions/{sessionId}/directories']['post']['requestBody']['content']['application/json'];
 export type ApiSftpCreateDirectoryResponse =

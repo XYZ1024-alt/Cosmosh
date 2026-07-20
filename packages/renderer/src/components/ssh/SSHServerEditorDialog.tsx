@@ -500,6 +500,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
         visual={createFolderDialog.folderVisual}
         isSubmitting={createFolderDialog.isSubmitting}
         onOpenChange={createFolderDialog.onOpenChange}
+        onExitComplete={createFolderDialog.onExitComplete}
         onFolderNameChange={createFolderDialog.setFolderName}
         onVisualChange={createFolderDialog.setFolderVisual}
         onSubmit={() => {

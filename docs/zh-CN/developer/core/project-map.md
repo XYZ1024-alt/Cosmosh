@@ -13,15 +13,26 @@ flowchart TB
   ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
+  ROOT --> CI[".github/workflows"]
 ```
 
 ## 2. 目录职责
+
+### `.github/workflows`
+
+- **角色**：CI 校验、滚动开发资产与版本化发布编排。
+- `build-main.yml` 负责普通 Electron 打包，以及按设计保持可变的 `remote-bootstrap-dev` 与分支 prerelease 通道。
+- `release.yml` 负责只读平台构建、Windows 签名策略检查、资产清单校验、校验和、provenance attestations，并通过单一限权写入任务发布 draft release。
+- 所有外部 Action 引用都固定到完整 commit SHA；`.github/dependabot.yml` 提交需要评审的 digest 更新。
 
 ### `scripts`
 
 - **角色**：仓库级开发与发布流程辅助脚本。
 - **关键文件**：
   - `dev-profile.mjs`：`pnpm dev:profile` 与 `pnpm dev:main:fresh` 使用的开发身份管理器。它会自动把旧的隐式默认身份导入到受保护的 `default` 身份，然后在 `.cosmosh/dev-profiles/<name>/` 下创建、切换、重置、删除身份，并可用身份级运行路径执行命令。
+  - `build-remote-bootstrap-release.mjs`：CI/发布辅助脚本，用于交叉编译 Linux 远端 bootstrap binary、计算 SHA-256，并在 `packages/remote-bootstrap/dist/` 下写入被 git ignore 的 manifest。正式 tag release 会把这些文件上传到版本化 release；`main` push 会上传到固定 `remote-bootstrap-dev` prerelease；分支名包含 `remote-bootstrap` 的 push 和手动 dispatch 可以上传到分支专用临时 prerelease 做端到端测试；普通 PR 只用它做校验。
+  - `prepare-release-assets.mjs`：校验扁平的跨平台 release 资产清单，并在 attestation 与 draft 上传前写入确定性的 `SHA256SUMS`。
+  - `verify-windows-release-signatures.ps1`：对 NSIS 安装器与打包应用可执行文件的 Authenticode 签名和时间戳证书进行审计或强制校验。
   - `update-version.js`：版本元数据更新辅助。
   - `precommit-staged.mjs`：暂存文件 precommit 校验辅助。
   - `setup-githooks.mjs`：本地 Git hook 初始化。
@@ -31,16 +42,25 @@ flowchart TB
 - **角色**：Electron 宿主进程。
 - **关键文件**：
   - `src/index.ts`：应用启动、窗口配置、IPC 处理器、后端子进程管理。
+  - `src/window-close-guard.ts`：根据 backend 持有的 SSH/SFTP 活动状态串行处理窗口关闭与应用退出决策，并对探测失败采用保守确认策略。
+  - `src/renderer-close-confirmation.ts`：绑定发送方并校验 request ID 的 Main 到 Renderer 关闭确认 broker，包含超时与 renderer 销毁处理。
   - `src/ipc/register-app-utility-ipc.ts`：特权应用工具 IPC，例如原生对话框、文件管理器集成、SFTP 临时文件创建，以及已校验的系统打开/打开方式流程。
+  - `src/ipc/sftp-open-with-runtime.ts`：负责 SFTP 打开方式使用的内核锚定 Windows 系统可执行文件/库解析、OS known-folder 子进程环境，以及 macOS 打包态与开发态 helper 选择。
   - `src/ipc/register-debug-ipc.ts`：开发诊断 IPC，包括 backend 请求镜像的列表、清空与事件通道。
   - `src/ipc/backend-request-trace-store.ts`：仅开发态使用的 backend proxy 请求镜像脱敏 ring buffer。
-  - `src/ipc/sftp-download-target-authorizations.ts`：面向 renderer 所有者的本地 SFTP 下载目标精确路径能力授权。
+  - `src/ipc/sftp-download-target-authorizations.ts`：面向 renderer 所有者的本地 SFTP 下载目标精确路径能力授权，并包含按 `transferId` 绑定所有者的一次重试租约。
   - `src/preload.ts`：安全渲染层桥接。
   - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助，包含开发身份数据库路径覆盖。
   - `src/dev/dev-profile.ts`：仅开发态使用的身份激活逻辑，在启动前将选中身份映射到 Electron `userData`、SQLite 与 backend secret 存储路径。
+  - `src/dev/backend-runtime.ts`：Main 开发态 backend 子进程使用的系统 Node executable 校验边界。
   - `resources/installer.nsh`：Windows NSIS 安装器扩展，包括辅助安装选项页、shell/terminal 注册钩子、卸载数据清理，以及安装器 DPI manifest 设置。
   - `resources/helpers`：打包的系统 helper，包括 macOS NSWorkspace SFTP 打开方式 helper 源码/二进制。
+  - `resources/remote-bootstrap/manifest-url.json`：被 git ignore 的 CI 打包资源，在 release 或 `main` 构建提供默认 URL 时记录 packaged backend 启动使用的远端增强 manifest URL。
   - `scripts/compile-macos-open-with-helper.mjs`：仅 macOS 生效的构建钩子，在打包前编译 SFTP 打开方式 helper。
+  - `scripts/dev-main.cjs`：在系统 Node 下编译 Main，并把 canonical Node executable 交接给 Electron 的开发启动器。
+  - `scripts/dev-preflight.cjs`：面向 API contract 与 i18n 产物的增量开发构建检查。
+  - `scripts/ensure-sqlcipher-native.cjs`：面向系统 Node 开发态和 Electron 打包态的 SQLCipher native ABI 探针与重建路径。
+  - `scripts/write-remote-bootstrap-manifest-url.cjs`：CI 打包辅助脚本，在设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时写入 packaged 远端增强 manifest URL 资源；未设置时会删除陈旧的被 ignore 资源。
   - `devtools/request-trace-panel`：未打包的仅开发态 DevTools extension，由 Main 在开发运行中加载；它读取 renderer 镜像缓存，不改变 backend transport。
 
 ### `packages/renderer`
@@ -48,12 +68,13 @@ flowchart TB
 - **角色**：React UI 层。
 - **关键目录**：
   - `src/pages`：功能页面（`Home`、`SSH`、`SFTP`、`Settings`、`SettingsEditor`等）。Home 负责 SSH 服务器、钥匙链与端口转发管理界面。
-  - `src/pages/sftp`：SFTP 页面子模块，负责浏览器式 UI 编排、动作菜单、目录/树/详情面板与共享 SFTP 辅助函数。
+  - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务队列、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
-  - `src/components/ui`：基于 Radix 的原子组件封装与样式契约。
-  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、视觉编辑器、可复用的创建文件夹弹窗）。
+  - `src/components/CloseWindowConfirmationDialog.tsx`：为 Main 持有的活动会话关闭决策提供共享 Renderer `Dialog` 界面。
+  - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
+  - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、基于 TanStack Virtual 的视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
-  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
+  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与查找/替换 adapter，以及工具抽象（含共享实体视觉工具与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。
 
 ### `packages/backend`
@@ -62,16 +83,17 @@ flowchart TB
 - **关键目录**：
   - `src/http/routes`：设置、SSH 实体、端口转发规则与本地终端动作 REST 路由。
   - `src/audit`：本地优先审计领域（脱敏、保留策略、查询模型与写入服务）。
-  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测），以及非 shell SSH 连接共享 helper。
-  - `src/remote-bootstrap`：面向活跃 SSH 会话的远端增强 bootstrap 编排。它负责加载部署 manifest、通过有界侧通道 `ssh2 exec` 探测远端平台、注入 shell wrapper、转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
+  - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测、钥匙链凭据解析），以及供 shell 与非 shell transport 共用的已认证连接 helper。该 helper 会为每条 transport 创建新的 proxy socket，并支持 attempt 级压缩策略与取消信号。
+  - `src/remote-bootstrap`：交互 shell 打开前的远端增强编排。它负责加载部署 manifest，通过与交互 client 隔离的临时 SSH transport 探测远端平台，校验已安装 Go binary 的运行时状态，仅在安装缺失或陈旧时注入下载 wrapper，向 `SshSessionService` 返回可信 helper 契约，转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
-  - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理）。
+  - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理），包含单文件传输的短期内存字节进度记录。
   - `src/settings`：设置默认值、请求校验解析，以及供 HTTP 路由和运行时服务复用的 AppSettings 读取器。
   - `src/validation-utils.ts`：后端 HTTP 边界校验共享原语，供路由与领域 payload 解析器复用。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
   - `src/terminal`：终端会话共享原语（WebSocket 消息规范化、历史命令解析、尺寸收敛、历史同步时序辅助）。
   - `src/terminal/completion`：终端自动补全共享领域模块（规范数据、排序引擎、补全响应组装），由 SSH 与本地终端会话服务共同使用。
-  - `src/db`：Prisma 初始化与数据库生命周期。
+  - `src/db/prisma.ts`：Prisma 生命周期、运行时 migration 执行、schema 校验与结构化数据库错误。
+  - `src/db/sqlcipher.ts`：生产 SQLCipher adapter factory、keyed connection 校验、旧明文库迁移与迁移中断恢复。
 
 ### `packages/api-contract`
 
@@ -96,9 +118,9 @@ main/backend/renderer 作用域共用的语言 JSON 源与运行时 i18n 包。
 
 - `README.md`：模块指南，覆盖目的、运行时归属、manifest 契约、安装路径、状态码、安全边界以及测试/构建命令。
 - `cmd/cosmosh-wrappergen`：为 `bash`、`zsh`、`fish`、`ash`、`sh` 生成 shell 专属 bootstrap wrapper。
-- `cmd/cosmosh-bootstrap`：将下载得到的 bootstrap binary 与薄 shell helper 安装到远端用户级目录。
+- `cmd/cosmosh-bootstrap`：将下载得到的 bootstrap binary 与 Go 生成的 shell helper 安装到远端用户级目录，或报告经过校验的已安装运行时契约。
 - `internal/wrapper`：校验来自 manifest 的 wrapper 输入，并用 shell-safe quoting 渲染 POSIX/fish shell source。
-- `internal/install`：执行幂等用户级安装、shell profile hook 修复、version marker 写入，以及 line-delimited `bootstrap-status` 输出。
+- `internal/install`：负责版本化 helper 生成、OSC 协议/能力声明、helper/binary 精确校验、幂等用户级安装、profile hook 修复、已安装状态报告、version marker 写入以及 line-delimited `bootstrap-status` 输出。
 
 ## 3. 功能落位规则
 
@@ -127,7 +149,7 @@ flowchart TD
 
 ## 5. 尚未实现（规划中）
 
-- 完整 SFTP 传输队列模块（目录上传/下载、字节级进度/取消、重试策略与持久化传输历史）。
+- 完整的 backend SFTP 传输队列模块（目录上传/下载、取消/续传、通用重试策略与持久化传输历史）。单文件上传/下载的字节进度与速度观测已经实现，但不包含 backend 调度。
 - 尚无独立 `common` 共享包；当前共享通过 `api-contract` + `i18n` 实现。
 
 ## 6. 常见改动场景

@@ -17,6 +17,30 @@ export type RemoteBootstrapStatus = {
   message?: string;
 };
 
+/** OSC contract version understood by the backend runtime gate. */
+export const REMOTE_SHELL_PROTOCOL_VERSION = 1;
+
+/** Runtime identity returned only after bootstrap installation has been validated. */
+export type RemoteBootstrapRuntimeContract = {
+  shell: RemoteBootstrapProbe['shell'];
+  helperVersion: string;
+  protocolVersion: number;
+  capabilities: string[];
+};
+
+/** Result used by SSH session creation to enable or disable helper event consumption. */
+export type RemoteBootstrapResult =
+  | {
+      state: 'ready';
+      source: 'current' | 'installed';
+      contract: RemoteBootstrapRuntimeContract;
+    }
+  | {
+      state: 'disabled';
+      code: string;
+      message: string;
+    };
+
 type RemoteBootstrapProbe = {
   os: 'linux';
   arch: 'amd64' | 'arm64';
@@ -35,25 +59,43 @@ type RemoteBootstrapManifest = {
   assets: RemoteBootstrapAsset[];
 };
 
+type RemoteBootstrapInstalledStatus = {
+  installed: boolean;
+  version: string;
+  protocolVersion: number;
+  capabilities: string[];
+  helperCurrent: boolean;
+  profileCurrent: boolean;
+  binarySha256: string;
+};
+
 type RemoteBootstrapServiceOptions = {
   auditEventService: AuditEventService;
   manifestUrl?: string;
-  fetchManifest?: (url: string) => Promise<unknown>;
+  fetchManifest?: (url: string, signal?: AbortSignal) => Promise<unknown>;
 };
 
-type RunForSessionOptions = {
+/** Session identity and live sink shared by status delivery and audit persistence. */
+type RemoteBootstrapStatusContext = {
   serverId: string;
   sessionId: string;
   requestId?: string;
-  executeCommand: (command: string) => Promise<string | null>;
   sendStatus: (status: RemoteBootstrapStatus) => void;
+};
+
+type RunForSessionOptions = RemoteBootstrapStatusContext & {
+  executeCommand: (command: string) => Promise<string | null>;
+  signal?: AbortSignal;
 };
 
 const REMOTE_BOOTSTRAP_COMMAND_TIMEOUT_MS = 60_000;
 const REMOTE_BOOTSTRAP_OUTPUT_MAX_BYTES = 256 * 1024;
+const REMOTE_BOOTSTRAP_MANIFEST_TIMEOUT_MS = 10_000;
 const REMOTE_BOOTSTRAP_SUPPORTED_SHELLS = new Set(['ash', 'bash', 'fish', 'sh', 'zsh']);
 const REMOTE_BOOTSTRAP_SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const REMOTE_BOOTSTRAP_VERSION_PATTERN = /^[A-Za-z0-9._+-]+$/;
+const REMOTE_BOOTSTRAP_CAPABILITY_PATTERN = /^[a-z0-9-]+$/;
+const REMOTE_BOOTSTRAP_MAX_CAPABILITIES = 32;
 
 const PROBE_COMMAND =
   ' sh -lc \'os=$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); arch=$(uname -m 2>/dev/null); shell_name=$(basename "${SHELL:-sh}"); case "$arch" in x86_64|amd64) arch=amd64;; aarch64|arm64) arch=arm64;; *) arch=unsupported;; esac; case "$shell_name" in zsh|fish|bash|ash|sh) shell="$shell_name";; *) shell=unsupported;; esac; printf "{\\"os\\":\\"%s\\",\\"arch\\":\\"%s\\",\\"shell\\":\\"%s\\"}\\n" "$os" "$arch" "$shell"\'';
@@ -66,7 +108,7 @@ export class RemoteBootstrapService {
 
   private readonly manifestUrl: string | undefined;
 
-  private readonly fetchManifest: (url: string) => Promise<unknown>;
+  private readonly fetchManifest: (url: string, signal?: AbortSignal) => Promise<unknown>;
 
   public constructor(options: RemoteBootstrapServiceOptions) {
     this.auditEventService = options.auditEventService;
@@ -75,43 +117,117 @@ export class RemoteBootstrapService {
   }
 
   /**
+   * Delivers one bootstrap status to both the live session and persistent audit trail.
+   *
+   * Session-owned terminal failures use this method so their audit metadata remains
+   * identical to statuses emitted during bootstrap orchestration.
+   *
+   * @param context Session identity and renderer status sink.
+   * @param status Bootstrap status to deliver and audit.
+   * @returns Nothing.
+   */
+  public reportStatus(context: RemoteBootstrapStatusContext, status: RemoteBootstrapStatus): void {
+    context.sendStatus(status);
+    this.logStatus(context, status);
+  }
+
+  /**
    * Runs bootstrap for one live SSH session without touching the interactive shell stream.
    *
    * @param options Session-scoped command executor and status callback.
-   * @returns Nothing.
+   * @returns Validated runtime contract, or a disabled result that leaves ordinary SSH available.
    */
-  public async runForSession(options: RunForSessionOptions): Promise<void> {
+  public async runForSession(options: RunForSessionOptions): Promise<RemoteBootstrapResult> {
+    throwIfSignalAborted(options.signal);
+
+    let lastFailure: RemoteBootstrapStatus | null = null;
     const emit = (status: RemoteBootstrapStatus): void => {
-      options.sendStatus(status);
-      this.logStatus(options, status);
+      if (options.signal?.aborted) {
+        return;
+      }
+
+      if (status.state === 'failed') {
+        lastFailure = status;
+      }
+      this.reportStatus(options, status);
     };
 
-    const manifest = await this.loadManifest(emit);
+    const manifest = await this.loadManifest(emit, options.signal);
+    throwIfSignalAborted(options.signal);
     if (!manifest) {
-      return;
+      return disabledFromStatus(lastFailure);
     }
 
     emit({ type: 'bootstrap-status', phase: 'probe', state: 'started', message: 'probing remote host' });
-    const probe = await this.probeRemote(options.executeCommand);
+    const probe = await this.probeRemote(options.executeCommand, options.signal);
+    throwIfSignalAborted(options.signal);
     if (!probe) {
       emit(this.failed('probe', 'PROBE_FAILED', 'remote platform or shell is unsupported'));
-      return;
+      return disabledFromStatus(lastFailure);
     }
 
     const asset = selectAsset(manifest, probe);
     if (!asset) {
       emit(this.failed('manifest', 'ASSET_NOT_FOUND', 'no matching linux bootstrap asset was found', manifest.version));
-      return;
+      return disabledFromStatus(lastFailure);
     }
 
-    const output = await options.executeCommand(buildInstallCommand(probe, manifest, asset));
-    this.forwardStatuses(output, emit, manifest.version);
+    const installedStatus = await this.readInstalledStatus(options.executeCommand, probe.shell, options.signal);
+    throwIfSignalAborted(options.signal);
+    if (isCurrentInstalledStatus(installedStatus, manifest.version, asset.sha256)) {
+      emit({
+        type: 'bootstrap-status',
+        phase: 'install',
+        state: 'skipped',
+        version: manifest.version,
+        message: 'bootstrap already current',
+      });
+      return readyResult('current', probe.shell, installedStatus);
+    }
+
+    let output: string | null;
+    try {
+      output = await options.executeCommand(buildInstallCommand(probe, manifest, asset));
+    } catch (error: unknown) {
+      throwIfSignalAborted(options.signal);
+      emit(this.failed('install', 'INSTALL_COMMAND_FAILED', errorMessage(error), manifest.version));
+      return disabledFromStatus(lastFailure);
+    }
+    throwIfSignalAborted(options.signal);
+
+    if (!this.forwardStatuses(output, emit, manifest.version)) {
+      return disabledFromStatus(lastFailure);
+    }
+
+    const verifiedStatus = await this.readInstalledStatus(options.executeCommand, probe.shell, options.signal);
+    throwIfSignalAborted(options.signal);
+    if (!isCurrentInstalledStatus(verifiedStatus, manifest.version, asset.sha256)) {
+      emit(
+        this.failed(
+          'verify',
+          'INSTALLATION_NOT_CURRENT',
+          'installed bootstrap runtime failed validation',
+          manifest.version,
+        ),
+      );
+      return disabledFromStatus(lastFailure);
+    }
+
+    return readyResult('installed', probe.shell, verifiedStatus);
   }
 
   private async probeRemote(
     executeCommand: RunForSessionOptions['executeCommand'],
+    signal?: AbortSignal,
   ): Promise<RemoteBootstrapProbe | null> {
-    const output = await executeCommand(PROBE_COMMAND);
+    let output: string | null;
+    try {
+      output = await executeCommand(PROBE_COMMAND);
+    } catch {
+      throwIfSignalAborted(signal);
+      return null;
+    }
+    throwIfSignalAborted(signal);
     if (!output) {
       return null;
     }
@@ -119,7 +235,34 @@ export class RemoteBootstrapService {
     return parseProbe(output);
   }
 
-  private async loadManifest(emit: (status: RemoteBootstrapStatus) => void): Promise<RemoteBootstrapManifest | null> {
+  /**
+   * Reads the installed bootstrap's self-validated helper and profile state.
+   *
+   * @param executeCommand Bounded SSH side-channel executor.
+   * @param shell Probed login shell used to resolve the installed helper.
+   * @param signal Session bootstrap cancellation signal.
+   * @returns Parsed status, or null for missing, legacy, or invalid installations.
+   */
+  private async readInstalledStatus(
+    executeCommand: RunForSessionOptions['executeCommand'],
+    shell: RemoteBootstrapProbe['shell'],
+    signal?: AbortSignal,
+  ): Promise<RemoteBootstrapInstalledStatus | null> {
+    try {
+      const output = await executeCommand(buildInstalledStatusCommand(shell));
+      throwIfSignalAborted(signal);
+      return parseInstalledStatus(output);
+    } catch {
+      throwIfSignalAborted(signal);
+      return null;
+    }
+  }
+
+  private async loadManifest(
+    emit: (status: RemoteBootstrapStatus) => void,
+    signal?: AbortSignal,
+  ): Promise<RemoteBootstrapManifest | null> {
+    throwIfSignalAborted(signal);
     if (!this.manifestUrl) {
       emit(this.failed('manifest', 'MANIFEST_URL_NOT_CONFIGURED', 'remote bootstrap manifest URL is not configured'));
       return null;
@@ -128,12 +271,14 @@ export class RemoteBootstrapService {
     emit({ type: 'bootstrap-status', phase: 'manifest', state: 'started', message: 'loading bootstrap manifest' });
     let loaded: unknown;
     try {
-      loaded = await this.fetchManifest(this.manifestUrl);
+      loaded = await this.fetchManifest(this.manifestUrl, signal);
     } catch (error: unknown) {
+      throwIfSignalAborted(signal);
       const message = error instanceof Error ? error.message : 'manifest request failed';
       emit(this.failed('manifest', 'MANIFEST_FETCH_FAILED', message));
       return null;
     }
+    throwIfSignalAborted(signal);
 
     const manifest = parseManifest(loaded);
     if (!manifest) {
@@ -145,14 +290,22 @@ export class RemoteBootstrapService {
     return manifest;
   }
 
-  private forwardStatuses(output: string | null, emit: (status: RemoteBootstrapStatus) => void, version: string): void {
+  private forwardStatuses(
+    output: string | null,
+    emit: (status: RemoteBootstrapStatus) => void,
+    version: string,
+  ): boolean {
     const statuses = parseStatusLines(output);
     if (statuses.length === 0) {
       emit(this.failed('install', 'NO_STATUS_OUTPUT', 'bootstrap wrapper did not emit status output', version));
-      return;
+      return false;
     }
 
     statuses.forEach(emit);
+    return (
+      !statuses.some((status) => status.state === 'failed') &&
+      statuses.some((status) => status.state === 'ok' || status.state === 'skipped')
+    );
   }
 
   private failed(phase: RemoteBootstrapPhase, code: string, message: string, version?: string): RemoteBootstrapStatus {
@@ -166,7 +319,7 @@ export class RemoteBootstrapService {
     };
   }
 
-  private logStatus(options: RunForSessionOptions, status: RemoteBootstrapStatus): void {
+  private logStatus(options: RemoteBootstrapStatusContext, status: RemoteBootstrapStatus): void {
     if (status.state !== 'failed' && status.state !== 'ok' && status.state !== 'skipped') {
       return;
     }
@@ -191,13 +344,35 @@ export const REMOTE_BOOTSTRAP_EXEC_OPTIONS = {
   maxOutputBytes: REMOTE_BOOTSTRAP_OUTPUT_MAX_BYTES,
 } as const;
 
-const defaultFetchManifest = async (url: string): Promise<unknown> => {
-  const response = await fetch(url);
+const defaultFetchManifest = async (url: string, signal?: AbortSignal): Promise<unknown> => {
+  const response = await fetch(url, {
+    signal: signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(REMOTE_BOOTSTRAP_MANIFEST_TIMEOUT_MS)])
+      : AbortSignal.timeout(REMOTE_BOOTSTRAP_MANIFEST_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Remote bootstrap manifest request failed: ${response.status}`);
   }
 
   return await response.json();
+};
+
+/**
+ * Propagates a caller-provided cancellation reason at async boundaries.
+ *
+ * @param signal Optional cancellation signal for one session bootstrap attempt.
+ * @returns Nothing.
+ */
+const throwIfSignalAborted = (signal?: AbortSignal): void => {
+  if (!signal?.aborted) {
+    return;
+  }
+
+  if (signal.reason instanceof Error) {
+    throw signal.reason;
+  }
+
+  throw new Error('Remote bootstrap was cancelled.');
 };
 
 const parseProbe = (output: string): RemoteBootstrapProbe | null => {
@@ -273,6 +448,145 @@ const selectAsset = (manifest: RemoteBootstrapManifest, probe: RemoteBootstrapPr
   return manifest.assets.find((asset) => asset.os === probe.os && asset.arch === probe.arch) ?? null;
 };
 
+/**
+ * Builds a side-channel command that invokes the installed binary only when present.
+ *
+ * @param shell Probed login shell.
+ * @returns POSIX command that emits one status JSON object or no output.
+ */
+const buildInstalledStatusCommand = (shell: RemoteBootstrapProbe['shell']): string => {
+  const script = `data_root=\${XDG_DATA_HOME:-"$HOME/.local/share"}
+bin="$data_root/cosmosh/bootstrap/bin/cosmosh-bootstrap"
+if [ -x "$bin" ]; then "$bin" status --shell ${quotePosixShell(shell)}; fi`;
+  return ` sh -lc ${quotePosixShell(script)}`;
+};
+
+/**
+ * Parses the installed binary's strict runtime contract.
+ *
+ * @param output Raw bounded SSH command output.
+ * @returns Validated status, or null for legacy and malformed output.
+ */
+const parseInstalledStatus = (output: string | null): RemoteBootstrapInstalledStatus | null => {
+  if (!output) {
+    return null;
+  }
+
+  const parsed = parseLastJsonObject(output);
+  if (
+    !parsed ||
+    typeof parsed.installed !== 'boolean' ||
+    typeof parsed.version !== 'string' ||
+    !REMOTE_BOOTSTRAP_VERSION_PATTERN.test(parsed.version) ||
+    typeof parsed.protocolVersion !== 'number' ||
+    !Number.isInteger(parsed.protocolVersion) ||
+    typeof parsed.helperCurrent !== 'boolean' ||
+    typeof parsed.profileCurrent !== 'boolean' ||
+    typeof parsed.binarySha256 !== 'string' ||
+    !REMOTE_BOOTSTRAP_SHA256_PATTERN.test(parsed.binarySha256) ||
+    !Array.isArray(parsed.capabilities) ||
+    parsed.capabilities.length === 0 ||
+    parsed.capabilities.length > REMOTE_BOOTSTRAP_MAX_CAPABILITIES
+  ) {
+    return null;
+  }
+
+  const capabilities: string[] = [];
+  for (const capability of parsed.capabilities) {
+    if (
+      typeof capability !== 'string' ||
+      !REMOTE_BOOTSTRAP_CAPABILITY_PATTERN.test(capability) ||
+      capabilities.includes(capability)
+    ) {
+      return null;
+    }
+    capabilities.push(capability);
+  }
+
+  return {
+    installed: parsed.installed,
+    version: parsed.version,
+    protocolVersion: parsed.protocolVersion,
+    capabilities,
+    helperCurrent: parsed.helperCurrent,
+    profileCurrent: parsed.profileCurrent,
+    binarySha256: parsed.binarySha256,
+  };
+};
+
+/**
+ * Checks whether an installed status can be trusted for the selected manifest.
+ *
+ * @param status Parsed installed runtime status.
+ * @param expectedVersion Selected manifest version.
+ * @param expectedSHA256 Selected manifest asset digest.
+ * @returns True only for a fully current and supported runtime.
+ */
+const isCurrentInstalledStatus = (
+  status: RemoteBootstrapInstalledStatus | null,
+  expectedVersion: string,
+  expectedSHA256: string,
+): status is RemoteBootstrapInstalledStatus => {
+  return (
+    status !== null &&
+    status.installed &&
+    status.version === expectedVersion &&
+    status.binarySha256 === expectedSHA256 &&
+    status.protocolVersion === REMOTE_SHELL_PROTOCOL_VERSION &&
+    status.helperCurrent &&
+    status.profileCurrent
+  );
+};
+
+/**
+ * Creates the runtime contract returned to SSH session orchestration.
+ *
+ * @param source Whether the fast path or installation path produced the contract.
+ * @param shell Probed login shell.
+ * @param status Validated installed runtime status.
+ * @returns Ready bootstrap result.
+ */
+const readyResult = (
+  source: 'current' | 'installed',
+  shell: RemoteBootstrapProbe['shell'],
+  status: RemoteBootstrapInstalledStatus,
+): RemoteBootstrapResult => {
+  return {
+    state: 'ready',
+    source,
+    contract: {
+      shell,
+      helperVersion: status.version,
+      protocolVersion: status.protocolVersion,
+      capabilities: [...status.capabilities],
+    },
+  };
+};
+
+/**
+ * Converts the most recent bootstrap failure into a fail-closed runtime result.
+ *
+ * @param status Most recently emitted failure status.
+ * @returns Disabled result suitable for ordinary SSH fallback.
+ */
+const disabledFromStatus = (status: RemoteBootstrapStatus | null): RemoteBootstrapResult => {
+  return {
+    state: 'disabled',
+    code: status?.code ?? 'BOOTSTRAP_UNAVAILABLE',
+    message: status?.message ?? 'remote enhancements are unavailable',
+  };
+};
+
+/**
+ * Normalizes an unknown thrown value into an operator-facing error string.
+ *
+ * @param error Unknown command failure.
+ * @returns Stable error message.
+ */
+const errorMessage = (error: unknown): string => {
+  return error instanceof Error ? error.message : 'remote bootstrap command failed';
+};
+
 const buildInstallCommand = (
   probe: RemoteBootstrapProbe,
   manifest: RemoteBootstrapManifest,
@@ -338,45 +652,27 @@ const buildWrapperScript = (
   manifest: RemoteBootstrapManifest,
   asset: RemoteBootstrapAsset,
 ): string => {
-  const helperPayload = Buffer.from(buildHelperScript(probe.shell), 'utf8').toString('base64');
   const config = {
     shell: probe.shell,
     version: manifest.version,
     url: asset.url,
     sha256: asset.sha256,
-    helperPayload,
   };
 
   return probe.shell === 'fish' ? buildFishWrapper(config) : buildPosixWrapper(config);
 };
 
-const buildHelperScript = (shell: RemoteBootstrapProbe['shell']): string => {
-  if (shell === 'fish') {
-    return 'set -gx COSMOSH_BOOTSTRAP_READY 1\n';
-  }
-
-  return 'export COSMOSH_BOOTSTRAP_READY=1\n';
-};
-
-const buildPosixWrapper = (config: {
-  shell: string;
-  version: string;
-  url: string;
-  sha256: string;
-  helperPayload: string;
-}): string => {
+const buildPosixWrapper = (config: { shell: string; version: string; url: string; sha256: string }): string => {
   const shell = quotePosixShell(config.shell);
   const version = quotePosixShell(config.version);
   const url = quotePosixShell(config.url);
   const sha256 = quotePosixShell(config.sha256);
-  const helperPayload = quotePosixShell(config.helperPayload);
 
   return `set -eu
 cosmosh_shell=${shell}
 cosmosh_version=${version}
 cosmosh_asset_url=${url}
 cosmosh_sha256=${sha256}
-cosmosh_helper_payload_b64=${helperPayload}
 cosmosh_fail() { printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"%s","code":"%s","message":"%s"}\\n' "$1" "$cosmosh_version" "$2" "$3"; exit 1; }
 if ! command -v mktemp >/dev/null 2>&1; then cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"; fi
 umask 077
@@ -389,22 +685,15 @@ printf '{"type":"bootstrap-status","phase":"verify","state":"started","version":
 if command -v sha256sum >/dev/null 2>&1; then printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | sha256sum -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "sha256sum verification failed"; elif command -v shasum >/dev/null 2>&1; then printf '%s  %s\\n' "$cosmosh_sha256" "$bin" | shasum -a 256 -c - >/dev/null || cosmosh_fail verify CHECKSUM_MISMATCH "shasum verification failed"; else cosmosh_fail verify HASH_TOOL_NOT_FOUND "sha256sum or shasum is required"; fi
 chmod 700 "$bin"
 printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"%s"}\\n' "$cosmosh_version"
-"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
+"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version"
 `;
 };
 
-const buildFishWrapper = (config: {
-  shell: string;
-  version: string;
-  url: string;
-  sha256: string;
-  helperPayload: string;
-}): string => {
+const buildFishWrapper = (config: { shell: string; version: string; url: string; sha256: string }): string => {
   const shell = quoteFishShell(config.shell);
   const version = quoteFishShell(config.version);
   const url = quoteFishShell(config.url);
   const sha256 = quoteFishShell(config.sha256);
-  const helperPayload = quoteFishShell(config.helperPayload);
 
   return `function cosmosh_fail
   printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"%s","code":"%s","message":"%s"}\\n' $argv[1] "$cosmosh_version" $argv[2] $argv[3]
@@ -414,7 +703,6 @@ set cosmosh_shell ${shell}
 set cosmosh_version ${version}
 set cosmosh_asset_url ${url}
 set cosmosh_sha256 ${sha256}
-set cosmosh_helper_payload_b64 ${helperPayload}
 if not command -q mktemp
   cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"
 end
@@ -446,7 +734,7 @@ else
 end
 chmod 700 "$bin"
 printf '{"type":"bootstrap-status","phase":"install","state":"started","version":"%s"}\\n' "$cosmosh_version"
-"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
+"$bin" install --shell "$cosmosh_shell" --version "$cosmosh_version"
 `;
 };
 

@@ -14,7 +14,13 @@ import {
   resolveTerminalTargetFromSnapshot,
   toResolvedTargetSnapshot,
 } from './ssh-target';
-import type { ResolvedTerminalTarget, ServerInboundMessage, SshTelemetryState } from './ssh-types';
+import type {
+  RemoteEnhancementRuntimeStatus,
+  RemoteEnhancementsDebugEvent,
+  ResolvedTerminalTarget,
+  ServerInboundMessage,
+  SshTelemetryState,
+} from './ssh-types';
 import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
 import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
 import {
@@ -30,6 +36,28 @@ import {
   type TerminalWebLinksSettings,
 } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
+
+const REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT = 200;
+
+/**
+ * Appends one diagnostic event while bounding renderer memory and rerender cost.
+ *
+ * @param previous Existing session-attempt event history.
+ * @param payload Newly received bootstrap, runtime, or helper event.
+ * @returns Bounded event history with the latest payload appended.
+ */
+const appendRemoteEnhancementsDebugEvent = (
+  previous: RemoteEnhancementsDebugEvent[],
+  payload: RemoteEnhancementsDebugEvent['payload'],
+): RemoteEnhancementsDebugEvent[] => {
+  return [
+    ...previous.slice(-(REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT - 1)),
+    {
+      receivedAt: Date.now(),
+      payload,
+    },
+  ];
+};
 
 type UseSshPrimarySessionParams = {
   tabId: string;
@@ -69,6 +97,8 @@ type UseSshPrimarySessionParams = {
   setRemoteBootstrapStatus: React.Dispatch<
     React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
   >;
+  setRemoteEnhancementRuntimeStatus: React.Dispatch<React.SetStateAction<RemoteEnhancementRuntimeStatus | null>>;
+  setRemoteEnhancementsDebugEvents: React.Dispatch<React.SetStateAction<RemoteEnhancementsDebugEvent[]>>;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -133,6 +163,8 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setConnectionError,
     setTelemetryState,
     setRemoteBootstrapStatus,
+    setRemoteEnhancementRuntimeStatus,
+    setRemoteEnhancementsDebugEvents,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
@@ -377,6 +409,18 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
         if (payload.type === 'bootstrap-status') {
           setRemoteBootstrapStatus(payload);
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
+          return;
+        }
+
+        if (payload.type === 'remote-enhancement-runtime-status') {
+          setRemoteEnhancementRuntimeStatus(payload);
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
+          return;
+        }
+
+        if (payload.type === 'remote-shell-event') {
+          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
           return;
         }
 
@@ -404,6 +448,9 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         setConnectionState('connecting');
         setConnectionError('');
         setTelemetryState(DEFAULT_TELEMETRY_STATE);
+        setRemoteBootstrapStatus(null);
+        setRemoteEnhancementRuntimeStatus(null);
+        setRemoteEnhancementsDebugEvents([]);
 
         const activeIntent = connectionIntentRef.current;
         if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
@@ -686,6 +733,8 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     setActivePane,
     setConnectionError,
     setConnectionState,
+    setRemoteEnhancementRuntimeStatus,
+    setRemoteEnhancementsDebugEvents,
     setRemoteBootstrapStatus,
     setTelemetryState,
     socketRef,

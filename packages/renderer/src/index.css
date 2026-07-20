@@ -477,7 +477,7 @@ body {
   backdrop-filter: none;
 }
 
-.menu-menubar-root .menu-menubar-field:not(:hover):not(:focus):not(:focus-within) {
+.menu-menubar-root .menu-menubar-field:not(:hover):not(:focus):not(:focus-within):not([data-state='on']) {
   background: transparent;
   backdrop-filter: none;
 }

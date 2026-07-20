@@ -23,7 +23,7 @@
       "time": "时间"
     },
     "countSummary": "共 {count} 条事件",
-    "detailEmpty": "请选择一个事件查看详情。",
+    "detailEmpty": "选择事件来查看详情。",
     "detailLoadFailed": "加载审计事件详情失败。",
     "detailLoading": "正在加载事件详情...",
     "detailSections": {
@@ -66,7 +66,7 @@
     "pagination": {
       "page": "第 {page} 页"
     },
-    "retentionHint": "默认保留策略会保存最近 180 天的事件。",
+    "retentionHint": "默认保留最近 180 天的事件。",
     "severity": {
       "critical": "严重",
       "info": "信息",
@@ -80,13 +80,19 @@
     },
     "title": "审计日志"
   },
+  "closeWindowConfirmation": {
+    "cancel": "取消",
+    "confirm": "关闭",
+    "description": "当前仍有正在进行的会话。确定要关闭窗口吗？",
+    "title": "关闭窗口？"
+  },
   "commandPalette": {
     "commands": {
       "developer": {
         "captureMainHeapSnapshot": "拍摄主进程堆快照",
         "reloadBackend": "重新加载后端",
         "reloadWebView": "重新加载 WebView",
-        "toggleDevTools": "切换 DevTools",
+        "toggleDevTools": "切换开发人员工具",
         "toggleMainHeapSnapshotExport": "切换启用主进程堆快照",
         "toggleSystemMonitorOverlay": "切换系统监视器浮层"
       },
@@ -117,10 +123,10 @@
       "systemMonitorOverlayDisabled": "系统监视器浮层已隐藏。",
       "systemMonitorOverlayEnabled": "系统监视器浮层已显示。"
     },
-    "placeholder": "输入命令或搜索设置",
+    "placeholder": "> 输入命令或搜索设置",
     "scopes": {
       "developer": "开发者",
-      "forward": "Forward",
+      "forward": "端口转发",
       "settings": "设置",
       "sftp": "SFTP",
       "ssh": "SSH",
@@ -130,9 +136,6 @@
   "common": {
     "click": "点击"
   },
-  "componentsPlayground": {
-    "title": "Components Playground"
-  },
   "header": {
     "about": "关于",
     "avatarAlt": "用户头像",
@@ -141,15 +144,14 @@
     "guestEmail": "guest@cosmosh.local",
     "guestUser": "未登录用户",
     "login": "登录",
-    "openDevTools": "打开 DevTools",
+    "openDevTools": "打开开发人员工具",
     "restartBackend": "重启后端运行时",
     "restartBackendFailed": "重启后端运行时失败。",
     "restartBackendSuccess": "后端运行时已重启。",
     "settings": "设置",
-    "syncDisabled": "设置中未启用账号同步。",
-    "syncFailed": "同步设置失败。",
+    "syncDisabled": "同步功能未启用。",
     "syncSettings": "同步设置",
-    "syncSuccess": "已从当前账号作用域同步设置。",
+    "syncSuccess": "已同步设置。",
     "userMenu": "用户菜单"
   },
   "home": {
@@ -157,7 +159,6 @@
     "actionCreate": "创建",
     "actionSave": "保存",
     "addAction": "添加...",
-    "clearSearch": "清空搜索",
     "contextConnect": "连接",
     "contextConnectSftp": "连接 SFTP",
     "contextCopy": "复制",
@@ -187,8 +188,6 @@
     "dragServerToFolderSuccess": "服务器已添加到文件夹。",
     "editVisual": "编辑图标和配色",
     "empty": "未找到符合条件的服务器。",
-    "fileAction": "文件",
-    "filterAction": "筛选",
     "folderCreateFailed": "创建文件夹失败。",
     "folderDeleteFailed": "删除文件夹失败。",
     "folderNamePlaceholder": "文件夹名称",
@@ -219,7 +218,6 @@
     "groupRecentlyUpdatedKeychains": "最近更新",
     "groupUntitled": "分组名称",
     "hostCount": "{count, plural, =0 {暂无主机} one {# 台主机} other {# 台主机}}",
-    "iconOptionsPending": "图标自定义已在编辑器中可用。",
     "iconSearchPlaceholder": "搜索图标...",
     "keychainCount": "{count, plural, =0 {暂无钥匙链} one {# 条钥匙链} other {# 条钥匙链}}",
     "loading": "正在加载数据...",
@@ -227,7 +225,6 @@
     "modePortForwarding": "端口转发",
     "modeSsh": "SSH",
     "openInFileManagerFailed": "打开文件管理器失败。",
-    "openSshCurrentTab": "在当前标签打开 SSH",
     "openSshNewTab": "在新标签页中打开",
     "portForwardingActiveDeleteDisabled": "请先停止该规则，再删除。",
     "portForwardingActiveEditDisabled": "请先停止该规则，再编辑。",
@@ -249,6 +246,7 @@
     "portForwardingDeleteSuccess": "端口转发规则已删除。",
     "portForwardingDeleteTitle": "删除端口转发规则",
     "portForwardingDialogCreateTitle": "新建端口转发规则",
+    "portForwardingDialogDescription": "配置此端口转发规则的连接方向、服务器和端点。",
     "portForwardingDialogEditTitle": "编辑端口转发规则",
     "portForwardingEmpty": "未找到符合条件的端口转发规则。",
     "portForwardingFieldName": "名称",
@@ -272,7 +270,7 @@
     "portForwardingStartFailed": "启动端口转发规则失败。",
     "portForwardingStartSuccess": "端口转发已启动。",
     "portForwardingStatusRunning": "运行中",
-    "portForwardingStatusRunningWithConnections": "运行中 · {count, plural, one {# 连接} other {# 连接}}",
+    "portForwardingStatusRunningWithConnections": "运行中，{count, plural, one {# 个连接} other {# 个连接}}",
     "portForwardingStatusStopped": "已停止",
     "portForwardingStopAction": "停止",
     "portForwardingStopFailed": "停止端口转发规则失败。",
@@ -293,23 +291,41 @@
     "sectionRecent": "最近连接",
     "sectionRecentlyUpdated": "最近更新",
     "serverDeleteFailed": "删除服务器失败。",
-    "serverDeleteSuccess": "服务器删除成功。",
+    "serverDeleteSuccess": "服务器已删除。",
     "sortAction": "排序方式",
     "sortByCreatedAt": "添加时间",
     "sortByLastUsed": "上次使用时间",
     "sortByNameAsc": "名称正序",
     "sortByNameDesc": "名称倒序",
-    "tagAll": "全部",
-    "tagUntagged": "未添加标签",
-    "title": "主页"
+    "tagUntagged": "无标签"
   },
   "inputContextMenu": {
     "copy": "复制",
     "cut": "剪切",
+    "findReplace": "查找/替换...",
     "paste": "粘贴",
     "redo": "重做",
     "selectAll": "全选",
     "undo": "撤销"
+  },
+  "searchReplace": {
+    "close": "关闭",
+    "currentMatch": "{current}/{total}",
+    "currentMatchCapped": "{current}/{total}+",
+    "findNext": "查找下一个",
+    "findPlaceholder": "查找",
+    "findPrevious": "查找上一个",
+    "invalidPattern": "表达式无效",
+    "matchCase": "区分大小写",
+    "matchCount": "共 {total} 处",
+    "matchCountCapped": "超过 {total} 处",
+    "noMatches": "无匹配",
+    "regexp": "正则",
+    "replaceAll": "全部替换",
+    "replaceNext": "替换",
+    "replacePlaceholder": "替换",
+    "selectAllMatches": "选中全部匹配",
+    "wholeWord": "整词"
   },
   "settings": {
     "about": {
@@ -387,7 +403,7 @@
     },
     "items": {
       "accountSyncEnabled": {
-        "description": "启用来将设置在使用当前账号的多个设备间同步。",
+        "description": "启用来在登录当前账号的多个设备之间同步设置。",
         "title": "账号同步"
       },
       "autoSaveEnabled": {
@@ -395,15 +411,15 @@
         "title": "自动保存"
       },
       "dateFormat": {
-        "description": "控制 SFTP、审计日志和诊断信息中的日期显示方式。",
+        "description": "选择应用中日期的显示方式。",
         "title": "日期格式"
       },
       "dateTimeTimeZone": {
-        "description": "使用操作系统时区，或选择 UTC、Asia/Shanghai 等受支持的 IANA 时区。",
+        "description": "选择要在应用中使用的时区。",
         "title": "时区"
       },
       "defaultLocalTerminalProfile": {
-        "description": "通过上下文打开终端时使用的默认本地终端。",
+        "description": "选择通过上下文打开终端时使用的默认本地终端。",
         "title": "默认本地终端"
       },
       "defaultServerNoteTemplate": {
@@ -413,22 +429,22 @@
       },
       "devToolsEnabled": {
         "description": "允许对程序界面进行调试。该选项仅适用于高级用户，请勿随意开启此选项。",
-        "title": "启用 DevTools"
+        "title": "启用开发人员工具"
       },
       "language": {
         "description": "设置使用的界面语言。",
         "title": "语言"
       },
       "localTerminalClipboardAccess": {
-        "description": "仅控制本地终端程序访问本地剪贴板的权限。",
+        "description": "仅设置本地终端程序访问本地剪贴板的权限。",
         "title": "允许本地终端访问本地剪贴板"
       },
       "remoteEnhancementsEnabled": {
-        "description": "配置 manifest URL 后，允许 SSH 会话安装 Cosmosh 远端 helper，用于 OS 检测、SFTP 增强与命令补全支持。",
+        "description": "允许 Cosmosh 为 SSH 会话安装远端增强帮助程序来增强终端功能。如果关闭远端增强，部分终端功能可能降级或无法使用。",
         "title": "远端增强"
       },
       "serverProxyMode": {
-        "description": "控制新建 SSH、SFTP 和端口转发连接默认使用的代理策略。单个服务器可以单独设置代理。",
+        "description": "设置 SSH、SFTP 和端口转发的默认代理策略。",
         "title": "服务器代理"
       },
       "serverProxyUrl": {
@@ -437,44 +453,52 @@
         "title": "自定义代理 URL"
       },
       "sftpAuxiliarySidebarMode": {
-        "description": "控制 SFTP 辅助侧栏显示详细信息、可编辑预览或关闭。",
+        "description": "选择 SFTP 标签页中显示的辅助侧栏类型。",
         "title": "SFTP 辅助侧栏"
       },
       "sftpDeleteConfirmationMode": {
-        "description": "控制 SFTP 删除远程文件或目录前何时需要确认。",
+        "description": "设置删除远程文件或目录前是否需要确认。",
         "title": "删除前确认"
       },
       "sftpDimHiddenEntries": {
-        "description": "隐藏文件可见时，对隐藏 SFTP 条目的图标和名称应用 80% 透明度。",
+        "description": "让隐藏文件在列表中显示得更淡。",
         "title": "弱化显示隐藏文件"
       },
       "sftpDirectoryListView": {
-        "description": "控制 SFTP 文件列表的列显示、列顺序和排序偏好。",
+        "description": "设置 SFTP 文件列表的显示方式。",
         "title": "SFTP 文件列表视图"
       },
       "sftpImagePreviewWarningThresholdBytes": {
-        "description": "图片预览达到该字节数时，先显示确认提示再下载。",
+        "description": "超出该大小（字节）的图片在预览时仅将在确认后下载。",
         "placeholder": "4194304",
         "title": "图片预览警告阈值"
       },
+      "sftpInternalDragDefaultAction": {
+        "description": "选择将 SFTP 项拖放到文件夹后执行的操作。",
+        "title": "SFTP 拖放操作"
+      },
+      "sftpInternalDragModifierAction": {
+        "description": "选择按住 Ctrl（macOS 为 Cmd）拖放 SFTP 项时执行的操作。",
+        "title": "SFTP 拖放修饰键操作"
+      },
       "sftpReconnectMode": {
-        "description": "控制远程连接在 SFTP 标签页保持打开时断开后如何恢复。",
+        "description": "设置 SFTP 会话断开后是否自动尝试重连。",
         "title": "SFTP 自动重连"
       },
       "sftpShowAddressAsText": {
-        "description": "始终将 SFTP 地址栏显示为可编辑的纯路径输入框，而不是层级地址栏。",
+        "description": "始终在地址栏中显示文本形式的地址输入框。",
         "title": "将地址显示为文本"
       },
       "sftpShowHiddenEntries": {
-        "description": "显示服务器标记为隐藏，或名称以点号开头的 SFTP 文件与文件夹。",
+        "description": "显示隐藏的 SFTP 文件与文件夹。",
         "title": "显示隐藏文件"
       },
       "sftpShowParentDirectoryEntry": {
-        "description": "在 SFTP 文件列表顶部显示“..”行，用于返回上一级目录。",
+        "description": "在 SFTP 文件列表中显示用于跳转到上一级的“..”选项。",
         "title": "在文件列表中显示返回按钮"
       },
       "sftpTextPreviewWarningThresholdBytes": {
-        "description": "文本/代码预览达到该字节数时，先显示确认提示再以可编辑方式打开。",
+        "description": "超出该大小（字节）的文本文件在预览时仅将在确认后打开。",
         "placeholder": "524288",
         "title": "文本预览警告阈值"
       },
@@ -483,7 +507,7 @@
         "title": "显示完整服务器地址"
       },
       "sshConnectionTimeoutSec": {
-        "description": "超时后，连接将自动断开。",
+        "description": "连接将在超时后自动断开。",
         "placeholder": "45",
         "title": "SSH 连接超时（秒）"
       },
@@ -497,15 +521,15 @@
         "title": "标签页聚焦时自动重连"
       },
       "sshTabApplyServerVisualStyle": {
-        "description": "将当前服务器设置的图标颜色和背景样式应用到 SSH 与 SFTP 标签页。",
-        "title": "将服务器图标配色应用到 SSH 与 SFTP 标签页"
+        "description": "将服务器的图标和背景颜色应用到打开的标签页。",
+        "title": "将服务器图标配色应用到标签页"
       },
       "terminalAltClickMovesCursor": {
-        "description": "按住 Alt（macOS 为 Option）并点击时，将光标移动到点击位置。",
-        "title": "Alt/Option 点击移动光标"
+        "description": "按住 Alt（在 macOS 上使用 Option）并点击时，将光标移动到点击位置。",
+        "title": "按住 Alt/Option 并点击来移动光标"
       },
       "terminalAutoCompleteAcceptKeys": {
-        "description": "控制使用哪个按键应用当前高亮的自动补全候选。",
+        "description": "设置用于应用当前高亮自动补全候选的按键。",
         "title": "自动补全应用快捷键"
       },
       "terminalAutoCompleteBuiltInCommandsEnabled": {
@@ -526,12 +550,10 @@
       },
       "terminalAutoCompleteMaxItems": {
         "description": "自动补全面板中最多显示的建议数量。",
-        "placeholder": "8",
         "title": "自动补全建议上限"
       },
       "terminalAutoCompleteMinChars": {
         "description": "触发自动补全前所需的最少输入字符数。",
-        "placeholder": "1",
         "title": "自动补全触发长度"
       },
       "terminalAutoCompletePasswordEnabled": {
@@ -543,28 +565,28 @@
         "title": "自动补全路径建议"
       },
       "terminalAutoCompletePromptRegex": {
-        "description": "可选正则：用于在命令文本前解析 prompt 前缀。留空时使用内置启发式规则。",
+        "description": "使用正则表达式自定义命令文本前的提示符解析方式。留空来使用默认规则。",
         "placeholder": "^.*[#$%>]\\s+",
-        "title": "自动补全 Prompt 正则"
+        "title": "自定义自动补全提示符解析"
       },
       "terminalBracketedPasteEnabled": {
-        "description": "将粘贴内容包装为安全粘贴格式，避免内容粘贴后被立即执行。",
+        "description": "包装粘贴内容为安全粘贴格式来避免内容粘贴后被立即执行。",
         "title": "安全粘贴"
       },
       "terminalCharacterWidthCompatibilityModeEnabled": {
-        "description": "使用 xterm Unicode 11 字符宽度表，改善 CJK 与 emoji 对齐。遇到终端界面错位时，可尝试关闭此项并重新连接，以使用传统字符宽度模式。",
+        "description": "使用 Unicode 11 字符宽度表来改善 CJK 与 emoji 内容的对齐。遇到终端界面错位时可尝试关闭此项并重新连接以使用传统字符宽度模式。",
         "title": "字符宽度兼容模式"
       },
       "terminalContextLaunchBehavior": {
-        "description": "控制通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
+        "description": "设置通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
         "title": "从上下文启动"
       },
       "terminalCopyOnSelectionEnabled": {
-        "description": "使用鼠标在终端选中文本时，自动将非空选中文本复制到剪贴板。",
+        "description": "使用鼠标时自动将在终端中选中的文本复制到剪贴板。",
         "title": "选中文本时复制"
       },
       "terminalCursorBlink": {
-        "description": "控制光标是否闪烁。",
+        "description": "设置光标是否闪烁。",
         "title": "光标闪烁"
       },
       "terminalCursorInactiveStyle": {
@@ -572,16 +594,16 @@
         "title": "失焦光标样式"
       },
       "terminalCursorStyle": {
-        "description": "设置终端聚焦时光标的形状。",
+        "description": "设置终端聚焦时光标的样式。",
         "title": "光标样式"
       },
       "terminalCursorWidth": {
-        "description": "当光标样式为 Bar 时，设置其 CSS 像素宽度。留空则使用默认行为。",
+        "description": "自定义光标样式为 Bar 时的光标宽度。留空来使用默认值。",
         "placeholder": "(空值)",
         "title": "光标宽度"
       },
       "terminalCustomGlyphs": {
-        "description": "使用自定义字形渲染框线和块状字符，以获得更好的对齐效果。",
+        "description": "使用自定义字形渲染框线和块状字符以优化对齐效果。",
         "title": "自定义字形"
       },
       "terminalDrawBoldTextInBrightColors": {
@@ -635,38 +657,38 @@
         "title": "大文本警告阈值"
       },
       "terminalLetterSpacing": {
-        "description": "终端字符额外字间距（像素）。",
+        "description": "为终端字符添加额外的字间距，以像素为单位。",
         "placeholder": "0",
         "title": "终端字间距"
       },
       "terminalLineHeight": {
-        "description": "终端渲染使用的行高倍率。",
+        "description": "设置终端行高倍数。",
         "placeholder": "1",
         "title": "终端行高"
       },
       "terminalMinimumContrastRatio": {
-        "description": "最小文字对比度。设为 1 可禁用动态对比调整。",
+        "description": "设置终端最小文字对比度。设为 1 可禁用动态对比调整。",
         "placeholder": "1",
         "title": "最小对比度"
       },
       "terminalRightClickAction": {
-        "description": "控制终端窗格中的右键操作。",
+        "description": "设置终端右键操作。",
         "title": "终端右键操作"
       },
       "terminalRightClickSelectsWord": {
-        "description": "在终端中右键时选中指针下方的单词。",
-        "title": "右键时选择文本"
+        "description": "在终端中右键时选中鼠标指针下方的单词。",
+        "title": "右键时选中文本"
       },
       "terminalScreenReaderMode": {
         "description": "启用终端屏幕阅读器支持。",
         "title": "屏幕阅读器模式"
       },
       "terminalScrollOnUserInput": {
-        "description": "用户输入时自动滚动到底部。",
+        "description": "在终端中输入时自动滚动到底部。",
         "title": "输入时自动滚动"
       },
       "terminalScrollSensitivity": {
-        "description": "滚轮滚动的基础速度倍率。",
+        "description": "控制鼠标滚轮的滚动倍数。",
         "placeholder": "1",
         "title": "滚动灵敏度"
       },
@@ -675,59 +697,63 @@
         "title": "Orbit Bar"
       },
       "terminalSelectionSearchEngine": {
-        "description": "定义搜索网页时使用的搜索引擎。",
+        "description": "设置搜索网页功能的搜索引擎。",
         "title": "搜索引擎"
       },
       "terminalSelectionSearchUrlTemplate": {
-        "description": "设置自定义的搜索引擎 URL。使用 QUERY_TOKEN 来代表搜索关键词。",
+        "description": "设置自定义搜索引擎 URL。使用 QUERY_TOKEN 来代表搜索关键词。",
         "placeholder": "https://www.google.com/search?q=QUERY_TOKEN",
         "title": "自定义搜索 URL"
       },
       "terminalSmoothScrollDuration": {
-        "description": "平滑滚动持续时间（毫秒）。设为 0 表示关闭。",
+        "description": "平滑滚动持续时间，以毫秒为单位。设为 0 以关闭。",
         "placeholder": "0",
         "title": "平滑滚动时长"
       },
       "terminalTabStopWidth": {
-        "description": "终端中一个 Tab 的字符宽度。",
+        "description": "设置终端中的制表符宽度。",
         "placeholder": "8",
-        "title": "Tab 停靠宽度"
+        "title": "制表符停靠宽度"
       },
       "terminalTextDropMode": {
-        "description": "控制何时允许通过拖拽将文本插入终端。",
+        "description": "设置何时允许通过拖拽将文本插入终端。",
         "title": "拖拽到终端"
       },
       "terminalWarnOnControlCharactersPaste": {
-        "description": "粘贴内容混入 ESC、BEL、ANSI 控制序列或其它控制字符时先发出警告。",
+        "description": "粘贴内容中包含 ESC、BEL、ANSI 控制序列或其它控制字符时进行警告。",
         "title": "控制字符警告"
       },
       "terminalWarnOnLargePaste": {
-        "description": "粘贴文本达到配置的大文本阈值时先发出警告。",
+        "description": "粘贴文本达到配置的大文本阈值时进行警告。",
         "title": "大文本粘贴警告"
       },
       "terminalWarnOnMultiLinePaste": {
-        "description": "粘贴多行文本前先发出警告。",
+        "description": "粘贴多行文本前进行警告。",
         "title": "多行粘贴警告"
       },
       "terminalWebLinksEnabled": {
-        "description": "识别终端输出中的 HTTP 与 HTTPS URL，并通过 Cosmosh 的外部浏览器桥接打开。",
+        "description": "识别终端输出中的链接并允许单击打开",
         "title": "终端网页链接"
       },
       "terminalWebLinksRequireModifierKey": {
-        "description": "需要 Ctrl+单击才能打开终端链接。macOS 使用 Cmd+单击。",
+        "description": "需要 Ctrl（在 macOS 上使用 Cmd）并单击以打开终端链接。",
         "title": "使用 Ctrl/Cmd+单击打开链接"
       },
       "theme": {
-        "description": "控制在界面中使用的颜色主题。",
+        "description": "设置应用颜色主题。",
         "title": "主题"
       },
       "timeFormat": {
-        "description": "控制显示时间时是否包含秒，以及使用 12 小时制或 24 小时制。",
+        "description": "选择应用中时间的显示方式。",
         "title": "时间格式"
       },
       "userMenuDebugEntryEnabled": {
         "description": "在用户菜单中显示“调试”入口。该选项面向开发和高级诊断场景。",
         "title": "在用户菜单显示调试入口"
+      },
+      "windowCloseConfirmationEnabled": {
+        "description": "关闭窗口时，若仍有正在进行的会话，则显示确认对话框。",
+        "title": "关闭窗口时询问"
       }
     },
     "loading": "正在加载设置...",
@@ -736,11 +762,6 @@
       "boolean": {
         "false": "已禁用",
         "true": "已启用"
-      },
-      "cursorStyle": {
-        "bar": "竖条",
-        "block": "方块",
-        "underline": "下划线"
       },
       "dateFormat": {
         "dd/MM/yy": "21/12/25",
@@ -757,7 +778,7 @@
         "unavailable": "不可用"
       },
       "language": {
-        "en": "English",
+        "en": "英语 (English)",
         "zh-CN": "简体中文 (Chinese, Simplified)"
       },
       "searchEngine": {
@@ -765,7 +786,7 @@
         "bing": "必应",
         "custom": "自定义",
         "duckduckgo": "DuckDuckGo",
-        "google": "Google"
+        "google": "谷歌"
       },
       "serverProxyMode": {
         "custom": "自定义代理",
@@ -783,15 +804,21 @@
         "off": "关闭",
         "shortcut": "使用快捷键时开启"
       },
+      "sftpDragAction": {
+        "ask": "每次询问",
+        "copy": "复制",
+        "link": "创建链接",
+        "move": "移动"
+      },
       "sftpReconnectMode": {
         "active": "主动",
         "off": "关闭",
         "passive": "被动"
       },
       "terminalAutoCompleteAcceptKeys": {
-        "enter": "回车",
+        "enter": "Enter",
         "tab": "Tab",
-        "tabEnter": "Tab/回车"
+        "tabEnter": "Tab/Enter"
       },
       "terminalClipboardAccess": {
         "askAlways": "始终询问",
@@ -844,7 +871,6 @@
         "HH:mm:ss": "23:45:30"
       }
     },
-    "query": "关键词",
     "saveChanges": "保存",
     "saveFailed": "保存设置失败。",
     "saveSuccess": "设置已保存。",
@@ -856,6 +882,7 @@
       "advancedTerminal": "高级终端配置",
       "appearance": "外观",
       "autoComplete": "自动补全",
+      "behavior": "行为",
       "connection": "连接",
       "editorDefaults": "默认值",
       "localization": "本地化",
@@ -864,12 +891,10 @@
       "search": "搜索",
       "sftpBrowser": "浏览器",
       "sftpSafety": "安全",
-      "sshRuntime": "SSH 运行时",
       "sshStyle": "SSH 样式",
       "synchronization": "同步",
       "terminalSelection": "Orbit Bar"
     },
-    "title": "设置",
     "validation": {
       "booleanRequired": "“{name}”必须是布尔值。",
       "enumRequired": "“{name}”必须是以下之一：{options}。",
@@ -881,7 +906,7 @@
       "notObject": "设置值必须是 JSON 对象。",
       "proxyUrlInvalid": "自定义代理 URL 必须使用 http://、https:// 或 socks5://，且不能包含路径、查询参数或片段。",
       "stringRequired": "“{name}”必须是字符串。",
-      "timeZoneUnsupported": "“{name}”必须是 system 或受支持的 IANA 时区。",
+      "timeZoneUnsupported": "“{name}”必须是 system 或受支持的时区。",
       "unknownKeys": "设置包含未知键：“{keys}”。",
       "unsupportedKey": "不支持的设置键：“{key}”。",
       "unsupportedType": "不支持的设置值类型，键：“{key}”。"
@@ -956,8 +981,10 @@
       "open": "打开",
       "openInNewTab": "在新标签页打开",
       "openSshHere": "在此处打开 SSH",
+      "openSymlinkTargetLocation": "打开文件所在的位置",
       "openWith": "打开方式...",
       "paste": "粘贴",
+      "pasteAsLink": "粘贴为链接",
       "properties": "属性",
       "redo": "重做",
       "refresh": "刷新",
@@ -974,6 +1001,7 @@
       "uploadFiles": "上传文件"
     },
     "addressCollapsedMenuLabel": "显示隐藏的路径层级",
+    "addressLoading": "正在加载...",
     "addressMenuEmpty": "没有文件夹",
     "addressMenuLoading": "正在加载文件夹...",
     "addressRootLabel": "远程服务器根目录",
@@ -1010,21 +1038,29 @@
     "deleteConfirmAccept": "删除",
     "deleteConfirmCancel": "取消",
     "deleteConfirmDescription": "确认从远程服务器删除“{name}”吗？",
-    "deleteConfirmDescriptionMany": "确认从远程服务器删除 {count} 个条目吗？",
-    "deleteConfirmTitle": "删除 SFTP 条目",
+    "deleteConfirmDescriptionMany": "确认从远程服务器删除 {count} 项吗？",
+    "deleteConfirmTitle": "删除项目",
     "detail": {
       "modified": "修改时间",
       "path": "路径",
       "permissions": "权限",
-      "size": "大小",
-      "type": "类型"
+      "size": "大小"
     },
     "detailEmpty": "选择文件或目录以查看元数据。",
-    "detailSelectedMany": "已选择 {count} 个条目。",
+    "detailSelectedMany": "已选择 {count} 项。",
     "detailTitle": "详情",
-    "directoryListLabel": "SFTP 目录条目",
+    "directoryListLabel": "SFTP 目录项目",
+    "directoryTreeLabel": "SFTP 目录树",
     "downloadPathUnavailable": "无法获取本地下载路径。",
     "downloadUnsupported": "仅普通文件可以保存到本地。",
+    "drag": {
+      "copyHere": "复制到这里",
+      "linkHere": "在这里创建链接",
+      "menuTitle": "拖拽到 {path}",
+      "menuTitleMany": "拖拽 {count} 个文件到 {path}",
+      "menuTrigger": "SFTP 拖放操作菜单",
+      "moveHere": "移动到这里"
+    },
     "empty": "该目录为空。",
     "entryType": {
       "directory": "目录",
@@ -1033,17 +1069,21 @@
       "symlink": "符号链接"
     },
     "feedback": {
-      "batchPartialFailure": "已完成 {completed}/{total} 个条目，{failed} 个失败，{skipped} 个已跳过。",
+      "alreadyInTargetDirectory": "已在该文件夹中。",
+      "batchPartialFailure": "已完成 {completed}/{total} 项，{failed} 个失败，{skipped} 个已跳过。",
       "copied": "已复制。",
-      "copiedMany": "已复制 {count} 个条目。",
+      "copiedMany": "已复制 {count} 项。",
       "copyPathFailed": "复制路径失败。",
       "deleted": "已删除。",
-      "deletedMany": "已删除 {count} 个条目。",
+      "deletedMany": "已删除 {count} 项。",
       "directoryCreated": "文件夹已创建。",
       "downloaded": "已保存到 {path}。",
       "fileCreated": "文件已创建。",
+      "invalidDropTarget": "不能将文件夹拖放到自身内部。",
+      "linked": "链接已创建。",
+      "linkedMany": "已创建 {count} 个链接。",
       "moved": "已移动。",
-      "movedMany": "已移动 {count} 个条目。",
+      "movedMany": "已移动 {count} 项。",
       "pathCopied": "文件地址已复制。",
       "relativePathCopied": "相对地址已复制。",
       "renamed": "已重命名。",
@@ -1051,17 +1091,17 @@
       "uploaded": "更改已上传。",
       "uploadedFile": "已上传 {name}。"
     },
-    "loadFailed": "加载 SFTP 目录失败。",
+    "loadFailed": "加载目录失败。",
     "loading": "正在加载目录...",
     "noSession": "当前没有活动的 SFTP 会话。",
     "openLocalFileFailed": "无法打开临时本地文件。",
-    "openUnsupported": "该条目无法打开。",
+    "openUnsupported": "该项无法打开。",
     "openWithApplicationsUnavailable": "加载可用应用失败。",
     "openWithFailed": "无法使用所选应用打开文件。",
     "openWithLoading": "正在加载应用...",
     "openWithNoApplications": "没有可用应用",
     "openWithUnsupported": "“打开方式”仅支持 Windows 与 macOS 上的普通文件。",
-    "operationFailed": "SFTP 操作失败。",
+    "operationFailed": "操作失败。",
     "parentDirectoryEntryLabel": "返回上一级目录",
     "pathInputLabel": "远程路径",
     "previewEmpty": "该文件为空。",
@@ -1077,10 +1117,9 @@
     "previewSelectOne": "选择一个项目以预览。",
     "previewTitle": "预览",
     "previewTooLargeToOpen": "该文件超过文本预览支持的最大大小。",
-    "previewTruncated": "预览已截断",
     "previewUnsavedChanges": "切换选择前请先保存或撤销预览更改。",
     "properties": {
-      "browserUnsupported": "网页运行时暂未实现 SFTP 属性功能。",
+      "browserUnsupported": "网页运行时目前不支持 SFTP 属性功能。",
       "close": "关闭",
       "edit": "编辑",
       "field": {
@@ -1092,7 +1131,6 @@
         "gid": "组 ID",
         "hidden": "隐藏",
         "modified": "修改时间",
-        "name": "名称",
         "octalMode": "八进制模式",
         "other": "其他",
         "parentPath": "父路径",
@@ -1116,15 +1154,15 @@
         "hidden": "是",
         "visible": "否"
       },
-      "loadFailed": "加载 SFTP 条目属性失败。",
+      "loadFailed": "属性加载失败。",
       "loading": "正在加载属性...",
-      "missingPayload": "属性窗口缺少 SFTP 会话或路径。",
-      "mixed": "混合",
-      "multipleItemsTitle": "{count} 个项目",
-      "notFound": "找不到所选 SFTP 条目。",
-      "openFailed": "无法打开 SFTP 属性窗口。",
+      "missingPayload": "无法在未知或已中断的会话中读取属性。",
+      "mixed": "多个值",
+      "multipleItemsTitle": "{count} 项",
+      "notFound": "找不到所选项。",
+      "openFailed": "无法打开属性窗口。",
       "permissionsTitle": "权限",
-      "rawDataTitle": "Raw Data",
+      "rawDataTitle": "原始数据",
       "selectionSubtitle": "所选项目",
       "symlinkStatus": {
         "broken": "已断开",
@@ -1133,28 +1171,32 @@
         "unknown": "未知"
       },
       "symlinkTitle": "符号链接",
-      "title": "属性",
-      "windowTitle": "SFTP 属性",
-      "windowTitleWithCount": "{count} 个项目属性",
+      "windowTitle": "属性",
+      "windowTitleWithCount": "{count} 项的属性",
       "windowTitleWithName": "{name} 属性"
     },
     "reconnectFailed": "SFTP 会话重连失败。",
-    "renameInputLabel": "条目名称",
-    "searchEmpty": "没有匹配的条目。",
+    "renameInputLabel": "项目名称",
+    "searchEmpty": "没有匹配项。",
     "searchPlaceholder": "搜索文件...",
     "sessionInitFailed": "初始化 SFTP 会话失败。",
+    "symlinkTargetLocationUnavailable": "无法解析链接的文件位置。",
     "tasks": {
       "copy": "复制",
       "createFile": "新建文件",
       "createFolder": "新建文件夹",
       "delete": "删除",
       "download": "下载",
-      "entryCountMany": "{count} 个条目",
-      "entryCountOne": "1 个条目",
+      "entryCountMany": "{count} 项",
+      "entryCountOne": "1 项",
+      "failureFeedback": "{operation}失败：{reason}",
+      "link": "创建链接",
       "move": "移动",
       "open": "打开",
       "openWith": "打开方式",
       "pending": "等待开始",
+      "progressBytes": "{completed} / {total}",
+      "progressBytesWithSpeed": "{completed} / {total} · {speed}/秒",
       "progressCount": "{completed}/{total}",
       "progressIndeterminate": "...",
       "reconnect": "重连",
@@ -1169,7 +1211,7 @@
         "running": "运行中",
         "success": "完成"
       },
-      "title": "SFTP 任务",
+      "title": "任务",
       "toolbarMixed": "{running} 个运行中，{queued} 个排队中",
       "toolbarQueued": "{count} 个排队任务",
       "toolbarRecent": "{count} 个最近任务",
@@ -1179,8 +1221,6 @@
       "uploadSkipped": "已跳过上传"
     },
     "temporaryPathUnavailable": "无法获取临时本地文件路径。",
-    "title": "SFTP",
-    "untitledServer": "SFTP 服务器",
     "uploadConfirmAccept": "上传",
     "uploadConfirmDescription": "“{name}”已在本地更改。要将更改上传到 {path} 吗？",
     "uploadConfirmIgnore": "忽略",
@@ -1189,6 +1229,9 @@
     "uploadConflictDescription": "远程已存在名为“{name}”的文件，或该文件在打开后发生了变化。要覆盖 {path} 吗？",
     "uploadConflictOverwrite": "覆盖",
     "uploadConflictTitle": "覆盖远程更改？",
+    "uploadDropDirectoriesUnsupported": "暂不支持上传文件夹，已跳过 {count} 个文件夹。",
+    "uploadDropSomeItemsSkipped": "已跳过 {count} 个无法上传的拖入项目。",
+    "uploadDropStagingFailed": "无法准备拖入文件进行上传。",
     "uploadSelectionFailed": "无法准备所选本地文件进行上传。",
     "uploadUnsupported": "本地文件上传仅在桌面应用中可用。",
     "viewMenu": {
@@ -1225,12 +1268,14 @@
     "columnUser": "用户名",
     "connecting": "连接中...",
     "contextMenuClearTerminal": "清屏",
+    "contextMenuCloseRemoteEnhancementsDebug": "关闭远端增强调试",
     "contextMenuCloseTerminal": "关闭终端",
     "contextMenuCopy": "复制",
     "contextMenuCopyAsHtml": "复制为 HTML",
     "contextMenuFind": "查找...",
     "contextMenuOpenDirectoryInSftp": "在 SFTP 中打开目录",
     "contextMenuOpenLink": "打开链接",
+    "contextMenuOpenRemoteEnhancementsDebug": "打开远端增强调试",
     "contextMenuPaste": "粘贴",
     "contextMenuSearchOnline": "联网搜索",
     "contextMenuSelectAll": "全选",
@@ -1239,7 +1284,7 @@
     "createTagFailed": "创建标签失败。",
     "credentialsLoadFailed": "加载已保存凭据失败。",
     "disableCharacterWidthCompatibilityMode": "禁用字符宽度兼容模式",
-    "disableCharacterWidthCompatibilityModeTooltip": "为此服务器禁用 Unicode 11 字符宽度支持。新的 SSH 会话将使用 xterm 传统宽度规则，远端终端输出出现错位时可尝试开启此项。",
+    "disableCharacterWidthCompatibilityModeTooltip": "为此服务器禁用 Unicode 11 字符宽度支持。远端终端输出出现错位时可尝试开启此项。",
     "dropTextToTerminal": "拖拽到此处来将文本添加到终端",
     "editorLoadFailed": "加载服务器编辑资源失败。",
     "emptyTags": "暂无已添加的标签",
@@ -1259,7 +1304,7 @@
     "historyTerminalLabel": "终端 {index}",
     "hostFingerprintDialogAlgorithm": "算法",
     "hostFingerprintDialogCancel": "取消",
-    "hostFingerprintDialogDescription": "首次连接检测到未受信任指纹，请确认后再继续连接。",
+    "hostFingerprintDialogDescription": "当前远程主机指纹未受信任。若要继续连接，请先信任远程主机指纹。",
     "hostFingerprintDialogFingerprint": "指纹",
     "hostFingerprintDialogHost": "主机",
     "hostFingerprintDialogTitle": "信任主机指纹",
@@ -1286,16 +1331,16 @@
       "previewLabel": "预览",
       "reasons": {
         "controlCharacters": "粘贴内容包含 ESC、BEL、ANSI 控制序列或其它控制字符。",
-        "largeText": "粘贴内容包含 {count} 个字符，已达到或超过 {threshold} 个字符阈值。",
+        "largeText": "粘贴内容包含 {count}/{threshold} 个字符。",
         "multiLine": "粘贴内容包含多行。"
       },
-      "title": "粘贴到终端？"
+      "title": "确认粘贴"
     },
     "portPlaceholder": "端口",
     "privateKeyImportAction": "导入私钥...",
     "privateKeyImportFailed": "导入私钥失败。",
     "privateKeyImportPlaceholder": "右键可从私钥文件导入",
-    "privateKeyImportSuccess": "私钥导入成功。",
+    "privateKeyImportSuccess": "私钥已导入。",
     "privateKeyLabel": "私钥",
     "privateKeyPassphraseLabel": "私钥口令",
     "privateKeySavedPlaceholder": "已保存私钥（仅在需要替换时粘贴新私钥）",
@@ -1310,9 +1355,38 @@
     "proxyUrlHint": "支持 HTTP、HTTPS CONNECT 和 SOCKS5 代理 URL，也支持在 URL 中携带凭据。",
     "proxyUrlLabel": "自定义代理 URL",
     "proxyUrlPlaceholder": "socks5://user:password@127.0.0.1:1080",
+    "remoteEnhancementRuntimeStates": {
+      "active": "已启用",
+      "disabled": "已停用",
+      "pending": "等待握手"
+    },
     "remoteEnhancements": "远端增强",
-    "remoteEnhancementsTooltip": "启用后，如果全局远端增强设置和 manifest URL 已配置，该服务器连接后可运行 Cosmosh 远端 helper 安装器。",
-    "removeTagLabel": "移除 {tagName}",
+    "remoteEnhancementsDebug": {
+      "capabilities": "能力",
+      "close": "关闭远端增强调试",
+      "code": "代码",
+      "emptyEvents": "本次会话尝试还没有收到远端增强事件。",
+      "emptyValue": "-",
+      "events": "事件",
+      "helperVersion": "帮助程序版本",
+      "latestPhase": "Bootstrap 阶段",
+      "latestState": "Bootstrap 状态",
+      "message": "消息",
+      "protocolVersion": "协议版本",
+      "runtimeState": "运行状态",
+      "title": "远端增强调试",
+      "version": "版本"
+    },
+    "remoteEnhancementsTooltip": "启用后，如果全局远端增强已开启，连接该服务器时会检查并准备 Cosmosh 远端增强帮助程序。",
+    "remoteShellEvents": {
+      "command-end": "命令结束",
+      "command-start": "命令开始",
+      "cwd": "当前目录",
+      "foreground-command": "前台命令",
+      "integration-ready": "集成就绪",
+      "prompt-ready": "提示符就绪"
+    },
+    "removeTagLabel": "移除“{tagName}”",
     "retry": "重试",
     "saveChanges": "保存修改",
     "saveInlineCredentialsToKeychain": "保存为钥匙链",
@@ -1340,13 +1414,13 @@
     "selectionBarOpenLinkFailed": "打开链接失败。",
     "selectionBarSearch": "联网搜索选中文本",
     "selectionBarSearchFailed": "打开浏览器搜索失败。",
-    "serverCreatedSuccessfully": "服务器创建成功。",
+    "serverCreatedSuccessfully": "服务器已创建。",
     "serverEditorDialogDescription": "创建或编辑 SSH 服务器连接配置。",
     "serverNamePlaceholder": "服务器名称",
-    "serverUpdatedSuccessfully": "服务器更新成功。",
+    "serverUpdatedSuccessfully": "服务器已更新。",
     "sessionInitFailed": "初始化 SSH 会话失败。",
     "strictHostKeyChecking": "严格主机密钥校验",
-    "strictHostKeyCheckingTooltip": "启用后，Cosmosh 只会连接到其 SSH 主机密钥指纹已经被信任的主机。遇到未知指纹时，会先提示你确认。",
+    "strictHostKeyCheckingTooltip": "启用后，未知指纹的会话仅可在确认后继续。",
     "tagNamePlaceholder": "按 Enter 键添加标签",
     "tagsLegend": "标签",
     "terminalClipboard": {
@@ -1377,8 +1451,6 @@
     "terminalClipboardAccessPlaceholder": "选择剪贴板权限",
     "terminalHardwareAccelerationDisabled": "WebGL 不可用，已禁用终端硬件加速。",
     "terminalSearchCaseSensitive": "区分大小写",
-    "terminalSearchFirst": "首个",
-    "terminalSearchLast": "末个",
     "terminalSearchNext": "下个",
     "terminalSearchPlaceholder": "在终端输出中搜索",
     "terminalSearchPrevious": "上个",
@@ -1396,8 +1468,13 @@
     "websocketTransportFailed": "连接传输失败。"
   },
   "sshKeychain": {
+    "contextCopyName": "复制名称",
     "createFolderAction": "创建文件夹",
     "createTagFailed": "创建标签失败。",
+    "deleteConfirmDescription": "确认删除钥匙链“{name}”？",
+    "deleteConfirmTitle": "删除钥匙链",
+    "deleteFailed": "删除钥匙链失败。",
+    "deleteSuccess": "钥匙链已删除。",
     "editorDialogDescription": "创建或编辑可复用的 SSH 认证钥匙链。",
     "empty": "暂无可用钥匙链。",
     "folderLabel": "文件夹",
@@ -1410,7 +1487,7 @@
     "removeTagLabel": "移除 {tagName}",
     "saveAction": "保存钥匙链",
     "saveFailed": "保存钥匙链失败。",
-    "saveSuccess": "钥匙链保存成功。",
+    "saveSuccess": "钥匙链已保存。",
     "tagPlaceholder": "按 Enter 键添加标签",
     "tagsLabel": "标签",
     "visibilityShared": "公用"
@@ -1428,7 +1505,6 @@
     "newToRight": "在右侧新建标签页",
     "page": {
       "auditLogs": "审计日志",
-      "componentsField": "组件实验场",
       "debug": "调试",
       "home": "主页",
       "localTerminal": "本地终端",

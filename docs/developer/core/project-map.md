@@ -13,15 +13,26 @@ flowchart TB
   ROOT --> REMOTE[packages/remote-bootstrap]
   ROOT --> DOCS[docs]
   ROOT --> SCRIPTS[scripts]
+  ROOT --> CI[".github/workflows"]
 ```
 
 ## 2. Directory Responsibilities
+
+### `.github/workflows`
+
+- **Role**: CI validation, rolling development assets, and versioned release orchestration.
+- `build-main.yml` owns ordinary Electron packaging plus intentionally mutable `remote-bootstrap-dev` and branch prerelease channels.
+- `release.yml` owns read-only platform builds, Windows signature policy checks, artifact inventory validation, checksums, provenance attestations, and draft release publication through one scoped writer job.
+- Every external Action reference is pinned to a full commit SHA. `.github/dependabot.yml` proposes reviewed digest updates.
 
 ### `scripts`
 
 - **Role**: Repository-level developer and release workflow helpers.
 - **Key files**:
   - `dev-profile.mjs`: development profile manager used by `pnpm dev:profile` and `pnpm dev:main:fresh`. It automatically imports the legacy implicit default identity into the protected `default` profile, then creates, switches, resets, deletes, and runs commands with profile-scoped runtime paths under `.cosmosh/dev-profiles/<name>/`.
+  - `build-remote-bootstrap-release.mjs`: CI/release helper that cross-compiles Linux remote bootstrap binaries, computes SHA-256 values, and writes the git-ignored manifest under `packages/remote-bootstrap/dist/`. Tagged releases upload those files to the versioned release; `main` pushes upload them to the fixed `remote-bootstrap-dev` prerelease; pushed branches whose name contains `remote-bootstrap` and manual dispatch runs can upload them to branch-scoped temporary prereleases for end-to-end testing; ordinary PRs use it only for validation.
+  - `prepare-release-assets.mjs`: validates the flat cross-platform release inventory and writes deterministic `SHA256SUMS` before attestation and draft upload.
+  - `verify-windows-release-signatures.ps1`: audits or enforces Authenticode signatures and timestamp certificates for the NSIS installer and packaged application executable.
   - `update-version.js`: version metadata update helper.
   - `precommit-staged.mjs`: staged-file precommit validation helper.
   - `setup-githooks.mjs`: local Git hook bootstrap.
@@ -31,16 +42,25 @@ flowchart TB
 - **Role**: Electron host process.
 - **Key files**:
   - `src/index.ts`: app bootstrap, BrowserWindow config, IPC handlers, backend subprocess management.
+  - `src/window-close-guard.ts`: serialized window/app close decisions based on backend-owned SSH/SFTP activity, including conservative probe-failure handling.
+  - `src/renderer-close-confirmation.ts`: sender-bound, request-ID-validated Main-to-Renderer close confirmation broker with timeout and renderer-destruction handling.
   - `src/ipc/register-app-utility-ipc.ts`: privileged app utility IPC such as native dialogs, file manager integration, SFTP temp-file creation, and validated OS-open/Open With flows.
+  - `src/ipc/sftp-open-with-runtime.ts`: kernel-anchored Windows system executable/library resolution, OS-known-folder child environments, and packaged-versus-development macOS helper selection for SFTP Open With.
   - `src/ipc/register-debug-ipc.ts`: development diagnostics IPC, including the backend request mirror list/clear/event channels.
   - `src/ipc/backend-request-trace-store.ts`: development-only sanitized ring buffer for backend proxy request mirrors.
-  - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations.
+  - `src/ipc/sftp-download-target-authorizations.ts`: renderer-owned exact-path capabilities for local SFTP download destinations, including one owner-bound retry lease keyed by `transferId`.
   - `src/preload.ts`: secure renderer bridge.
   - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
   - `src/dev/dev-profile.ts`: development-only profile activation that maps selected profiles to Electron `userData`, SQLite, and backend secret storage paths before startup.
+  - `src/dev/backend-runtime.ts`: validation boundary for the system Node executable used by Main's development backend child.
   - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
+  - `resources/remote-bootstrap/manifest-url.json`: git-ignored CI packaging resource that records the default Remote Enhancements manifest URL for packaged backend startup when a release or `main` build provides one.
   - `scripts/compile-macos-open-with-helper.mjs`: macOS-only build hook that compiles the SFTP Open With helper before packaging.
+  - `scripts/dev-main.cjs`: system-Node development launcher that compiles Main and hands the canonical Node executable to Electron.
+  - `scripts/dev-preflight.cjs`: incremental development build check for API contract and i18n outputs.
+  - `scripts/ensure-sqlcipher-native.cjs`: target-aware SQLCipher native ABI probe and rebuild path for system Node development and Electron packaging.
+  - `scripts/write-remote-bootstrap-manifest-url.cjs`: CI packaging helper that writes the packaged Remote Enhancements manifest URL resource when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is set, and removes any stale ignored resource when it is not set.
   - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded by Main in development runs; it reads the renderer mirror cache and does not alter backend transport.
 
 ### `packages/renderer`
@@ -48,12 +68,13 @@ flowchart TB
 - **Role**: React UI layer.
 - **Key folders**:
   - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
-  - `src/pages/sftp`: SFTP page submodules for browser UI composition, action menus, directory/tree/detail panels, and shared SFTP helpers.
+  - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, fixed-row virtualization helpers and tests, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing, byte-progress presentation, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
-  - `src/components/ui`: Radix-based primitive wrappers and styling contracts.
-  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, visual picker, reusable folder-creation dialog).
+  - `src/components/CloseWindowConfirmationDialog.tsx`: shared Renderer `Dialog` presentation for Main-owned active-session close decisions.
+  - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
+  - `src/components/home`: home/SSH shared entity modules (card/icon rendering, TanStack Virtual-backed visual picker, reusable folder-creation dialog).
   - `src/components/terminal`: terminal interaction composites (context menu, selection bar, autocomplete menu).
-  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
+  - `src/lib`: backend transport, i18n, settings bootstrap (`app-settings.ts`), renderer request-trace mirror bootstrap (`backend-request-trace-mirror.ts`), shared date-time display formatting (`date-time-format.ts`), shared CodeMirror syntax highlighting and search/replace adapter, and utility abstractions (including shared entity visual helpers and folder-dialog hook).
   - `theme`: token source used to generate CSS variable system.
 
 ### `packages/backend`
@@ -62,16 +83,17 @@ flowchart TB
 - **Key folders**:
   - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
-  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared non-shell connection helpers.
-  - `src/remote-bootstrap`: Remote Enhancements bootstrap orchestration for live SSH sessions. It loads the deployment manifest, probes the remote platform through bounded side-channel `ssh2 exec`, injects the shell wrapper, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
+  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared authenticated connection helpers for shell and non-shell transports. The helper creates fresh proxy sockets per transport and supports attempt-scoped compression and cancellation.
+  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It loads the deployment manifest, probes the remote platform through a temporary SSH transport isolated from the interactive client, validates the installed Go binary's runtime status, injects the download wrapper only for missing/stale installations, returns a trusted helper contract to `SshSessionService`, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
-  - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup).
+  - `src/sftp`: SFTP browser, download, and file-operation session logic (`ssh2.sftp`, path normalization, entry mapping, session cleanup), including short-lived in-memory byte-progress records for single-file transfers.
   - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
   - `src/validation-utils.ts`: shared backend HTTP-boundary validation primitives used by route and domain payload parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
   - `src/terminal`: shared terminal session primitives (WebSocket message normalization, history parsing, size clamping, history sync timing helpers).
   - `src/terminal/completion`: shared terminal auto-complete domain (spec dataset, ranking engine, completion payload shaping) used by both SSH and local-terminal session services.
-  - `src/db`: Prisma initialization and DB lifecycle.
+  - `src/db/prisma.ts`: Prisma lifecycle, runtime migration execution, schema validation, and structured database errors.
+  - `src/db/sqlcipher.ts`: production SQLCipher adapter factory, keyed connection verification, legacy plaintext migration, and interrupted-migration recovery.
 
 ### `packages/api-contract`
 
@@ -96,9 +118,9 @@ Go source for the user-scoped remote installer used by Remote Enhancements. This
 
 - `README.md`: module guide covering purpose, runtime ownership, manifest contract, installed paths, status codes, security boundaries, and test/build commands.
 - `cmd/cosmosh-wrappergen`: generates shell-specific bootstrap wrappers for `bash`, `zsh`, `fish`, `ash`, and `sh`.
-- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and thin shell helper into user-scoped remote directories.
+- `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and Go-generated shell helper into user-scoped remote directories, or reports the validated installed runtime contract.
 - `internal/wrapper`: validates manifest-derived wrapper inputs and renders POSIX/fish shell source with shell-safe quoting.
-- `internal/install`: performs idempotent user-level installation, shell profile hook repair, version marker writes, and line-delimited `bootstrap-status` output.
+- `internal/install`: owns versioned helper generation, OSC protocol/capability declarations, exact helper/binary validation, idempotent user-level installation, profile-hook repair, installed status reporting, version marker writes, and line-delimited `bootstrap-status` output.
 
 ## 3. Feature Placement Rules
 
@@ -127,7 +149,7 @@ flowchart TD
 
 ## 5. Not Implemented Yet (Planned)
 
-- Full SFTP transfer queue module (directory upload/download, byte-level progress/cancellation, retry policies, and persisted transfer history).
+- Full backend-owned SFTP transfer queue module (directory upload/download, cancellation/resume, generalized retry policies, and persisted transfer history). Single-file upload/download byte progress and speed observation are already implemented without backend scheduling.
 - Dedicated shared `common` package is not present yet; current sharing is done through `api-contract` + `i18n`.
 
 ## 6. Common Change Scenarios

@@ -1,8 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { createReadStream, createWriteStream } from 'node:fs';
+import { createReadStream, createWriteStream, lstatSync, realpathSync } from 'node:fs';
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
+import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import { sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
@@ -18,7 +18,17 @@ import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadat
 
 type GetDbClient = () => PrismaClient;
 
-const SFTP_TEMP_ROOT_DIRECTORY_NAME = 'cosmosh-sftp';
+const SFTP_TEMP_ROOT_ENV_NAME = 'COSMOSH_SFTP_TEMP_ROOT';
+const SFTP_TRANSFER_RETENTION_MS = 60_000;
+const SFTP_TRANSFER_SPEED_SAMPLE_INTERVAL_MS = 250;
+const SFTP_TRANSPORT_ERROR_CODES = new Set([
+  'ECONNRESET',
+  'EPIPE',
+  'ETIMEDOUT',
+  'ENOTCONN',
+  'ERR_STREAM_DESTROYED',
+  'ERR_STREAM_PREMATURE_CLOSE',
+]);
 
 type SshServerWithKeychain = Prisma.SshServerGetPayload<{
   include: {
@@ -102,7 +112,7 @@ export type SftpEntryDetailsItem = {
 /**
  * Batch operation modes supported by one SFTP API request.
  */
-export type SftpBatchOperation = 'copy' | 'move' | 'delete';
+export type SftpBatchOperation = 'copy' | 'move' | 'delete' | 'link';
 
 /**
  * Remote entry descriptor accepted by the SFTP batch operation endpoint.
@@ -262,6 +272,41 @@ export type DownloadSftpFileResult =
       message: string;
     };
 
+export type SftpTransferDirection = 'download' | 'upload';
+
+export type SftpTransferStatus = 'running' | 'completed' | 'failed';
+
+/**
+ * Public progress snapshot for one active or recently completed byte transfer.
+ */
+export type SftpTransferProgress = {
+  transferId: string;
+  direction: SftpTransferDirection;
+  status: SftpTransferStatus;
+  transferredBytes: number;
+  totalBytes: number;
+  bytesPerSecond: number;
+  startedAt: string;
+  updatedAt: string;
+  finishedAt?: string;
+  errorMessage?: string;
+};
+
+type SftpTransferRecord = {
+  transferId: string;
+  direction: SftpTransferDirection;
+  status: SftpTransferStatus;
+  transferredBytes: number;
+  totalBytes: number;
+  bytesPerSecond: number;
+  startedAt: number;
+  updatedAt: number;
+  finishedAt?: number;
+  errorMessage?: string;
+  lastSpeedSampleAt: number;
+  lastSpeedSampleBytes: number;
+};
+
 export type UploadSftpFileConflictSnapshot = {
   size: number;
   modifiedAt: string;
@@ -273,6 +318,7 @@ export type WriteSftpFileResult = SftpOperationResult;
 
 export type UploadSftpFileOptions = {
   overwrite?: boolean;
+  transferId?: string;
 };
 
 type RemoteFileReplacementOptions = {
@@ -330,6 +376,10 @@ type SftpDirectoryEntry = {
 
 type SftpReadlinkWrapper = SFTPWrapper & {
   readlink(targetPath: string, callback: (error: Error | undefined | null, linkString: string) => void): void;
+};
+
+type SftpSymlinkWrapper = SFTPWrapper & {
+  symlink(targetPath: string, linkPath: string, callback: (error: Error | undefined | null) => void): void;
 };
 
 type SftpOpenSshExtensions = {
@@ -540,15 +590,6 @@ export const isMutableSftpEntryPath = (targetPath: string): boolean => {
 };
 
 /**
- * Resolves the local temp root shared with the Electron main-process SFTP open-file bridge.
- *
- * @returns Absolute local temp root path.
- */
-const resolveSftpTemporaryRootPath = (): string => {
-  return path.join(os.tmpdir(), SFTP_TEMP_ROOT_DIRECTORY_NAME);
-};
-
-/**
  * Checks whether a local path stays inside the controlled SFTP temp root.
  *
  * @param candidatePath Absolute candidate path.
@@ -560,6 +601,49 @@ const isLocalPathInsideDirectory = (candidatePath: string, parentPath: string): 
   return (
     relativePath === '' || (relativePath.length > 0 && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))
   );
+};
+
+/**
+ * Asserts that the Main-owned SFTP temp root is private on POSIX platforms.
+ *
+ * @param rootPath Candidate root path used for diagnostics.
+ * @param mode File mode from lstat.
+ * @returns void.
+ */
+const assertPrivateSftpTemporaryRootMode = (rootPath: string, mode: number): void => {
+  if (process.platform === 'win32') {
+    return;
+  }
+
+  if ((mode & 0o077) !== 0) {
+    throw new Error(`SFTP temporary root is not private: ${rootPath}`);
+  }
+};
+
+/**
+ * Validates the Main-owned SFTP temp root passed into Backend.
+ *
+ * @param configuredPath Path supplied by Main through constructor options or process env.
+ * @returns Canonical temp root path.
+ */
+const validateConfiguredSftpTemporaryRootPath = (configuredPath: string | undefined): string => {
+  const rootPath = configuredPath?.trim();
+  if (!rootPath) {
+    throw new Error(
+      `${SFTP_TEMP_ROOT_ENV_NAME} is required for backend startup. Electron Main creates and injects this ` +
+        'private SFTP temp root automatically. When starting @cosmosh/backend directly, create a real existing ' +
+        `private directory and set ${SFTP_TEMP_ROOT_ENV_NAME} to its absolute path; POSIX platforms require mode 0700.`,
+    );
+  }
+
+  const normalizedRootPath = path.resolve(rootPath);
+  const rootStats = lstatSync(normalizedRootPath);
+  if (!rootStats.isDirectory() || rootStats.isSymbolicLink()) {
+    throw new Error('SFTP temporary root must be a real directory.');
+  }
+
+  assertPrivateSftpTemporaryRootMode(normalizedRootPath, rootStats.mode);
+  return realpathSync(normalizedRootPath);
 };
 
 /**
@@ -632,16 +716,24 @@ export class SftpSessionService {
 
   private readonly credentialEncryptionKey: Buffer;
 
+  private readonly sftpTemporaryRootPath: string;
+
   private readonly sessions = new Map<string, SftpLiveSession>();
+
+  private readonly transfers = new Map<string, SftpTransferRecord>();
 
   constructor(options: {
     getDbClient: GetDbClient;
     auditEventService: AuditEventService;
     credentialEncryptionKey: Buffer;
+    sftpTemporaryRootPath?: string;
   }) {
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
     this.credentialEncryptionKey = options.credentialEncryptionKey;
+    this.sftpTemporaryRootPath = validateConfiguredSftpTemporaryRootPath(
+      options.sftpTemporaryRootPath ?? process.env[SFTP_TEMP_ROOT_ENV_NAME],
+    );
   }
 
   /**
@@ -823,24 +915,31 @@ export class SftpSessionService {
 
     try {
       const entries = await this.readdir(session, resolvedPath);
+      const mappedEntries = await Promise.all(
+        entries
+          .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
+          .map(async (entry) => {
+            const entryPath = joinSftpPath(resolvedPath, entry.filename);
+            const entryType = resolveSftpEntryType(entry.attrs.mode);
+            const symlinkTarget =
+              entryType === 'symlink' ? await this.resolveSymlinkTargetMetadata(session, entryPath) : undefined;
+
+            return this.buildSftpEntry({
+              name: entry.filename,
+              path: entryPath,
+              stats: entry.attrs,
+              ...(entry.longname ? { longname: entry.longname } : {}),
+              ...(symlinkTarget ? { symlinkTarget } : {}),
+            });
+          }),
+      );
+
       return {
         type: 'success',
         sessionId,
         path: resolvedPath,
         parentPath: this.resolveParentPath(resolvedPath),
-        entries: sortSftpEntriesByBrowserOrder(
-          entries
-            .filter((entry) => entry.filename !== '.' && entry.filename !== '..')
-            .map((entry) => {
-              const entryPath = joinSftpPath(resolvedPath, entry.filename);
-              return this.buildSftpEntry({
-                name: entry.filename,
-                path: entryPath,
-                stats: entry.attrs,
-                ...(entry.longname ? { longname: entry.longname } : {}),
-              });
-            }),
-        ),
+        entries: sortSftpEntriesByBrowserOrder(mappedEntries),
       };
     } catch (error: unknown) {
       return {
@@ -1051,6 +1150,7 @@ export class SftpSessionService {
     sessionId: string,
     requestedPath: string | undefined,
     localPath: string | undefined,
+    transferId?: string,
   ): Promise<DownloadSftpFileResult> {
     const session = this.getOpenSession(sessionId);
     if (!session) {
@@ -1082,7 +1182,9 @@ export class SftpSessionService {
         };
       }
 
-      await this.downloadFileToLocalPath(session, normalizedPath, normalizedLocalPath);
+      this.beginTransfer(transferId, 'download', sourceStats.size);
+      await this.downloadFileToLocalPath(session, normalizedPath, normalizedLocalPath, transferId);
+      this.completeTransfer(transferId);
 
       return {
         type: 'success',
@@ -1092,9 +1194,16 @@ export class SftpSessionService {
         size: sourceStats.size,
       };
     } catch (error: unknown) {
+      const message = this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason'));
+      this.failTransfer(transferId, message);
+      if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
+        this.closeSession(sessionId);
+        return { type: 'not-found' };
+      }
+
       return {
         type: 'failed',
-        message: this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason')),
+        message,
       };
     }
   }
@@ -1128,14 +1237,16 @@ export class SftpSessionService {
       };
     }
 
-    const normalizedLocalPath = localPath ? path.resolve(localPath.trim()) : '';
-    if (!normalizedLocalPath) {
+    const requestedLocalPath = localPath?.trim() ?? '';
+    if (!requestedLocalPath) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.localPathRequired'),
       };
     }
-    if (!isLocalPathInsideDirectory(normalizedLocalPath, path.resolve(resolveSftpTemporaryRootPath()))) {
+
+    const normalizedLocalPath = path.resolve(requestedLocalPath);
+    if (!isLocalPathInsideDirectory(normalizedLocalPath, this.sftpTemporaryRootPath)) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.localFileReadUnsupported'),
@@ -1185,26 +1296,49 @@ export class SftpSessionService {
         };
       }
 
-      const localStats = await fs.stat(normalizedLocalPath);
-      if (!localStats.isFile()) {
+      const canonicalLocalPath = await this.resolveExistingUploadLocalPath(normalizedLocalPath);
+      if (!canonicalLocalPath) {
         return {
           type: 'failed',
           message: session.t('errors.sftp.localFileReadUnsupported'),
         };
       }
 
+      const localStats = await fs.lstat(canonicalLocalPath);
+      if (!localStats.isFile() || localStats.isSymbolicLink()) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.localFileReadUnsupported'),
+        };
+      }
+
+      this.beginTransfer(options.transferId, 'upload', localStats.size);
       if (targetStats) {
-        await this.uploadLocalFileToRemotePath(session, normalizedLocalPath, normalizedPath, targetStats.mode & 0o777, {
-          expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
-        });
+        await this.uploadLocalFileToRemotePath(
+          session,
+          canonicalLocalPath,
+          normalizedPath,
+          targetStats.mode & 0o777,
+          {
+            expectedRemoteSnapshot: options.overwrite ? undefined : expectedRemoteSnapshot,
+          },
+          options.transferId,
+        );
       } else {
-        await this.createRemoteFileFromLocalPath(session, normalizedLocalPath, normalizedPath, 0o644);
+        await this.createRemoteFileFromLocalPath(
+          session,
+          canonicalLocalPath,
+          normalizedPath,
+          0o644,
+          options.transferId,
+        );
       }
 
       this.logSftpMutation(session, 'upload', {
         path: normalizedPath,
       });
       const uploadedStats = await this.stat(session, normalizedPath);
+      this.completeTransfer(options.transferId);
 
       return {
         type: 'success',
@@ -1214,6 +1348,13 @@ export class SftpSessionService {
         modifiedAt: this.formatStatsTimestamp(uploadedStats.mtime),
       };
     } catch (error: unknown) {
+      const message = this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileUploadFailedNoReason'));
+      this.failTransfer(options.transferId, message);
+      if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
+        this.closeSession(sessionId);
+        return { type: 'not-found' };
+      }
+
       if (error instanceof SftpRemoteConflictError) {
         return {
           type: 'failed',
@@ -1224,9 +1365,36 @@ export class SftpSessionService {
 
       return {
         type: 'failed',
-        message: this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileUploadFailedNoReason')),
+        message,
       };
     }
+  }
+
+  /**
+   * Reads one active or recently completed transfer progress snapshot.
+   *
+   * @param transferId Renderer-generated transfer identifier.
+   * @returns Progress snapshot, or null after the record expires.
+   */
+  public getTransferProgress(transferId: string): SftpTransferProgress | null {
+    this.pruneExpiredTransfers();
+    const transfer = this.transfers.get(transferId);
+    if (!transfer) {
+      return null;
+    }
+
+    return {
+      transferId: transfer.transferId,
+      direction: transfer.direction,
+      status: transfer.status,
+      transferredBytes: transfer.transferredBytes,
+      totalBytes: transfer.totalBytes,
+      bytesPerSecond: transfer.bytesPerSecond,
+      startedAt: new Date(transfer.startedAt).toISOString(),
+      updatedAt: new Date(transfer.updatedAt).toISOString(),
+      ...(transfer.finishedAt ? { finishedAt: new Date(transfer.finishedAt).toISOString() } : {}),
+      ...(transfer.errorMessage ? { errorMessage: transfer.errorMessage } : {}),
+    };
   }
 
   /**
@@ -1338,6 +1506,11 @@ export class SftpSessionService {
     }
 
     try {
+      const sourceStats = await this.lstat(session, sourcePath);
+      if (sourceStats.isDirectory() && this.isSameOrDescendantPath(sourcePath, targetPath)) {
+        throw new Error(session.t('errors.sftp.moveIntoSelfUnsupported'));
+      }
+
       await this.rename(session, sourcePath, targetPath);
       this.logSftpMutation(session, 'rename', {
         path: sourcePath,
@@ -1406,6 +1579,55 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryCopyFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Creates one absolute symbolic link to a remote file or directory.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Source path the link should point to.
+   * @param requestedTargetPath Desired link path.
+   * @returns Link result.
+   */
+  public async linkEntry(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const sourcePath = normalizeSftpPathInput(requestedSourcePath);
+    const targetPath = normalizeSftpPathInput(requestedTargetPath);
+    if (!isMutableSftpEntryPath(sourcePath) || !isMutableSftpEntryPath(targetPath)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.pathRequired'),
+      };
+    }
+
+    try {
+      const resolvedTargetPath = await this.resolveAvailableCopyPath(session, targetPath);
+      await this.symlink(session, sourcePath, resolvedTargetPath);
+      this.logSftpMutation(session, 'link', {
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      });
+
+      return {
+        type: 'success',
+        sessionId,
+        path: sourcePath,
+        targetPath: resolvedTargetPath,
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.entryLinkFailedNoReason')),
       };
     }
   }
@@ -1481,7 +1703,10 @@ export class SftpSessionService {
     const targetDirectoryPath = input.targetDirectoryPath
       ? normalizeSftpPathInput(input.targetDirectoryPath)
       : undefined;
-    if ((input.operation === 'copy' || input.operation === 'move') && !targetDirectoryPath) {
+    if (
+      (input.operation === 'copy' || input.operation === 'move' || input.operation === 'link') &&
+      !targetDirectoryPath
+    ) {
       return {
         type: 'failed',
         message: session.t('errors.sftp.batchTargetRequired'),
@@ -1583,6 +1808,32 @@ export class SftpSessionService {
   }
 
   /**
+   * Returns the number of SFTP sessions that still own live SSH transports.
+   *
+   * @returns Active SFTP session count.
+   */
+  public getActiveSessionCount(): number {
+    return this.sessions.size;
+  }
+
+  /**
+   * Closes every active SFTP session without stopping the service.
+   *
+   * @returns Number of sessions closed by this call.
+   */
+  public closeAllSessions(): number {
+    let closedCount = 0;
+
+    for (const sessionId of [...this.sessions.keys()]) {
+      if (this.closeSession(sessionId)) {
+        closedCount += 1;
+      }
+    }
+
+    return closedCount;
+  }
+
+  /**
    * Stops all active SFTP sessions during backend shutdown.
    *
    * @returns Promise resolved after best-effort cleanup.
@@ -1591,6 +1842,7 @@ export class SftpSessionService {
     for (const sessionId of [...this.sessions.keys()]) {
       this.closeSession(sessionId);
     }
+    this.transfers.clear();
   }
 
   /**
@@ -1868,6 +2120,28 @@ export class SftpSessionService {
         }
 
         resolve(linkString);
+      });
+    });
+  }
+
+  /**
+   * Creates one symbolic link through the active SFTP subsystem.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Absolute remote path the new link should point to.
+   * @param linkPath Remote path where the symlink should be created.
+   * @returns Nothing.
+   */
+  private async symlink(session: SftpLiveSession, targetPath: string, linkPath: string): Promise<void> {
+    await new Promise<void>((resolve, reject) => {
+      const sftp = session.sftp as SftpSymlinkWrapper;
+      sftp.symlink(targetPath, linkPath, (error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
       });
     });
   }
@@ -2197,6 +2471,10 @@ export class SftpSessionService {
       return await this.copyEntry(sessionId, entry.path, targetPath);
     }
 
+    if (operation === 'link') {
+      return await this.linkEntry(sessionId, entry.path, targetPath);
+    }
+
     return await this.renameEntry(sessionId, entry.path, targetPath);
   }
 
@@ -2212,6 +2490,35 @@ export class SftpSessionService {
   }
 
   /**
+   * Resolves a renderer-supplied upload source into a canonical Main-owned temp file path.
+   *
+   * @param localPath Renderer-supplied local temp path.
+   * @returns Canonical local file path, or null when validation fails.
+   */
+  private async resolveExistingUploadLocalPath(localPath: string): Promise<string | null> {
+    const normalizedLocalPath = path.resolve(localPath);
+    if (!isLocalPathInsideDirectory(normalizedLocalPath, this.sftpTemporaryRootPath)) {
+      return null;
+    }
+
+    try {
+      const localStats = await fs.lstat(normalizedLocalPath);
+      if (!localStats.isFile() || localStats.isSymbolicLink()) {
+        return null;
+      }
+
+      const canonicalLocalPath = await fs.realpath(normalizedLocalPath);
+      if (!isLocalPathInsideDirectory(canonicalLocalPath, this.sftpTemporaryRootPath)) {
+        return null;
+      }
+
+      return canonicalLocalPath;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Streams one remote file to a temporary local file before replacing the final destination.
    *
    * @param session Live SFTP session.
@@ -2223,6 +2530,7 @@ export class SftpSessionService {
     session: SftpLiveSession,
     sourcePath: string,
     localPath: string,
+    transferId?: string,
   ): Promise<void> {
     const localDirectory = path.dirname(localPath);
     const temporaryPath = path.join(
@@ -2234,8 +2542,12 @@ export class SftpSessionService {
 
     try {
       const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
-      const writeStream = createWriteStream(temporaryPath, { flags: 'wx' });
-      await pipeline(readStream, writeStream);
+      const shouldHardenTemporaryFile = isLocalPathInsideDirectory(path.resolve(localPath), this.sftpTemporaryRootPath);
+      const writeStream = createWriteStream(temporaryPath, {
+        flags: 'wx',
+        ...(shouldHardenTemporaryFile ? { mode: 0o600 } : {}),
+      });
+      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
       await fs.rename(temporaryPath, localPath);
     } catch (error: unknown) {
       await fs.unlink(temporaryPath).catch(() => undefined);
@@ -2258,6 +2570,7 @@ export class SftpSessionService {
     targetPath: string,
     mode: number,
     options: RemoteFileReplacementOptions,
+    transferId?: string,
   ): Promise<void> {
     const remoteDirectory = this.resolveParentPath(targetPath) ?? '.';
     const temporaryPath = joinSftpPath(
@@ -2268,7 +2581,7 @@ export class SftpSessionService {
     try {
       const readStream = createReadStream(localPath, { flags: 'r' });
       const writeStream = session.sftp.createWriteStream(temporaryPath, { flags: 'wx', mode });
-      await pipeline(readStream, writeStream);
+      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
       await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
     } catch (error: unknown) {
       await this.unlinkRemoteTempFile(session, temporaryPath);
@@ -2290,6 +2603,7 @@ export class SftpSessionService {
     localPath: string,
     targetPath: string,
     mode: number,
+    transferId?: string,
   ): Promise<void> {
     let didOpenTarget = false;
 
@@ -2299,7 +2613,7 @@ export class SftpSessionService {
       writeStream.once('open', () => {
         didOpenTarget = true;
       });
-      await pipeline(readStream, writeStream);
+      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
     } catch (error: unknown) {
       if (this.isFileAlreadyExistsError(error)) {
         throw new SftpRemoteConflictError(session.t('errors.sftp.fileUploadTargetExists'));
@@ -2309,6 +2623,152 @@ export class SftpSessionService {
         await this.unlinkRemoteTempFile(session, targetPath);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Creates or resets the progress record for a transfer that is about to stream bytes.
+   *
+   * @param transferId Optional renderer-generated identifier.
+   * @param direction Transfer direction.
+   * @param totalBytes Total file size known before streaming begins.
+   * @returns void.
+   */
+  private beginTransfer(transferId: string | undefined, direction: SftpTransferDirection, totalBytes: number): void {
+    if (!transferId) {
+      return;
+    }
+
+    this.pruneExpiredTransfers();
+    const now = Date.now();
+    this.transfers.set(transferId, {
+      transferId,
+      direction,
+      status: 'running',
+      transferredBytes: 0,
+      totalBytes: Math.max(0, totalBytes),
+      bytesPerSecond: 0,
+      startedAt: now,
+      updatedAt: now,
+      lastSpeedSampleAt: now,
+      lastSpeedSampleBytes: 0,
+    });
+  }
+
+  /**
+   * Creates a binary pass-through stream that updates progress without buffering file contents.
+   *
+   * @param transferId Optional renderer-generated identifier.
+   * @returns Transform stream suitable for Node pipeline composition.
+   */
+  private createTransferCountingStream(transferId: string | undefined): Transform {
+    return new Transform({
+      transform: (chunk: Buffer, _encoding, callback): void => {
+        this.recordTransferredBytes(transferId, chunk.byteLength);
+        callback(null, chunk);
+      },
+    });
+  }
+
+  /**
+   * Records streamed bytes and periodically refreshes a smoothed transfer rate.
+   *
+   * @param transferId Optional renderer-generated identifier.
+   * @param byteLength Number of bytes in the latest stream chunk.
+   * @returns void.
+   */
+  private recordTransferredBytes(transferId: string | undefined, byteLength: number): void {
+    if (!transferId) {
+      return;
+    }
+
+    const transfer = this.transfers.get(transferId);
+    if (!transfer || transfer.status !== 'running') {
+      return;
+    }
+
+    const now = Date.now();
+    transfer.transferredBytes += Math.max(0, byteLength);
+    transfer.updatedAt = now;
+
+    const sampleDurationMs = now - transfer.lastSpeedSampleAt;
+    if (sampleDurationMs < SFTP_TRANSFER_SPEED_SAMPLE_INTERVAL_MS) {
+      return;
+    }
+
+    const sampleBytes = transfer.transferredBytes - transfer.lastSpeedSampleBytes;
+    const sampledRate = (sampleBytes * 1000) / sampleDurationMs;
+    transfer.bytesPerSecond =
+      transfer.bytesPerSecond === 0 ? sampledRate : transfer.bytesPerSecond * 0.65 + sampledRate * 0.35;
+    transfer.lastSpeedSampleAt = now;
+    transfer.lastSpeedSampleBytes = transfer.transferredBytes;
+  }
+
+  /**
+   * Marks a transfer complete while preserving its last measured speed for the recent-task UI.
+   *
+   * @param transferId Optional renderer-generated identifier.
+   * @returns void.
+   */
+  private completeTransfer(transferId: string | undefined): void {
+    if (!transferId) {
+      return;
+    }
+
+    const transfer = this.transfers.get(transferId);
+    if (!transfer) {
+      return;
+    }
+
+    const now = Date.now();
+    transfer.status = 'completed';
+    transfer.totalBytes = Math.max(transfer.totalBytes, transfer.transferredBytes);
+    const finalSampleDurationMs = now - transfer.lastSpeedSampleAt;
+    const finalSampleBytes = transfer.transferredBytes - transfer.lastSpeedSampleBytes;
+    if (finalSampleDurationMs > 0 && finalSampleBytes > 0) {
+      const sampledRate = (finalSampleBytes * 1000) / finalSampleDurationMs;
+      transfer.bytesPerSecond =
+        transfer.bytesPerSecond === 0 ? sampledRate : transfer.bytesPerSecond * 0.65 + sampledRate * 0.35;
+    }
+    transfer.updatedAt = now;
+    transfer.finishedAt = now;
+  }
+
+  /**
+   * Marks a started transfer failed and retains its localized failure reason temporarily.
+   *
+   * @param transferId Optional renderer-generated identifier.
+   * @param errorMessage Localized transfer failure reason.
+   * @returns void.
+   */
+  private failTransfer(transferId: string | undefined, errorMessage: string): void {
+    if (!transferId) {
+      return;
+    }
+
+    const transfer = this.transfers.get(transferId);
+    if (!transfer) {
+      return;
+    }
+
+    const now = Date.now();
+    transfer.status = 'failed';
+    transfer.updatedAt = now;
+    transfer.finishedAt = now;
+    transfer.errorMessage = errorMessage;
+  }
+
+  /**
+   * Removes terminal transfer records after the bounded UI inspection window.
+   *
+   * @returns void.
+   */
+  private pruneExpiredTransfers(): void {
+    const expirationBoundary = Date.now() - SFTP_TRANSFER_RETENTION_MS;
+    for (const [transferId, transfer] of this.transfers) {
+      if (transfer.finishedAt !== undefined && transfer.finishedAt < expirationBoundary) {
+        this.transfers.delete(transferId);
+      }
     }
   }
 
@@ -2489,6 +2949,27 @@ export class SftpSessionService {
     }
 
     return this.readSftpErrorMessage(error).includes('permission denied');
+  }
+
+  /**
+   * Detects transport-level failures that require session eviction and passive reconnect.
+   *
+   * @param error Raw Node/ssh2 stream error.
+   * @returns True when the error indicates an unusable SSH/SFTP transport.
+   */
+  private isSftpTransportFailure(error: unknown): boolean {
+    const code = this.readSftpErrorCode(error);
+    if (typeof code === 'string' && SFTP_TRANSPORT_ERROR_CODES.has(code.toUpperCase())) {
+      return true;
+    }
+
+    const message = this.readSftpErrorMessage(error);
+    return (
+      message.includes('connection lost') ||
+      message.includes('connection closed') ||
+      message.includes('client is not connected') ||
+      message.includes('no sftp connection')
+    );
   }
 
   /**

@@ -1,4 +1,4 @@
-import type { components } from '@cosmosh/api-contract';
+import type { ApiSshUpdateKeychainRequest, components } from '@cosmosh/api-contract';
 
 import { pickRandomEntityVisual } from './entity-visuals';
 import {
@@ -91,6 +91,29 @@ export const mapKeychainToFormState = (keychain: SshKeychainListItem): KeychainF
   folderId: keychain.folder?.id ?? '',
   tagIds: (keychain.tags ?? []).map((tag) => tag.id),
   note: keychain.note ?? '',
+});
+
+/**
+ * Builds a metadata-only update payload for an existing keychain.
+ * Credential fields are intentionally omitted so lightweight actions such as
+ * favorite toggles cannot read, clear, or resubmit encrypted secrets.
+ *
+ * @param keychain Existing keychain metadata from the list endpoint.
+ * @param tagIds Tag ids that should replace the keychain's current tag set.
+ * @returns A complete keychain update request containing only non-credential fields.
+ */
+export const buildKeychainMetadataUpdatePayload = (
+  keychain: SshKeychainListItem,
+  tagIds: string[],
+): ApiSshUpdateKeychainRequest => ({
+  name: keychain.name,
+  iconKey: keychain.iconKey,
+  colorKey: keychain.colorKey,
+  authType: keychain.authType,
+  visibility: keychain.visibility,
+  folderId: keychain.folder?.id,
+  tagIds,
+  note: keychain.note?.trim() || undefined,
 });
 
 /**

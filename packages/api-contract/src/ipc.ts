@@ -9,6 +9,21 @@ export const APP_MENU_ACTIONS = [
 
 export type AppMenuAction = (typeof APP_MENU_ACTIONS)[number];
 
+/**
+ * Main-to-renderer request to display the guarded window close confirmation.
+ */
+export type AppCloseConfirmationRequest = {
+  requestId: string;
+};
+
+/**
+ * Renderer response that resolves one guarded window close confirmation.
+ */
+export type AppCloseConfirmationResponse = {
+  requestId: string;
+  confirmed: boolean;
+};
+
 export type SystemProxyResolveRequest = {
   host: string;
   port: number;
@@ -56,11 +71,40 @@ export type SftpUploadLocalFile = {
 };
 
 /**
+ * Why a dropped local filesystem entry could not be staged for SFTP upload.
+ */
+export type SftpUploadRejectedLocalEntryReason =
+  | 'directory-unsupported'
+  | 'not-file'
+  | 'path-unavailable'
+  | 'unreadable';
+
+/**
+ * One dropped local entry that main/preload declined before SFTP upload.
+ */
+export type SftpUploadRejectedLocalEntry = {
+  name: string;
+  reason: SftpUploadRejectedLocalEntryReason;
+};
+
+/**
+ * Local path payload resolved by preload for dropped SFTP upload entries.
+ *
+ * Renderer code never constructs this shape; it passes File objects to preload,
+ * and preload narrows them to paths before invoking main.
+ */
+export type SftpDroppedUploadLocalEntry = {
+  name: string;
+  localPath?: string;
+};
+
+/**
  * Result returned by the native SFTP upload file picker.
  */
 export type SftpUploadFileSelection = {
   canceled: boolean;
   files: SftpUploadLocalFile[];
+  rejectedEntries?: SftpUploadRejectedLocalEntry[];
 };
 
 /** HTTP methods mirrored by the development backend request trace store. */

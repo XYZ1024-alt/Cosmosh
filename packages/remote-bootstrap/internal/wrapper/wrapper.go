@@ -12,21 +12,19 @@ import (
 
 // Config describes the immutable bootstrap wrapper inputs.
 type Config struct {
-	Shell            string
-	TargetOS         string
-	TargetArch       string
-	Version          string
-	AssetURL         string
-	SHA256           string
-	HelperPayloadB64 string
+	Shell      string
+	TargetOS   string
+	TargetArch string
+	Version    string
+	AssetURL   string
+	SHA256     string
 }
 
 type renderConfig struct {
-	ShellLiteral            string
-	VersionLiteral          string
-	AssetURLLiteral         string
-	SHA256Literal           string
-	HelperPayloadB64Literal string
+	ShellLiteral    string
+	VersionLiteral  string
+	AssetURLLiteral string
+	SHA256Literal   string
 }
 
 var supportedShells = map[string]bool{
@@ -38,13 +36,13 @@ var supportedShells = map[string]bool{
 }
 
 var sha256Pattern = regexp.MustCompile(`^[a-f0-9]{64}$`)
+var versionPattern = regexp.MustCompile(`^[A-Za-z0-9._+-]+$`)
 
 const posixTemplate = `set -eu
 cosmosh_shell={{.ShellLiteral}}
 cosmosh_version={{.VersionLiteral}}
 cosmosh_asset_url={{.AssetURLLiteral}}
 cosmosh_sha256={{.SHA256Literal}}
-cosmosh_helper_payload_b64={{.HelperPayloadB64Literal}}
 cosmosh_phase() { printf '{"type":"bootstrap-status","phase":"%s","state":"%s","version":"%s","message":"%s"}\n' "$1" "$2" "$cosmosh_version" "$3"; }
 cosmosh_fail() { printf '{"type":"bootstrap-status","phase":"%s","state":"failed","version":"%s","code":"%s","message":"%s"}\n' "$1" "$cosmosh_version" "$2" "$3"; exit 1; }
 if ! command -v mktemp >/dev/null 2>&1; then cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"; fi
@@ -70,7 +68,7 @@ else
 fi
 chmod 700 "$cosmosh_bin"
 cosmosh_phase install started "installing bootstrap helper"
-"$cosmosh_bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
+"$cosmosh_bin" install --shell "$cosmosh_shell" --version "$cosmosh_version"
 `
 
 const fishTemplate = `function cosmosh_phase
@@ -84,7 +82,6 @@ set cosmosh_shell {{.ShellLiteral}}
 set cosmosh_version {{.VersionLiteral}}
 set cosmosh_asset_url {{.AssetURLLiteral}}
 set cosmosh_sha256 {{.SHA256Literal}}
-set cosmosh_helper_payload_b64 {{.HelperPayloadB64Literal}}
 if not command -q mktemp
   cosmosh_fail download MKTEMP_NOT_FOUND "mktemp is required"
 end
@@ -116,7 +113,7 @@ else
 end
 chmod 700 "$cosmosh_bin"
 cosmosh_phase install started "installing bootstrap helper"
-"$cosmosh_bin" install --shell "$cosmosh_shell" --version "$cosmosh_version" --helper-payload-b64 "$cosmosh_helper_payload_b64"
+"$cosmosh_bin" install --shell "$cosmosh_shell" --version "$cosmosh_version"
 `
 
 // Generate returns a shell-specific bootstrap wrapper script.
@@ -151,7 +148,6 @@ func normalize(config Config) (Config, error) {
 	config.Version = strings.TrimSpace(config.Version)
 	config.AssetURL = strings.TrimSpace(config.AssetURL)
 	config.SHA256 = strings.TrimSpace(config.SHA256)
-	config.HelperPayloadB64 = strings.TrimSpace(config.HelperPayloadB64)
 
 	if !supportedShells[config.Shell] {
 		return Config{}, fmt.Errorf("unsupported shell: %s", config.Shell)
@@ -165,8 +161,12 @@ func normalize(config Config) (Config, error) {
 		return Config{}, fmt.Errorf("unsupported target arch: %s", config.TargetArch)
 	}
 
-	if config.Version == "" || config.AssetURL == "" || config.HelperPayloadB64 == "" {
-		return Config{}, errors.New("version, asset url, and helper payload are required")
+	if config.Version == "" || config.AssetURL == "" {
+		return Config{}, errors.New("version and asset url are required")
+	}
+
+	if !versionPattern.MatchString(config.Version) {
+		return Config{}, errors.New("version must contain only letters, digits, dots, underscores, plus signs, or hyphens")
 	}
 
 	if !isHTTPSURL(config.AssetURL) {
@@ -189,20 +189,18 @@ func isHTTPSURL(value string) bool {
 func buildRenderConfig(config Config) renderConfig {
 	if config.Shell == "fish" {
 		return renderConfig{
-			ShellLiteral:            quoteFish(config.Shell),
-			VersionLiteral:          quoteFish(config.Version),
-			AssetURLLiteral:         quoteFish(config.AssetURL),
-			SHA256Literal:           quoteFish(config.SHA256),
-			HelperPayloadB64Literal: quoteFish(config.HelperPayloadB64),
+			ShellLiteral:    quoteFish(config.Shell),
+			VersionLiteral:  quoteFish(config.Version),
+			AssetURLLiteral: quoteFish(config.AssetURL),
+			SHA256Literal:   quoteFish(config.SHA256),
 		}
 	}
 
 	return renderConfig{
-		ShellLiteral:            quotePOSIX(config.Shell),
-		VersionLiteral:          quotePOSIX(config.Version),
-		AssetURLLiteral:         quotePOSIX(config.AssetURL),
-		SHA256Literal:           quotePOSIX(config.SHA256),
-		HelperPayloadB64Literal: quotePOSIX(config.HelperPayloadB64),
+		ShellLiteral:    quotePOSIX(config.Shell),
+		VersionLiteral:  quotePOSIX(config.Version),
+		AssetURLLiteral: quotePOSIX(config.AssetURL),
+		SHA256Literal:   quotePOSIX(config.SHA256),
 	}
 }
 

@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { chmodSync, mkdtempSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { Writable } from 'node:stream';
-import test from 'node:test';
+import { Readable, Writable } from 'node:stream';
+import test, { after } from 'node:test';
 
 import {
   escapeSftpShellPath,
@@ -41,6 +42,19 @@ type TestSftpStats = {
   isDirectory(): boolean;
 };
 
+type TestSftpDirectoryEntry = {
+  filename: string;
+  longname?: string;
+  attrs: TestSftpStats;
+};
+
+type TestListSftp = EventEmitter & {
+  realpath(targetPath: string, callback: (error: Error | null, resolvedPath: string) => void): void;
+  readdir(targetPath: string, callback: (error: Error | null, entries?: TestSftpDirectoryEntry[]) => void): void;
+  readlink(targetPath: string, callback: (error: Error | null, linkString: string) => void): void;
+  stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+};
+
 type TestUploadSftp = EventEmitter & {
   stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
   createWriteStream(targetPath: string, options: { flags: string; mode: number }): Writable;
@@ -49,16 +63,42 @@ type TestUploadSftp = EventEmitter & {
   ext_openssh_rename?(sourcePath: string, targetPath: string, callback: (error?: Error | null) => void): void;
 };
 
+type TestDownloadSftp = EventEmitter & {
+  stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  createReadStream(targetPath: string, options: { flags: string }): Readable;
+};
+
+type TestLinkSftp = EventEmitter & {
+  stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  symlink(targetPath: string, linkPath: string, callback: (error?: Error | null) => void): void;
+};
+
+type TestRenameSftp = EventEmitter & {
+  lstat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  rename(sourcePath: string, targetPath: string, callback: (error?: Error | null) => void): void;
+};
+
 type TestSftpSessionServiceInternals = {
   sessions: Map<string, TestSftpSession>;
   watchSessionTransport(session: TestSftpSession): void;
 };
+
+const TEST_SFTP_TEMP_ROOT_PATH = mkdtempSync(path.join(os.tmpdir(), 'cosmosh-sftp-test-root-'));
+
+if (process.platform !== 'win32') {
+  chmodSync(TEST_SFTP_TEMP_ROOT_PATH, 0o700);
+}
+
+after(async () => {
+  await fs.rm(TEST_SFTP_TEMP_ROOT_PATH, { force: true, recursive: true });
+});
 
 const createTestSftpSessionService = (): SftpSessionService => {
   return new SftpSessionService({
     getDbClient: () => ({}) as never,
     auditEventService: { logEvent: async () => null } as never,
     credentialEncryptionKey: Buffer.alloc(32),
+    sftpTemporaryRootPath: TEST_SFTP_TEMP_ROOT_PATH,
   });
 };
 
@@ -86,22 +126,126 @@ const registerTestSession = (service: SftpSessionService, session: TestSftpSessi
   internals.watchSessionTransport(session);
 };
 
+test('active session count tracks bulk SFTP session close operations', async () => {
+  const service = createTestSftpSessionService();
+  const firstSession = createTestSftpSession();
+  const secondSession = createTestSftpSession();
+  firstSession.sessionId = 'sftp-count-1';
+  secondSession.sessionId = 'sftp-count-2';
+
+  registerTestSession(service, firstSession);
+  registerTestSession(service, secondSession);
+
+  assert.equal(service.getActiveSessionCount(), 2);
+  assert.equal(service.closeAllSessions(), 2);
+  assert.equal(service.getActiveSessionCount(), 0);
+  assert.equal(firstSession.isClosed, true);
+  assert.equal(secondSession.isClosed, true);
+  assert.equal(service.closeAllSessions(), 0);
+
+  await service.stop();
+});
+
 /**
  * Creates minimal ssh2-compatible stats for upload tests.
  *
  * @param options Stats options.
  * @returns Fake SFTP stats object.
  */
-const createTestSftpStats = (options: { size: number; mtime: number; isFile?: boolean }): TestSftpStats => ({
-  mode: options.isFile === false ? 0o040755 : 0o100644,
-  size: options.size,
-  mtime: options.mtime,
-  atime: options.mtime,
-  uid: 1000,
-  gid: 1000,
-  isFile: () => options.isFile !== false,
-  isDirectory: () => options.isFile === false,
-});
+const createTestSftpStats = (options: {
+  size: number;
+  mtime: number;
+  isFile?: boolean;
+  entryType?: 'directory' | 'file' | 'symlink';
+}): TestSftpStats => {
+  const entryType = options.entryType ?? (options.isFile === false ? 'directory' : 'file');
+  const mode = entryType === 'directory' ? 0o040755 : entryType === 'symlink' ? 0o120777 : 0o100644;
+
+  return {
+    mode,
+    size: options.size,
+    mtime: options.mtime,
+    atime: options.mtime,
+    uid: 1000,
+    gid: 1000,
+    isFile: () => entryType === 'file',
+    isDirectory: () => entryType === 'directory',
+  };
+};
+
+/**
+ * Creates an SFTP stream mock for directory listing and symlink target metadata tests.
+ *
+ * @param entriesByDirectory Directory entries keyed by remote directory path.
+ * @param linkTargetsByPath Raw readlink targets keyed by link path.
+ * @param targetStatsByPath Target stat results keyed by resolved target path.
+ * @returns Mock SFTP wrapper.
+ */
+const createListSftpMock = (
+  entriesByDirectory: Record<string, TestSftpDirectoryEntry[]>,
+  linkTargetsByPath: Record<string, string> = {},
+  targetStatsByPath: Record<string, TestSftpStats> = {},
+): TestListSftp => {
+  const sftp = new EventEmitter() as TestListSftp;
+
+  sftp.realpath = (targetPath, callback): void => {
+    callback(null, targetPath);
+  };
+  sftp.readdir = (targetPath, callback): void => {
+    callback(null, entriesByDirectory[targetPath] ?? []);
+  };
+  sftp.readlink = (targetPath, callback): void => {
+    const linkTarget = linkTargetsByPath[targetPath];
+    if (!linkTarget) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error, '');
+      return;
+    }
+
+    callback(null, linkTarget);
+  };
+  sftp.stat = (targetPath, callback): void => {
+    const stats = targetStatsByPath[targetPath];
+    if (!stats) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
+      return;
+    }
+
+    callback(null, stats);
+  };
+
+  return sftp;
+};
+
+/**
+ * Creates an SFTP stream mock that serves one remote regular file.
+ *
+ * @param remotePath Remote source path.
+ * @param content Binary file contents.
+ * @returns Mock SFTP wrapper.
+ */
+const createDownloadSftpMock = (remotePath: string, content: Buffer): TestDownloadSftp => {
+  const sftp = new EventEmitter() as TestDownloadSftp;
+  sftp.stat = (targetPath, callback): void => {
+    if (targetPath !== remotePath) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
+      return;
+    }
+
+    callback(null, createTestSftpStats({ size: content.byteLength, mtime: 1_710_000_000 }));
+  };
+  sftp.createReadStream = (targetPath): Readable => {
+    assert.equal(targetPath, remotePath);
+    const splitAt = Math.floor(content.byteLength / 2);
+    return Readable.from([content.subarray(0, splitAt), content.subarray(splitAt)]);
+  };
+  return sftp;
+};
 
 /**
  * Creates an SFTP stream mock that records upload replacement behavior.
@@ -211,14 +355,81 @@ const createUploadSftpMock = (
 };
 
 /**
+ * Creates an SFTP mock for symbolic-link batch operation tests.
+ *
+ * @param existingPaths Remote paths that should appear as occupied.
+ * @returns Mock SFTP wrapper and created symlink log.
+ */
+const createLinkSftpMock = (
+  existingPaths: Iterable<string>,
+): {
+  sftp: TestLinkSftp;
+  symlinks: Array<{ linkPath: string; targetPath: string }>;
+} => {
+  const occupiedPaths = new Set(existingPaths);
+  const symlinks: Array<{ linkPath: string; targetPath: string }> = [];
+  const sftp = new EventEmitter() as TestLinkSftp;
+
+  sftp.stat = (targetPath, callback): void => {
+    if (!occupiedPaths.has(targetPath)) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
+      return;
+    }
+
+    callback(null, createTestSftpStats({ size: 1, mtime: 1_710_000_000 }));
+  };
+  sftp.symlink = (targetPath, linkPath, callback): void => {
+    symlinks.push({ targetPath, linkPath });
+    occupiedPaths.add(linkPath);
+    callback(null);
+  };
+
+  return { sftp, symlinks };
+};
+
+/**
+ * Creates an SFTP mock for remote rename tests.
+ *
+ * @param statsByPath Remote stats keyed by path.
+ * @returns Mock SFTP wrapper and rename log.
+ */
+const createRenameSftpMock = (
+  statsByPath: Record<string, TestSftpStats>,
+): {
+  renames: Array<{ sourcePath: string; targetPath: string }>;
+  sftp: TestRenameSftp;
+} => {
+  const renames: Array<{ sourcePath: string; targetPath: string }> = [];
+  const sftp = new EventEmitter() as TestRenameSftp;
+
+  sftp.lstat = (targetPath, callback): void => {
+    const stats = statsByPath[targetPath];
+    if (!stats) {
+      const error = new Error('No such file') as Error & { code: number };
+      error.code = 2;
+      callback(error);
+      return;
+    }
+
+    callback(null, stats);
+  };
+  sftp.rename = (sourcePath, targetPath, callback): void => {
+    renames.push({ sourcePath, targetPath });
+    callback(null);
+  };
+
+  return { renames, sftp };
+};
+
+/**
  * Creates a local test directory inside the controlled SFTP temp root.
  *
  * @returns Absolute temp directory path.
  */
 const createSftpTemporaryTestDirectory = async (): Promise<string> => {
-  const temporaryRootPath = path.join(os.tmpdir(), 'cosmosh-sftp');
-  await fs.mkdir(temporaryRootPath, { recursive: true });
-  return fs.mkdtemp(path.join(temporaryRootPath, 'upload-test-'));
+  return fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'upload-test-'));
 };
 
 /**
@@ -227,7 +438,7 @@ const createSftpTemporaryTestDirectory = async (): Promise<string> => {
  * @returns Absolute temp-root path that does not need to exist.
  */
 const resolveUnusedSftpTemporaryTestPath = (): string => {
-  return path.join(os.tmpdir(), 'cosmosh-sftp', 'unused-local-path');
+  return path.join(TEST_SFTP_TEMP_ROOT_PATH, 'unused-local-path');
 };
 
 /**
@@ -344,6 +555,256 @@ test('SftpSessionService closeSession remains idempotent for evicted sessions', 
   assert.equal(endCallCount, 1);
 });
 
+test('SftpSessionService listDirectory includes symlink target metadata', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  session.sftp = createListSftpMock(
+    {
+      '/srv': [
+        {
+          filename: 'app-link',
+          attrs: createTestSftpStats({ size: 7, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'config-link',
+          attrs: createTestSftpStats({ size: 11, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'missing-link',
+          attrs: createTestSftpStats({ size: 8, mtime: 1_710_000_000, entryType: 'symlink' }),
+        },
+        {
+          filename: 'notes.txt',
+          attrs: createTestSftpStats({ size: 64, mtime: 1_710_000_000 }),
+        },
+      ],
+    },
+    {
+      '/srv/app-link': '/opt/app',
+      '/srv/config-link': 'config.json',
+      '/srv/missing-link': '/missing',
+    },
+    {
+      '/opt/app': createTestSftpStats({ size: 0, mtime: 1_710_000_001, entryType: 'directory' }),
+      '/srv/config.json': createTestSftpStats({ size: 128, mtime: 1_710_000_002 }),
+    },
+  );
+  registerTestSession(service, session);
+
+  const result = await service.listDirectory(session.sessionId, '/srv');
+
+  assert.equal(result.type, 'success');
+  if (result.type !== 'success') {
+    return;
+  }
+
+  const appLink = result.entries.find((entry) => entry.path === '/srv/app-link');
+  const configLink = result.entries.find((entry) => entry.path === '/srv/config-link');
+  const missingLink = result.entries.find((entry) => entry.path === '/srv/missing-link');
+  const notesFile = result.entries.find((entry) => entry.path === '/srv/notes.txt');
+
+  assert.equal(appLink?.symlinkTarget?.status, 'exists');
+  assert.equal(appLink?.symlinkTarget?.type, 'directory');
+  assert.equal(appLink?.symlinkTarget?.resolvedPath, '/opt/app');
+  assert.equal(configLink?.symlinkTarget?.status, 'exists');
+  assert.equal(configLink?.symlinkTarget?.type, 'file');
+  assert.equal(configLink?.symlinkTarget?.resolvedPath, '/srv/config.json');
+  assert.equal(missingLink?.symlinkTarget?.status, 'broken');
+  assert.equal(missingLink?.symlinkTarget?.resolvedPath, '/missing');
+  assert.equal(notesFile?.symlinkTarget, undefined);
+});
+
+test('SftpSessionService runBatchOperation creates symlinks with copy-style conflict suffixes', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const linkSftp = createLinkSftpMock(['/target/app.log']);
+  session.sftp = linkSftp.sftp;
+  registerTestSession(service, session);
+
+  const result = await service.runBatchOperation(session.sessionId, {
+    operation: 'link',
+    targetDirectoryPath: '/target',
+    entries: [{ path: '/source/app.log', type: 'file' }],
+  });
+
+  assert.equal(result.type, 'success');
+  if (result.type !== 'success') {
+    return;
+  }
+
+  assert.equal(result.operation, 'link');
+  assert.equal(result.completedCount, 1);
+  assert.deepEqual(linkSftp.symlinks, [{ targetPath: '/source/app.log', linkPath: '/target/app copy.log' }]);
+  assert.deepEqual(result.results, [
+    {
+      path: '/source/app.log',
+      type: 'file',
+      targetPath: '/target/app copy.log',
+      status: 'success',
+    },
+  ]);
+});
+
+test('SftpSessionService runBatchOperation requires a target directory for link operations', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  session.sftp = createLinkSftpMock([]).sftp;
+  registerTestSession(service, session);
+
+  const result = await service.runBatchOperation(session.sessionId, {
+    operation: 'link',
+    entries: [{ path: '/source/app.log', type: 'file' }],
+  });
+
+  assert.deepEqual(result, {
+    type: 'failed',
+    message: 'errors.sftp.batchTargetRequired',
+  });
+});
+
+test('SftpSessionService renameEntry rejects moving a directory into its descendant', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const renameSftp = createRenameSftpMock({
+    '/srv/app': createTestSftpStats({ size: 0, mtime: 1_710_000_000, isFile: false }),
+  });
+  session.sftp = renameSftp.sftp;
+  registerTestSession(service, session);
+
+  const result = await service.renameEntry(session.sessionId, '/srv/app', '/srv/app/logs/app');
+
+  assert.deepEqual(result, {
+    type: 'failed',
+    message: 'errors.sftp.moveIntoSelfUnsupported',
+  });
+  assert.deepEqual(renameSftp.renames, []);
+});
+
+test('SftpSessionService downloadFile writes large content and records completed byte progress', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/srv/archive.bin';
+  const transferId = 'f57aa040-3138-4bf5-b329-ec4c9242fbb8';
+  const content = Buffer.alloc(2 * 1024 * 1024, 0x5a);
+  const localDirectory = await fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'download-success-'));
+  const localPath = path.join(localDirectory, 'archive.bin');
+  session.sftp = createDownloadSftpMock(remotePath, content);
+  registerTestSession(service, session);
+
+  try {
+    const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
+
+    assert.deepEqual(result, {
+      type: 'success',
+      sessionId: session.sessionId,
+      path: remotePath,
+      localPath,
+      size: content.byteLength,
+    });
+    assert.deepEqual(await fs.readFile(localPath), content);
+    const progress = service.getTransferProgress(transferId);
+    assert.equal(progress?.transferId, transferId);
+    assert.equal(progress?.direction, 'download');
+    assert.equal(progress?.status, 'completed');
+    assert.equal(progress?.transferredBytes, content.byteLength);
+    assert.equal(progress?.totalBytes, content.byteLength);
+    assert.ok(progress?.startedAt);
+    assert.ok(progress?.updatedAt);
+    assert.ok(progress?.finishedAt);
+  } finally {
+    await fs.rm(localDirectory, { force: true, recursive: true });
+  }
+});
+
+test('SftpSessionService downloadFile reports rolling speed while a transfer is active', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/srv/slow-archive.bin';
+  const transferId = 'd9e06fa8-88f3-43d5-87c5-e42139d58abc';
+  const chunk = Buffer.alloc(64 * 1024, 0x2a);
+  const content = Buffer.concat([chunk, chunk, chunk]);
+  const localDirectory = await fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'download-speed-'));
+  const localPath = path.join(localDirectory, 'slow-archive.bin');
+  const sftp = createDownloadSftpMock(remotePath, content);
+  let signalSpeedSample: (() => void) | undefined;
+  const speedSampleReady = new Promise<void>((resolve) => {
+    signalSpeedSample = resolve;
+  });
+  sftp.createReadStream = (): Readable => {
+    return Readable.from(
+      (async function* createDelayedChunks(): AsyncGenerator<Buffer> {
+        yield chunk;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        yield chunk;
+        signalSpeedSample?.();
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        yield chunk;
+      })(),
+    );
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  try {
+    const downloadPromise = service.downloadFile(session.sessionId, remotePath, localPath, transferId);
+    await speedSampleReady;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const activeProgress = service.getTransferProgress(transferId);
+    assert.equal(activeProgress?.status, 'running');
+    assert.ok((activeProgress?.transferredBytes ?? 0) >= chunk.byteLength * 2);
+    assert.ok((activeProgress?.bytesPerSecond ?? 0) > 0);
+    assert.equal((await downloadPromise).type, 'success');
+  } finally {
+    await fs.rm(localDirectory, { force: true, recursive: true });
+  }
+});
+
+test('SftpSessionService downloadFile reports closed transports and removes partial local files', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const remotePath = '/srv/interrupted.bin';
+  const transferId = '7e33e12b-b1c8-46c6-9e6f-ff8c02ab7d8d';
+  const content = Buffer.alloc(1024 * 1024, 0x41);
+  const localDirectory = await fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'download-failure-'));
+  const localPath = path.join(localDirectory, 'interrupted.bin');
+  const sftp = createDownloadSftpMock(remotePath, content);
+  let didRead = false;
+  sftp.createReadStream = (): Readable => {
+    return new Readable({
+      read(): void {
+        if (didRead) {
+          return;
+        }
+        didRead = true;
+        this.push(content.subarray(0, 64 * 1024));
+        this.destroy(new Error('connection lost'));
+      },
+    });
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  try {
+    const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
+
+    assert.deepEqual(result, { type: 'not-found' });
+    assert.equal(session.isClosed, true);
+    assert.equal(
+      await fs
+        .stat(localPath)
+        .then(() => true)
+        .catch(() => false),
+      false,
+    );
+    assert.deepEqual(await fs.readdir(localDirectory), []);
+    const progress = service.getTransferProgress(transferId);
+    assert.equal(progress?.status, 'failed');
+    assert.equal(progress?.errorMessage, 'connection lost');
+  } finally {
+    await fs.rm(localDirectory, { force: true, recursive: true });
+  }
+});
+
 test('SftpSessionService uploadFile replaces a matching remote regular file', async () => {
   const service = createTestSftpSessionService();
   const session = createTestSftpSession();
@@ -356,12 +817,19 @@ test('SftpSessionService uploadFile replaces a matching remote regular file', as
   registerTestSession(service, session);
 
   const uploadableFile = await createUploadableTempFile('index.html', 'locally edited');
+  const transferId = 'bdcf495c-9d31-4bc6-8abf-57f94a41718f';
 
   try {
-    const result = await service.uploadFile(session.sessionId, remotePath, uploadableFile.localPath, {
-      size: 12,
-      modifiedAt: new Date(openedMtime * 1000).toISOString(),
-    });
+    const result = await service.uploadFile(
+      session.sessionId,
+      remotePath,
+      uploadableFile.localPath,
+      {
+        size: 12,
+        modifiedAt: new Date(openedMtime * 1000).toISOString(),
+      },
+      { transferId },
+    );
 
     assert.deepEqual(result, {
       type: 'success',
@@ -374,6 +842,11 @@ test('SftpSessionService uploadFile replaces a matching remote regular file', as
     assert.match(uploadSftp.writes[0] ?? '', /^\/var\/www\/\.index\.html\.cosmosh-.+\.tmp$/);
     assert.equal(uploadSftp.writtenContentByPath.get(uploadSftp.writes[0] ?? ''), 'locally edited');
     assert.deepEqual(uploadSftp.renames, [{ sourcePath: uploadSftp.writes[0], targetPath: remotePath }]);
+    const progress = service.getTransferProgress(transferId);
+    assert.equal(progress?.direction, 'upload');
+    assert.equal(progress?.status, 'completed');
+    assert.equal(progress?.transferredBytes, 14);
+    assert.equal(progress?.totalBytes, 14);
   } finally {
     await uploadableFile.cleanup();
   }
@@ -697,6 +1170,43 @@ test('SftpSessionService uploadFile rejects local paths outside the controlled S
   assert.deepEqual(uploadSftp.writes, []);
   assert.deepEqual(uploadSftp.renames, []);
 });
+
+test(
+  'SftpSessionService uploadFile rejects symlink paths inside the controlled SFTP temp root',
+  { skip: process.platform === 'win32' ? 'Windows symlink creation requires elevated host policy.' : false },
+  async () => {
+    const service = createTestSftpSessionService();
+    const session = createTestSftpSession();
+    const remotePath = '/tmp/file.txt';
+    const uploadSftp = createUploadSftpMock({
+      [remotePath]: createTestSftpStats({ size: 1, mtime: 1_710_000_000 }),
+    });
+    session.sftp = uploadSftp.sftp;
+    registerTestSession(service, session);
+
+    const temporaryDirectoryPath = await createSftpTemporaryTestDirectory();
+    const symlinkTargetPath = path.join(temporaryDirectoryPath, 'target.txt');
+    const localPath = path.join(temporaryDirectoryPath, 'link.txt');
+    await fs.writeFile(symlinkTargetPath, 'hello', 'utf8');
+    await fs.symlink(symlinkTargetPath, localPath);
+
+    try {
+      const result = await service.uploadFile(session.sessionId, remotePath, localPath, {
+        size: 1,
+        modifiedAt: new Date(1_710_000_000 * 1000).toISOString(),
+      });
+
+      assert.deepEqual(result, {
+        type: 'failed',
+        message: 'errors.sftp.localFileReadUnsupported',
+      });
+      assert.deepEqual(uploadSftp.writes, []);
+      assert.deepEqual(uploadSftp.renames, []);
+    } finally {
+      await fs.rm(temporaryDirectoryPath, { force: true, recursive: true });
+    }
+  },
+);
 
 test('SftpSessionService uploadFile keeps the primary error when temp cleanup also fails', async () => {
   const service = createTestSftpSessionService();

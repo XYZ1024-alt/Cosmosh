@@ -38,6 +38,7 @@ import type {
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
   ApiSftpWriteFileRequest,
@@ -68,6 +69,8 @@ import type {
   ApiSshUpdateServerRequest,
   ApiSshUpdateServerResponse,
   ApiTestPingResponse,
+  AppCloseConfirmationRequest,
+  AppCloseConfirmationResponse,
   AppMenuAction,
   BackendRequestTrace,
   SftpOpenWithApplication,
@@ -94,6 +97,8 @@ declare global {
   interface Window {
     electron?: {
       closeWindow: () => void;
+      onCloseConfirmationRequested: (listener: (request: AppCloseConfirmationRequest) => void) => () => void;
+      respondToCloseConfirmation: (response: AppCloseConfirmationResponse) => void;
       getLocale: () => Promise<string>;
       setLocale: (locale: string) => Promise<string>;
       getRuntimeUserName: () => Promise<string>;
@@ -114,6 +119,7 @@ declare global {
       createSftpTemporaryFile: (fileName: string) => Promise<string>;
       createSftpDownloadsFile: (fileName: string) => Promise<string>;
       selectSftpUploadFiles: () => Promise<SftpUploadFileSelection>;
+      stageDroppedSftpUploadFiles: (files: File[]) => Promise<SftpUploadFileSelection>;
       cleanupSftpTemporaryFiles: (localPaths: string[]) => Promise<boolean>;
       openSftpTemporaryFile: (localPath: string) => Promise<boolean>;
       readSftpTemporaryImagePreview: (localPath: string) => Promise<string>;
@@ -257,6 +263,9 @@ declare global {
         sessionId: string,
         payload: ApiSftpUploadFileRequest,
       ) => Promise<ApiSftpUploadFileResponse | ApiErrorResponse>;
+      backendSftpGetTransferProgress: (
+        transferId: string,
+      ) => Promise<ApiSftpTransferProgressResponse | ApiErrorResponse>;
       backendSftpCreateDirectory: (
         sessionId: string,
         payload: ApiSftpCreateDirectoryRequest,

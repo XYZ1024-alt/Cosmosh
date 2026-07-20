@@ -483,8 +483,14 @@ export const Tabs: React.FC<TabsProps> = ({
     el.scrollBy({ left: offset, behavior: 'smooth' });
   };
 
+  /**
+   * Converts discrete vertical wheel input into horizontal tab-list scrolling.
+   *
+   * @param event Native wheel event from the tab-list scroll container.
+   * @returns Nothing.
+   */
   const handleTabListWheel = React.useCallback(
-    (event: React.WheelEvent<HTMLDivElement>) => {
+    (event: WheelEvent): void => {
       const scrollContainer = scrollContainerRef.current;
       if (!scrollContainer) {
         return;
@@ -516,6 +522,20 @@ export const Tabs: React.FC<TabsProps> = ({
     },
     [updateScrollState],
   );
+
+  React.useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (!scrollContainer) {
+      return;
+    }
+
+    // React delegates wheel events passively, but this interaction must cancel vertical page scrolling.
+    scrollContainer.addEventListener('wheel', handleTabListWheel, { passive: false });
+
+    return () => {
+      scrollContainer.removeEventListener('wheel', handleTabListWheel);
+    };
+  }, [handleTabListWheel]);
 
   const orderedTabs = dragPreviewTabs ?? tabs;
 
@@ -728,7 +748,6 @@ export const Tabs: React.FC<TabsProps> = ({
               className="no-scrollbar h-full min-w-0 overflow-x-auto"
               // @ts-expect-error React.CSSProperties
               style={{ WebkitAppRegion: 'no-drag' }}
-              onWheel={handleTabListWheel}
             >
               <DndContext
                 sensors={sensors}

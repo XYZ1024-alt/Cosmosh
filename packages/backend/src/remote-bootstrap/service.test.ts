@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { AuditEventService } from '../audit/service.js';
-import { RemoteBootstrapService, type RemoteBootstrapStatus } from './service.js';
+import type { AuditEventInput } from '../audit/types.js';
+import { REMOTE_SHELL_PROTOCOL_VERSION, RemoteBootstrapService, type RemoteBootstrapStatus } from './service.js';
 
 const TEST_SHA256 = '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
 const ADVERSARIAL_ASSET_URL = 'https://downloads.example.test/cosmosh bootstrap$(printf pwn)`whoami`\'";?line=%0Aafter';
+const TEST_CAPABILITIES = ['cwd', 'command-start', 'command-end', 'foreground-command', 'prompt-ready'];
 
 type WrapperRenderResult = {
   command: string;
@@ -16,12 +18,35 @@ type WrapperRenderResult = {
 /**
  * Creates a no-op audit service for bootstrap service unit tests.
  *
+ * @param onLogEvent Optional observer for emitted audit payloads.
  * @returns Minimal audit event service test double.
  */
-const createAuditService = (): AuditEventService => {
+const createAuditService = (onLogEvent?: (input: AuditEventInput) => void): AuditEventService => {
   return {
-    logEvent: async () => null,
+    logEvent: async (input: AuditEventInput) => {
+      onLogEvent?.(input);
+      return null;
+    },
   } as unknown as AuditEventService;
+};
+
+/**
+ * Serializes a current Go bootstrap status response.
+ *
+ * @param overrides Optional fields used to model stale or invalid installations.
+ * @returns One newline-terminated JSON status object.
+ */
+const installedStatus = (overrides: Record<string, unknown> = {}): string => {
+  return `${JSON.stringify({
+    installed: true,
+    version: '1.2.3',
+    protocolVersion: REMOTE_SHELL_PROTOCOL_VERSION,
+    capabilities: TEST_CAPABILITIES,
+    helperCurrent: true,
+    profileCurrent: true,
+    binarySha256: TEST_SHA256,
+    ...overrides,
+  })}\n`;
 };
 
 /**
@@ -42,7 +67,11 @@ const decodeWrapperPayload = (command: string): string => {
  * @param options Remote shell and asset URL used for manifest-driven wrapper rendering.
  * @returns Generated install command, decoded wrapper, and emitted statuses.
  */
-const renderWrapper = async (options: { assetUrl: string; shell: 'bash' | 'fish' }): Promise<WrapperRenderResult> => {
+const renderWrapper = async (options: {
+  assetUrl: string;
+  shell: 'bash' | 'fish';
+  initialStatus?: string;
+}): Promise<WrapperRenderResult> => {
   const statuses: RemoteBootstrapStatus[] = [];
   const executedCommands: string[] = [];
   const service = new RemoteBootstrapService({
@@ -61,27 +90,73 @@ const renderWrapper = async (options: { assetUrl: string; shell: 'bash' | 'fish'
     }),
   });
 
+  let statusReads = 0;
   await service.runForSession({
     serverId: 'server-1',
     sessionId: 'session-1',
     executeCommand: async (command) => {
       executedCommands.push(command);
-      if (executedCommands.length === 1) {
+      if (command.includes('uname -s')) {
         return `{"os":"linux","arch":"amd64","shell":"${options.shell}"}\n`;
       }
 
-      return '{"type":"bootstrap-status","phase":"install","state":"ok","version":"1.2.3"}\n';
+      if (command.includes(' status --shell')) {
+        statusReads += 1;
+        return statusReads === 1 ? (options.initialStatus ?? null) : installedStatus();
+      }
+
+      return '{"type":"bootstrap-status","phase":"verify","state":"ok","version":"1.2.3"}\n';
     },
     sendStatus: (status) => statuses.push(status),
   });
 
-  const command = executedCommands.at(-1) ?? '';
+  const command = executedCommands.find((candidate) => candidate.includes('cosmosh-wrapper')) ?? '';
   return {
     command,
     statuses,
     wrapper: decodeWrapperPayload(command),
   };
 };
+
+test('RemoteBootstrapService reports session-owned terminal statuses through the shared audit path', () => {
+  const statuses: RemoteBootstrapStatus[] = [];
+  const auditEvents: AuditEventInput[] = [];
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService((input) => auditEvents.push(input)),
+  });
+  const status: RemoteBootstrapStatus = {
+    type: 'bootstrap-status',
+    phase: 'install',
+    state: 'failed',
+    code: 'BOOTSTRAP_ENSURE_TIMEOUT',
+    message: 'remote enhancement setup exceeded the connection budget',
+  };
+
+  service.reportStatus(
+    {
+      serverId: 'server-1',
+      sessionId: 'session-1',
+      requestId: 'request-1',
+      sendStatus: (payload) => statuses.push(payload),
+    },
+    status,
+  );
+
+  assert.deepEqual(statuses, [status]);
+  assert.deepEqual(auditEvents, [
+    {
+      category: 'ssh-session',
+      action: 'remote-bootstrap',
+      outcome: 'failure',
+      severity: 'warning',
+      entityType: 'ssh-server',
+      entityId: 'server-1',
+      sessionId: 'session-1',
+      requestId: 'request-1',
+      metadata: status,
+    },
+  ]);
+});
 
 test('RemoteBootstrapService does not probe remotes when the manifest URL is missing', async () => {
   const statuses: RemoteBootstrapStatus[] = [];
@@ -90,7 +165,7 @@ test('RemoteBootstrapService does not probe remotes when the manifest URL is mis
     auditEventService: createAuditService(),
   });
 
-  await service.runForSession({
+  const result = await service.runForSession({
     serverId: 'server-1',
     sessionId: 'session-1',
     executeCommand: async (command) => {
@@ -102,6 +177,11 @@ test('RemoteBootstrapService does not probe remotes when the manifest URL is mis
 
   assert.equal(executedCommands.length, 0);
   assert.equal(statuses.at(-1)?.code, 'MANIFEST_URL_NOT_CONFIGURED');
+  assert.deepEqual(result, {
+    state: 'disabled',
+    code: 'MANIFEST_URL_NOT_CONFIGURED',
+    message: 'remote bootstrap manifest URL is not configured',
+  });
 });
 
 test('RemoteBootstrapService accepts bash remotes and installs through bash profile support', async () => {
@@ -123,16 +203,22 @@ test('RemoteBootstrapService accepts bash remotes and installs through bash prof
     }),
   });
 
-  await service.runForSession({
+  let statusReads = 0;
+  const result = await service.runForSession({
     serverId: 'server-1',
     sessionId: 'session-1',
     executeCommand: async (command) => {
       executedCommands.push(command);
-      if (executedCommands.length === 1) {
+      if (command.includes('uname -s')) {
         return '{"os":"linux","arch":"amd64","shell":"bash"}\n';
       }
 
-      return '{"type":"bootstrap-status","phase":"install","state":"ok","version":"1.2.3"}\n';
+      if (command.includes(' status --shell')) {
+        statusReads += 1;
+        return statusReads === 1 ? null : installedStatus();
+      }
+
+      return '{"type":"bootstrap-status","phase":"verify","state":"ok","version":"1.2.3"}\n';
     },
     sendStatus: (status) => statuses.push(status),
   });
@@ -141,9 +227,80 @@ test('RemoteBootstrapService accepts bash remotes and installs through bash prof
     statuses.some((status) => status.code === 'PROBE_FAILED'),
     false,
   );
+  assert.equal(result.state, 'ready');
   assert.equal(statuses.at(-1)?.state, 'ok');
-  assert.match(executedCommands.at(-1) ?? '', /command -v bash/);
-  assert.match(decodeWrapperPayload(executedCommands.at(-1) ?? ''), /install --shell "\$cosmosh_shell"/);
+  const installCommand = executedCommands.find((command) => command.includes('cosmosh-wrapper')) ?? '';
+  assert.match(installCommand, /command -v bash/);
+  assert.match(decodeWrapperPayload(installCommand), /install --shell "\$cosmosh_shell"/);
+  assert.doesNotMatch(decodeWrapperPayload(installCommand), /helper-payload-b64/);
+});
+
+test('RemoteBootstrapService skips download when the installed runtime contract is current', async () => {
+  const statuses: RemoteBootstrapStatus[] = [];
+  const executedCommands: string[] = [];
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+    manifestUrl: 'https://downloads.example.test/manifest.json',
+    fetchManifest: async () => ({
+      version: '1.2.3',
+      assets: [
+        {
+          os: 'linux',
+          arch: 'amd64',
+          url: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+          sha256: TEST_SHA256,
+        },
+      ],
+    }),
+  });
+
+  const result = await service.runForSession({
+    serverId: 'server-1',
+    sessionId: 'session-1',
+    executeCommand: async (command) => {
+      executedCommands.push(command);
+      return command.includes('uname -s') ? '{"os":"linux","arch":"amd64","shell":"bash"}\n' : installedStatus();
+    },
+    sendStatus: (status) => statuses.push(status),
+  });
+
+  assert.deepEqual(result, {
+    state: 'ready',
+    source: 'current',
+    contract: {
+      shell: 'bash',
+      helperVersion: '1.2.3',
+      protocolVersion: REMOTE_SHELL_PROTOCOL_VERSION,
+      capabilities: TEST_CAPABILITIES,
+    },
+  });
+  assert.equal(executedCommands.length, 2);
+  assert.equal(
+    executedCommands.some((command) => command.includes('cosmosh-wrapper')),
+    false,
+  );
+  assert.equal(statuses.at(-1)?.state, 'skipped');
+});
+
+test('RemoteBootstrapService treats legacy installed status as stale and reinstalls', async () => {
+  const result = await renderWrapper({
+    assetUrl: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+    initialStatus: '{"binaryPath":"/home/dev/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap"}\n',
+    shell: 'bash',
+  });
+
+  assert.match(result.wrapper, /install --shell "\$cosmosh_shell" --version "\$cosmosh_version"/);
+  assert.doesNotMatch(result.wrapper, /cosmosh_helper_payload_b64|helper-payload-b64/);
+});
+
+test('RemoteBootstrapService reinstalls when the installed binary digest differs from the manifest', async () => {
+  const result = await renderWrapper({
+    assetUrl: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+    initialStatus: installedStatus({ binarySha256: 'f'.repeat(64) }),
+    shell: 'bash',
+  });
+
+  assert.match(result.wrapper, /curl -fsSL "\$cosmosh_asset_url"/);
 });
 
 test('RemoteBootstrapService rejects manifests that include invalid assets', async () => {
@@ -216,4 +373,42 @@ test('RemoteBootstrapService quotes adversarial manifest URLs in fish wrappers',
   assert.doesNotMatch(result.wrapper, /curl -fsSL "https:\/\//);
   assert.doesNotMatch(result.wrapper, /wget -q -O "\$bin" "https:\/\//);
   assert.doesNotMatch(result.wrapper, /cosmosh-bootstrap-1\.2\.3/);
+});
+
+test('RemoteBootstrapService propagates a session budget abort without reporting a probe failure', async () => {
+  const statuses: RemoteBootstrapStatus[] = [];
+  const abortController = new AbortController();
+  const timeoutError = new Error('session bootstrap budget expired');
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+    manifestUrl: 'https://downloads.example.test/manifest.json',
+    fetchManifest: async () => ({
+      version: '1.2.3',
+      assets: [
+        {
+          os: 'linux',
+          arch: 'amd64',
+          url: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+          sha256: TEST_SHA256,
+        },
+      ],
+    }),
+  });
+
+  const resultPromise = service.runForSession({
+    serverId: 'server-1',
+    sessionId: 'session-1',
+    executeCommand: async () => {
+      abortController.abort(timeoutError);
+      return null;
+    },
+    sendStatus: (status) => statuses.push(status),
+    signal: abortController.signal,
+  });
+
+  await assert.rejects(resultPromise, (error: unknown) => error === timeoutError);
+  assert.equal(
+    statuses.some((status) => status.code === 'PROBE_FAILED'),
+    false,
+  );
 });

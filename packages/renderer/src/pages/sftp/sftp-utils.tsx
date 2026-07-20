@@ -1,6 +1,6 @@
 import { type ApiSftpEntry, type SettingsValues, sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
 import classNames from 'classnames';
-import { File, Folder } from 'lucide-react';
+import { File, FileSymlink, Folder, FolderSymlink } from 'lucide-react';
 import React from 'react';
 
 import { t } from '../../lib/i18n';
@@ -283,7 +283,7 @@ export const formatFileSize = (size: number): string => {
   }
 
   if (size < 1024) {
-    return `${size} B`;
+    return `${Math.round(size)} B`;
   }
 
   const units = ['KB', 'MB', 'GB', 'TB'];
@@ -328,6 +328,7 @@ export const formatModifiedAt = (value: string, formatDateTime: DateTimeDisplayF
  * Resolves the icon for a directory-list entry.
  *
  * @param entry SFTP entry.
+ * @param className Optional icon class override.
  * @returns Icon element matching the entry type.
  */
 export const resolveEntryIcon = (entry: ApiSftpEntry, className?: string): React.ReactNode => {
@@ -335,6 +336,14 @@ export const resolveEntryIcon = (entry: ApiSftpEntry, className?: string): React
 
   if (entry.type === 'directory') {
     return <Folder className={iconClassName} />;
+  }
+
+  if (entry.type === 'symlink') {
+    return entry.symlinkTarget?.type === 'directory' ? (
+      <FolderSymlink className={iconClassName} />
+    ) : (
+      <FileSymlink className={iconClassName} />
+    );
   }
 
   return <File className={iconClassName} />;
@@ -707,37 +716,6 @@ export const resolveRangeSelectionPaths = (
 };
 
 /**
- * Flattens the expanded directory tree into the exact visual row order.
- *
- * @param treeNodes Directory tree registry keyed by remote path.
- * @param rootPaths Top-level paths to render.
- * @returns Visible directory paths in keyboard navigation order.
- */
-export const flattenVisibleTreePaths = (
-  treeNodes: Record<string, TreeDirectoryNode>,
-  rootPaths: string[],
-): string[] => {
-  const visiblePaths: string[] = [];
-
-  const appendNode = (nodePath: string): void => {
-    const node = treeNodes[nodePath];
-    if (!node) {
-      return;
-    }
-
-    visiblePaths.push(node.path);
-
-    if (node.isExpanded) {
-      node.children.forEach(appendNode);
-    }
-  };
-
-  rootPaths.forEach(appendNode);
-
-  return visiblePaths;
-};
-
-/**
  * Resolves the entries affected by a toolbar or row-context action.
  *
  * @param contextEntry Row entry that opened the context menu, when available.
@@ -808,6 +786,20 @@ export const formatBatchPartialFailureFeedback = (summary: {
 export const formatSftpTaskProgressLabel = (progress?: SftpTaskProgress): string => {
   if (!progress) {
     return t('sftp.tasks.progressIndeterminate');
+  }
+
+  if (progress.unit === 'bytes') {
+    const completed = formatFileSize(progress.completed);
+    const total = formatFileSize(progress.total);
+    if (progress.bytesPerSecond !== undefined && progress.bytesPerSecond > 0) {
+      return t('sftp.tasks.progressBytesWithSpeed', {
+        completed,
+        speed: formatFileSize(progress.bytesPerSecond),
+        total,
+      });
+    }
+
+    return t('sftp.tasks.progressBytes', { completed, total });
   }
 
   return t('sftp.tasks.progressCount', {

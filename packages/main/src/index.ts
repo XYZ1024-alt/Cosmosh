@@ -5,7 +5,13 @@ import net from 'node:net';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 
-import type { ApiErrorResponse, AppMenuAction } from '@cosmosh/api-contract';
+import type {
+  ApiErrorResponse,
+  ApiRuntimeActiveConnectionsCloseResponse,
+  ApiRuntimeActiveConnectionsGetResponse,
+  ApiSettingsGetResponse,
+  AppMenuAction,
+} from '@cosmosh/api-contract';
 import { API_CODES, API_HEADERS, API_PATHS, createApiError } from '@cosmosh/api-contract';
 import { createI18n, createMessages, enableI18nDevHotReload, resolveLocale } from '@cosmosh/i18n';
 import mainEn from '@cosmosh/i18n/locales/en/main.json';
@@ -25,6 +31,7 @@ import {
 } from 'electron';
 import path from 'path';
 
+import { DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME, resolveDevelopmentBackendNodeExecutable } from './dev/backend-runtime';
 import { applyDevelopmentProfileToElectronApp } from './dev/dev-profile';
 import { BackendRequestTraceStore } from './ipc/backend-request-trace-store';
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
@@ -32,11 +39,18 @@ import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
 import { registerDebugIpcHandlers } from './ipc/register-debug-ipc';
 import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-target-authorizations';
 import {
+  cleanupSftpTemporaryRoot,
+  createPrivateSftpTemporaryRoot,
+  SFTP_TEMP_ROOT_ENV_NAME,
+} from './ipc/sftp-temporary-root';
+import { RendererCloseConfirmationBroker } from './renderer-close-confirmation';
+import {
   getDatabaseEncryptionKey,
   getDatabasePath,
   getDatabaseSecurityInfo,
   toPrismaSqliteUrl,
 } from './security/database-encryption';
+import { type ActiveConnectionSummary, ConnectionCloseGuard, parseActiveConnectionSummary } from './window-close-guard';
 
 /**
  * Main-process singleton runtime state.
@@ -48,12 +62,34 @@ let backendPort: number | null = null;
 let backendToken: string | null = null;
 let backendStartupPromise: Promise<void> | null = null;
 let backendShutdownPromise: Promise<void> | null = null;
+let sftpTemporaryRootPath: string | null = null;
 let disableI18nHotReload: (() => void) | null = null;
 let pendingLaunchWorkingDirectory: string | null = null;
 const sftpDownloadTargetAuthorizations = new SftpDownloadTargetAuthorizationRegistry();
 const backendRequestTraceStore = new BackendRequestTraceStore(!app.isPackaged);
+const rendererCloseConfirmationBroker = new RendererCloseConfirmationBroker({
+  onError: (stage, error) => {
+    console.error(`[close-confirmation] ${stage} failed.`, error);
+  },
+});
+
+// Consume the internal handoff before Electron creates child processes that could inherit it.
+const developmentBackendNodeExecutablePath = process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
+delete process.env[DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME];
 
 let isAppShutdownInProgress = false;
+let bypassConnectionCloseGuard = false;
+let allowNextMainWindowClose = false;
+
+/**
+ * Requests an immediate app quit while preserving the normal backend cleanup hook.
+ *
+ * @returns void.
+ */
+const quitWithoutConnectionWarning = (): void => {
+  bypassConnectionCloseGuard = true;
+  app.quit();
+};
 
 let appLocale = resolveLocale(process.env.COSMOSH_LOCALE, 'en');
 const mainProcessMessages = createMessages({
@@ -68,6 +104,9 @@ const WINDOWS_TITLE_BAR_OVERLAY_HEIGHT = 50;
 const DOCUMENTATION_URL = 'https://github.com/agoudbg/cosmosh/tree/main/docs';
 const GITHUB_REPOSITORY_URL = 'https://github.com/agoudbg/cosmosh';
 const SFTP_PROPERTIES_WINDOW_ROUTE_PARAM = 'sftp-entry-properties';
+const PACKAGED_REMOTE_BOOTSTRAP_MANIFEST_RESOURCE = path.join('remote-bootstrap', 'manifest-url.json');
+const DEVELOPMENT_REMOTE_BOOTSTRAP_MANIFEST_URL =
+  'https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json';
 
 type TrustedRendererWindowOpenTarget = {
   origin: string;
@@ -589,6 +628,33 @@ const stopBackendService = async (origin: string): Promise<void> => {
   }
 };
 
+/**
+ * Creates or returns the canonical Main-owned SFTP temp root for this app run.
+ *
+ * @returns Canonical private temp root path.
+ */
+const resolveSftpTemporaryRootPath = async (): Promise<string> => {
+  if (sftpTemporaryRootPath) {
+    return sftpTemporaryRootPath;
+  }
+
+  sftpTemporaryRootPath = await createPrivateSftpTemporaryRoot(app.getPath('temp'));
+  return sftpTemporaryRootPath;
+};
+
+/**
+ * Returns the initialized SFTP temp root required by IPC handlers.
+ *
+ * @returns Canonical private temp root path.
+ */
+const requireSftpTemporaryRootPath = (): string => {
+  if (!sftpTemporaryRootPath) {
+    throw new Error('SFTP temporary root is not initialized.');
+  }
+
+  return sftpTemporaryRootPath;
+};
+
 const formatStartupError = (error: unknown): string => {
   if (error instanceof Error) {
     return `${error.name}: ${error.message}`;
@@ -624,13 +690,13 @@ const showStartupFailureDialog = (error: unknown): void => {
 process.on('uncaughtException', (error) => {
   console.error('Uncaught exception in main process.', error);
   showStartupFailureDialog(error);
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.on('unhandledRejection', (reason) => {
   console.error('Unhandled rejection in main process.', reason);
   showStartupFailureDialog(reason);
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 const runCommand = async (
@@ -906,6 +972,50 @@ const resolveBackendHealthCheckTimeoutMs = (isDev: boolean): number => {
 };
 
 /**
+ * Reads the packaged remote bootstrap manifest URL written by CI packaging.
+ *
+ * Environment variables intentionally remain the first-class override, so this
+ * fallback only activates for packaged artifacts that carry the resource.
+ *
+ * @returns Manifest URL or undefined when no packaged URL is present.
+ */
+const readPackagedRemoteBootstrapManifestUrl = async (): Promise<string | undefined> => {
+  if (!app.isPackaged) {
+    return undefined;
+  }
+
+  const resourcePath = path.join(process.resourcesPath, PACKAGED_REMOTE_BOOTSTRAP_MANIFEST_RESOURCE);
+  let raw: string;
+  try {
+    raw = await fs.readFile(resourcePath, 'utf8');
+  } catch (error: unknown) {
+    const code = typeof error === 'object' && error && 'code' in error ? error.code : undefined;
+    if (code !== 'ENOENT') {
+      console.warn('[backend:init] Unable to read packaged remote bootstrap manifest URL resource.', error);
+    }
+    return undefined;
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as { manifestUrl?: unknown };
+    if (typeof parsed.manifestUrl !== 'string' || parsed.manifestUrl.trim().length === 0) {
+      return undefined;
+    }
+
+    const manifestUrl = parsed.manifestUrl.trim();
+    if (new URL(manifestUrl).protocol !== 'https:') {
+      console.warn('[backend:init] Ignoring packaged remote bootstrap manifest URL because it is not HTTPS.');
+      return undefined;
+    }
+
+    return manifestUrl;
+  } catch (error: unknown) {
+    console.warn('[backend:init] Ignoring invalid packaged remote bootstrap manifest URL resource.', error);
+    return undefined;
+  }
+};
+
+/**
  * Starts backend runtime and blocks until health check becomes available.
  */
 const startBackendService = async (): Promise<void> => {
@@ -927,7 +1037,9 @@ const startBackendService = async (): Promise<void> => {
       getDatabaseEncryptionKey(),
       resolveBackendSecretKey(),
     ]);
+    const sftpTemporaryRoot = await resolveSftpTemporaryRootPath();
     const isDev = !app.isPackaged;
+    const packagedRemoteBootstrapManifestUrl = await readPackagedRemoteBootstrapManifestUrl();
     const workspaceRoot = resolveWorkspaceRoot();
     const packagedBackendEntryPath = path.join(
       process.resourcesPath,
@@ -947,8 +1059,14 @@ const startBackendService = async (): Promise<void> => {
       COSMOSH_DB_ENCRYPTION_KEY: databaseEncryptionKey,
       COSMOSH_USER_DATA_PATH: app.getPath('userData'),
       COSMOSH_APP_ENV: isDev ? 'development' : 'production',
+      [SFTP_TEMP_ROOT_ENV_NAME]: sftpTemporaryRoot,
       DATABASE_URL: databaseUrl,
     };
+
+    if (!backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL) {
+      backendEnv.COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL =
+        packagedRemoteBootstrapManifestUrl ?? (isDev ? DEVELOPMENT_REMOTE_BOOTSTRAP_MANIFEST_URL : undefined);
+    }
 
     let command: string;
     let args: string[];
@@ -956,6 +1074,11 @@ const startBackendService = async (): Promise<void> => {
     let backendProcessCwd = workspaceRoot;
 
     if (isDev) {
+      const developmentNodeExecutablePath = await resolveDevelopmentBackendNodeExecutable(
+        developmentBackendNodeExecutablePath,
+      );
+      delete backendEnv.ELECTRON_RUN_AS_NODE;
+
       const hasExistingDatabase = await fileExists(databasePath);
 
       if (!hasExistingDatabase) {
@@ -979,11 +1102,11 @@ const startBackendService = async (): Promise<void> => {
 
       // Launch backend as a direct child process to guarantee deterministic shutdown on Windows.
       // Using `pnpm run` with `shell: true` can orphan the actual runtime after app quit.
-      command = process.execPath;
+      command = developmentNodeExecutablePath;
       args = ['--import', 'tsx', backendDevEntryPath];
       shell = false;
-      backendEnv.ELECTRON_RUN_AS_NODE = '1';
       backendEnv.NODE_ENV = 'development';
+      console.log(`[backend:init] Development backend runtime -> Node ${developmentNodeExecutablePath}`);
     } else {
       await fs.access(packagedBackendEntryPath);
       command = process.execPath;
@@ -1145,7 +1268,7 @@ const requestBackendRaw = async (
 const requestBackend = async <TSuccess>(
   path: string,
   options: {
-    method: 'GET' | 'POST' | 'PUT';
+    method: 'DELETE' | 'GET' | 'POST' | 'PUT';
     body?: unknown;
   },
 ): Promise<TSuccess | ApiErrorResponse> => {
@@ -1173,6 +1296,94 @@ const requestBackend = async <TSuccess>(
       `Backend returned non-JSON response (${response.status}): ${response.responseText.slice(0, 180)}`,
     );
   }
+};
+
+/**
+ * Reads and validates backend-owned SSH/SFTP activity for the close guard.
+ *
+ * @returns Authoritative active connection counts.
+ */
+const readActiveConnectionSummary = async (): Promise<ActiveConnectionSummary> => {
+  const response = await requestBackend<ApiRuntimeActiveConnectionsGetResponse>(API_PATHS.runtimeGetActiveConnections, {
+    method: 'GET',
+  });
+
+  if (!response.success) {
+    throw new Error(`Backend rejected active connection query: ${response.code}`);
+  }
+
+  const summary = parseActiveConnectionSummary(response.data);
+  if (!summary) {
+    throw new Error('Backend returned invalid active connection counts.');
+  }
+
+  return summary;
+};
+
+/**
+ * Closes backend-owned SSH/SFTP sessions after the user approves closing.
+ *
+ * @returns Promise resolved after backend confirms the bulk disconnect.
+ */
+const closeActiveConnections = async (): Promise<void> => {
+  const response = await requestBackend<ApiRuntimeActiveConnectionsCloseResponse>(
+    API_PATHS.runtimeCloseActiveConnections,
+    { method: 'DELETE' },
+  );
+
+  if (!response.success) {
+    throw new Error(`Backend rejected active connection close: ${response.code}`);
+  }
+
+  if (!parseActiveConnectionSummary(response.data)) {
+    throw new Error('Backend returned invalid closed connection counts.');
+  }
+};
+
+/**
+ * Reads the persisted preference that controls active-session close confirmation.
+ *
+ * @returns Whether Main should ask before closing active SSH/SFTP sessions.
+ */
+const readWindowCloseConfirmationEnabled = async (): Promise<boolean> => {
+  const response = await requestBackend<ApiSettingsGetResponse>(API_PATHS.settingsGet, { method: 'GET' });
+  if (!response.success) {
+    throw new Error(`Backend rejected settings query: ${response.code}`);
+  }
+
+  const value = response.data.item.values.windowCloseConfirmationEnabled;
+  if (typeof value !== 'boolean') {
+    throw new Error('Backend returned an invalid window close confirmation preference.');
+  }
+
+  return value;
+};
+
+/**
+ * Requests the shared renderer dialog while the BrowserWindow is still alive.
+ *
+ * @returns Whether the user approved the destructive close action.
+ */
+const confirmConnectionClose = async (): Promise<boolean> => {
+  const targetWindow = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+  if (!targetWindow || targetWindow.webContents.isDestroyed()) {
+    return rendererCloseConfirmationBroker.requestConfirmation(null);
+  }
+
+  const { webContents } = targetWindow;
+
+  return rendererCloseConfirmationBroker.requestConfirmation({
+    webContentsId: webContents.id,
+    sendRequest: (request) => {
+      webContents.send('app:close-confirmation-request', request);
+    },
+    subscribeDestroyed: (listener) => {
+      webContents.once('destroyed', listener);
+      return () => {
+        webContents.removeListener('destroyed', listener);
+      };
+    },
+  });
 };
 
 /**
@@ -1331,6 +1542,16 @@ const createWindow = async (): Promise<void> => {
   });
   registerRendererWindowOpenPolicy(mainWindow, preloadPath, resolveTrustedRendererWindowOpenTarget(isDev));
 
+  mainWindow.on('close', (event) => {
+    if (isAppShutdownInProgress || allowNextMainWindowClose) {
+      allowNextMainWindowClose = false;
+      return;
+    }
+
+    event.preventDefault();
+    void connectionCloseGuard.requestClose('window');
+  });
+
   // Load renderer based on environment
   if (isDev) {
     await mainWindow.loadURL(`http://localhost:${resolveRendererDevPort()}`);
@@ -1352,7 +1573,7 @@ const createWindow = async (): Promise<void> => {
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
-  app.quit();
+  quitWithoutConnectionWarning();
 } else {
   app.on('second-instance', (_event, commandLine, workingDirectory) => {
     void resolveWorkingDirectoryFromArgv(commandLine, workingDirectory)
@@ -1392,6 +1613,7 @@ if (!hasSingleInstanceLock) {
         });
       }
 
+      await resolveSftpTemporaryRootPath();
       const windowStartupTask = createWindow();
       const backendStartupTask = startBackendService();
       await windowStartupTask;
@@ -1399,7 +1621,7 @@ if (!hasSingleInstanceLock) {
     } catch (error) {
       console.error('Failed to start Cosmosh application.', error);
       showStartupFailureDialog(error);
-      app.quit();
+      quitWithoutConnectionWarning();
       return;
     }
 
@@ -1410,7 +1632,7 @@ if (!hasSingleInstanceLock) {
         void createWindow().catch((error) => {
           console.error('Failed to recreate main window.', error);
           showStartupFailureDialog(error);
-          app.quit();
+          quitWithoutConnectionWarning();
         });
       }
     });
@@ -1422,6 +1644,9 @@ if (!hasSingleInstanceLock) {
 // -----------------------------------------------------------------------------
 registerAppUtilityIpcHandlers({
   getMainWindow: () => mainWindow,
+  resolveCloseConfirmation: (senderWebContentsId, response) => {
+    rendererCloseConfirmationBroker.resolveConfirmation(senderWebContentsId, response);
+  },
   getLocale: () => appLocale,
   translateMain: (key, params) => getMainI18n().t(key, params),
   setLocale: (nextLocale: string) => {
@@ -1435,6 +1660,7 @@ registerAppUtilityIpcHandlers({
   getDatabaseSecurityInfo,
   restartBackendRuntime: restartBackendService,
   getBackendProcessId: () => backendProcess?.pid ?? null,
+  getSftpTemporaryRootPath: requireSftpTemporaryRootPath,
   setWindowsSystemMenuSymbolColor,
   sftpDownloadTargetAuthorizations,
 });
@@ -1456,40 +1682,87 @@ registerDebugIpcHandlers({
 // -----------------------------------------------------------------------------
 // Shutdown hooks
 // -----------------------------------------------------------------------------
+/**
+ * Performs one idempotent application shutdown and always releases Main-owned resources.
+ *
+ * @returns Promise resolved after Electron receives the final quit request.
+ */
+const beginAppShutdown = async (): Promise<void> => {
+  if (isAppShutdownInProgress) {
+    return;
+  }
+
+  isAppShutdownInProgress = true;
+  disableI18nHotReload?.();
+  disableI18nHotReload = null;
+
+  try {
+    await stopBackendService('electron:before-quit');
+  } catch (error: unknown) {
+    console.error('[shutdown] Failed to stop backend service.', error);
+  }
+
+  try {
+    await cleanupSftpTemporaryRoot(sftpTemporaryRootPath);
+  } catch (error: unknown) {
+    console.error('[shutdown] Failed to clean the SFTP temporary root.', error);
+  } finally {
+    sftpTemporaryRootPath = null;
+  }
+
+  app.quit();
+};
+
+const connectionCloseGuard = new ConnectionCloseGuard({
+  readActiveConnections: readActiveConnectionSummary,
+  readCloseConfirmationEnabled: readWindowCloseConfirmationEnabled,
+  confirmClose: () => confirmConnectionClose(),
+  closeActiveConnections,
+  onApproved: async (intent) => {
+    if (intent === 'window' && process.platform === 'darwin') {
+      const targetWindow = mainWindow;
+      if (targetWindow && !targetWindow.isDestroyed()) {
+        allowNextMainWindowClose = true;
+        targetWindow.close();
+      }
+      return;
+    }
+
+    await beginAppShutdown();
+  },
+  onError: (stage, error) => {
+    console.error(`[close-guard] ${stage} failed.`, error);
+  },
+});
+
 app.on('before-quit', (event) => {
   if (isAppShutdownInProgress) {
     return;
   }
 
   event.preventDefault();
-  isAppShutdownInProgress = true;
 
-  void (async () => {
-    disableI18nHotReload?.();
-    disableI18nHotReload = null;
-    await stopBackendService('electron:before-quit');
-  })()
-    .catch((error) => {
-      console.error('[shutdown] Failed during shutdown cleanup.', error);
-    })
-    .finally(() => {
-      app.quit();
-    });
+  if (bypassConnectionCloseGuard) {
+    void beginAppShutdown();
+    return;
+  }
+
+  void connectionCloseGuard.requestClose('quit');
 });
 
 process.once('SIGINT', () => {
   console.warn('[shutdown] SIGINT received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.once('SIGTERM', () => {
   console.warn('[shutdown] SIGTERM received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 process.once('SIGBREAK', () => {
   console.warn('[shutdown] SIGBREAK received. Quitting application...');
-  app.quit();
+  quitWithoutConnectionWarning();
 });
 
 app.on('window-all-closed', () => {

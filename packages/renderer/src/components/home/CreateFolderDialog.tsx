@@ -14,6 +14,7 @@ type CreateFolderDialogProps = {
   visual: EntityVisual;
   isSubmitting: boolean;
   onOpenChange: (open: boolean) => void;
+  onExitComplete: () => void;
   onFolderNameChange: (value: string) => void;
   onVisualChange: (nextVisual: EntityVisual) => void;
   onSubmit: () => void;
@@ -25,6 +26,7 @@ const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
   visual,
   isSubmitting,
   onOpenChange,
+  onExitComplete,
   onFolderNameChange,
   onVisualChange,
   onSubmit,
@@ -34,7 +36,7 @@ const CreateFolderDialog: React.FC<CreateFolderDialogProps> = ({
       open={open}
       onOpenChange={onOpenChange}
     >
-      <DialogContent>
+      <DialogContent onExitComplete={onExitComplete}>
         <DialogHeader>
           <DialogTitle>{t('home.quickAddFolder')}</DialogTitle>
           <DialogDescription>{t('home.dialogCreateFolderDescription')}</DialogDescription>

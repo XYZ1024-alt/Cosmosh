@@ -18,7 +18,7 @@ flowchart LR
   R -->|WebSocket token URL| WS2[Local Terminal WS Service]
   B --> WS1
   B --> WS2
-  B --> DB[(SQLite via Prisma)]
+  B --> DB[(Prisma adapter 管理的 SQLCipher)]
 ```
 
 ## 2. Main ↔ Renderer 职责划分
@@ -28,23 +28,35 @@ flowchart LR
 - 应用启动阶段并行拉起 BrowserWindow 与 backend 预热流程。
 - 维护单例的后端启动中的 Promise，避免并发触发重复拉起。
 - Main 到 backend 的代理请求会在转发前确保 backend 已就绪。
-- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。
+- 在开发启动路径中，Main 采用增量预检（`packages/main/scripts/dev-preflight.cjs`），当产物是最新时会跳过 `@cosmosh/api-contract` / `@cosmosh/i18n` 的重复构建。同一 lifecycle 会在系统 Node 运行时下探测 SQLCipher native binding，并且只在当前 ABI 不兼容时重建。
 - 开发身份由 `pnpm dev:profile`（`scripts/dev-profile.mjs`）管理。当选中身份或通过 `COSMOSH_DEV_PROFILE` 指定身份时，Main 会在窗口/backend 启动前应用该身份，使 Electron `userData`、SQLite 文件和 backend 专用 secret 存储都落到 `.cosmosh/dev-profiles/<name>/` 下。
-- Main 会以仅运行时且非 watch 的命令（`dev:runtime`）拉起 backend，避免嵌套 `predev` 重构建并降低笔记本持续风扇噪音。
+- `packages/main/scripts/dev-main.cjs` 在 workspace 系统 Node 下运行，编译 Main，并通过仅开发态使用的 `COSMOSH_DEV_NODE_EXEC_PATH` 交接 canonical Node executable 给 Electron。
+- Main 使用已校验的系统 Node executable 与 `tsx` 直接拉起开发态 backend，从而同时避免 package script 遗留孤儿进程以及 Electron/Node native ABI 冲突。打包 Main 仍使用 Electron 的 `process.execPath` 配合 `ELECTRON_RUN_AS_NODE=1` 启动已同步的 backend。
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
+- 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
+- 持有窗口/应用关闭守卫。Main 会阻止首次关闭，查询 backend 持有的 SSH/SFTP 注册表，将确认界面委托给 renderer，并且仅在不存在活动连接或用户明确确认中断后继续关闭。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
   - 用于后端 i18n 响应的 locale header。
 
+#### 开发态 Backend 运行时边界
+
+开发启动器负责交接系统 Node executable，因为它在 Electron 替换 `process.execPath` 之前运行。Main 仅接受能够解析到 canonical regular file 的绝对路径；在适用平台上要求 POSIX executable bits，拒绝 Electron host executable 本身，并在启动 Backend 前从子进程环境中移除交接变量。该值只属于开发编排元数据，不属于 Backend 环境契约。
+
+开发与打包有意使用不同的 native target。Main 与 standalone Backend 的 `predev` lifecycle，以及 Backend 的 `predb:init`，都会调用 `ensure-sqlcipher-native.cjs --runtime=node --if-needed`；打包则无参数调用同一脚本，强制执行 Electron target 的 release rebuild。两个路径都会在构建后使用所选运行时打开并关闭内存数据库；探针失败会在 Backend 启动或 packaged runtime 同步前中止。在 Windows 上，切换 target 前必须关闭所有正在使用共享 binding 的 Cosmosh 进程，因为已加载的 `.node` 文件无法被替换。
+
 ### Backend 进程 (`packages/backend/src/index.ts`)
 
 - 注册幂等的优雅关闭流程，覆盖运行时信号与致命进程事件。
+- 暴露仅由 Main 关闭守卫使用、受内部 token 保护的运行时连接汇总/关闭操作；renderer 不获得批量断开 bridge。
 - 关闭顺序固定：先停 WS 会话服务，再关闭 HTTP 监听，最后断开 Prisma/SQLite 连接句柄。
 - Windows 终止信号（`SIGBREAK`）与 POSIX 信号共用同一路径，降低数据库文件锁残留概率。
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
-- SSH 会话首次 attach 后，在全局与服务器级开关以及 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 均允许时，可以通过 `RemoteBootstrapService` 启动远端增强 bootstrap 侧通道。Backend 负责 manifest 加载、远端探测、侧通道执行、状态转发与审计记录；`packages/remote-bootstrap` 负责下载后在远端运行的用户级 Go 安装器。该侧通道使用有界 `ssh2 exec`，不会把安装器输出写入交互终端流，并通过结构化 `bootstrap-status` WS 事件回传状态。
+- 主 SSH transport 认证成功后、交互 PTY 打开前，若全局与服务器级开关允许，`SshSessionService` 会通过 `RemoteBootstrapService` 执行远端增强 ensure。远端命令使用按需懒创建的临时 SSH transport，并复用相同的凭据、host-trust、压缩与代理策略；主 transport 调用 `shell()` 前会先启动临时 transport 的优雅关闭。这样主 transport 永远不会创建 bootstrap `exec` channel，既保留服务端登录消息，也能让新安装的 profile hook 在首次交互 shell 中生效。Backend 负责 manifest 加载、远端探测、已安装状态校验、按需下载编排、状态转发、运行时事件门禁与审计记录；`packages/remote-bootstrap` 负责远端用户级 Go 安装器，以及由 Go 生成的 helper 协议/能力契约。Manifest URL 优先来自 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，其次是 packaged CI resource，未打包开发运行则再回退到仅开发使用的 `remote-bootstrap-dev` 默认值。正式 tag release 包指向版本化 release manifest；`main` 包指向固定的 `remote-bootstrap-dev` prerelease manifest；分支名包含 `remote-bootstrap` 的 push 构建可以指向分支专用临时 prerelease manifest，用于端到端 CI 测试。已安装契约为最新时跳过 asset 下载；ensure 失败会启动临时 transport 的关闭、禁用本次会话的增强数据，但不会阻止已认证的主 transport 打开普通 shell。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
+- 生产环境使用 `PrismaSqlCipherAdapterFactory` 构造 Prisma；该 factory 会把 `better-sqlite3-multiple-ciphers` native binding 注入 Prisma 的 better-sqlite3 adapter，并在暴露连接前应用数据库密钥。Schema migration 与业务查询因此共享同一条 keyed SQLCipher 连接路径。
+- 标准 SQLite 明文文件头会触发一次性的复制/rekey/校验/替换迁移。未知文件或错误密钥不会进入明文 fallback，固定迁移产物可在下一次启动恢复 rename 中断窗口。
 - 简单的 Prisma `ALTER TABLE ... ADD COLUMN` migration 会先对照实时 SQLite 表元数据；若列已存在但 `_prisma_migrations` 缺少记录，启动会补记该 migration，而不是再次执行重复 DDL；非简单 migration 漂移仍然快速失败。
 - Schema 同步采用快速失败策略：若运行时 migration 执行后仍无法满足必需表结构，backend 将中止启动，避免 API 进入部分可用/行为不确定状态。
 - migration 台账元数据采用与 Prisma 兼容的 `_prisma_migrations` 结构，便于后续平滑切换到原生 `prisma migrate deploy/resolve` 工作流。
@@ -59,7 +71,7 @@ flowchart LR
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 - SSH 页面使用 tab 作用域的连接意图快照模型（不再依赖全局可变目标单例），重试与分屏互不串扰。
 - 隐藏 tab 保留渲染但不会触发新的 SSH 连接副作用，连接流程仅允许 active tab 发起。
-- Renderer 会消费 backend `bootstrap-status` 消息用于远端增强可观测性，但 v1 不在 SSH 侧栏渲染专用的远端增强卡片。
+- Renderer 会消费 backend 的 `bootstrap-status`、`remote-enhancement-runtime-status` 与可信 `remote-shell-event` 消息，用于远端增强可观测性，但 v1 不在 SSH 侧栏渲染专用的远端增强卡片。
 
 ## 3. IPC 生命周期（当前）
 
@@ -87,6 +99,45 @@ sequenceDiagram
   PB->>MP: ipcRenderer.invoke('backend:ssh-close-session', sessionId)
   MP->>BE: DELETE /api/v1/ssh/sessions/{sessionId}
 ```
+
+## 3.1 受保护的窗口关闭与应用退出生命周期
+
+```mermaid
+sequenceDiagram
+  participant OS as Window/App Close Intent
+  participant MP as Main Process
+  participant BE as Backend Runtime
+  participant RD as Renderer Dialog
+
+  OS->>MP: BrowserWindow close or app before-quit
+  MP->>MP: preventDefault + 合并重复请求
+  MP->>BE: GET /api/v1/runtime/active-connections
+  alt 没有活动 SSH/SFTP 会话
+    MP->>MP: 继续关闭窗口或关闭应用
+  else 存在活动会话或探测不可用
+    MP->>BE: GET /api/v1/settings
+    alt 已关闭关闭确认
+      MP->>BE: DELETE /api/v1/runtime/active-connections
+      MP->>MP: 继续关闭窗口或关闭应用
+    else 已开启确认或设置不可用
+      MP->>RD: 请求本地化警告（不透明 requestId）
+      alt 用户取消
+        RD-->>MP: confirmed=false
+      else 用户确认
+        RD-->>MP: confirmed=true
+        MP->>BE: DELETE /api/v1/runtime/active-connections
+        MP->>MP: 继续关闭窗口或关闭应用
+      end
+    end
+  end
+```
+
+- “活动连接”指仍存在于 backend 服务注册表中的 SSH 或 SFTP 会话。本地终端和端口转发运行时明确不属于本次警告范围。
+- `windowCloseConfirmationEnabled` 注册在“通用 > 行为”下，默认值为 `true`。仅当存在活动会话或活动状态探测不可用时，Main 才读取这项 backend 持久化设置。关闭该设置会跳过 renderer 对话框，但仍会在关闭窗口或应用前断开已注册的 SSH/SFTP 会话；设置读取失败时保留默认询问行为。
+- Main 会先校验计数均为非负值且总数一致，再用于关闭判断。探测失败或响应畸形时会遵循已配置的确认行为，不会静默关闭，也不会永久阻止退出。
+- 标题栏、最后一个标签页、菜单和快捷键产生的重复关闭请求共用一个进行中的决策。Main 会将 renderer 响应同时绑定到不透明 request ID 与所属 `webContents`；preload 负责校验请求，并在 React listener 挂载前暂存该请求。可响应 renderer 超时后按安全的取消处理；renderer 不可用或已销毁时则允许退出，避免永久阻塞。
+- Windows 与 Linux 上，获准的主窗口关闭会进入完整应用关闭流程。macOS 上，仅关闭窗口时会先断开 SSH/SFTP 会话再销毁窗口，并保留应用运行时以供重新激活；退出应用仍执行完整关闭。
+- 启动失败与致命进程退出会绕过交互确认，但继续执行既有 backend 与 SFTP 临时目录清理路径。
 
 ## 4. 安全模型
 
@@ -118,13 +169,24 @@ sequenceDiagram
 - token 不匹配或会话过期会立即关闭（`1008`）。
 - 30 秒 attach 超时用于避免资源孤儿化。
 
+### 发布供应链边界
+
+- 普通 CI 与滚动 remote-bootstrap 通道和版本化公开发布保持分离。滚动 `remote-bootstrap-dev` 与 `remote-bootstrap-branch-*` 资产按设计允许替换；带 tag 的应用只使用对应的精确版本 manifest URL。
+- GitHub Actions 固定到完整 commit SHA，并通过经过评审的 Dependabot pull request 更新。构建任务对仓库只读并暂存短期 workflow artifacts；只有最终 release 任务可以创建或更新 draft。
+- 正式发布组装会校验完整平台资产清单、写入 `SHA256SUMS`、创建 GitHub provenance attestations，并拒绝修改已发布 release。
+- Windows 签名当前使用策略门禁。`audit` 允许生成带醒目标记的未签名 draft 以验证流水线，`enforce` 则要求在创建 draft 前通过 Authenticode 签名、时间戳与已配置发布者身份验证。
+- Draft 可变性是有意设计。首次公开发布前还需通过仓库侧 immutable releases、受保护的 `release` environment 与 `v*` tag ruleset 完成边界。操作契约与剩余配置见[发布安全](./release-security.md)。
+
 ## 5. 运行时能力
 
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
-- 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 均允许时，SSH 会话会在首次 WS attach 后执行用户级远端增强 bootstrap 安装。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置会在任何远端 probe 前作为明确失败状态上报。Go 安装器只写入远端用户 XDG/home 文件与 shell profile hook；模块契约见 `packages/remote-bootstrap/README.md`。
+- 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 manifest URL 均允许时，SSH 会话会在主 transport 认证后、PTY 创建前 ensure 用户级远端增强运行时。第一次需要远端命令时才会懒创建独立 bootstrap transport；所有 probe/install/status `exec` channel 都只运行在该 transport，并在 `shell()` 成为主 transport 的第一个 session channel 前启动关闭。这个可选的 shell 打开前路径对设置读取、manifest I/O、bootstrap transport/proxy 建连和 exec 工作共享同一个 15 秒总预算。超时会取消活动工作、销毁临时 client，并以 `BOOTSTRAP_ENSURE_TIMEOUT` 打开普通 PTY。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置会在创建任何 bootstrap transport 或远端 probe 前作为明确失败状态上报。Backend 会先查询已安装 Go binary；version、manifest asset SHA-256、protocol、helper 与 profile 状态均匹配时跳过下载，状态缺失或属于旧格式时触发重装并在安装后复验。正式 tag release 安装包、`main` 构建产物以及显式启用发布路径的 remote-bootstrap 分支构建，可以通过 packaged `remote-bootstrap/manifest-url.json` 资源提供默认 manifest URL，而 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 仍是显式 override。未打包开发运行在没有 override 或 packaged resource 时使用 `remote-bootstrap-dev`。普通 PR 与分支构建默认不打入 manifest URL。Go 安装器只写入远端用户 XDG/home 文件与 shell profile hook；模块契约见 `packages/remote-bootstrap/README.md`。
+
+- 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费；错过 deadline 会得到 `HELPER_HANDSHAKE_TIMEOUT`。每条 OSC 事件都必须匹配交互 shell 打开前确认的 helper version、protocol version、shell 与 capability 集合。Manifest/安装/设置失败、缺少契约字段的旧事件、缺少握手或运行期契约不匹配都不会影响普通 SSH，但会让 helper 派生状态保持不可用。
+- Renderer 会把最新 backend 运行状态与最多 200 条诊断历史分别保存，因此长会话淘汰旧事件后仍保留权威的当前诊断状态。
 - SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除与批量文件操作。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
-- SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；macOS 使用打包的 NSWorkspace helper；Linux 不显示打开方式。
+- SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；PowerShell 主路径与 rundll32/shell32 fallback 会分别从内核所有的 `GLOBALROOT\SystemRoot\System32` 命名空间解析，不信任继承的环境变量、PATH 或 CWD，主路径再通过 Windows known-folder API 补充子进程环境。PowerShell 被阻止或不可用时，已校验的 rundll32 fallback 仍可使用内核锚定的最小环境运行。macOS 打包运行只接受 `process.resourcesPath` 下已编译的 NSWorkspace helper；仓库内二进制/源码 fallback 仅供开发态使用，在 `app.isPackaged` 为 true 时不可用。Linux 不显示打开方式。
 - SFTP 目录上传/下载、chmod、字节级传输进度/取消、更完整的传输队列与 SSH terminal 会话复用仍属于后续规划。
 
 ## 5.1 SSH 端口转发运行时（已实现）
@@ -202,7 +264,7 @@ flowchart TD
   BRIDGE --> MAIN[ipcMain handler]
   MAIN --> API[Backend route]
   API --> SERVICE[Session service]
-  SERVICE --> DB[(Prisma / SQLite)]
+  SERVICE --> DB[(Prisma / SQLCipher adapter)]
   SERVICE --> REMOTE[SSH host or local PTY]
   SERVICE --> TOKEN[WS token + session registry]
   TOKEN --> UI
@@ -221,7 +283,34 @@ flowchart LR
   WS2 --> XT2[xterm.js write]
 ```
 
-### 6.3 失败边界模型
+### 6.3 SFTP 传输进度数据流
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer 任务队列
+  participant PB as Preload Bridge
+  participant MP as Main IPC
+  participant BE as Backend SFTP Service
+  participant FS as 本地/远程流
+
+  UI->>PB: 上传/下载(payload + transferId)
+  PB->>MP: invoke 最终传输请求
+  MP->>BE: POST upload/download
+  BE->>FS: 经过字节计数 Transform 的 pipeline
+  loop 请求等待期间每 500 ms
+    UI->>PB: get progress(transferId)
+    PB->>MP: backend:sftp-get-transfer-progress
+    MP->>BE: GET /api/v1/sftp/transfers/{transferId}
+    BE-->>UI: 已传输字节 + 总量 + 滚动速度 + 状态
+  end
+  BE-->>UI: 最终成功或稳定 API 错误
+```
+
+- 文件字节继续沿既有 backend 流路径传输；HTTP 与 IPC 只传递有界进度元数据。
+- Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
+- 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
+
+### 6.4 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。
@@ -333,29 +422,37 @@ sequenceDiagram
 - 会话运行时必须防止陈旧 attach 状态污染。
 - Renderer 重载应视作新生命周期并显式重建状态。
 
-### 8.4 启动时 SQLite 文件不可读
+### 8.4 生产数据库加密与恢复
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite File
+  participant DB as Database File
   participant MAIN as Electron Main
 
-  BE->>DB: 尝试 SQLCipher 启动校验
-  DB-->>BE: file is not a database / unreadable
-  BE-->>MAIN: 以 DB_PRAGMA_FAILED 失败退出
+  BE->>DB: 检查文件头
+  alt 标准 SQLite 明文库
+    BE->>DB: checkpoint + copy + rekey 加密副本
+    BE->>DB: integrity/schema 校验 + 原子提升
+  else 加密数据库
+    BE->>DB: 校验 SQLCipher 密钥与完整性
+  end
+  BE->>DB: Prisma 通过 keyed SQLCipher adapter 连接
+  DB-->>BE: 就绪或返回明确迁移/密钥错误
+  BE-->>MAIN: 仅在确认加密存储后继续
 ```
 
 处理原则：
 
-- 生产环境采用严格策略：SQLCipher/Prisma 不兼容时快速失败，由运维修复。
+- 生产环境不存在明文 Prisma fallback。只有标准明文文件头会进入一次性迁移；未知/损坏文件与错误密钥会直接失败且不会旋转密钥材料。
+- 加密副本通过完整性与 schema 表数量校验前，源库始终保持权威。固定的 `.sqlcipher-migration`、`.plaintext-backup` 产物支持 rename 中断后的重启恢复。加密临时库验证失败时必须与明文备份一起保留并中止启动；恢复流程不得静默恢复明文库并用未经验证的密钥重新加密，从而造成数据库密钥轮换。
 
 ### 8.5 启动时 Schema 升级路径
 
 ```mermaid
 sequenceDiagram
   participant BE as Backend Bootstrap
-  participant DB as SQLite
+  participant DB as Prisma adapter 管理的 SQLCipher
 
   BE->>DB: initializeDatabase(...)
   BE->>DB: 应用 PRAGMA + 执行待应用 Prisma migration.sql 文件

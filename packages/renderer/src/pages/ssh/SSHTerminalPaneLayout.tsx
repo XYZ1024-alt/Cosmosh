@@ -20,6 +20,7 @@ type SSHTerminalPaneLayoutProps = {
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
   rightClickAction: TerminalRightClickAction;
+  remoteEnhancementsDebugLabel?: string;
   canOpenDirectoryInSftp: boolean;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
@@ -34,6 +35,7 @@ type SSHTerminalPaneLayoutProps = {
   onClearTerminal: PaneActionHandler;
   onSplitPane: PaneActionHandler;
   onClosePane: PaneActionHandler;
+  onToggleRemoteEnhancementsDebug?: PaneActionHandler;
 };
 
 /**
@@ -55,6 +57,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
  * @param props.rightClickAction Configured action for terminal right-click gestures.
+ * @param props.remoteEnhancementsDebugLabel Optional label for the Remote Enhancements debug panel action.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
@@ -69,6 +72,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.onClearTerminal Callback for clear-screen action.
  * @param props.onSplitPane Callback for split action.
  * @param props.onClosePane Callback for close-pane action.
+ * @param props.onToggleRemoteEnhancementsDebug Optional callback for the Remote Enhancements debug panel toggle.
  * @returns Pane layout JSX subtree.
  */
 export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
@@ -84,6 +88,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   findShortcutLabel,
   clearTerminalShortcutLabel,
   rightClickAction,
+  remoteEnhancementsDebugLabel,
   canOpenDirectoryInSftp,
   setPaneContainerElement,
   setPrimaryPaneContainer,
@@ -98,6 +103,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   onClearTerminal,
   onSplitPane,
   onClosePane,
+  onToggleRemoteEnhancementsDebug,
 }) => {
   const renderTerminalPane = (paneId: string, isPrimaryPane: boolean): React.ReactNode => {
     return (
@@ -119,6 +125,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           clearTerminalShortcutLabel={clearTerminalShortcutLabel}
           splitTerminalLabel={t('ssh.contextMenuSplitTerminal')}
           closeTerminalLabel={t('ssh.contextMenuCloseTerminal')}
+          remoteEnhancementsDebugLabel={remoteEnhancementsDebugLabel}
           canSplitTerminal={canSplitTerminal}
           canCloseTerminal={terminalPaneIds.length > 1}
           canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
@@ -133,6 +140,9 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           onClearTerminal={() => onClearTerminal(paneId)}
           onSplitTerminal={() => onSplitPane(paneId)}
           onCloseTerminal={() => onClosePane(paneId)}
+          onToggleRemoteEnhancementsDebug={
+            onToggleRemoteEnhancementsDebug ? () => onToggleRemoteEnhancementsDebug(paneId) : undefined
+          }
         >
           <div
             ref={(element) => {

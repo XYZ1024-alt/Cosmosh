@@ -7,9 +7,139 @@ on:
   push:
     branches: ["**"]
   pull_request:
+  workflow_dispatch:
+    inputs:
+      publishRemoteBootstrap:
+        description: "Publish branch-scoped remote bootstrap assets and package their manifest URL."
+        required: false
+        default: false
+        type: boolean
 
 jobs:
+  build-remote-bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/remote-bootstrap/go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Test remote bootstrap package
+        working-directory: packages/remote-bootstrap
+        run: go test ./...
+      - name: Validate remote bootstrap release assets
+        env:
+          COSMOSH_REMOTE_BOOTSTRAP_RELEASE_TAG: ci-${{ github.sha }}
+          COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_VERSION: ci-${{ github.sha }}
+          COSMOSH_REMOTE_BOOTSTRAP_RELEASE_ASSET_BASE_URL: https://example.invalid/cosmosh/remote-bootstrap/${{ github.sha }}
+        run: node scripts/build-remote-bootstrap-release.mjs
+
+  publish-remote-bootstrap-channel:
+    needs: build-remote-bootstrap
+    if: |
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'push' && contains(github.ref_name, 'remote-bootstrap')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.publishRemoteBootstrap)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    outputs:
+      manifest_url: ${{ steps.channel.outputs.manifest_url }}
+      tag: ${{ steps.channel.outputs.tag }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: packages/remote-bootstrap/go.mod
+          cache: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
+        with:
+          node-version: "22"
+      - name: Resolve remote bootstrap publish channel
+        id: channel
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            tag="remote-bootstrap-dev"
+            version="dev-${GITHUB_SHA}"
+            title="Remote Bootstrap Dev"
+            notes="Rolling dev-channel remote bootstrap assets for main branch builds."
+          else
+            raw="${GITHUB_REF_NAME}"
+            safe="$(
+              printf '%s' "${raw}" |
+                tr '[:upper:]' '[:lower:]' |
+                sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g; s/-+/-/g' |
+                cut -c1-80
+            )"
+            if [[ -z "${safe}" ]]; then
+              safe="${GITHUB_RUN_ID}"
+            fi
+            tag="remote-bootstrap-branch-${safe}"
+            version="branch-${safe}-${GITHUB_SHA}"
+            title="Remote Bootstrap Branch: ${raw}"
+            notes="Temporary branch-scoped remote bootstrap assets for testing ${raw}. This prerelease is not user-facing and may be deleted after the branch is merged or abandoned."
+          fi
+          manifest_url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${tag}/cosmosh-remote-bootstrap-manifest.json"
+          {
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "title=${title}"
+            echo "manifest_url=${manifest_url}"
+            echo "notes<<EOF"
+            echo "${notes}"
+            echo "EOF"
+          } >> "${GITHUB_OUTPUT}"
+      - name: Build remote bootstrap dev-channel assets
+        env:
+          COSMOSH_REMOTE_BOOTSTRAP_RELEASE_TAG: ${{ steps.channel.outputs.tag }}
+          COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_VERSION: ${{ steps.channel.outputs.version }}
+        run: node scripts/build-remote-bootstrap-release.mjs
+      - name: Publish remote bootstrap channel assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_NOTES: ${{ steps.channel.outputs.notes }}
+          RELEASE_TAG: ${{ steps.channel.outputs.tag }}
+          RELEASE_TITLE: ${{ steps.channel.outputs.title }}
+        run: |
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh api \
+              --method PATCH \
+              "repos/${GITHUB_REPOSITORY}/git/refs/tags/${RELEASE_TAG}" \
+              -f sha="${GITHUB_SHA}" \
+              -F force=true >/dev/null
+          else
+            gh api \
+              --method POST \
+              "repos/${GITHUB_REPOSITORY}/git/refs" \
+              -f ref="refs/tags/${RELEASE_TAG}" \
+              -f sha="${GITHUB_SHA}" >/dev/null
+          fi
+          if ! gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --title "${RELEASE_TITLE}" \
+              --notes "${RELEASE_NOTES}" \
+              --prerelease \
+              --target "${GITHUB_SHA}"
+          fi
+          gh release upload "${RELEASE_TAG}" \
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-linux-amd64 \
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-linux-arm64 \
+            packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json \
+            --clobber
+
   build-main:
+    needs: [build-remote-bootstrap, publish-remote-bootstrap-channel]
+    if: always() && needs.build-remote-bootstrap.result == 'success' && (needs.publish-remote-bootstrap-channel.result == 'success' || needs.publish-remote-bootstrap-channel.result == 'skipped')
     strategy:
       fail-fast: false
       matrix:
@@ -27,12 +157,15 @@ jobs:
             platform: mac-arm64
             buildArgs: --mac dmg zip --arm64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     env:
       ELECTRON_CACHE: ${{ github.workspace }}/.cache/electron
       ELECTRON_BUILDER_CACHE: ${{ github.workspace }}/.cache/electron-builder
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6
         with:
           node-version: "22"
       - name: Setup pnpm
@@ -45,14 +178,14 @@ jobs:
         shell: bash
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: ${{ runner.os }}-pnpm-store-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: |
             ${{ runner.os }}-pnpm-store-
       - name: Cache Electron downloads
-        uses: actions/cache@v4
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
             .cache/electron
@@ -65,6 +198,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build main
         env:
+          COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL: ${{ needs.publish-remote-bootstrap-channel.outputs.manifest_url || '' }}
           COSMOSH_ENFORCE_GLIBC_BASELINE: ${{ matrix.platform == 'linux' && '1' || '0' }}
           COSMOSH_MAX_GLIBC_VERSION: 2.35
           COSMOSH_REQUIRED_PRISMA_TARGETS: ${{ matrix.platform == 'linux' && 'debian-openssl-1.1.x,debian-openssl-3.0.x' || '' }}
@@ -72,7 +206,7 @@ jobs:
 
       - name: Upload Windows portable zip
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-windows-portable-zip
           retention-days: 14
@@ -82,7 +216,7 @@ jobs:
 
       - name: Upload Windows installer exe
         if: matrix.platform == 'win'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-windows-installer-exe
           retention-days: 14
@@ -93,7 +227,7 @@ jobs:
 
       - name: Upload Linux portable zip
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-linux-portable-zip
           retention-days: 14
@@ -103,7 +237,7 @@ jobs:
 
       - name: Upload Linux AppImage installer
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-linux-installer-appimage
           retention-days: 14
@@ -113,7 +247,7 @@ jobs:
 
       - name: Upload Linux deb installer
         if: matrix.platform == 'linux'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-linux-installer-deb
           retention-days: 14
@@ -123,7 +257,7 @@ jobs:
 
       - name: Upload macOS x64 artifacts
         if: matrix.platform == 'mac-x64'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-macos-x64
           retention-days: 14
@@ -134,7 +268,7 @@ jobs:
 
       - name: Upload macOS arm64 artifacts
         if: matrix.platform == 'mac-arm64'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: cosmosh-main-macos-arm64
           retention-days: 14
