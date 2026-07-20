@@ -121,7 +121,8 @@ Locale behavior:
 - On every SSH session creation, backend executes remote history probes and parses shell history into normalized commands.
 - Remote history sources are probed in a compatibility order (shell builtin + common files), including Bash/Zsh/Fish/Ksh/Ash-style files and optional PowerShell PSReadLine history when available.
 - Runtime-specific REPL stores (for example `.node_repl_history`) are intentionally excluded from shell command history aggregation.
-- When renderer sends `input` containing line-submit characters (`\r` / `\n`), backend schedules a delayed + throttled history refresh to avoid over-fetching.
+- When an active trusted helper advertises `command-start`, backend treats each unique `commandId` as the authoritative command-count and delayed history-refresh trigger. Duplicate lifecycle events do not double count.
+- Raw `input` line-submit characters (`\r` / `\n`) trigger the existing delayed + throttled history refresh only when the session has no active structured command lifecycle, preserving a conservative fallback for disabled/degraded helpers.
 - History refresh and telemetry are decoupled: telemetry stays interval-based, while history can be pushed immediately through `history` events.
 - Delete action in `SSH.tsx` sends `history-delete`; backend performs best-effort remote history file cleanup and then re-syncs history.
 
@@ -131,6 +132,8 @@ Locale behavior:
 - Renderer gates autocomplete while xterm is in alternate screen buffer (for example `vim`, `less`, `top`) so shell completion does not hijack editor/TUI key handling.
 - Renderer suppresses empty-input completion by default (no real command text), and only allows empty-prefix requests for explicit secret-prompt flow.
 - Renderer keeps a per-pane local command-prefix shadow from xterm input events, so typing-trigger completion does not wait for remote shell echo before computing request prefix.
+- Completion requests, output-echo wakeups, secret-prompt triggers, responses, and popup anchors carry an explicit pane id. Responses for a non-active pane or an older request id are discarded.
+- When trusted `line-state` metadata is available, renderer calibrates the reconstructed prefix with `lineLength`, `cursorIndex`, and `promptGeneration`. It uses the cursor only when the reconstructed length and prompt generation agree; otherwise it keeps the conservative xterm/local-shadow result. The helper never sends the line buffer itself.
 - After readline/history navigation control sequences (`ArrowUp`/`ArrowDown`/`Ctrl+P` style recall), renderer treats the next local input shadow as a suffix and reconciles it with the rendered xterm command line before sending completion requests. This keeps recalled commands such as `echo 1` in the completion prefix when the user continues typing.
 - Command-start boundary detection no longer depends on a fixed prompt-token list. Renderer first parses shell command segment boundaries around cursor context (quotes + separators such as `;`, `&&`, `||`, `|`) and only then applies prompt-boundary heuristics.
 - Prompt parsing is user-configurable via `terminalAutoCompletePromptRegex` (Settings > Terminal > Auto Complete). When set, this regex is applied as an override for prompt-prefix trimming; when empty or invalid, renderer falls back to built-in heuristics.
@@ -225,11 +228,12 @@ flowchart LR
 
 - Session attach timeout: 30s.
 - Any socket close/error transitions UI state to failed.
-- Retry is **manual** via UI retry button (`SSH.tsx`), which creates a new session.
+- Retry is available manually through the UI retry button (`SSH.tsx`) and targets the active pane only. Its temporary target-readiness transition does not dispose or reconnect sibling pane runtimes.
 - Retry is bound to the tab's latest resolved target snapshot and never re-reads global target selection.
 - If the first connect fails before any snapshot is captured, manual retry falls back to fresh intent resolution for that tab.
 - Each connect attempt has attempt identity (`attemptId`) with stale-result dropping and abortable pre-connect resolution.
 - Hidden tabs do not trigger new connection side effects; only active tab can start connect flow.
+- When `sshReconnectOnFocus` is enabled, reactivating a tab reconnects every failed pane that has no connecting/open socket. The first activation of a deferred tab always starts its primary pane, independently of that preference.
 - No automatic exponential reconnection loop is implemented yet.
 
 ### Recommended Next Step (Planned)
@@ -314,17 +318,18 @@ Notes:
 - When an SSH tab becomes active, renderer restores keyboard focus to the active xterm instance so typing lands in the terminal immediately after tab switching.
 - Maximum visible panes are capped at 4 in current implementation.
 - Each split pane creates its own backend terminal session against the same resolved target (same SSH server/local profile), so panes can run independent commands.
-- Mirror panes always reuse the primary pane's resolved target snapshot semantics on retries.
+- Secondary panes reuse the primary pane's resolved target snapshot semantics on retries.
 - New split panes start from an empty viewport and render only their own session stream to avoid stale buffer carry-over from other panes.
-- Closing a pane only affects renderer layout state; backend session lifecycle remains unchanged until the page-level session closes.
-- Closing a pane disposes only that pane’s session/socket; the remaining panes continue running.
+- Every pane owns an independent xterm, WebSocket, backend session, transport state, telemetry, completion state, Remote Enhancements trust state, cwd, line state, debug history, and command markers. Primary and secondary messages pass through the same pane-aware reducer.
+- Closing any pane disposes only that pane's socket/backend session and leaves surviving pane ids and runtimes unchanged. Closing the original primary does not transfer ownership by renaming another pane.
 - Completion popup anchoring is resolved against the currently active pane container, and primary-pane ref updates must not overwrite active mirror-pane geometry after rerenders.
 - In-terminal text search is implemented with xterm `SearchAddon` in both primary and mirror panes. `Find...` opens the shared `SearchReplacePanel` in find-only mode, with configurable filter toggles (`Case Sensitive` / `Regex`) plus compact previous/next navigation actions to highlight matches in the active pane.
 - Search highlight decorations are explicitly cleared when the query becomes empty or the search panel is dismissed, which prevents stale search markers from keeping extra memory alive after search exits.
 - Orbit Bar stays suppressed for the full search lifecycle (including empty query state and ESC close path) so search highlight flows do not re-open selection actions unexpectedly.
 - Orbit Bar and selection-dependent terminal context-menu actions resolve selection geometry from xterm `getSelectionPosition()` first, with DOM selection blocks only as fallback. This keeps `WebglAddon` canvas rendering compatible with Orbit Bar placement and `Search Online` enablement.
-- Orbit Bar and the terminal context menu can hand off a selected remote directory to SFTP. The action is available only for SSH-server sessions and explicit POSIX-like paths (`/path`, `~/path`, `./path`, `../path`, or `file:///path`); bare relative names stay disabled because SSH shell cwd is not shared with SFTP tabs.
+- Orbit Bar and the terminal context menu can hand off a selected remote directory to SFTP. The action is available only for SSH-server sessions and explicit POSIX-like paths (`/path`, `~/path`, `./path`, `../path`, or `file:///path`). Dot-relative paths use only the source pane's trusted helper cwd; without a trusted absolute cwd they retain the previous strict behavior. Bare relative names remain disabled.
 - Opening a selected directory in SFTP always creates a new SFTP tab with that `initialPath`, even when another SFTP tab for the same server already exists, and does not replace the active SSH terminal tab.
+- `Previous Command` and `Next Command` navigate xterm markers owned by the active pane. Trusted `command-start` events promote matching local Enter markers and attach command id/lifecycle metadata; the local marker remains the fallback when enhancements are unavailable.
 
 ## 7. Developer Debug Checklist
 
@@ -344,7 +349,7 @@ Remote Enhancements are the optional runtime layer for host-aware SSH features s
 
 - `packages/backend/src/remote-bootstrap/service.ts` owns pre-shell orchestration. It fetches the manifest, probes the remote host, reads installed status, injects a download wrapper only when required, verifies the result, returns a trusted runtime contract, parses JSON-line statuses, and writes audit events.
 - `packages/remote-bootstrap` owns the Go installer, helper generator, OSC protocol/capability declarations, installed-state validator, and wrapper renderer. See `packages/remote-bootstrap/README.md` for module-level build, test, path, and security details.
-- The feature is enabled only when Settings `remoteEnhancementsEnabled` is true and the SSH server record `remoteEnhancementsEnabled` is true. Both defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
+- The effective gate is `global setting && persisted server field && request override !== false`. The request field is disable-only: a stale renderer snapshot cannot re-enable a server that the current database record has disabled. The global and persisted server defaults are true, so deployment-level activation is controlled by the manifest URL until a user disables either gate.
 - When either gate is disabled, backend does not run any remote command, ignores runtime shell OSC events from previously installed helpers, and emits a skipped `bootstrap-status` with code `REMOTE_ENHANCEMENTS_DISABLED`.
 - Backend requires a manifest URL to load the bootstrap manifest. `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is the first-class override. Unpackaged development runs default to the rolling `remote-bootstrap-dev` manifest so local development can exercise Remote Enhancements without per-shell setup. Packaged CI builds may also carry `remote-bootstrap/manifest-url.json`, generated before app packaging, so installers can discover the GitHub-hosted manifest without a user-provided environment variable. Tagged releases point at the same versioned GitHub Release as the app installers; `main` push builds point at `remote-bootstrap-dev`; pushed branches whose name contains `remote-bootstrap` and manual workflow dispatch runs can point at branch-scoped temporary prereleases such as `remote-bootstrap-branch-codex-remote-bootstrap-ci-release`. Ordinary PR and feature-branch builds do not package a default URL. Missing configuration does not run a remote probe or any other remote command; it only emits an explicit `MANIFEST_URL_NOT_CONFIGURED` failure when Remote Enhancements are enabled.
 
@@ -397,10 +402,11 @@ sequenceDiagram
 - All bootstrap probe/install/status `exec` channels run only on the temporary transport. Backend begins its teardown before the primary calls `client.shell(...)`; actual socket closure may complete asynchronously. The primary transport's first session channel is therefore the interactive PTY, preserving OpenSSH/PAM login messages such as Debian MOTD while still loading a newly installed profile hook in that same first shell.
 - Disabled gates or missing/invalid manifest data never open the temporary transport. Its decrypted completion secret is discarded and is never copied into session state, status payloads, or audit metadata.
 - Backend checks the installed binary before downloading. It skips download only when manifest version and asset SHA-256, supported protocol, helper contents, and profile hook are current. Missing fields from an older binary are incompatible and trigger reinstall. A second status read validates the installation before PTY creation.
+- Successfully validated manifests are cached for five minutes and concurrent sessions share one in-flight load. Failed loads are not cached. Cancelling one session only stops that session from waiting and does not cancel the shared manifest request for other sessions.
 - Each side-channel command uses `ssh2 exec` with `REMOTE_BOOTSTRAP_EXEC_OPTIONS`: 60 seconds and 256 KiB output. The entire optional pre-shell ensure has a stricter shared 15-second budget across settings, manifest I/O, temporary proxy/SSH connection, and exec work. Expiry stops waiting for proxy preparation, closes active exec channels, destroys the temporary client, emits `BOOTSTRAP_ENSURE_TIMEOUT`, and immediately continues to ordinary PTY creation. A preconnected proxy socket that completes after cancellation is destroyed on arrival. Installer output is parsed as JSON lines and never written into the interactive terminal stream.
 - Ensure connection failure or timeout never turns a valid primary SSH authentication into a failed shell session. Backend begins temporary-transport teardown, opens the primary PTY with runtime state `disabled`, reports the failure, and ignores all helper-derived events for that session. If the primary transport itself fails during ensure, its error cancels temporary work and the ordinary session creation fails through the existing SSH error path.
 - Go `install`/`status` output establishes installation identity and trust state; it does not directly provide cwd, input state, or command lifecycle data. Live shell data comes later from the Go-generated helper over OSC 777 and remains subject to the runtime gate.
-- Renderer stores the latest `bootstrap-status` and latest `remote-enhancement-runtime-status` independently from the bounded 200-entry Remote Enhancements debug history. History eviction therefore cannot erase the current runtime state. When Settings `userMenuDebugEntryEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug`; selecting it opens a fixed top-right terminal overlay with bootstrap status, runtime state, helper/protocol/capability identity, and selectable raw JSON for bootstrap, runtime, and trusted shell events.
+- Renderer stores bootstrap status, runtime trust state, trusted cwd/line state, telemetry, lifecycle state, and a bounded 200-entry Remote Enhancements debug history independently for every pane. When Settings `remoteEnhancementsDebugEnabled` is enabled, the terminal context menu exposes `Remote Enhancements Debug` for the source pane; its overlay follows the active pane and never substitutes primary-pane data.
 - The debug overlay records status/event payloads only. It does not record terminal `input`, terminal `output`, passwords, private key material, or full screen output.
 - Terminal `ready`, `output`, telemetry, history, completion, and shell-state messages remain independent from bootstrap progress.
 
@@ -417,9 +423,10 @@ Backend parsing rules:
 - `SshSessionService` streams SSH output through `RemoteShellEventOscParser` before writing to xterm.
 - Cosmosh OSC sequences are stripped from visible terminal output and decoded, but events are forwarded and applied only after the backend runtime gate becomes `active`.
 - The gate starts `pending` only after pre-shell status validation. It becomes `active` on a matching `integration-ready`. If no valid handshake arrives within 10 seconds, it changes to `disabled` with `HELPER_HANDSHAKE_TIMEOUT`; any shell, helper-version, protocol-version, or capability mismatch also changes it to `disabled` and clears helper-derived state.
-- Non-Cosmosh OSC sequences and ordinary ANSI output remain visible and unchanged.
+- Non-Cosmosh OSC sequences and ordinary ANSI output stream through visibly and unchanged, including sequences split across SSH chunks.
 - Invalid JSON, invalid event shapes, and payloads over 8 KiB are dropped without crashing the session.
 - Split SSH chunks are supported; incomplete OSC data is buffered until a BEL or ST terminator arrives.
+- Protocol constants and the discriminated Backend/Renderer message unions are shared from `packages/api-contract/src/terminal-protocol.ts`. The current helper protocol is v2.
 
 Server-to-renderer payload:
 
@@ -432,7 +439,8 @@ type RemoteShellEventMessage = {
     | 'cwd'
     | 'command-start'
     | 'command-end'
-    | 'foreground-command';
+    | 'foreground-command'
+    | 'line-state';
   shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
   helperVersion: string;
   protocolVersion: number;
@@ -442,25 +450,32 @@ type RemoteShellEventMessage = {
   exitCode?: number;
   durationMs?: number;
   commandId?: string;
+  promptGeneration?: number;
+  lineLength?: number;
+  cursorIndex?: number;
   timestamp: number;
 };
 ```
 
+The shared TypeScript type is a discriminated union rather than the optional-field sketch above. `cwd` requires an absolute decoded cwd; command events require a bounded sanitized executable and `commandId`; `command-end` additionally requires `exitCode` and `durationMs`; `line-state` requires `lineLength`, `cursorIndex`, and `promptGeneration`. An event is rejected unless its name is advertised by the exact capability set. Dynamic cwd/command strings are canonical Base64 fields inside the helper JSON envelope, preventing tabs, newlines, quotes, or backslashes from corrupting JSON.
+
 Current first-phase helper behavior:
 
-- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and the previous prompt's `command-end` exit code. Scalar prompt hooks execute behind a separate evaluation boundary, so trailing separators such as `history -a;` cannot create malformed outer syntax. A guarded `DEBUG` trap emits one `command-start` and one `foreground-command` per submitted command line after prompt setup finishes.
-- Zsh uses `precmd`, `preexec`, and `chpwd` hooks, preferring `add-zsh-hook` when available.
+- Bash uses `PROMPT_COMMAND` to preserve any existing prompt hook and then emit `cwd`, `prompt-ready`, and a `command-end` with matching command id, exit code, and duration. A guarded `DEBUG` trap emits one `command-start` and one `foreground-command` per submitted command line after prompt setup finishes.
+- Zsh uses `precmd`, `preexec`, and `chpwd` hooks plus `line-pre-redraw` for line length/cursor calibration. The helper becomes ready only when all required hook registrations succeed.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
-- Sh/Ash degrade to prompt-based `cwd`, `prompt-ready`, and `command-end` only; they do not claim precise preexec behavior.
+- Sh/Ash install a prompt-capture fallback and advertise only `cwd` and `prompt-ready`; they do not claim command lifecycle support.
+- Every shell emits `integration-ready` only after its advertised hook set has installed successfully. Non-interactive shells emit no OSC events.
 - `command-start` and `foreground-command` are emitted for every submitted command that can be reduced to an executable name; they carry only that sanitized executable name (for example `vim`), not the full command line or arguments.
-- First phase intentionally does not emit full command text, line-buffer state, password input, or native shell completion lists.
+- The helper intentionally does not emit full command text, line-buffer contents, password input, or native shell completion lists. Zsh `line-state` contains numeric length/cursor metadata only.
 
 Backend state model:
 
 - Each session owns an explicit `pending`, `active`, or `disabled` enhancement runtime state, the contract validated before PTY creation, and a handshake timer that is cleared on activation, disablement, or session disposal.
-- Each `SshLiveSession` keeps `remoteShellReady`, `remoteShellCwd`, `remoteShellForegroundCommand`, `lastRemoteCommand`, `lastExitCode`, and `lastCommandDurationMs`.
+- Each `SshLiveSession` keeps trusted cwd/foreground state plus the latest command id, sanitized executable, exit code, and duration. Unique structured `command-start` events drive command counting and history refresh; raw Enter parsing is the fallback only when that capability is unavailable.
 - `remoteShellCwd` is the preferred path-completion cwd source; existing exec probes and renderer hints remain fallback paths.
-- When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`; this covers short commands, long-running foreground processes, and unknown TUI/REPL programs without maintaining a command whitelist.
+- When `remoteShellForegroundCommand` is set by `foreground-command`, backend returns an empty completion response until the next `prompt-ready`; `command-end` does not clear suppression early. This covers short commands, long-running foreground processes, and unknown TUI/REPL programs without maintaining a command whitelist.
+- Renderer clears trusted cwd/line calibration immediately whenever backend trust leaves `active`, and applies prompt-generation checks before using `line-state` for completion. Command lifecycle events also maintain pane-local xterm navigation markers.
 - Password prompts and reusable secret suggestions remain output-driven local backend behavior; shell hooks never capture password input.
 
 ### 8.3 Manifest and Asset Contract
@@ -488,7 +503,7 @@ Backend state model:
 - `version` must contain only letters, digits, `.`, `_`, `+`, or `-`.
 - `assets` must be non-empty.
 - Every manifest asset must include an HTTPS `url` and lowercase 64-character `sha256`; one malformed asset invalidates the whole manifest so polluted release metadata fails visibly.
-- v1 selects assets only for Linux `amd64` and `arm64` remotes.
+- The current target matrix selects assets only for Linux `amd64` and `arm64` remotes.
 - The injected wrapper treats all manifest fields as quoted data, never as executable shell source, then downloads the binary with `curl` or `wget`, verifies it with `sha256sum` or `shasum`, and runs `cosmosh-bootstrap install`.
 - `cosmosh-wrappergen` independently enforces the manifest version grammar, HTTPS asset URLs, and lowercase SHA-256 input validation before rendering shell source.
 - `scripts/build-remote-bootstrap-release.mjs` builds `cosmosh-remote-bootstrap-linux-amd64` and `cosmosh-remote-bootstrap-linux-arm64`, computes SHA-256 values, and writes the git-ignored `packages/remote-bootstrap/dist/cosmosh-remote-bootstrap-manifest.json`. CI can override the download tag/base URL and the manifest `version`, so a fixed GitHub release tag can still publish a manifest version such as `dev-<commit-sha>`.
@@ -521,17 +536,17 @@ Installed files stay under the remote user's scope:
 | Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` or `~/.local/share/cosmosh/bootstrap/bin/.version` |
 | POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` or `~/.config/cosmosh/bootstrap/helper.sh` |
 | Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` or `~/.config/cosmosh/bootstrap/helper.fish` |
-| Bash hook | `~/.bashrc` inside a Cosmosh marker block |
+| Bash hooks | `~/.bashrc` plus the active login profile (`~/.bash_profile`, else `~/.bash_login`, else `~/.profile`) inside Cosmosh marker blocks |
 | Zsh hook | `~/.zshrc` inside a Cosmosh marker block |
 | Sh/Ash hook | `~/.profile` inside a Cosmosh marker block |
 | Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` or `~/.config/fish/conf.d/cosmosh.fish` |
 
-The installer is idempotent. It emits `skipped` only when the installed version, exact binary contents, exact Go-generated helper contents, and shell hook are current. If the profile hook or helper was removed or edited, it repairs the installation instead of skipping. The version marker is written only after file installation and profile updates succeed. `status` reports `installed`, `version`, `binarySha256`, `protocolVersion`, `capabilities`, `helperCurrent`, `profileCurrent`, and the resolved paths.
+The installer is idempotent. It emits `skipped` only when the installed version, exact binary contents, exact Go-generated helper contents, and every required shell hook are current. Bash login-profile blocks guard on `BASH_VERSION`, so a generic `.profile` read by Dash does not load the Bash helper. Binary/helper/version/profile replacement is atomic; existing profile permissions and symlink targets are preserved. The version marker is written only after all file and profile updates succeed. `status` reports both the compatibility `profilePath` and complete `profilePaths` collection.
 
 ### 8.5 Security and Failure Model
 
 - Wrapper files and bootstrap working directories are created with `mktemp` under `${TMPDIR:-/tmp}` using restrictive permissions and exit cleanup.
-- The remote wrapper uses `umask 077`; installer files use `0700` for directories/binaries and `0600` for helpers/profile writes where applicable.
+- The remote wrapper uses `umask 077`; installer files use `0700` for directories/binaries and `0600` for new helpers/profiles where applicable. Existing profile modes are retained during atomic replacement.
 - Missing `mktemp`, `base64`, downloader, hash tool, or target shell remains an explicit `bootstrap-status` failure rather than a silent fallback.
 - The Go installer persists files under the remote user's XDG paths and only updates shell profile files inside a Cosmosh marker block. It does not require root and does not write global locations.
 - Bootstrap audit metadata is status-only and must stay secret-free. SSH credentials, private keys, and terminal input are not part of this contract.

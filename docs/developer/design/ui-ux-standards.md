@@ -104,8 +104,9 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Split progression is intentionally constrained to a fixed dense layout sequence (1 → 2 → 3 → 4 panes) to keep power-user scanning rhythm predictable.
 - Pane separators must use tokenized divider colors with lighter contrast than card boundaries.
 - SSH split-pane separators should use the dedicated token `color.ssh.terminal.split.divider` (Tailwind: `border-ssh-terminal-split-divider`) instead of reusing generic home/card divider colors.
-- Split panes must reuse the current live terminal session stream when technically feasible; avoid opening redundant backend sessions by default.
-- Pane close action should be available on each pane context menu while keeping at least one visible pane.
+- Each split pane is an independent command surface and therefore owns its own xterm, backend session, WebSocket, completion/status state, and command markers against the same resolved target. UI actions and overlays must route by explicit pane id.
+- Pane close action must be available on each pane context menu while keeping at least one visible pane. Closing any pane, including the original primary, must leave surviving ids and runtimes intact.
+- `Previous Command`/`Next Command` navigate markers in the active pane only. `Remote Enhancements Debug` is shown only when `remoteEnhancementsDebugEnabled` is enabled and must display the source/active pane's data rather than primary-pane fallback data.
 
 ## 7.2 Tab Reorder Runtime Continuity
 

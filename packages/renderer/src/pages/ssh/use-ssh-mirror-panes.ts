@@ -5,8 +5,8 @@ import React from 'react';
 import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
-import type { MirrorPaneRuntime, ResolvedTerminalTarget, ServerInboundMessage } from './ssh-types';
-import { applyTerminalRuntimeOptions, SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import type { ResolvedTerminalTarget, ServerInboundMessage, TerminalPaneRuntime } from './ssh-types';
+import { applyTerminalRuntimeOptions, reconcileSecondaryPaneRuntimes, sendClientMessage } from './ssh-utils';
 import {
   createTerminalInstance,
   loadTerminalAddons,
@@ -21,13 +21,13 @@ import type { TerminalClipboardProvider } from './use-terminal-clipboard-provide
 
 type UseSshMirrorPanesParams = {
   isActive: boolean;
-  connectionState: 'connecting' | 'connected' | 'failed';
+  sessionTargetReady: boolean;
   terminalPaneIds: string[];
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
   hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
   characterWidthCompatibilityModeEnabledRef: React.RefObject<boolean>;
   paneContainerMapRef: React.RefObject<Map<string, HTMLDivElement>>;
-  mirrorPaneRuntimeMapRef: React.RefObject<Map<string, MirrorPaneRuntime>>;
+  paneRuntimeMapRef: React.RefObject<Map<string, TerminalPaneRuntime>>;
   selectionPointerClientXRef: React.RefObject<number | null>;
   activePaneIdRef: React.RefObject<string>;
   socketRef: React.RefObject<WebSocket | null>;
@@ -44,13 +44,15 @@ type UseSshMirrorPanesParams = {
   onTerminalSelectionChange: (selectionText: string) => void;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
-  notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
-  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
-  handleCompletionResponse: (
-    payload: Extract<ServerInboundMessage, { type: 'completion-response' }>,
+  resetPaneState: (paneId: string) => void;
+  setPaneTransportState: (paneId: string, state: 'connecting' | 'connected' | 'failed', error?: string) => void;
+  handlePaneServerMessage: (
     paneId: string,
+    terminal: TerminalPaneRuntime['terminal'],
+    payload: ServerInboundMessage,
   ) => void;
+  recordPaneInputCommandMarker: (paneId: string, inputData: string) => void;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -71,13 +73,13 @@ type UseSshMirrorPanesParams = {
 export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   const {
     isActive,
-    connectionState,
+    sessionTargetReady,
     terminalPaneIds,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
     characterWidthCompatibilityModeEnabledRef,
     paneContainerMapRef,
-    mirrorPaneRuntimeMapRef,
+    paneRuntimeMapRef,
     selectionPointerClientXRef,
     activePaneIdRef,
     socketRef,
@@ -94,10 +96,11 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     onTerminalSelectionChange,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
-    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
-    scheduleAutocompleteRequestRef,
-    handleCompletionResponse,
+    resetPaneState,
+    setPaneTransportState,
+    handlePaneServerMessage,
+    recordPaneInputCommandMarker,
     requestHostFingerprintTrust,
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
@@ -109,35 +112,32 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   }, [onTerminalSelectionChange]);
 
   React.useEffect(() => {
-    if (!isActive || connectionState !== 'connected') {
+    reconcileSecondaryPaneRuntimes(paneRuntimeMapRef.current, {
+      desiredPaneIds: terminalPaneIds,
+      isActive,
+      sessionTargetReady,
+    });
+
+    if (!isActive || !sessionTargetReady) {
       return;
     }
 
-    const desiredMirrorPaneIds = terminalPaneIds.slice(1);
+    const desiredPaneIds = terminalPaneIds;
 
-    mirrorPaneRuntimeMapRef.current.forEach((runtime, paneId) => {
-      if (desiredMirrorPaneIds.includes(paneId)) {
-        return;
-      }
-
-      runtime.dispose();
-      mirrorPaneRuntimeMapRef.current.delete(paneId);
-    });
-
-    desiredMirrorPaneIds.forEach((paneId) => {
+    desiredPaneIds.forEach((paneId) => {
       const containerElement = paneContainerMapRef.current.get(paneId);
       if (!containerElement) {
         return;
       }
 
-      const existingRuntime = mirrorPaneRuntimeMapRef.current.get(paneId);
+      const existingRuntime = paneRuntimeMapRef.current.get(paneId);
       if (existingRuntime) {
-        if (existingRuntime.containerElement === containerElement) {
+        if (existingRuntime.owner === 'primary' || existingRuntime.containerElement === containerElement) {
           return;
         }
 
         existingRuntime.dispose();
-        mirrorPaneRuntimeMapRef.current.delete(paneId);
+        paneRuntimeMapRef.current.delete(paneId);
       }
 
       const resolvedTarget = resolvedTerminalTargetRef.current;
@@ -170,7 +170,8 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         notifyHardwareAccelerationContextLoss,
       );
 
-      const runtime: MirrorPaneRuntime = {
+      const runtime: TerminalPaneRuntime = {
+        owner: 'secondary',
         terminal,
         fitAddon,
         searchAddon,
@@ -181,9 +182,11 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         socket: null,
         sessionId: null,
         sessionType: null,
+        commandMarkers: [],
+        reconnect: () => undefined,
         dispose: () => undefined,
       };
-      mirrorPaneRuntimeMapRef.current.set(paneId, runtime);
+      paneRuntimeMapRef.current.set(paneId, runtime);
 
       try {
         fitAddon.fit();
@@ -208,6 +211,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           setActivePane(paneId);
         }
 
+        recordPaneInputCommandMarker(paneId, data);
         const autocompleteInputState = applyAutocompleteInputData(paneId, data);
         if (autocompleteInputState.shouldClose) {
           closeAutocompleteRef.current();
@@ -251,10 +255,65 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       containerElement.addEventListener('mousedown', handleSetActivePane, true);
       containerElement.addEventListener('contextmenu', handleSetActivePane, true);
 
+      let disposed = false;
+      let connectAttemptId = 0;
+
+      /**
+       * Closes the current transport while preserving the pane's xterm instance.
+       *
+       * @returns Nothing.
+       */
+      const closeRuntimeSession = (): void => {
+        const previousSocket = runtime.socket;
+        const previousSessionId = runtime.sessionId;
+        const previousSessionType = runtime.sessionType;
+
+        runtime.socket = null;
+        runtime.sessionId = null;
+        runtime.sessionType = null;
+        if (socketRef.current === previousSocket) {
+          socketRef.current = null;
+        }
+
+        if (previousSocket) {
+          try {
+            if (previousSocket.readyState === WebSocket.OPEN) {
+              sendClientMessage(previousSocket, { type: 'close' });
+            }
+            if (previousSocket.readyState === WebSocket.CONNECTING || previousSocket.readyState === WebSocket.OPEN) {
+              previousSocket.close();
+            }
+          } catch {
+            // Ignore websocket close races during retry and pane disposal.
+          }
+        }
+
+        if (!previousSessionId) {
+          return;
+        }
+
+        if (previousSessionType === 'local-terminal') {
+          void closeLocalTerminalSession(previousSessionId).catch(() => undefined);
+        } else {
+          void closeSshSession(previousSessionId).catch(() => undefined);
+        }
+      };
+
       const connectPaneSession = async (): Promise<void> => {
+        if (disposed) {
+          return;
+        }
+
+        connectAttemptId += 1;
+        const attemptId = connectAttemptId;
+        closeRuntimeSession();
+        resetPaneState(paneId);
+        setPaneTransportState(paneId, 'connecting');
+
         try {
           const target = resolvedTerminalTargetRef.current;
           if (!target) {
+            setPaneTransportState(paneId, 'failed', t('ssh.sessionInitFailed'));
             notifyWarning(t('ssh.sessionInitFailed'));
             return;
           }
@@ -280,35 +339,44 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
             hostFingerprintNotTrustedMessage: t('ssh.hostFingerprintNotTrusted'),
           });
 
+          if (disposed || attemptId !== connectAttemptId) {
+            if (openedSession.sessionType === 'local-terminal') {
+              void closeLocalTerminalSession(openedSession.sessionId).catch(() => undefined);
+            } else {
+              void closeSshSession(openedSession.sessionId).catch(() => undefined);
+            }
+            openedSession.socket.close();
+            return;
+          }
+
           runtime.sessionType = openedSession.sessionType;
           runtime.sessionId = openedSession.sessionId;
           const socket = openedSession.socket;
           runtime.socket = socket;
 
           socket.addEventListener('message', (event) => {
+            if (disposed || attemptId !== connectAttemptId) {
+              return;
+            }
+
             try {
               const payload = JSON.parse(event.data) as ServerInboundMessage;
-              if (payload.type === 'output') {
-                terminal.write(payload.data);
-                notifyAutocompleteOutputEchoRef.current(paneId);
-                if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
-                  scheduleAutocompleteRequestRef.current('secretPrompt');
-                }
-                return;
-              }
-
-              if (payload.type === 'completion-response') {
-                handleCompletionResponse(payload, paneId);
-              }
+              handlePaneServerMessage(paneId, terminal, payload);
             } catch {
+              setPaneTransportState(paneId, 'failed', t('ssh.websocketMalformedMessage'));
               notifyWarning(t('ssh.websocketMalformedMessage'));
             }
           });
 
           socket.addEventListener('open', () => {
+            if (disposed || attemptId !== connectAttemptId) {
+              return;
+            }
+
             if (activePaneIdRef.current === paneId) {
               socketRef.current = socket;
             }
+            setPaneTransportState(paneId, 'connected');
 
             try {
               fitAddon.fit();
@@ -324,43 +392,57 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
           });
 
           socket.addEventListener('close', () => {
+            if (disposed || attemptId !== connectAttemptId) {
+              return;
+            }
+
             runtime.socket = null;
             if (activePaneIdRef.current === paneId) {
               socketRef.current = null;
             }
+            setPaneTransportState(paneId, 'failed', t('ssh.websocketClosed'));
           });
 
           socket.addEventListener('error', () => {
+            if (disposed || attemptId !== connectAttemptId) {
+              return;
+            }
+
             runtime.socket = null;
             notifyWarning(t('ssh.websocketTransportFailed'));
             if (activePaneIdRef.current === paneId) {
               socketRef.current = null;
             }
+            setPaneTransportState(paneId, 'failed', t('ssh.websocketTransportFailed'));
           });
         } catch (error: unknown) {
-          notifyWarning(error instanceof Error ? error.message : t('ssh.sessionInitFailed'));
+          if (disposed || attemptId !== connectAttemptId) {
+            return;
+          }
+
+          const message = error instanceof Error ? error.message : t('ssh.sessionInitFailed');
+          setPaneTransportState(paneId, 'failed', message);
+          notifyWarning(message);
         }
       };
 
+      runtime.reconnect = () => {
+        void connectPaneSession();
+      };
       void connectPaneSession();
 
       runtime.dispose = () => {
-        if (runtime.socket && runtime.socket.readyState === WebSocket.OPEN) {
-          sendClientMessage(runtime.socket, { type: 'close' });
-          runtime.socket.close();
+        if (disposed) {
+          return;
         }
 
-        if (runtime.sessionId) {
-          if (runtime.sessionType === 'local-terminal') {
-            void closeLocalTerminalSession(runtime.sessionId).catch(() => undefined);
-          } else {
-            void closeSshSession(runtime.sessionId).catch(() => undefined);
-          }
+        disposed = true;
+        connectAttemptId += 1;
+        closeRuntimeSession();
+        runtime.reconnect = () => undefined;
+        if (paneRuntimeMapRef.current.get(paneId) === runtime) {
+          paneRuntimeMapRef.current.delete(paneId);
         }
-
-        runtime.socket = null;
-        runtime.sessionId = null;
-        runtime.sessionType = null;
         disposeTerminalInput.dispose();
         disposeSelectionChange.dispose();
         disposeSelectionScroll.dispose();
@@ -374,7 +456,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       };
     });
 
-    mirrorPaneRuntimeMapRef.current.forEach((runtime) => {
+    paneRuntimeMapRef.current.forEach((runtime) => {
       applyTerminalRuntimeOptions(runtime.terminal, terminalInitOptionsRef.current);
       try {
         runtime.fitAddon.fit();
@@ -390,18 +472,16 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     applyAutocompleteInputData,
     characterWidthCompatibilityModeEnabledRef,
     closeAutocompleteRef,
-    connectionState,
     handleAutocompleteTerminalKeyDownRef,
-    handleCompletionResponse,
+    handlePaneServerMessage,
     hardwareAccelerationStateRef,
-    mirrorPaneRuntimeMapRef,
+    paneRuntimeMapRef,
     isActive,
     openExternalLinkRef,
     paneContainerMapRef,
     refreshSelectionAnchor,
     requestHostFingerprintTrust,
     resolvedTerminalTargetRef,
-    scheduleAutocompleteRequestRef,
     scheduleFitAndResizeSyncRef,
     selectionPointerClientXRef,
     setActivePane,
@@ -412,33 +492,25 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     terminalPaneIds,
-    notifyAutocompleteOutputEchoRef,
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
+    recordPaneInputCommandMarker,
+    resetPaneState,
+    sessionTargetReady,
+    setPaneTransportState,
   ]);
 
   React.useEffect(() => {
-    // Keep mirror sessions alive while tab is inactive so split panes resume instantly.
-    if (connectionState === 'connected') {
-      return;
-    }
-
-    mirrorPaneRuntimeMapRef.current.forEach((runtime) => {
-      runtime.dispose();
-    });
-    mirrorPaneRuntimeMapRef.current.clear();
-  }, [connectionState, isActive, mirrorPaneRuntimeMapRef]);
-
-  React.useEffect(() => {
-    const mirrorRuntimeMap = mirrorPaneRuntimeMapRef.current;
+    const paneRuntimeMap = paneRuntimeMapRef.current;
 
     return () => {
-      mirrorRuntimeMap.forEach((runtime) => {
-        runtime.dispose();
+      paneRuntimeMap.forEach((runtime) => {
+        if (runtime.owner === 'secondary') {
+          runtime.dispose();
+        }
       });
-      mirrorRuntimeMap.clear();
     };
-  }, [mirrorPaneRuntimeMapRef]);
+  }, [paneRuntimeMapRef]);
 
   /**
    * Fits all mirror panes and synchronizes rows/cols with active sockets.
@@ -448,7 +520,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
   const fitAllTerminalPanes = React.useCallback(() => {
     scheduleFitAndResizeSyncRef.current?.();
 
-    mirrorPaneRuntimeMapRef.current.forEach((runtime) => {
+    paneRuntimeMapRef.current.forEach((runtime) => {
       try {
         runtime.fitAddon.fit();
         if (runtime.socket && runtime.socket.readyState === WebSocket.OPEN) {
@@ -462,7 +534,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         // Ignore fit race while host layout is transitioning.
       }
     });
-  }, [mirrorPaneRuntimeMapRef, scheduleFitAndResizeSyncRef]);
+  }, [paneRuntimeMapRef, scheduleFitAndResizeSyncRef]);
 
   React.useEffect(() => {
     const scheduleFitRefresh = (): void => {

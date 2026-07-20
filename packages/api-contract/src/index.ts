@@ -101,6 +101,26 @@ export {
 } from './terminal-interaction';
 export type { TerminalForceSelectionModifier, TerminalRightClickAction } from './terminal-interaction';
 export {
+  REMOTE_SHELL_CAPABILITIES,
+  REMOTE_SHELL_EVENT_NAMES,
+  REMOTE_SHELL_NAMES,
+  REMOTE_SHELL_PROTOCOL_VERSION,
+} from './terminal-protocol';
+export type {
+  RemoteBootstrapPhase,
+  RemoteBootstrapState,
+  RemoteBootstrapStatus,
+  RemoteEnhancementRuntimeStatus,
+  RemoteShellCapability,
+  RemoteShellEventMessage,
+  RemoteShellEventName,
+  RemoteShellName,
+  SshTerminalServerMessage,
+  TerminalClientMessage,
+  TerminalCompletionItem,
+  TerminalServerMessage,
+} from './terminal-protocol';
+export {
   DEFAULT_TERMINAL_INLINE_IMAGE_OPTIONS,
   MAX_TERMINAL_INLINE_IMAGE_PIXEL_LIMIT,
   MAX_TERMINAL_INLINE_IMAGE_SEQUENCE_LIMIT,

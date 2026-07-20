@@ -1,31 +1,29 @@
 import { Buffer } from 'node:buffer';
 
+import {
+  REMOTE_SHELL_CAPABILITIES,
+  REMOTE_SHELL_PROTOCOL_VERSION,
+  type RemoteBootstrapPhase,
+  type RemoteBootstrapState,
+  type RemoteBootstrapStatus,
+  type RemoteShellCapability,
+} from '@cosmosh/api-contract';
+
 import type { AuditEventService } from '../audit/service.js';
 
-/** Phase names emitted by the remote bootstrap side-channel. */
-export type RemoteBootstrapPhase = 'probe' | 'manifest' | 'download' | 'install' | 'verify';
-/** State names emitted by the remote bootstrap side-channel. */
-export type RemoteBootstrapState = 'started' | 'ok' | 'skipped' | 'failed';
-
-/** WebSocket status payload forwarded to the renderer for remote bootstrap progress. */
-export type RemoteBootstrapStatus = {
-  type: 'bootstrap-status';
-  phase: RemoteBootstrapPhase;
-  state: RemoteBootstrapState;
-  version?: string;
-  code?: string;
-  message?: string;
+export {
+  REMOTE_SHELL_PROTOCOL_VERSION,
+  type RemoteBootstrapPhase,
+  type RemoteBootstrapState,
+  type RemoteBootstrapStatus,
 };
-
-/** OSC contract version understood by the backend runtime gate. */
-export const REMOTE_SHELL_PROTOCOL_VERSION = 1;
 
 /** Runtime identity returned only after bootstrap installation has been validated. */
 export type RemoteBootstrapRuntimeContract = {
   shell: RemoteBootstrapProbe['shell'];
   helperVersion: string;
   protocolVersion: number;
-  capabilities: string[];
+  capabilities: RemoteShellCapability[];
 };
 
 /** Result used by SSH session creation to enable or disable helper event consumption. */
@@ -63,7 +61,7 @@ type RemoteBootstrapInstalledStatus = {
   installed: boolean;
   version: string;
   protocolVersion: number;
-  capabilities: string[];
+  capabilities: RemoteShellCapability[];
   helperCurrent: boolean;
   profileCurrent: boolean;
   binarySha256: string;
@@ -73,7 +71,13 @@ type RemoteBootstrapServiceOptions = {
   auditEventService: AuditEventService;
   manifestUrl?: string;
   fetchManifest?: (url: string, signal?: AbortSignal) => Promise<unknown>;
+  manifestCacheTtlMs?: number;
+  now?: () => number;
 };
+
+type RemoteBootstrapManifestLoadOutcome =
+  | { state: 'ready'; manifest: RemoteBootstrapManifest }
+  | { state: 'failed'; code: 'MANIFEST_FETCH_FAILED' | 'MANIFEST_INVALID'; message: string };
 
 /** Session identity and live sink shared by status delivery and audit persistence. */
 type RemoteBootstrapStatusContext = {
@@ -91,11 +95,12 @@ type RunForSessionOptions = RemoteBootstrapStatusContext & {
 const REMOTE_BOOTSTRAP_COMMAND_TIMEOUT_MS = 60_000;
 const REMOTE_BOOTSTRAP_OUTPUT_MAX_BYTES = 256 * 1024;
 const REMOTE_BOOTSTRAP_MANIFEST_TIMEOUT_MS = 10_000;
+const REMOTE_BOOTSTRAP_MANIFEST_CACHE_TTL_MS = 5 * 60_000;
 const REMOTE_BOOTSTRAP_SUPPORTED_SHELLS = new Set(['ash', 'bash', 'fish', 'sh', 'zsh']);
 const REMOTE_BOOTSTRAP_SHA256_PATTERN = /^[a-f0-9]{64}$/;
 const REMOTE_BOOTSTRAP_VERSION_PATTERN = /^[A-Za-z0-9._+-]+$/;
-const REMOTE_BOOTSTRAP_CAPABILITY_PATTERN = /^[a-z0-9-]+$/;
 const REMOTE_BOOTSTRAP_MAX_CAPABILITIES = 32;
+const REMOTE_BOOTSTRAP_CAPABILITY_SET = new Set<RemoteShellCapability>(REMOTE_SHELL_CAPABILITIES);
 
 const PROBE_COMMAND =
   ' sh -lc \'os=$(uname -s 2>/dev/null | tr "[:upper:]" "[:lower:]"); arch=$(uname -m 2>/dev/null); shell_name=$(basename "${SHELL:-sh}"); case "$arch" in x86_64|amd64) arch=amd64;; aarch64|arm64) arch=arm64;; *) arch=unsupported;; esac; case "$shell_name" in zsh|fish|bash|ash|sh) shell="$shell_name";; *) shell=unsupported;; esac; printf "{\\"os\\":\\"%s\\",\\"arch\\":\\"%s\\",\\"shell\\":\\"%s\\"}\\n" "$os" "$arch" "$shell"\'';
@@ -110,10 +115,20 @@ export class RemoteBootstrapService {
 
   private readonly fetchManifest: (url: string, signal?: AbortSignal) => Promise<unknown>;
 
+  private readonly manifestCacheTtlMs: number;
+
+  private readonly now: () => number;
+
+  private manifestCache: { expiresAt: number; manifest: RemoteBootstrapManifest } | null = null;
+
+  private manifestLoadPromise: Promise<RemoteBootstrapManifestLoadOutcome> | null = null;
+
   public constructor(options: RemoteBootstrapServiceOptions) {
     this.auditEventService = options.auditEventService;
     this.manifestUrl = options.manifestUrl;
     this.fetchManifest = options.fetchManifest ?? defaultFetchManifest;
+    this.manifestCacheTtlMs = Math.max(0, options.manifestCacheTtlMs ?? REMOTE_BOOTSTRAP_MANIFEST_CACHE_TTL_MS);
+    this.now = options.now ?? Date.now;
   }
 
   /**
@@ -269,25 +284,84 @@ export class RemoteBootstrapService {
     }
 
     emit({ type: 'bootstrap-status', phase: 'manifest', state: 'started', message: 'loading bootstrap manifest' });
-    let loaded: unknown;
-    try {
-      loaded = await this.fetchManifest(this.manifestUrl, signal);
-    } catch (error: unknown) {
-      throwIfSignalAborted(signal);
-      const message = error instanceof Error ? error.message : 'manifest request failed';
-      emit(this.failed('manifest', 'MANIFEST_FETCH_FAILED', message));
-      return null;
-    }
+    const outcome = await awaitWithAbortSignal(this.loadSharedManifest(), signal);
     throwIfSignalAborted(signal);
-
-    const manifest = parseManifest(loaded);
-    if (!manifest) {
-      emit(this.failed('manifest', 'MANIFEST_INVALID', 'remote bootstrap manifest is invalid'));
+    if (outcome.state === 'failed') {
+      emit(this.failed('manifest', outcome.code, outcome.message));
       return null;
     }
 
+    const manifest = outcome.manifest;
     emit({ type: 'bootstrap-status', phase: 'manifest', state: 'ok', version: manifest.version });
     return manifest;
+  }
+
+  /**
+   * Loads one validated manifest through a success-only TTL cache and shared in-flight request.
+   *
+   * The underlying request intentionally has its own bounded timeout instead of inheriting one
+   * session's signal. A cancelled session stops waiting without cancelling other sessions that
+   * are awaiting the same deployment metadata.
+   *
+   * @returns Shared validated manifest outcome.
+   */
+  private loadSharedManifest(): Promise<RemoteBootstrapManifestLoadOutcome> {
+    const now = this.now();
+    if (this.manifestCache && this.manifestCache.expiresAt > now) {
+      return Promise.resolve({ state: 'ready', manifest: this.manifestCache.manifest });
+    }
+
+    if (this.manifestLoadPromise) {
+      return this.manifestLoadPromise;
+    }
+
+    const manifestUrl = this.manifestUrl;
+    if (!manifestUrl) {
+      return Promise.resolve({
+        state: 'failed',
+        code: 'MANIFEST_FETCH_FAILED',
+        message: 'remote bootstrap manifest URL is not configured',
+      });
+    }
+
+    const pendingLoad = (async (): Promise<RemoteBootstrapManifestLoadOutcome> => {
+      let loaded: unknown;
+      try {
+        loaded = await this.fetchManifest(manifestUrl);
+      } catch (error: unknown) {
+        return {
+          state: 'failed',
+          code: 'MANIFEST_FETCH_FAILED',
+          message: error instanceof Error ? error.message : 'manifest request failed',
+        };
+      }
+
+      const manifest = parseManifest(loaded);
+      if (!manifest) {
+        return {
+          state: 'failed',
+          code: 'MANIFEST_INVALID',
+          message: 'remote bootstrap manifest is invalid',
+        };
+      }
+
+      if (this.manifestCacheTtlMs > 0) {
+        this.manifestCache = {
+          expiresAt: this.now() + this.manifestCacheTtlMs,
+          manifest,
+        };
+      }
+      return { state: 'ready', manifest };
+    })();
+
+    this.manifestLoadPromise = pendingLoad;
+    const clearPendingLoad = (): void => {
+      if (this.manifestLoadPromise === pendingLoad) {
+        this.manifestLoadPromise = null;
+      }
+    };
+    void pendingLoad.then(clearPendingLoad, clearPendingLoad);
+    return pendingLoad;
   }
 
   private forwardStatuses(
@@ -373,6 +447,39 @@ const throwIfSignalAborted = (signal?: AbortSignal): void => {
   }
 
   throw new Error('Remote bootstrap was cancelled.');
+};
+
+/**
+ * Stops one session from waiting on shared manifest I/O without cancelling other waiters.
+ *
+ * @param operation Shared bounded manifest operation.
+ * @param signal Optional session cancellation signal.
+ * @returns Operation result when it resolves before session cancellation.
+ */
+const awaitWithAbortSignal = async <T>(operation: Promise<T>, signal?: AbortSignal): Promise<T> => {
+  if (!signal) {
+    return await operation;
+  }
+  throwIfSignalAborted(signal);
+
+  return await new Promise<T>((resolve, reject) => {
+    const handleAbort = (): void => {
+      signal.removeEventListener('abort', handleAbort);
+      reject(signal.reason instanceof Error ? signal.reason : new Error('Remote bootstrap was cancelled.'));
+    };
+
+    signal.addEventListener('abort', handleAbort, { once: true });
+    operation.then(
+      (value) => {
+        signal.removeEventListener('abort', handleAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener('abort', handleAbort);
+        reject(error);
+      },
+    );
+  });
 };
 
 const parseProbe = (output: string): RemoteBootstrapProbe | null => {
@@ -491,16 +598,16 @@ const parseInstalledStatus = (output: string | null): RemoteBootstrapInstalledSt
     return null;
   }
 
-  const capabilities: string[] = [];
+  const capabilities: RemoteShellCapability[] = [];
   for (const capability of parsed.capabilities) {
     if (
       typeof capability !== 'string' ||
-      !REMOTE_BOOTSTRAP_CAPABILITY_PATTERN.test(capability) ||
-      capabilities.includes(capability)
+      !REMOTE_BOOTSTRAP_CAPABILITY_SET.has(capability as RemoteShellCapability) ||
+      capabilities.includes(capability as RemoteShellCapability)
     ) {
       return null;
     }
-    capabilities.push(capability);
+    capabilities.push(capability as RemoteShellCapability);
   }
 
   return {

@@ -1,5 +1,7 @@
 import { DEFAULT_TERMINAL_RIGHT_CLICK_ACTION, type TerminalRightClickAction } from '@cosmosh/api-contract';
 import {
+  ArrowDown,
+  ArrowUp,
   Bug,
   ClipboardPaste,
   Copy,
@@ -52,6 +54,10 @@ type TerminalContextMenuProps = {
   clearTerminalLabel: string;
   /** Optional shortcut hint shown on the "Clear Terminal" menu item. */
   clearTerminalShortcutLabel?: string;
+  /** Label for scrolling to the previous command marker. */
+  previousCommandLabel: string;
+  /** Label for scrolling to the next command marker. */
+  nextCommandLabel: string;
   /** Label for the "Split Terminal" menu item. */
   splitTerminalLabel?: string;
   /** Label for the "Close Terminal" menu item. */
@@ -64,6 +70,8 @@ type TerminalContextMenuProps = {
   canCloseTerminal?: boolean;
   /** Whether the selected text can be opened as a remote SFTP directory. */
   canOpenDirectoryInSftp?: boolean;
+  /** Whether the source pane has retained command markers. */
+  canNavigateCommands?: boolean;
   /** Action executed by terminal right-click gestures. */
   rightClickAction?: TerminalRightClickAction;
   onCopy: () => void;
@@ -79,6 +87,8 @@ type TerminalContextMenuProps = {
   onFind: () => void;
   onSelectAll: () => void;
   onClearTerminal: () => void;
+  onPreviousCommand: () => void;
+  onNextCommand: () => void;
   onSplitTerminal?: () => void;
   onCloseTerminal?: () => void;
   onToggleRemoteEnhancementsDebug?: () => void;
@@ -100,12 +110,15 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   selectAllLabel,
   clearTerminalLabel,
   clearTerminalShortcutLabel,
+  previousCommandLabel,
+  nextCommandLabel,
   splitTerminalLabel,
   closeTerminalLabel,
   remoteEnhancementsDebugLabel,
   canSplitTerminal = false,
   canCloseTerminal = false,
   canOpenDirectoryInSftp = false,
+  canNavigateCommands = false,
   rightClickAction = DEFAULT_TERMINAL_RIGHT_CLICK_ACTION,
   onCopy,
   onCopyAsHtml,
@@ -115,6 +128,8 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
   onFind,
   onSelectAll,
   onClearTerminal,
+  onPreviousCommand,
+  onNextCommand,
   onSplitTerminal,
   onCloseTerminal,
   onToggleRemoteEnhancementsDebug,
@@ -340,6 +355,22 @@ const TerminalContextMenu: React.FC<TerminalContextMenuProps> = ({
         >
           {clearTerminalLabel}
           {clearTerminalShortcutLabel ? <ContextMenuShortcut>{clearTerminalShortcutLabel}</ContextMenuShortcut> : null}
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          icon={ArrowUp}
+          disabled={!isConnected || !canNavigateCommands}
+          onSelect={onPreviousCommand}
+        >
+          {previousCommandLabel}
+        </ContextMenuItem>
+
+        <ContextMenuItem
+          icon={ArrowDown}
+          disabled={!isConnected || !canNavigateCommands}
+          onSelect={onNextCommand}
+        >
+          {nextCommandLabel}
         </ContextMenuItem>
 
         {splitTerminalLabel && onSplitTerminal ? (

@@ -1,6 +1,6 @@
 import type { ITerminalOptions, Terminal } from '@xterm/xterm';
 
-import type { ClientOutboundMessage, TerminalSelectionSettings } from './ssh-types';
+import type { ClientOutboundMessage, TerminalPaneRuntime, TerminalSelectionSettings } from './ssh-types';
 
 const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngine'], string>> = {
   google: 'https://www.google.com/search?q=',
@@ -41,6 +41,14 @@ export type TerminalPasteSafetySettings = {
   warnOnControlCharactersPaste: boolean;
 };
 
+export type TerminalPaneActivationReconnectInput = {
+  owner: 'primary' | 'secondary';
+  connectionState: 'connecting' | 'connected' | 'failed';
+  socketReadyState: number | null;
+  isFirstActivation: boolean;
+  reconnectOnFocus: boolean;
+};
+
 type PromptBoundaryToken = {
   value: string;
   start: number;
@@ -58,6 +66,61 @@ type AutocompleteCommandPrefixResolveOptions = {
  * Detects common password/passphrase prompt endings in terminal output.
  */
 export const SECRET_PROMPT_PATTERN = /(password(?: for [^:]+)?:|passphrase(?: for [^:]+)?:)\s*$/i;
+
+/**
+ * Determines whether a pane should open a new session when its tab becomes active.
+ *
+ * The first activation starts a deferred primary session independently of the reconnect
+ * preference. Later activations only recover failed panes when the preference allows it.
+ * Sockets that are already connecting or open always retain ownership of their attempt.
+ *
+ * @param input Pane ownership, transport state, and activation context.
+ * @returns `true` when the pane runtime should invoke its reconnect operation.
+ */
+export const shouldReconnectTerminalPaneOnActivation = (input: TerminalPaneActivationReconnectInput): boolean => {
+  if (input.socketReadyState === WebSocket.CONNECTING || input.socketReadyState === WebSocket.OPEN) {
+    return false;
+  }
+
+  if (input.isFirstActivation) {
+    return input.owner === 'primary';
+  }
+
+  return input.reconnectOnFocus && input.connectionState === 'failed';
+};
+
+/**
+ * Reconciles secondary pane runtimes only when the active layout has a stable target.
+ *
+ * A primary retry temporarily clears target readiness, so that transition must preserve
+ * sibling runtimes. Once readiness returns, only panes removed from the layout are disposed.
+ *
+ * @param runtimeMap Pane-indexed runtime resources shared by primary and secondary panes.
+ * @param input Current layout ids and lifecycle gates.
+ * @returns Nothing.
+ */
+export const reconcileSecondaryPaneRuntimes = <TRuntime extends Pick<TerminalPaneRuntime, 'owner' | 'dispose'>>(
+  runtimeMap: Map<string, TRuntime>,
+  input: {
+    desiredPaneIds: readonly string[];
+    isActive: boolean;
+    sessionTargetReady: boolean;
+  },
+): void => {
+  if (!input.isActive || !input.sessionTargetReady) {
+    return;
+  }
+
+  const desiredPaneIds = new Set(input.desiredPaneIds);
+  runtimeMap.forEach((runtime, paneId) => {
+    if (runtime.owner === 'primary' || desiredPaneIds.has(paneId)) {
+      return;
+    }
+
+    runtime.dispose();
+    runtimeMap.delete(paneId);
+  });
+};
 
 /**
  * Formats pasted text for a compact safety-dialog preview.
@@ -604,6 +667,28 @@ export const resolveAutocompleteCommandPrefix = (
 };
 
 /**
+ * Calibrates a reconstructed completion prefix with trusted shell cursor metadata.
+ *
+ * The helper never sends command text. Calibration is therefore applied only when
+ * renderer reconstruction has the exact helper-reported line length; otherwise the
+ * existing conservative prefix remains unchanged.
+ *
+ * @param commandPrefix Reconstructed command buffer candidate.
+ * @param lineState Optional helper-reported line length and cursor index.
+ * @returns Prefix ending at the trusted cursor when lengths agree.
+ */
+export const calibrateAutocompleteCommandPrefix = (
+  commandPrefix: string,
+  lineState: { lineLength: number; cursorIndex: number } | null,
+): string => {
+  if (!lineState || commandPrefix.length !== lineState.lineLength) {
+    return commandPrefix;
+  }
+
+  return commandPrefix.slice(0, lineState.cursorIndex);
+};
+
+/**
  * Locates where user command starts in a shell prompt line.
  *
  * @param linePrefix Visible content before cursor on current line.
@@ -835,12 +920,14 @@ const safeDecodePathComponent = (value: string): string => {
  *
  * This parser intentionally accepts only explicit POSIX-like directory strings:
  * absolute paths, home-relative paths, and dot-relative paths. Bare relative
- * names are excluded because SSH terminal cwd is not shared with SFTP sessions.
+ * names are excluded. Dot-relative paths are resolved only when the source pane
+ * has reported a trusted absolute cwd through Remote Enhancements.
  *
  * @param text Raw terminal selection text.
+ * @param trustedCwd Optional helper-reported cwd for the source pane.
  * @returns Normalized path candidate or `null` when selection is not a safe directory path.
  */
-export const resolveSftpDirectoryPathFromSelection = (text: string): string | null => {
+export const resolveSftpDirectoryPathFromSelection = (text: string, trustedCwd?: string | null): string | null => {
   const firstLine = text
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -859,7 +946,64 @@ export const resolveSftpDirectoryPathFromSelection = (text: string): string | nu
     return null;
   }
 
+  if (
+    trustedCwd?.startsWith('/') &&
+    (withoutTrailingSlash === '.' ||
+      withoutTrailingSlash === '..' ||
+      withoutTrailingSlash.startsWith('./') ||
+      withoutTrailingSlash.startsWith('../'))
+  ) {
+    const segments = `${trustedCwd}/${withoutTrailingSlash}`.split('/');
+    const normalizedSegments: string[] = [];
+    segments.forEach((segment) => {
+      if (!segment || segment === '.') {
+        return;
+      }
+
+      if (segment === '..') {
+        normalizedSegments.pop();
+        return;
+      }
+
+      normalizedSegments.push(segment);
+    });
+
+    return `/${normalizedSegments.join('/')}`;
+  }
+
   return withoutTrailingSlash || null;
+};
+
+/**
+ * Resolves a deterministic pane collection and active pane after one close request.
+ *
+ * @param paneIds Ordered visible pane ids.
+ * @param activePaneId Currently active pane id.
+ * @param closingPaneId Pane requested for closure.
+ * @returns Next pane state, or `null` when closure is not allowed.
+ */
+export const resolveTerminalPaneCloseTransition = (
+  paneIds: readonly string[],
+  activePaneId: string,
+  closingPaneId: string,
+): { paneIds: string[]; activePaneId: string } | null => {
+  if (paneIds.length <= 1) {
+    return null;
+  }
+
+  const closingIndex = paneIds.indexOf(closingPaneId);
+  if (closingIndex < 0) {
+    return null;
+  }
+
+  const nextPaneIds = paneIds.filter((paneId) => paneId !== closingPaneId);
+  return {
+    paneIds: nextPaneIds,
+    activePaneId:
+      activePaneId === closingPaneId
+        ? (nextPaneIds[Math.max(0, closingIndex - 1)] ?? nextPaneIds[0] ?? activePaneId)
+        : activePaneId,
+  };
 };
 
 /**

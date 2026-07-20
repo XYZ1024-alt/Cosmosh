@@ -54,6 +54,7 @@ Development and packaging intentionally use different native targets. The Main a
 - Windows-specific termination (`SIGBREAK`) is handled in the same path as POSIX signals to reduce stale DB lock cases.
 - Local terminal profile discovery now uses short-lived in-memory caching and parallel probing, reducing repeated profile scan latency on Home/Settings first-load paths.
 - After the primary SSH transport authenticates and before it opens the interactive PTY, `SshSessionService` runs the Remote Enhancements ensure flow through `RemoteBootstrapService` when global and server-level gates allow it. Remote commands use a lazily opened temporary SSH transport with the same credential, host-trust, compression, and proxy policy; graceful teardown of that transport begins before the primary calls `shell()`. The primary transport therefore never opens a bootstrap `exec` channel, preserving server login messages while still allowing a newly installed profile hook to load in the first interactive shell. Backend owns manifest loading, remote probing, installed-status validation, conditional download orchestration, status forwarding, runtime event gating, and audit logging; `packages/remote-bootstrap` owns the downloaded user-scoped Go installer plus the generated helper's protocol/capability contract. The manifest URL comes from `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` first, then the packaged CI resource when present, then the development-only `remote-bootstrap-dev` default for unpackaged runs. Tagged release packages point to a versioned release manifest; `main` packages point to the fixed `remote-bootstrap-dev` prerelease manifest; pushed branches whose name contains `remote-bootstrap` can point to branch-scoped temporary prerelease manifests for end-to-end CI testing. A current installed contract skips asset download; an ensure failure starts temporary-transport teardown, disables enhancement data for that session, and does not prevent the already-authenticated primary transport from opening an ordinary shell.
+- `RemoteBootstrapService` shares concurrent manifest loads and caches only validated successes for five minutes. Session cancellation stops one waiter without aborting the shared request; failed loads remain immediately retryable.
 - Startup includes idempotent Prisma migration-file execution in `initializeDatabase(...)`, so first install launch and every subsequent launch both converge local DB structure to the current backend schema contract before serving HTTP routes.
 - Production constructs Prisma with `PrismaSqlCipherAdapterFactory`; the factory loads the `better-sqlite3-multiple-ciphers` native binding into Prisma's better-sqlite3 adapter and applies the database key before exposing the connection. Schema migrations and business queries therefore share one keyed SQLCipher connection path.
 - A canonical plaintext SQLite header triggers a one-time copy/rekey/verify/replace migration. Unknown or wrong-key files fail without plaintext fallback, and fixed migration artifacts allow interrupted rename windows to recover on the next startup.
@@ -69,9 +70,9 @@ Development and packaging intentionally use different native targets. The Main a
 - Non-home renderer pages, including SSH and the CodeMirror-backed settings editor, are lazy-loaded to keep heavyweight assets out of the default startup path.
 - Renderer bootstrap hydrates settings from local cache first, then refreshes canonical values from backend in background.
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
-- SSH page uses tab-scoped connection intent snapshots (no global mutable target singleton), so retry/split flows are isolated per tab.
-- Hidden tabs are rendered but cannot start new SSH connect side effects; connect flow is active-tab gated.
-- Renderer consumes backend `bootstrap-status`, `remote-enhancement-runtime-status`, and trusted `remote-shell-event` messages for Remote Enhancements observability, but SSH sidebar does not render a dedicated Remote Enhancements card in v1.
+- SSH page uses tab-scoped connection intent snapshots and pane-scoped runtimes. Every primary/secondary pane owns its xterm, WebSocket/session, transport state, telemetry, completion state, Remote Enhancements state, debug history, and command markers; all inbound messages use one pane-aware reducer.
+- Hidden tabs cannot start new SSH connect side effects. On reactivation, the optional reconnect-on-focus path evaluates every failed pane independently, while the first activation always starts a deferred primary pane. Retrying or reconnecting one pane preserves all sibling pane runtimes.
+- Renderer consumes backend `bootstrap-status`, `remote-enhancement-runtime-status`, and trusted protocol-v2 `remote-shell-event` messages per pane. Debug visibility is controlled by `remoteEnhancementsDebugEnabled`, and the overlay always reflects its source/active pane.
 
 ## 3. IPC Lifecycle (Current)
 
@@ -182,8 +183,8 @@ sequenceDiagram
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
 - SSH sessions ensure the user-scoped Remote Enhancements runtime after primary transport authentication and before PTY creation when Settings `remoteEnhancementsEnabled`, the server record `remoteEnhancementsEnabled`, and a manifest URL allow it. The first remote command lazily opens a separate bootstrap transport; all probe/install/status `exec` channels stay there, and its teardown begins before `shell()` becomes the primary transport's first session channel. This optional pre-shell path has a shared 15-second budget across settings, manifest I/O, bootstrap transport/proxy connection, and exec work. Expiry cancels active work, destroys the temporary client, and opens an ordinary PTY with code `BOOTSTRAP_ENSURE_TIMEOUT`. Disabled gates emit `REMOTE_ENHANCEMENTS_DISABLED`; missing manifest configuration remains an explicit failed bootstrap status before any bootstrap transport or remote probe is opened. The installed Go binary is queried first; matching version, manifest asset SHA-256, protocol, helper, and profile state skips download, while missing or legacy status triggers reinstall and post-install verification. Tagged release installers, `main` build artifacts, and opted-in remote-bootstrap branch builds can provide the default manifest URL through the packaged `remote-bootstrap/manifest-url.json` resource, while `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` remains the explicit override. Unpackaged development runs use `remote-bootstrap-dev` when neither override nor packaged resource is present. Ordinary PR and branch builds do not package a default manifest URL. The Go installer writes only remote user XDG/home files and shell profile hooks; see `packages/remote-bootstrap/README.md` for the module contract.
 
-- Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption. Missing the deadline yields `HELPER_HANDSHAKE_TIMEOUT`. Every OSC event must match the pre-shell helper version, protocol version, shell, and capability set. Manifest/install/settings failure, legacy events without contract fields, a missing handshake, or a runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored.
-- Renderer keeps the latest backend runtime status independently from its bounded 200-entry diagnostic history, so long sessions retain authoritative current diagnostics after older events are evicted.
+- Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption. Protocol-v2 events must match the pre-shell shell/version/capability contract and their capability-specific required fields. Manifest/install/settings failure, a missing handshake, or any runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored and trusted renderer cwd/line calibration is cleared.
+- Renderer keeps current backend runtime state independently from a bounded 200-entry diagnostic history for each pane. Structured command lifecycle events drive backend count/history refresh and pane-local xterm command markers; raw Enter parsing remains the fallback when the helper capability is unavailable.
 - SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With, resolves the PowerShell primary route and rundll32/shell32 fallback independently from the kernel-owned `GLOBALROOT\SystemRoot\System32` namespace instead of inherited environment/PATH/CWD values, and enriches the primary child environment through Windows known-folder APIs. A blocked or unavailable PowerShell route cannot prevent the validated rundll32 fallback from running with a kernel-anchored minimal environment. Packaged macOS runs accept only the compiled NSWorkspace helper under `process.resourcesPath`; repository binary/source fallbacks are development-only and unavailable when `app.isPackaged` is true. Linux omits Open With.
@@ -208,7 +209,7 @@ sequenceDiagram
 - Renderer bootstrap (`packages/renderer/src/main.tsx`) applies persisted language/theme using cached settings at startup, then synchronizes with backend.
 - Renderer date-time display uses persisted time-zone/date/time format settings through `packages/renderer/src/lib/date-time-format.ts`; `system` preserves the OS time zone, and the Settings UI lists runtime-supported IANA time zones with their current UTC offsets.
 - Renderer terminal character width compatibility is stored as `terminalCharacterWidthCompatibilityModeEnabled`; SSH server records can opt out per server with `disableCharacterWidthCompatibilityMode`, while local terminal sessions only follow the global setting.
-- Remote Enhancements use both a global Settings gate `remoteEnhancementsEnabled` and a per-server `SshServer.remoteEnhancementsEnabled` field. Defaults are true so the manifest URL remains the deployment-level on/off switch until users explicitly disable either gate.
+- Remote Enhancements use `global setting && persisted SshServer field && request override !== false`. The request override can only narrow access and cannot re-enable a server disabled in current backend state. `remoteEnhancementsDebugEnabled` independently controls pane-specific diagnostics and does not enable the remote runtime.
 - Non-visual settings (for example SSH runtime limits) are persisted and discoverable, but some are intentionally not bound to runtime behavior yet.
 - All setting definitions (types, defaults, constraints, enum sets, JSON schemas, UI metadata, categories) live in a single registry: `packages/api-contract/src/settings-registry.ts`. Adding or removing a setting only requires editing this file (plus i18n locale files).
 - Validation logic in `packages/api-contract/src/settings.ts` is now generic and registry-driven for common scalar rules (type check, enum, range, maxLength), with narrow custom validators for settings that need runtime checks or structured JSON normalization such as IANA time-zone support and the SFTP directory-list view.
@@ -274,13 +275,17 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  XT[xterm.js] --> IN[input events]
-  IN --> WS[WebSocket]
+  XT[Active pane xterm.js] --> IN[pane input events]
+  IN --> WS[Pane WebSocket]
   WS --> SVC[Backend session runtime]
   SVC --> REM[Remote shell / PTY]
-  REM --> OUT[stdout + stderr]
-  OUT --> WS2[WebSocket output events]
-  WS2 --> XT2[xterm.js write]
+  REM --> PARSER[OSC 777 streaming parser]
+  PARSER --> OUT[Visible stdout + stderr]
+  PARSER --> GATE[Contract and trust gate]
+  OUT --> WS2[Pane WebSocket messages]
+  GATE --> WS2
+  WS2 --> REDUCER[Pane runtime and reducer]
+  REDUCER --> XT2[xterm write, completion, markers, diagnostics]
 ```
 
 ### 6.3 SFTP Transfer Progress Data Flow

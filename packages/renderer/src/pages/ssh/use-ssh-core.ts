@@ -7,20 +7,36 @@ import type { TerminalAutocompleteMenuHandle } from '../../components/terminal/t
 import { t } from '../../lib/i18n';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
 import {
-  DEFAULT_TELEMETRY_STATE,
+  applyRemoteCommandMarkerEvent,
+  navigateTerminalCommandMarker,
+  recordFallbackCommandMarker,
+} from './ssh-command-markers';
+import {
+  createSshPaneState,
+  reduceSshPaneState,
+  type SshPaneStateAction,
+  type SshPaneStateMap,
+} from './ssh-pane-state';
+import {
   type HostFingerprintPrompt,
   MAX_TERMINAL_PANES,
-  type MirrorPaneRuntime,
   type RemoteBootstrapStatus,
   type RemoteEnhancementRuntimeStatus,
   type RemoteEnhancementsDebugEvent,
   type ResolvedTerminalTarget,
+  type ServerInboundMessage,
   type SshTelemetryState,
   type TerminalAutocompleteAnchor,
+  type TerminalPaneRuntime,
   type TerminalSelectionAnchor,
   type TerminalSelectionBarPosition,
 } from './ssh-types';
-import { sendClientMessage } from './ssh-utils';
+import {
+  resolveTerminalPaneCloseTransition,
+  SECRET_PROMPT_PATTERN,
+  sendClientMessage,
+  shouldReconnectTerminalPaneOnActivation,
+} from './ssh-utils';
 import {
   disposeTerminalWebglAddon,
   syncTerminalWebglAddon,
@@ -81,10 +97,9 @@ class SshRuntimeCoordinator {
   public activeContainer: HTMLDivElement | null = null;
   public resolvedTarget: ResolvedTerminalTarget | null = null;
   public scheduleFitAndResizeSync: (() => void) | null = null;
-  public connectSession: (() => void) | null = null;
   public selectionPointerClientX: number | null = null;
   public readonly paneContainerMap: Map<string, HTMLDivElement> = new Map();
-  public readonly mirrorPaneRuntimeMap: Map<string, MirrorPaneRuntime> = new Map();
+  public readonly paneRuntimeMap: Map<string, TerminalPaneRuntime> = new Map();
   public readonly sessionMap: Map<string, PaneSessionRuntime> = new Map();
 
   /**
@@ -125,9 +140,7 @@ class SshRuntimeCoordinator {
     this.activeSocket = session.socket;
     this.activeContainer = session.container;
 
-    if (session.container) {
-      terminalContainerRef.current = session.container;
-    }
+    terminalContainerRef.current = session.container;
   }
 }
 
@@ -210,6 +223,8 @@ export type SshCoreState = {
   remoteBootstrapStatus: RemoteBootstrapStatus | null;
   remoteEnhancementRuntimeStatus: RemoteEnhancementRuntimeStatus | null;
   remoteEnhancementsDebugEvents: RemoteEnhancementsDebugEvent[];
+  trustedCwd: string | null;
+  canNavigateCommands: boolean;
   hostFingerprintPrompt: HostFingerprintPrompt | null;
   canSplitTerminal: boolean;
   selectionAnchor: TerminalSelectionAnchor | null;
@@ -301,6 +316,13 @@ export type SshCoreActions = {
    */
   clearTerminalScreen: () => void;
   /**
+   * Scrolls the active terminal to a retained command marker.
+   *
+   * @param direction Previous or next command relative to the viewport.
+   * @returns Nothing.
+   */
+  navigateToCommand: (direction: 'previous' | 'next') => void;
+  /**
    * Runs active-pane terminal text search and updates the highlighted match.
    *
    * @param query Search text.
@@ -386,6 +408,26 @@ export type UseSshCoreResult = {
  * @returns Declarative SSH page model (state + actions + required DOM refs).
  */
 export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
+  /**
+   * Reads the latest trusted line-state calibration for one pane.
+   *
+   * @param paneId Source pane id.
+   * @returns Latest line-state metadata, or `null` when unsupported/stale.
+   */
+  const getPaneLineState = React.useCallback((paneId: string) => {
+    return paneStateMapRef.current[paneId]?.lineState ?? null;
+  }, []);
+
+  /**
+   * Reads the latest helper-reported working directory for one pane.
+   *
+   * @param paneId Source pane id.
+   * @returns Trusted absolute cwd, or `null` before a cwd event is received.
+   */
+  const getPaneTrustedCwd = React.useCallback((paneId: string): string | null => {
+    return paneStateMapRef.current[paneId]?.trustedCwd ?? null;
+  }, []);
+
   const {
     tabId,
     isActive,
@@ -502,9 +544,9 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     (runtime) => runtime.paneContainerMap,
     () => undefined,
   );
-  const mirrorPaneRuntimeMapRef = useRuntimeFieldRef(
+  const paneRuntimeMapRef = useRuntimeFieldRef(
     runtimeRef,
-    (runtime) => runtime.mirrorPaneRuntimeMap,
+    (runtime) => runtime.paneRuntimeMap,
     () => undefined,
   );
   const scheduleFitAndResizeSyncRef = useRuntimeFieldRef(
@@ -512,13 +554,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     (runtime) => runtime.scheduleFitAndResizeSync,
     (runtime, value) => {
       runtime.scheduleFitAndResizeSync = value;
-    },
-  );
-  const connectSessionRef = useRuntimeFieldRef(
-    runtimeRef,
-    (runtime) => runtime.connectSession,
-    (runtime, value) => {
-      runtime.connectSession = value;
     },
   );
   const selectionPointerClientXRef = useRuntimeFieldRef(
@@ -532,6 +567,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const characterWidthCompatibilityModeEnabledRef = React.useRef<boolean>(characterWidthCompatibilityModeEnabled);
   const sshConnectionTimeoutSecRef = React.useRef<number>(sshConnectionTimeoutSec);
   const sshReconnectOnFocusRef = React.useRef<boolean>(sshReconnectOnFocus);
+  const wasActiveRef = React.useRef<boolean>(isActive);
+  const hasEverBeenActiveRef = React.useRef<boolean>(isActive);
   const terminalInlineImageSettingsRef = React.useRef<TerminalInlineImageSettings>(terminalInlineImageSettings);
   const terminalWebLinksSettingsRef = React.useRef<TerminalWebLinksSettings>(terminalWebLinksSettings);
   const openExternalLinkRef = React.useRef<TerminalExternalLinkHandler>(openExternalLink);
@@ -543,16 +580,36 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
 
   const [terminalPaneIds, setTerminalPaneIds] = React.useState<string[]>(['pane-1']);
   const [activePaneId, setActivePaneId] = React.useState<string>('pane-1');
-  const [connectionState, setConnectionState] = React.useState<SshConnectionState>('connecting');
-  const [connectionError, setConnectionError] = React.useState<string>('');
-  const [telemetryState, setTelemetryState] = React.useState<SshTelemetryState>(DEFAULT_TELEMETRY_STATE);
-  const [remoteBootstrapStatus, setRemoteBootstrapStatus] = React.useState<RemoteBootstrapStatus | null>(null);
-  const [remoteEnhancementRuntimeStatus, setRemoteEnhancementRuntimeStatus] =
-    React.useState<RemoteEnhancementRuntimeStatus | null>(null);
-  const [remoteEnhancementsDebugEvents, setRemoteEnhancementsDebugEvents] = React.useState<
-    RemoteEnhancementsDebugEvent[]
-  >([]);
+  const [paneStateMap, dispatchPaneStateReducer] = React.useReducer(reduceSshPaneState, {
+    'pane-1': createSshPaneState(),
+  });
+  const paneStateMapRef = React.useRef<SshPaneStateMap>(paneStateMap);
+  const [sessionTargetReady, setSessionTargetReady] = React.useState<boolean>(false);
+  const [, setCommandMarkerRevision] = React.useState<number>(0);
   const [hostFingerprintPrompt, setHostFingerprintPrompt] = React.useState<HostFingerprintPrompt | null>(null);
+  const activePaneState = paneStateMap[activePaneId] ?? createSshPaneState();
+  const connectionState = activePaneState.connectionState;
+  const connectionError = activePaneState.connectionError;
+  const telemetryState = activePaneState.telemetryState;
+  const remoteBootstrapStatus: RemoteBootstrapStatus | null = activePaneState.remoteBootstrapStatus;
+  const remoteEnhancementRuntimeStatus: RemoteEnhancementRuntimeStatus | null =
+    activePaneState.remoteEnhancementRuntimeStatus;
+  const remoteEnhancementsDebugEvents: RemoteEnhancementsDebugEvent[] = activePaneState.remoteEnhancementsDebugEvents;
+
+  /**
+   * Dispatches pane state synchronously to the imperative routing ref and React reducer.
+   *
+   * @param action Pane lifecycle or inbound-message action.
+   * @returns Nothing.
+   */
+  const dispatchPaneState = React.useCallback((action: SshPaneStateAction): void => {
+    paneStateMapRef.current = reduceSshPaneState(paneStateMapRef.current, action);
+    dispatchPaneStateReducer(action);
+  }, []);
+
+  React.useEffect(() => {
+    paneStateMapRef.current = paneStateMap;
+  }, [paneStateMap]);
 
   React.useEffect(() => {
     onTabTitleChangeRef.current = onTabTitleChange;
@@ -565,6 +622,18 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   React.useEffect(() => {
     activePaneIdRef.current = activePaneId;
   }, [activePaneId, activePaneIdRef]);
+
+  React.useEffect(() => {
+    terminalPaneIds.forEach((paneId) => {
+      dispatchPaneState({ type: 'ensure-pane', paneId });
+    });
+
+    Object.keys(paneStateMapRef.current).forEach((paneId) => {
+      if (!terminalPaneIds.includes(paneId)) {
+        dispatchPaneState({ type: 'remove-pane', paneId });
+      }
+    });
+  }, [dispatchPaneState, terminalPaneIds]);
 
   React.useEffect(() => {
     terminalInitOptionsRef.current = terminalInitOptions;
@@ -601,8 +670,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     }
 
     accelerationState.hasShownContextLossWarning = true;
-    disposeTerminalWebglAddon(runtimeRef.current.primaryWebglAddonRuntime);
-    runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+    runtimeRef.current.paneRuntimeMap.forEach((runtime) => {
       disposeTerminalWebglAddon(runtime);
     });
     notifyWarning(t('ssh.terminalHardwareAccelerationDisabled'));
@@ -619,8 +687,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     }
 
     if (!terminalHardwareAccelerationEnabled) {
-      disposeTerminalWebglAddon(runtimeRef.current.primaryWebglAddonRuntime);
-      runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+      runtimeRef.current.paneRuntimeMap.forEach((runtime) => {
         disposeTerminalWebglAddon(runtime);
       });
       return;
@@ -630,17 +697,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       return;
     }
 
-    const primaryTerminal = runtimeRef.current.primaryTerminal;
-    if (primaryTerminal) {
-      syncTerminalWebglAddon(
-        primaryTerminal,
-        runtimeRef.current.primaryWebglAddonRuntime,
-        accelerationState,
-        notifyHardwareAccelerationContextLoss,
-      );
-    }
-
-    runtimeRef.current.mirrorPaneRuntimeMap.forEach((runtime) => {
+    runtimeRef.current.paneRuntimeMap.forEach((runtime) => {
       syncTerminalWebglAddon(runtime.terminal, runtime, accelerationState, notifyHardwareAccelerationContextLoss);
     });
   }, [notifyHardwareAccelerationContextLoss, terminalHardwareAccelerationEnabled]);
@@ -671,13 +728,121 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     wrapperRef,
     terminalContainerRef,
     terminalRef,
-    socketRef,
-    primaryPaneIdRef,
     activePaneIdRef,
-    primarySocketRef,
-    primaryTerminalRef,
-    mirrorPaneRuntimeMapRef,
+    paneRuntimeMapRef,
+    getPaneLineState,
+    getPaneTrustedCwd,
   });
+
+  /**
+   * Applies one pane transport transition to the shared reducer.
+   *
+   * @param paneId Source pane id.
+   * @param nextState Next transport state.
+   * @param error Optional localized failure reason.
+   * @returns Nothing.
+   */
+  const setPaneTransportState = React.useCallback(
+    (paneId: string, nextState: SshConnectionState, error = ''): void => {
+      dispatchPaneState({
+        type: 'transport-state',
+        paneId,
+        connectionState: nextState,
+        connectionError: error,
+      });
+    },
+    [dispatchPaneState],
+  );
+
+  /**
+   * Resets all declarative state for one new pane connection attempt.
+   *
+   * @param paneId Source pane id.
+   * @returns Nothing.
+   */
+  const resetPaneState = React.useCallback(
+    (paneId: string): void => {
+      dispatchPaneState({ type: 'reset-pane', paneId });
+    },
+    [dispatchPaneState],
+  );
+
+  /**
+   * Routes every valid Backend message through one pane-aware side-effect and state path.
+   *
+   * @param paneId Source pane id.
+   * @param terminal Source pane xterm instance.
+   * @param payload Validated Backend-to-Renderer terminal message.
+   * @returns Nothing.
+   */
+  const handlePaneServerMessage = React.useCallback(
+    (paneId: string, terminal: Terminal, payload: ServerInboundMessage): void => {
+      if (payload.type === 'output') {
+        terminal.write(payload.data);
+        notifyAutocompleteOutputEchoRef.current(paneId);
+        if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
+          scheduleAutocompleteRequestRef.current(paneId, 'secretPrompt');
+        }
+        return;
+      }
+
+      if (payload.type === 'completion-response') {
+        handleCompletionResponse(payload, paneId);
+        return;
+      }
+
+      const receivedAt = Date.now();
+      if (payload.type === 'remote-shell-event') {
+        const paneRuntime = paneRuntimeMapRef.current.get(paneId);
+        if (paneRuntime && applyRemoteCommandMarkerEvent(paneRuntime, payload, receivedAt)) {
+          setCommandMarkerRevision((previous) => previous + 1);
+        }
+      }
+
+      dispatchPaneState({
+        type: 'server-message',
+        paneId,
+        payload,
+        receivedAt,
+      });
+    },
+    [
+      dispatchPaneState,
+      handleCompletionResponse,
+      notifyAutocompleteOutputEchoRef,
+      paneRuntimeMapRef,
+      scheduleAutocompleteRequestRef,
+    ],
+  );
+
+  /**
+   * Adds a local marker only when the trusted helper cannot provide command-start events.
+   *
+   * @param paneId Source pane id.
+   * @param inputData Raw xterm input chunk.
+   * @returns Nothing.
+   */
+  const recordPaneInputCommandMarker = React.useCallback(
+    (paneId: string, inputData: string): void => {
+      if (!/\r|\n/u.test(inputData)) {
+        return;
+      }
+
+      const paneState = paneStateMapRef.current[paneId];
+      const hasStructuredCommandStart =
+        paneState?.remoteEnhancementRuntimeStatus?.state === 'active' &&
+        paneState.remoteEnhancementRuntimeStatus.capabilities?.includes('command-start');
+      if (hasStructuredCommandStart) {
+        return;
+      }
+
+      const paneRuntime = paneRuntimeMapRef.current.get(paneId);
+      if (paneRuntime && recordFallbackCommandMarker(paneRuntime, Date.now())) {
+        setCommandMarkerRevision((previous) => previous + 1);
+      }
+    },
+    [paneRuntimeMapRef],
+  );
 
   const {
     selectionAnchor,
@@ -716,15 +881,11 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       runtime.activePaneId = paneId;
       setActivePaneId(paneId);
 
-      const mirrorRuntime = runtime.mirrorPaneRuntimeMap.get(paneId);
+      const paneRuntime = runtime.paneRuntimeMap.get(paneId);
       const paneSession = runtime.ensureSession(paneId);
       paneSession.isPrimary = paneId === runtime.primaryPaneId;
-      paneSession.terminal = paneSession.isPrimary
-        ? runtime.primaryTerminal
-        : (mirrorRuntime?.terminal ?? paneSession.terminal);
-      paneSession.socket = paneSession.isPrimary
-        ? runtime.primarySocket
-        : (mirrorRuntime?.socket ?? paneSession.socket);
+      paneSession.terminal = paneRuntime ? paneRuntime.terminal : paneSession.terminal;
+      paneSession.socket = paneRuntime ? paneRuntime.socket : paneSession.socket;
       paneSession.container = runtime.paneContainerMap.get(paneId) ?? paneSession.container;
       runtime.applyActivePane(paneId, terminalContainerRef);
 
@@ -738,11 +899,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   );
 
   React.useEffect(() => {
-    const nextPrimaryPaneId = terminalPaneIds[0] ?? 'pane-1';
-    primaryPaneIdRef.current = nextPrimaryPaneId;
-
     if (!terminalPaneIds.includes(activePaneIdRef.current)) {
-      activatePane(nextPrimaryPaneId);
+      activatePane(terminalPaneIds[0] ?? primaryPaneIdRef.current);
     }
   }, [activatePane, activePaneIdRef, primaryPaneIdRef, terminalPaneIds]);
 
@@ -764,6 +922,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
 
       runtime.paneContainerMap.set(paneId, element);
       runtime.ensureSession(paneId).container = element;
+      if (runtime.activePaneId === paneId) {
+        terminalContainerRef.current = element;
+        runtime.activeContainer = element;
+      }
       return;
     }
 
@@ -773,6 +935,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
 
     runtime.paneContainerMap.delete(paneId);
     runtime.ensureSession(paneId).container = null;
+    if (runtime.activePaneId === paneId && terminalContainerRef.current === existingElement) {
+      terminalContainerRef.current = null;
+      runtime.activeContainer = null;
+    }
   }, []);
 
   /**
@@ -783,6 +949,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
    */
   const setPrimaryPaneContainer = React.useCallback((element: HTMLDivElement | null) => {
     const runtime = runtimeRef.current;
+    if (runtime.paneRuntimeMap.get(runtime.primaryPaneId)?.owner !== 'primary') {
+      return;
+    }
+
     runtime.ensureSession(runtime.primaryPaneId).container = element;
 
     if (runtime.activePaneId === runtime.primaryPaneId) {
@@ -815,30 +985,24 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
    */
   const closePane = React.useCallback(
     (paneId: string) => {
-      setTerminalPaneIds((previous) => {
-        if (previous.length <= 1) {
-          return previous;
-        }
+      const transition = resolveTerminalPaneCloseTransition(terminalPaneIds, activePaneIdRef.current, paneId);
+      if (!transition) {
+        return;
+      }
 
-        const index = previous.indexOf(paneId);
-        if (index < 0) {
-          return previous;
-        }
+      if (activePaneIdRef.current === paneId) {
+        activatePane(transition.activePaneId);
+      }
 
-        const next = previous.filter((item) => item !== paneId);
-        if (next.length === 0) {
-          return previous;
-        }
-
-        if (activePaneIdRef.current === paneId) {
-          const nextPaneId = next[Math.max(0, index - 1)] ?? next[0] ?? primaryPaneIdRef.current;
-          activatePane(nextPaneId);
-        }
-
-        return next;
-      });
+      const paneRuntime = runtimeRef.current.paneRuntimeMap.get(paneId);
+      paneRuntime?.dispose();
+      runtimeRef.current.paneRuntimeMap.delete(paneId);
+      runtimeRef.current.sessionMap.delete(paneId);
+      dispatchPaneState({ type: 'remove-pane', paneId });
+      closeAutocompleteRef.current();
+      setTerminalPaneIds(transition.paneIds);
     },
-    [activatePane, activePaneIdRef, primaryPaneIdRef],
+    [activatePane, activePaneIdRef, closeAutocompleteRef, dispatchPaneState, terminalPaneIds],
   );
 
   /**
@@ -892,49 +1056,44 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
+    paneRuntimeMapRef,
     primarySocketRef,
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
-    sshReconnectOnFocusRef,
     terminalClipboardProvider,
     terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
-    connectSessionRef,
     selectionPointerClientXRef,
     onTabTitleChangeRef,
     onTabVisualChangeRef,
-    setConnectionState,
-    setConnectionError,
-    setTelemetryState,
-    setRemoteBootstrapStatus,
-    setRemoteEnhancementRuntimeStatus,
-    setRemoteEnhancementsDebugEvents,
+    resetPaneState,
+    setPaneTransportState,
+    setSessionTargetReady,
+    handlePaneServerMessage,
+    recordPaneInputCommandMarker,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     setActivePane: activatePane,
     refreshSelectionAnchor,
     onTerminalSelectionChange,
     clearSelectionOverlay,
     applyAutocompleteInputData,
-    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
-    scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
-    handleCompletionResponse,
     notifyHardwareAccelerationContextLoss,
   });
 
   useSshMirrorPanes({
     isActive,
-    connectionState,
+    sessionTargetReady,
     terminalPaneIds,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
     characterWidthCompatibilityModeEnabledRef,
     paneContainerMapRef,
-    mirrorPaneRuntimeMapRef,
+    paneRuntimeMapRef,
     selectionPointerClientXRef,
     activePaneIdRef,
     socketRef,
@@ -951,14 +1110,40 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     onTerminalSelectionChange,
     handleAutocompleteTerminalKeyDownRef,
     applyAutocompleteInputData,
-    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
-    scheduleAutocompleteRequestRef,
-    handleCompletionResponse,
+    resetPaneState,
+    setPaneTransportState,
+    handlePaneServerMessage,
+    recordPaneInputCommandMarker,
     requestHostFingerprintTrust: requestHostFingerprintTrust ?? requestHostFingerprintTrustInternal,
     notifyWarning,
     notifyHardwareAccelerationContextLoss,
   });
+
+  React.useEffect(() => {
+    const wasActive = wasActiveRef.current;
+    wasActiveRef.current = isActive;
+    if (!isActive || wasActive) {
+      return;
+    }
+
+    const isFirstActivation = !hasEverBeenActiveRef.current;
+    hasEverBeenActiveRef.current = true;
+    paneRuntimeMapRef.current.forEach((paneRuntime, paneId) => {
+      const connectionState = paneStateMapRef.current[paneId]?.connectionState ?? 'connecting';
+      if (
+        shouldReconnectTerminalPaneOnActivation({
+          owner: paneRuntime.owner,
+          connectionState,
+          socketReadyState: paneRuntime.socket?.readyState ?? null,
+          isFirstActivation,
+          reconnectOnFocus: sshReconnectOnFocusRef.current,
+        })
+      ) {
+        paneRuntime.reconnect();
+      }
+    });
+  }, [isActive, paneRuntimeMapRef, sshReconnectOnFocusRef]);
 
   React.useEffect(() => {
     const runtime = runtimeRef.current;
@@ -968,12 +1153,12 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     primarySession.socket = runtime.primarySocket;
     primarySession.container = runtime.paneContainerMap.get(runtime.primaryPaneId) ?? primarySession.container;
 
-    runtime.mirrorPaneRuntimeMap.forEach((mirrorRuntime, paneId) => {
+    runtime.paneRuntimeMap.forEach((paneRuntime, paneId) => {
       const session = runtime.ensureSession(paneId);
       session.isPrimary = paneId === runtime.primaryPaneId;
-      session.terminal = mirrorRuntime.terminal;
-      session.socket = mirrorRuntime.socket;
-      session.container = runtime.paneContainerMap.get(paneId) ?? mirrorRuntime.containerElement ?? session.container;
+      session.terminal = paneRuntime.terminal;
+      session.socket = paneRuntime.socket;
+      session.container = runtime.paneContainerMap.get(paneId) ?? paneRuntime.containerElement ?? session.container;
     });
 
     runtime.sessionMap.forEach((_, paneId) => {
@@ -995,8 +1180,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       return;
     }
 
-    connectSessionRef.current?.();
-  }, [connectSessionRef, connectionState]);
+    paneRuntimeMapRef.current.get(activePaneIdRef.current)?.reconnect();
+  }, [activePaneIdRef, connectionState, paneRuntimeMapRef]);
 
   /**
    * Sends input bytes to active pane websocket.
@@ -1015,10 +1200,11 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
         type: 'input',
         data,
       });
+      recordPaneInputCommandMarker(activePaneIdRef.current, data);
 
       return true;
     },
-    [socketRef],
+    [activePaneIdRef, recordPaneInputCommandMarker, socketRef],
   );
 
   /**
@@ -1106,10 +1292,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       return '';
     }
 
-    const serializeAddon =
-      activePaneIdRef.current === primaryPaneIdRef.current
-        ? primarySerializeAddonRef.current
-        : (mirrorPaneRuntimeMapRef.current.get(activePaneIdRef.current)?.serializeAddon ?? null);
+    const serializeAddon = paneRuntimeMapRef.current.get(activePaneIdRef.current)?.serializeAddon ?? null;
     if (!serializeAddon) {
       return '';
     }
@@ -1123,7 +1306,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       console.warn('Failed to serialize terminal selection as HTML.', error);
       return '';
     }
-  }, [activePaneIdRef, mirrorPaneRuntimeMapRef, primaryPaneIdRef, primarySerializeAddonRef, terminalRef]);
+  }, [activePaneIdRef, paneRuntimeMapRef, terminalRef]);
 
   /**
    * Focuses active terminal instance.
@@ -1144,23 +1327,31 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   }, [sendInput]);
 
   /**
+   * Reveals the nearest retained command marker in the active pane.
+   *
+   * @param direction Previous or next command relative to the viewport.
+   * @returns Nothing.
+   */
+  const navigateToCommand = React.useCallback(
+    (direction: 'previous' | 'next'): void => {
+      const paneRuntime = paneRuntimeMapRef.current.get(activePaneIdRef.current);
+      if (!paneRuntime) {
+        return;
+      }
+
+      navigateTerminalCommandMarker(paneRuntime, direction);
+    },
+    [activePaneIdRef, paneRuntimeMapRef],
+  );
+
+  /**
    * Resolves active-pane search resources from primary or mirror runtime state.
    *
    * @returns Active terminal/search-addon pair. Returns `null` when primary pane resources
    * are not mounted yet, or when the active mirror pane runtime is not created/ready.
    */
   const resolveActiveSearchResources = React.useCallback((): ActiveSearchResources | null => {
-    if (activePaneIdRef.current === primaryPaneIdRef.current) {
-      const addon = primarySearchAddonRef.current;
-      const terminal = primaryTerminalRef.current;
-      if (!addon || !terminal) {
-        return null;
-      }
-
-      return { addon, terminal };
-    }
-
-    const runtime = mirrorPaneRuntimeMapRef.current.get(activePaneIdRef.current);
+    const runtime = paneRuntimeMapRef.current.get(activePaneIdRef.current);
     if (!runtime) {
       return null;
     }
@@ -1169,7 +1360,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       addon: runtime.searchAddon,
       terminal: runtime.terminal,
     };
-  }, [activePaneIdRef, mirrorPaneRuntimeMapRef, primaryPaneIdRef, primarySearchAddonRef, primaryTerminalRef]);
+  }, [activePaneIdRef, paneRuntimeMapRef]);
 
   /**
    * Clears active-pane search decorations when search UI exits or query is empty.
@@ -1248,6 +1439,9 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       remoteBootstrapStatus,
       remoteEnhancementRuntimeStatus,
       remoteEnhancementsDebugEvents,
+      trustedCwd: activePaneState.trustedCwd,
+      canNavigateCommands:
+        paneRuntimeMapRef.current.get(activePaneId)?.commandMarkers.some((entry) => entry.marker.line >= 0) ?? false,
       hostFingerprintPrompt,
       canSplitTerminal: terminalPaneIds.length < MAX_TERMINAL_PANES,
       selectionAnchor,
@@ -1269,6 +1463,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
+      navigateToCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,
       setPaneContainerElement,

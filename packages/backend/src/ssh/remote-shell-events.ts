@@ -1,3 +1,15 @@
+import {
+  REMOTE_SHELL_CAPABILITIES,
+  REMOTE_SHELL_EVENT_NAMES,
+  REMOTE_SHELL_NAMES,
+  type RemoteShellCapability,
+  type RemoteShellEventMessage,
+  type RemoteShellEventName,
+  type RemoteShellName,
+} from '@cosmosh/api-contract';
+
+export type { RemoteShellEventMessage } from '@cosmosh/api-contract';
+
 export const REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES = 8 * 1024;
 
 const ESCAPE = '\u001b';
@@ -5,44 +17,15 @@ const BELL = '\u0007';
 const STRING_TERMINATOR = `${ESCAPE}\\`;
 const COSMOSH_OSC_PREFIX = `${ESCAPE}]777;cosmosh;`;
 
-const REMOTE_SHELL_EVENTS = new Set([
-  'integration-ready',
-  'prompt-ready',
-  'cwd',
-  'command-start',
-  'command-end',
-  'foreground-command',
-] as const);
-
-const REMOTE_SHELL_NAMES = new Set(['bash', 'zsh', 'fish', 'sh', 'ash'] as const);
+const REMOTE_SHELL_EVENT_SET = new Set<RemoteShellEventName>(REMOTE_SHELL_EVENT_NAMES);
+const REMOTE_SHELL_NAME_SET = new Set<RemoteShellName>(REMOTE_SHELL_NAMES);
+const REMOTE_SHELL_CAPABILITY_SET = new Set<RemoteShellCapability>(REMOTE_SHELL_CAPABILITIES);
 const REMOTE_SHELL_HELPER_VERSION_PATTERN = /^[A-Za-z0-9._+-]+$/;
-const REMOTE_SHELL_CAPABILITY_PATTERN = /^[a-z0-9-]+$/;
 const REMOTE_SHELL_CAPABILITY_MAX_COUNT = 32;
-
-export type RemoteShellEventName =
-  | 'integration-ready'
-  | 'prompt-ready'
-  | 'cwd'
-  | 'command-start'
-  | 'command-end'
-  | 'foreground-command';
-
-export type RemoteShellName = 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
-
-export type RemoteShellEventMessage = {
-  type: 'remote-shell-event';
-  event: RemoteShellEventName;
-  shell: RemoteShellName;
-  helperVersion: string;
-  protocolVersion: number;
-  capabilities: string[];
-  cwd?: string;
-  command?: string;
-  exitCode?: number;
-  durationMs?: number;
-  commandId?: string;
-  timestamp: number;
-};
+const REMOTE_SHELL_COMMAND_ID_PATTERN = /^[A-Za-z0-9._:-]+$/;
+const REMOTE_SHELL_CWD_MAX_BYTES = 4 * 1024;
+const REMOTE_SHELL_COMMAND_MAX_BYTES = 255;
+const REMOTE_SHELL_LINE_LENGTH_MAX = 1024 * 1024;
 
 type ParseResult = {
   output: string;
@@ -59,7 +42,11 @@ type ParseResult = {
 export class RemoteShellEventOscParser {
   private pendingEscape = false;
 
-  private pendingOsc: string | null = null;
+  private pendingOscPrefix: string | null = null;
+
+  private pendingCosmoshOsc: string | null = null;
+
+  private pendingCosmoshPayloadBytes = 0;
 
   private discardingOversizedCosmoshOsc = false;
 
@@ -83,8 +70,8 @@ export class RemoteShellEventOscParser {
         continue;
       }
 
-      if (this.pendingOsc !== null) {
-        const completedSequence = this.appendOscChar(char);
+      if (this.pendingCosmoshOsc !== null) {
+        const completedSequence = this.appendCosmoshOscChar(char);
         if (completedSequence === null) {
           continue;
         }
@@ -95,10 +82,21 @@ export class RemoteShellEventOscParser {
         continue;
       }
 
+      if (this.pendingOscPrefix !== null) {
+        const prefixResult = this.appendOscPrefixChar(char);
+        output += prefixResult.output;
+        if (prefixResult.completedSequence) {
+          const parsed = this.parseCompletedOsc(prefixResult.completedSequence);
+          output += parsed.output;
+          events.push(...parsed.events);
+        }
+        continue;
+      }
+
       if (this.pendingEscape) {
         this.pendingEscape = false;
         if (char === ']') {
-          this.pendingOsc = `${ESCAPE}]`;
+          this.pendingOscPrefix = `${ESCAPE}]`;
           continue;
         }
 
@@ -133,9 +131,15 @@ export class RemoteShellEventOscParser {
       this.pendingEscape = false;
     }
 
-    if (this.pendingOsc !== null) {
-      output += this.pendingOsc;
-      this.pendingOsc = null;
+    if (this.pendingOscPrefix !== null) {
+      output += this.pendingOscPrefix;
+      this.pendingOscPrefix = null;
+    }
+
+    if (this.pendingCosmoshOsc !== null) {
+      output += this.pendingCosmoshOsc;
+      this.pendingCosmoshOsc = null;
+      this.pendingCosmoshPayloadBytes = 0;
     }
 
     this.discardingOversizedCosmoshOsc = false;
@@ -150,21 +154,57 @@ export class RemoteShellEventOscParser {
    * @param char Next character in the SSH output stream.
    * @returns Completed sequence, or null while waiting for a terminator.
    */
-  private appendOscChar(char: string): string | null {
-    if (this.pendingOsc === null) {
+  private appendOscPrefixChar(char: string): { output: string; completedSequence: string | null } {
+    if (this.pendingOscPrefix === null) {
+      return { output: '', completedSequence: null };
+    }
+
+    this.pendingOscPrefix += char;
+    const candidate = this.pendingOscPrefix;
+
+    if (candidate.endsWith(BELL) || candidate.endsWith(STRING_TERMINATOR)) {
+      this.pendingOscPrefix = null;
+      return { output: '', completedSequence: candidate };
+    }
+
+    if (candidate === COSMOSH_OSC_PREFIX) {
+      this.pendingOscPrefix = null;
+      this.pendingCosmoshOsc = candidate;
+      this.pendingCosmoshPayloadBytes = 0;
+      return { output: '', completedSequence: null };
+    }
+
+    if (COSMOSH_OSC_PREFIX.startsWith(candidate)) {
+      return { output: '', completedSequence: null };
+    }
+
+    this.pendingOscPrefix = null;
+    return { output: candidate, completedSequence: null };
+  }
+
+  /**
+   * Appends one character to a confirmed Cosmosh OSC sequence.
+   *
+   * @param char Next character from the SSH output stream.
+   * @returns Completed sequence, or null while collecting/discarding it.
+   */
+  private appendCosmoshOscChar(char: string): string | null {
+    if (this.pendingCosmoshOsc === null) {
       return null;
     }
 
-    this.pendingOsc += char;
-
-    if (this.pendingOsc.endsWith(BELL) || this.pendingOsc.endsWith(STRING_TERMINATOR)) {
-      const completed = this.pendingOsc;
-      this.pendingOsc = null;
+    this.pendingCosmoshOsc += char;
+    if (this.pendingCosmoshOsc.endsWith(BELL) || this.pendingCosmoshOsc.endsWith(STRING_TERMINATOR)) {
+      const completed = this.pendingCosmoshOsc;
+      this.pendingCosmoshOsc = null;
+      this.pendingCosmoshPayloadBytes = 0;
       return completed;
     }
 
-    if (this.isOversizedCosmoshOsc(this.pendingOsc)) {
-      this.pendingOsc = null;
+    this.pendingCosmoshPayloadBytes += Buffer.byteLength(char, 'utf8');
+    if (this.pendingCosmoshPayloadBytes > REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES) {
+      this.pendingCosmoshOsc = null;
+      this.pendingCosmoshPayloadBytes = 0;
       this.discardingOversizedCosmoshOsc = true;
     }
 
@@ -218,19 +258,6 @@ export class RemoteShellEventOscParser {
       events: event ? [event] : [],
     };
   }
-
-  /**
-   * Checks whether a pending Cosmosh OSC has exceeded the event payload cap.
-   *
-   * @param sequence Pending OSC sequence.
-   * @returns True when the parser should stop buffering and discard to terminator.
-   */
-  private isOversizedCosmoshOsc(sequence: string): boolean {
-    return (
-      sequence.startsWith(COSMOSH_OSC_PREFIX) &&
-      Buffer.byteLength(sequence.slice(COSMOSH_OSC_PREFIX.length), 'utf8') > REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES
-    );
-  }
 }
 
 /**
@@ -270,11 +297,11 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
   const protocolVersion = value.protocolVersion;
   const timestamp = value.timestamp;
 
-  if (typeof event !== 'string' || !REMOTE_SHELL_EVENTS.has(event as RemoteShellEventName)) {
+  if (typeof event !== 'string' || !REMOTE_SHELL_EVENT_SET.has(event as RemoteShellEventName)) {
     return null;
   }
 
-  if (typeof shell !== 'string' || !REMOTE_SHELL_NAMES.has(shell as RemoteShellName)) {
+  if (typeof shell !== 'string' || !REMOTE_SHELL_NAME_SET.has(shell as RemoteShellName)) {
     return null;
   }
 
@@ -293,41 +320,74 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
     return null;
   }
 
-  if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
+  if (typeof timestamp !== 'number' || !Number.isSafeInteger(timestamp) || timestamp < 0) {
     return null;
   }
 
-  const message: RemoteShellEventMessage = {
+  const base = {
     type: 'remote-shell-event',
-    event: event as RemoteShellEventName,
     shell: shell as RemoteShellName,
     helperVersion,
     protocolVersion,
     capabilities,
     timestamp,
-  };
+  } as const;
+  const eventName = event as RemoteShellEventName;
 
-  if (typeof value.cwd === 'string' && value.cwd.length > 0 && value.cwd.length <= 4096) {
-    message.cwd = value.cwd;
+  if (eventName === 'integration-ready') {
+    return { ...base, event: eventName };
   }
 
-  if (typeof value.command === 'string' && value.command.length > 0 && value.command.length <= 4096) {
-    message.command = value.command;
+  if (!capabilities.includes(eventName)) {
+    return null;
   }
 
-  if (typeof value.exitCode === 'number' && Number.isInteger(value.exitCode)) {
-    message.exitCode = value.exitCode;
+  if (eventName === 'prompt-ready') {
+    const promptGeneration = normalizeBoundedInteger(value.promptGeneration, 0, Number.MAX_SAFE_INTEGER);
+    if (capabilities.includes('line-state') && promptGeneration === null) {
+      return null;
+    }
+
+    return promptGeneration === null ? { ...base, event: eventName } : { ...base, event: eventName, promptGeneration };
   }
 
-  if (typeof value.durationMs === 'number' && Number.isFinite(value.durationMs) && value.durationMs >= 0) {
-    message.durationMs = Math.round(value.durationMs);
+  if (eventName === 'cwd') {
+    const cwd = decodeBoundedBase64Utf8(value.cwdBase64, REMOTE_SHELL_CWD_MAX_BYTES);
+    if (!cwd || !cwd.startsWith('/') || cwd.includes('\u0000')) {
+      return null;
+    }
+
+    return { ...base, event: eventName, cwd };
   }
 
-  if (typeof value.commandId === 'string' && value.commandId.length > 0 && value.commandId.length <= 128) {
-    message.commandId = value.commandId;
+  if (eventName === 'line-state') {
+    const lineLength = normalizeBoundedInteger(value.lineLength, 0, REMOTE_SHELL_LINE_LENGTH_MAX);
+    const cursorIndex = normalizeBoundedInteger(value.cursorIndex, 0, REMOTE_SHELL_LINE_LENGTH_MAX);
+    const promptGeneration = normalizeBoundedInteger(value.promptGeneration, 0, Number.MAX_SAFE_INTEGER);
+    if (lineLength === null || cursorIndex === null || promptGeneration === null || cursorIndex > lineLength) {
+      return null;
+    }
+
+    return { ...base, event: eventName, lineLength, cursorIndex, promptGeneration };
   }
 
-  return message;
+  const command = decodeBoundedBase64Utf8(value.commandBase64, REMOTE_SHELL_COMMAND_MAX_BYTES);
+  const commandId = normalizeCommandId(value.commandId);
+  if (!command || containsAsciiControlCharacter(command) || !commandId) {
+    return null;
+  }
+
+  if (eventName === 'command-start' || eventName === 'foreground-command') {
+    return { ...base, event: eventName, command, commandId };
+  }
+
+  const exitCode = normalizeBoundedInteger(value.exitCode, 0, 255);
+  const durationMs = normalizeBoundedInteger(value.durationMs, 0, Number.MAX_SAFE_INTEGER);
+  if (exitCode === null || durationMs === null) {
+    return null;
+  }
+
+  return { ...base, event: eventName, command, commandId, exitCode, durationMs };
 };
 
 /**
@@ -336,24 +396,103 @@ export const normalizeRemoteShellEvent = (value: unknown): RemoteShellEventMessa
  * @param value Unknown capabilities payload.
  * @returns Normalized capabilities, or null when malformed.
  */
-const normalizeCapabilities = (value: unknown): string[] | null => {
+const normalizeCapabilities = (value: unknown): RemoteShellCapability[] | null => {
   if (!Array.isArray(value) || value.length === 0 || value.length > REMOTE_SHELL_CAPABILITY_MAX_COUNT) {
     return null;
   }
 
-  const capabilities: string[] = [];
+  const capabilities: RemoteShellCapability[] = [];
   for (const capability of value) {
     if (
       typeof capability !== 'string' ||
-      !REMOTE_SHELL_CAPABILITY_PATTERN.test(capability) ||
-      capabilities.includes(capability)
+      !REMOTE_SHELL_CAPABILITY_SET.has(capability as RemoteShellCapability) ||
+      capabilities.includes(capability as RemoteShellCapability)
     ) {
       return null;
     }
-    capabilities.push(capability);
+    capabilities.push(capability as RemoteShellCapability);
   }
 
   return capabilities;
+};
+
+/**
+ * Decodes one canonical base64 field as bounded, valid UTF-8.
+ *
+ * Dynamic shell strings use base64 inside the JSON envelope so valid path control
+ * characters cannot corrupt the helper event syntax.
+ *
+ * @param value Unknown base64 field.
+ * @param maxBytes Maximum decoded UTF-8 bytes.
+ * @returns Decoded string, or null when malformed or oversized.
+ */
+const decodeBoundedBase64Utf8 = (value: unknown, maxBytes: number): string | null => {
+  if (typeof value !== 'string' || value.length === 0 || value.length > Math.ceil(maxBytes / 3) * 4 + 4) {
+    return null;
+  }
+
+  try {
+    const decodedBytes = Buffer.from(value, 'base64');
+    if (decodedBytes.length === 0 || decodedBytes.length > maxBytes || decodedBytes.toString('base64') !== value) {
+      return null;
+    }
+
+    return new TextDecoder('utf-8', { fatal: true }).decode(decodedBytes);
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Validates a command lifecycle identifier without accepting arbitrary payload data.
+ *
+ * @param value Unknown command identifier.
+ * @returns Valid identifier, or null when malformed.
+ */
+const normalizeCommandId = (value: unknown): string | null => {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > 128 ||
+    !REMOTE_SHELL_COMMAND_ID_PATTERN.test(value)
+  ) {
+    return null;
+  }
+
+  return value;
+};
+
+/**
+ * Detects ASCII control bytes that are forbidden in sanitized executable names.
+ *
+ * @param value Decoded helper command field.
+ * @returns True when the string contains C0 controls or DEL.
+ */
+const containsAsciiControlCharacter = (value: string): boolean => {
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    if (codePoint <= 0x1f || codePoint === 0x7f) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Narrows an unknown value to a finite integer inside an inclusive range.
+ *
+ * @param value Unknown numeric field.
+ * @param minimum Inclusive minimum.
+ * @param maximum Inclusive maximum.
+ * @returns Valid integer, or null when outside the contract.
+ */
+const normalizeBoundedInteger = (value: unknown, minimum: number, maximum: number): number | null => {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    return null;
+  }
+
+  return value;
 };
 
 /**

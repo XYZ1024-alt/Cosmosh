@@ -104,8 +104,9 @@ SSH 页面中的终端文本选区交互必须满足以下规则：
 - 分屏序列固定为高密度布局（1 → 2 → 3 → 4），以保持可预测的操作与扫描节奏。
 - 窗格分隔线必须使用 token 化分隔色，并保持比卡片边界更浅的对比度。
 - SSH 分屏分隔线应使用专用 token `color.ssh.terminal.split.divider`（Tailwind 类：`border-ssh-terminal-split-divider`），不要复用 Home/Card 通用分隔色。
-- 在技术可行时，分屏默认复用当前活动终端会话流，避免无必要地新增后端会话。
-- 每个窗格右键菜单都应提供关闭入口，但界面上至少保留一个可见窗格。
+- 每个分屏 pane 都是独立命令操作面，因此针对同一已解析目标分别持有 xterm、backend session、WebSocket、补全/状态与命令 marker。UI 动作与浮层必须通过明确 pane id 路由。
+- 每个 pane 右键菜单都应提供关闭入口，但界面上至少保留一个可见 pane。关闭任意 pane（包括原始 primary）必须保留其余 pane id 与运行时。
+- `上一条命令`/`下一条命令`只导航活动 pane 的 marker。仅当 `remoteEnhancementsDebugEnabled` 启用时显示`远端增强调试`，并且必须展示来源/活动 pane 数据，不得回退到 primary pane 数据。
 
 ## 7.2 Tab 重排运行时连续性
 

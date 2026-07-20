@@ -89,6 +89,7 @@ export interface SettingsValues {
   terminalSmoothScrollDuration: number;
   terminalTabStopWidth: number;
   remoteEnhancementsEnabled: boolean;
+  remoteEnhancementsDebugEnabled: boolean;
   devToolsEnabled: boolean;
   userMenuDebugEntryEnabled: boolean;
   autoSaveEnabled: boolean;
@@ -1013,6 +1014,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
       'sftp enhancement',
       'command completion',
     ],
+  },
+  {
+    key: 'remoteEnhancementsDebugEnabled',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.remoteEnhancementsDebugEnabled.title',
+    descriptionI18nKey: 'settings.items.remoteEnhancementsDebugEnabled.description',
+    category: SETTINGS_CATEGORIES.advanced,
+    section: SETTINGS_CATEGORIES.advanced.sections.runtime,
+    control: 'switch',
+    path: 'advanced.runtime.remoteEnhancements.debugEnabled',
+    commandActionId: 'settings.advanced.runtime.remoteEnhancements.debugEnabled.toggle',
+    searchTerms: ['remote enhancements debug', 'helper events', 'bootstrap diagnostics', 'shell integration debug'],
   },
   {
     key: 'devToolsEnabled',

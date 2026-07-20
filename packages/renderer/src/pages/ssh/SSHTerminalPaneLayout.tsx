@@ -6,6 +6,7 @@ import { TerminalContextMenu } from '../../components/terminal/terminal-context-
 import { t } from '../../lib/i18n';
 
 type PaneActionHandler = (paneId: string) => void;
+type PaneCommandNavigationHandler = (paneId: string, direction: 'previous' | 'next') => void;
 
 type SSHTerminalPaneLayoutProps = {
   terminalPaneIds: string[];
@@ -19,9 +20,12 @@ type SSHTerminalPaneLayoutProps = {
   openDirectoryInSftpLabel: string;
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
+  previousCommandLabel: string;
+  nextCommandLabel: string;
   rightClickAction: TerminalRightClickAction;
   remoteEnhancementsDebugLabel?: string;
   canOpenDirectoryInSftp: boolean;
+  canNavigateCommands: boolean;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
@@ -33,6 +37,7 @@ type SSHTerminalPaneLayoutProps = {
   onFind: PaneActionHandler;
   onSelectAll: PaneActionHandler;
   onClearTerminal: PaneActionHandler;
+  onNavigateCommand: PaneCommandNavigationHandler;
   onSplitPane: PaneActionHandler;
   onClosePane: PaneActionHandler;
   onToggleRemoteEnhancementsDebug?: PaneActionHandler;
@@ -56,9 +61,12 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.openDirectoryInSftpLabel Label for selection-based SFTP directory handoff action.
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
+ * @param props.previousCommandLabel Label for previous command navigation.
+ * @param props.nextCommandLabel Label for next command navigation.
  * @param props.rightClickAction Configured action for terminal right-click gestures.
  * @param props.remoteEnhancementsDebugLabel Optional label for the Remote Enhancements debug panel action.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
+ * @param props.canNavigateCommands Whether the source pane has retained command markers.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
@@ -70,6 +78,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.onFind Callback for find action.
  * @param props.onSelectAll Callback for select-all action.
  * @param props.onClearTerminal Callback for clear-screen action.
+ * @param props.onNavigateCommand Callback for previous/next command navigation.
  * @param props.onSplitPane Callback for split action.
  * @param props.onClosePane Callback for close-pane action.
  * @param props.onToggleRemoteEnhancementsDebug Optional callback for the Remote Enhancements debug panel toggle.
@@ -87,9 +96,12 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   openDirectoryInSftpLabel,
   findShortcutLabel,
   clearTerminalShortcutLabel,
+  previousCommandLabel,
+  nextCommandLabel,
   rightClickAction,
   remoteEnhancementsDebugLabel,
   canOpenDirectoryInSftp,
+  canNavigateCommands,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
@@ -101,6 +113,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   onFind,
   onSelectAll,
   onClearTerminal,
+  onNavigateCommand,
   onSplitPane,
   onClosePane,
   onToggleRemoteEnhancementsDebug,
@@ -123,12 +136,15 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           selectAllLabel={t('ssh.contextMenuSelectAll')}
           clearTerminalLabel={t('ssh.contextMenuClearTerminal')}
           clearTerminalShortcutLabel={clearTerminalShortcutLabel}
+          previousCommandLabel={previousCommandLabel}
+          nextCommandLabel={nextCommandLabel}
           splitTerminalLabel={t('ssh.contextMenuSplitTerminal')}
           closeTerminalLabel={t('ssh.contextMenuCloseTerminal')}
           remoteEnhancementsDebugLabel={remoteEnhancementsDebugLabel}
           canSplitTerminal={canSplitTerminal}
           canCloseTerminal={terminalPaneIds.length > 1}
           canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
+          canNavigateCommands={activePaneId === paneId && canNavigateCommands}
           rightClickAction={rightClickAction}
           onCopy={() => onCopy(paneId)}
           onCopyAsHtml={() => onCopyAsHtml(paneId)}
@@ -138,6 +154,8 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           onFind={() => onFind(paneId)}
           onSelectAll={() => onSelectAll(paneId)}
           onClearTerminal={() => onClearTerminal(paneId)}
+          onPreviousCommand={() => onNavigateCommand(paneId, 'previous')}
+          onNextCommand={() => onNavigateCommand(paneId, 'next')}
           onSplitTerminal={() => onSplitPane(paneId)}
           onCloseTerminal={() => onClosePane(paneId)}
           onToggleRemoteEnhancementsDebug={
@@ -161,46 +179,51 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   };
 
   const paneCount = terminalPaneIds.length;
-  const pane1Id = terminalPaneIds[0] ?? 'pane-1';
-  const pane2Id = terminalPaneIds[1] ?? 'pane-2';
-  const pane3Id = terminalPaneIds[2] ?? 'pane-3';
-  const pane4Id = terminalPaneIds[3] ?? 'pane-4';
+  const gridClassName =
+    paneCount === 1
+      ? 'grid-cols-1'
+      : paneCount === 2
+        ? 'grid-cols-2'
+        : paneCount === 3
+          ? 'grid-cols-3'
+          : 'grid-cols-3 grid-rows-2';
 
-  if (paneCount <= 2) {
-    return (
-      <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-2">
-        <div className={classNames('min-h-0', paneCount === 1 ? 'col-span-2' : '')}>
-          {renderTerminalPane(pane1Id, true)}
-        </div>
-        <div
-          className={classNames('min-h-0 border-l border-ssh-terminal-split-divider', paneCount < 2 ? 'hidden' : '')}
-        >
-          {paneCount >= 2 ? renderTerminalPane(pane2Id, false) : null}
-        </div>
-      </div>
-    );
-  }
+  /**
+   * Resolves stable grid placement without changing pane DOM ancestry.
+   *
+   * @param index Pane index in the fixed split progression.
+   * @returns Tokenized divider and grid placement classes.
+   */
+  const resolvePaneClassName = (index: number): string => {
+    if (paneCount < 4) {
+      return classNames('min-h-0 min-w-0', index > 0 && 'border-l border-ssh-terminal-split-divider');
+    }
 
-  if (paneCount === 3) {
-    return (
-      <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-3">
-        <div className="min-h-0">{renderTerminalPane(pane1Id, true)}</div>
-        <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane2Id, false)}</div>
-        <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane3Id, false)}</div>
-      </div>
-    );
-  }
+    if (index === 0) {
+      return 'row-span-2 min-h-0 min-w-0';
+    }
+
+    if (index === 1) {
+      return 'row-span-2 min-h-0 min-w-0 border-l border-ssh-terminal-split-divider';
+    }
+
+    if (index === 2) {
+      return 'col-start-3 row-start-1 min-h-0 min-w-0 border-l border-ssh-terminal-split-divider';
+    }
+
+    return 'col-start-3 row-start-2 min-h-0 min-w-0 border-l border-t border-ssh-terminal-split-divider';
+  };
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[1fr_1fr_1fr]">
-      <div className="min-h-0">{renderTerminalPane(pane1Id, true)}</div>
-      <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane2Id, false)}</div>
-      <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-ssh-terminal-split-divider">
-        <div className="min-h-0 flex-1">{renderTerminalPane(pane3Id, false)}</div>
-        <div className="min-h-0 flex-1 border-t border-ssh-terminal-split-divider">
-          {renderTerminalPane(pane4Id, false)}
+    <div className={classNames('grid h-full min-h-0 w-full min-w-0', gridClassName)}>
+      {terminalPaneIds.map((paneId, index) => (
+        <div
+          key={paneId}
+          className={resolvePaneClassName(index)}
+        >
+          {renderTerminalPane(paneId, index === 0)}
         </div>
-      </div>
+      ))}
     </div>
   );
 };
