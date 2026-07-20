@@ -407,7 +407,7 @@ const SSH: React.FC<SSHProps> = ({
       remoteEnhancementRuntimeStatus,
       remoteEnhancementsDebugEvents,
       trustedCwd,
-      canNavigateCommands,
+      commandTimelineModels,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -429,7 +429,8 @@ const SSH: React.FC<SSHProps> = ({
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
-      navigateToCommand,
+      navigatePaneCommand,
+      scrollToPaneCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,
       setPaneContainerElement,
@@ -1418,8 +1419,6 @@ const SSH: React.FC<SSHProps> = ({
           pasteShortcutLabel={terminalPasteShortcutLabel}
           findShortcutLabel={terminalFindShortcutLabel}
           clearTerminalShortcutLabel={terminalClearShortcutLabel}
-          previousCommandLabel={t('ssh.contextMenuPreviousCommand')}
-          nextCommandLabel={t('ssh.contextMenuNextCommand')}
           rightClickAction={terminalRightClickAction}
           remoteEnhancementsDebugLabel={
             canShowRemoteEnhancementsDebug ? remoteEnhancementsDebugContextMenuLabel : undefined
@@ -1427,7 +1426,7 @@ const SSH: React.FC<SSHProps> = ({
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
-          canNavigateCommands={canNavigateCommands}
+          commandTimelineModels={commandTimelineModels}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
@@ -1463,10 +1462,8 @@ const SSH: React.FC<SSHProps> = ({
             activatePane(paneId);
             handleContextMenuClearTerminal();
           }}
-          onNavigateCommand={(paneId, direction) => {
-            activatePane(paneId);
-            navigateToCommand(direction);
-          }}
+          onNavigateCommand={navigatePaneCommand}
+          onSelectCommand={scrollToPaneCommand}
           onSplitPane={(paneId) => {
             activatePane(paneId);
             splitPane();

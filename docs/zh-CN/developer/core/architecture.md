@@ -70,7 +70,7 @@ flowchart LR
 - 非 Home 的渲染页（包括 SSH 与基于 CodeMirror 的设置编辑器）采用懒加载，避免重型资源进入默认启动路径。
 - Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
-- SSH 页面使用 tab 作用域的连接意图快照与 pane 作用域的运行时。每个 primary/secondary pane 独立持有 xterm、WebSocket/session、transport 状态、telemetry、补全状态、远端增强状态、调试历史与命令 marker；所有 inbound message 统一经过 pane-aware reducer。
+- SSH 页面使用 tab 作用域的连接意图快照与 pane 作用域的运行时。每个 primary/secondary pane 独立持有 xterm、WebSocket/session、transport 状态、telemetry、补全状态、远端增强状态、调试历史与可信命令时间线 marker；所有 inbound message 统一经过 pane-aware reducer。时间线中的完整命令从 xterm 已渲染输入重建，并且只保存在对应 pane runtime 的内存中。
 - 隐藏 tab 不会启动新的 SSH 连接副作用。重新激活时，可选的切回重连路径会分别检查每个失败 pane；第一次激活始终启动延迟创建的 primary pane。重试或重连任一 pane 时，所有同级 pane runtime 都会保持存活。
 - Renderer 按 pane 消费 backend 的 `bootstrap-status`、`remote-enhancement-runtime-status` 与可信协议 v2 `remote-shell-event`。调试入口由 `remoteEnhancementsDebugEnabled` 控制，浮层始终展示其来源/活动 pane。
 
@@ -184,7 +184,7 @@ sequenceDiagram
 - 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 manifest URL 均允许时，SSH 会话会在主 transport 认证后、PTY 创建前 ensure 用户级远端增强运行时。第一次需要远端命令时才会懒创建独立 bootstrap transport；所有 probe/install/status `exec` channel 都只运行在该 transport，并在 `shell()` 成为主 transport 的第一个 session channel 前启动关闭。这个可选的 shell 打开前路径对设置读取、manifest I/O、bootstrap transport/proxy 建连和 exec 工作共享同一个 15 秒总预算。超时会取消活动工作、销毁临时 client，并以 `BOOTSTRAP_ENSURE_TIMEOUT` 打开普通 PTY。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置会在创建任何 bootstrap transport 或远端 probe 前作为明确失败状态上报。Backend 会先查询已安装 Go binary；version、manifest asset SHA-256、protocol、helper 与 profile 状态均匹配时跳过下载，状态缺失或属于旧格式时触发重装并在安装后复验。正式 tag release 安装包、`main` 构建产物以及显式启用发布路径的 remote-bootstrap 分支构建，可以通过 packaged `remote-bootstrap/manifest-url.json` 资源提供默认 manifest URL，而 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 仍是显式 override。未打包开发运行在没有 override 或 packaged resource 时使用 `remote-bootstrap-dev`。普通 PR 与分支构建默认不打入 manifest URL。Go 安装器只写入远端用户 XDG/home 文件与 shell profile hook；模块契约见 `packages/remote-bootstrap/README.md`。
 
 - 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费。协议 v2 事件必须匹配 shell/version/capability 契约及 capability 专属必填字段。Manifest/安装/设置失败、缺少握手或任何运行期不匹配都不会影响普通 SSH，但会忽略 helper 派生状态，并清除 renderer 的可信 cwd/line 校准。
-- Renderer 为每个 pane 分别保存当前 backend 运行状态与最多 200 条诊断历史。结构化命令生命周期驱动 backend 命令计数/history 刷新及 pane-local xterm command marker；helper capability 不可用时才回退到原始 Enter 解析。
+- Renderer 为每个 pane 分别保存当前 backend 运行状态与最多 200 条诊断历史。结构化命令生命周期驱动 backend 命令计数/history 刷新及 pane-local xterm 命令时间线。Backend 命令计数/history 刷新可以保留原始 Enter 解析作为降级路径，但 renderer 时间线没有本地 fallback：只有通过认证且处于 active 状态的 helper 声明 `command-start` 时才显示。
 - SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除与批量文件操作。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
 - SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；PowerShell 主路径与 rundll32/shell32 fallback 会分别从内核所有的 `GLOBALROOT\SystemRoot\System32` 命名空间解析，不信任继承的环境变量、PATH 或 CWD，主路径再通过 Windows known-folder API 补充子进程环境。PowerShell 被阻止或不可用时，已校验的 rundll32 fallback 仍可使用内核锚定的最小环境运行。macOS 打包运行只接受 `process.resourcesPath` 下已编译的 NSWorkspace helper；仓库内二进制/源码 fallback 仅供开发态使用，在 `app.isPackaged` 为 true 时不可用。Linux 不显示打开方式。

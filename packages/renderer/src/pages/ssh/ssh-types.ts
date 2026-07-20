@@ -139,17 +139,53 @@ export type TerminalSelectionBounds = Pick<
 >;
 
 /**
- * One navigable terminal command marker owned by a pane runtime.
+ * Hidden input marker awaiting confirmation from a trusted `command-start` event.
+ */
+export type TerminalPendingCommandMarker = {
+  marker: IMarker;
+  recordedAt: number;
+};
+
+/**
+ * One trusted user command retained in a pane-local visual timeline.
+ *
+ * The renderer keeps the full command only in memory. Separate xterm markers
+ * preserve the input row used for navigation and the output interval used for
+ * the timeline width without retaining command output.
  */
 export type TerminalCommandMarker = {
   commandId: string;
-  command: string | null;
-  source: 'remote' | 'fallback';
-  marker: IMarker;
+  command: string;
+  inputMarker: IMarker;
+  outputStartMarker: IMarker;
+  outputEndMarker: IMarker | null;
   startedAt: number;
   endedAt: number | null;
   durationMs: number | null;
   exitCode: number | null;
+};
+
+/**
+ * Serializable renderer view of one retained command timeline entry.
+ */
+export type TerminalCommandTimelineItem = {
+  commandId: string;
+  command: string;
+  inputLine: number;
+  outputRows: number;
+  barWidth: number;
+};
+
+/**
+ * Pane-local command timeline state consumed by the SSH pane layout.
+ */
+export type TerminalCommandTimelineModel = {
+  visible: boolean;
+  alternateScreenActive: boolean;
+  items: TerminalCommandTimelineItem[];
+  activeCommandId: string | null;
+  canNavigatePrevious: boolean;
+  canNavigateNext: boolean;
 };
 
 /**
@@ -167,7 +203,9 @@ export type TerminalPaneRuntime = {
   socket: WebSocket | null;
   sessionId: string | null;
   sessionType: 'ssh-server' | 'local-terminal' | null;
+  pendingCommandMarkers: TerminalPendingCommandMarker[];
   commandMarkers: TerminalCommandMarker[];
+  refreshCommandTimeline: () => void;
   reconnect: () => void;
   dispose: () => void;
 };

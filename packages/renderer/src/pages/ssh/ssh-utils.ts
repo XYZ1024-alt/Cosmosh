@@ -689,6 +689,44 @@ export const calibrateAutocompleteCommandPrefix = (
 };
 
 /**
+ * Locates where user input starts without treating shell separators as a new
+ * autocomplete segment.
+ *
+ * Command timeline tooltips need the complete submitted line, while
+ * autocomplete intentionally narrows its context after separators such as
+ * `&&` or `|`. Keeping prompt stripping separate prevents timeline entries
+ * from losing the earlier portions of compound commands.
+ *
+ * @param line Visible logical terminal line containing prompt and user input.
+ * @param options Optional prompt parsing configuration.
+ * @returns Zero-based command start offset within the complete logical line.
+ */
+export const resolvePromptCommandStartOffset = (line: string, options?: CommandStartResolveOptions): number => {
+  const configuredOffset = resolveConfiguredPromptOffset(line, options?.promptPrefixRegex ?? null);
+  if (configuredOffset !== null) {
+    return Math.max(0, configuredOffset);
+  }
+
+  // A strong shell terminator ends prompt parsing immediately, preventing
+  // command operators such as `&&` from being mistaken for later prompt tokens.
+  const tokens = tokenizeWhitespace(line);
+  if (tokens.length > 0 && isLikelyPromptStartToken(tokens[0]?.value ?? '')) {
+    const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+    for (let tokenIndex = 0; tokenIndex < scanLimit; tokenIndex += 1) {
+      const token = tokens[tokenIndex]?.value ?? '';
+      const lastChar = token[token.length - 1] ?? '';
+      if (!isPromptTerminatorChar(lastChar)) {
+        continue;
+      }
+
+      return tokens[tokenIndex + 1]?.start ?? line.length;
+    }
+  }
+
+  return Math.max(0, resolveHeuristicPromptOffset(line));
+};
+
+/**
  * Locates where user command starts in a shell prompt line.
  *
  * @param linePrefix Visible content before cursor on current line.
@@ -698,14 +736,7 @@ export const calibrateAutocompleteCommandPrefix = (
 export const resolveCommandStartOffset = (linePrefix: string, options?: CommandStartResolveOptions): number => {
   const segmentStartOffset = resolveShellSegmentStartOffset(linePrefix);
   const segmentPrefix = linePrefix.slice(segmentStartOffset);
-
-  const configuredOffset = resolveConfiguredPromptOffset(segmentPrefix, options?.promptPrefixRegex ?? null);
-  if (configuredOffset !== null) {
-    return Math.max(0, segmentStartOffset + configuredOffset);
-  }
-
-  const heuristicOffset = resolveHeuristicPromptOffset(segmentPrefix);
-  return Math.max(0, segmentStartOffset + heuristicOffset);
+  return Math.max(0, segmentStartOffset + resolvePromptCommandStartOffset(segmentPrefix, options));
 };
 
 /**

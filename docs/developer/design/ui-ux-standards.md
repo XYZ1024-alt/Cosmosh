@@ -98,7 +98,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Provide tooltip labels for each icon action and keep labels localized through renderer i18n resources.
 - Non-implemented actions must use explicit "coming soon" feedback instead of silent no-op behavior.
 
-## 7.1 SSH Split-Pane Context Menu Standard
+## 7.1 SSH Split-Pane And Command Timeline Standard
 
 - SSH terminal split/close actions are exposed only through the terminal context menu.
 - Split progression is intentionally constrained to a fixed dense layout sequence (1 → 2 → 3 → 4 panes) to keep power-user scanning rhythm predictable.
@@ -106,7 +106,10 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - SSH split-pane separators should use the dedicated token `color.ssh.terminal.split.divider` (Tailwind: `border-ssh-terminal-split-divider`) instead of reusing generic home/card divider colors.
 - Each split pane is an independent command surface and therefore owns its own xterm, backend session, WebSocket, completion/status state, and command markers against the same resolved target. UI actions and overlays must route by explicit pane id.
 - Pane close action must be available on each pane context menu while keeping at least one visible pane. Closing any pane, including the original primary, must leave surviving ids and runtimes intact.
-- `Previous Command`/`Next Command` navigate markers in the active pane only. `Remote Enhancements Debug` is shown only when `remoteEnhancementsDebugEnabled` is enabled and must display the source/active pane's data rather than primary-pane fallback data.
+- Previous/next command actions do not belong in the terminal context menu. A trusted command timeline occupies a fixed-width rail on the right edge of each eligible pane; all click and navigation actions carry that pane's explicit id.
+- Timeline markers are equally spaced horizontal lines. Their widths use `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS pixels and the semantic `color.ssh.terminal.command-timeline.*` token family. Hover exposes the complete command, click reveals its input row, top/bottom chevrons navigate without wrapping, and the current marker uses the active token.
+- Hide the timeline unless authenticated Remote Enhancements are active with `command-start`. During alternate-screen programs, hide its controls but reserve rail width so xterm/PTY columns do not shift.
+- `Remote Enhancements Debug` is shown only when `remoteEnhancementsDebugEnabled` is enabled and must display the source/active pane's data rather than primary-pane fallback data.
 
 ## 7.2 Tab Reorder Runtime Continuity
 

@@ -4,9 +4,12 @@ import React from 'react';
 
 import { TerminalContextMenu } from '../../components/terminal/terminal-context-menu';
 import { t } from '../../lib/i18n';
+import type { TerminalCommandTimelineModel } from './ssh-types';
+import { TerminalCommandTimeline } from './TerminalCommandTimeline';
 
 type PaneActionHandler = (paneId: string) => void;
 type PaneCommandNavigationHandler = (paneId: string, direction: 'previous' | 'next') => void;
+type PaneCommandSelectionHandler = (paneId: string, commandId: string) => void;
 
 type SSHTerminalPaneLayoutProps = {
   terminalPaneIds: string[];
@@ -20,12 +23,10 @@ type SSHTerminalPaneLayoutProps = {
   openDirectoryInSftpLabel: string;
   findShortcutLabel: string;
   clearTerminalShortcutLabel: string;
-  previousCommandLabel: string;
-  nextCommandLabel: string;
   rightClickAction: TerminalRightClickAction;
   remoteEnhancementsDebugLabel?: string;
   canOpenDirectoryInSftp: boolean;
-  canNavigateCommands: boolean;
+  commandTimelineModels: Record<string, TerminalCommandTimelineModel>;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
@@ -38,6 +39,7 @@ type SSHTerminalPaneLayoutProps = {
   onSelectAll: PaneActionHandler;
   onClearTerminal: PaneActionHandler;
   onNavigateCommand: PaneCommandNavigationHandler;
+  onSelectCommand: PaneCommandSelectionHandler;
   onSplitPane: PaneActionHandler;
   onClosePane: PaneActionHandler;
   onToggleRemoteEnhancementsDebug?: PaneActionHandler;
@@ -61,12 +63,10 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.openDirectoryInSftpLabel Label for selection-based SFTP directory handoff action.
  * @param props.findShortcutLabel Platform-resolved find shortcut label.
  * @param props.clearTerminalShortcutLabel Platform-resolved clear-screen shortcut label.
- * @param props.previousCommandLabel Label for previous command navigation.
- * @param props.nextCommandLabel Label for next command navigation.
  * @param props.rightClickAction Configured action for terminal right-click gestures.
  * @param props.remoteEnhancementsDebugLabel Optional label for the Remote Enhancements debug panel action.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
- * @param props.canNavigateCommands Whether the source pane has retained command markers.
+ * @param props.commandTimelineModels Pane-indexed trusted command timeline models.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
@@ -79,6 +79,7 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.onSelectAll Callback for select-all action.
  * @param props.onClearTerminal Callback for clear-screen action.
  * @param props.onNavigateCommand Callback for previous/next command navigation.
+ * @param props.onSelectCommand Callback for direct command-marker selection.
  * @param props.onSplitPane Callback for split action.
  * @param props.onClosePane Callback for close-pane action.
  * @param props.onToggleRemoteEnhancementsDebug Optional callback for the Remote Enhancements debug panel toggle.
@@ -96,12 +97,10 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   openDirectoryInSftpLabel,
   findShortcutLabel,
   clearTerminalShortcutLabel,
-  previousCommandLabel,
-  nextCommandLabel,
   rightClickAction,
   remoteEnhancementsDebugLabel,
   canOpenDirectoryInSftp,
-  canNavigateCommands,
+  commandTimelineModels,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
@@ -114,11 +113,13 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   onSelectAll,
   onClearTerminal,
   onNavigateCommand,
+  onSelectCommand,
   onSplitPane,
   onClosePane,
   onToggleRemoteEnhancementsDebug,
 }) => {
   const renderTerminalPane = (paneId: string, isPrimaryPane: boolean): React.ReactNode => {
+    const commandTimelineModel = commandTimelineModels[paneId];
     return (
       <div className="h-full min-h-0 w-full min-w-0 overflow-hidden">
         <TerminalContextMenu
@@ -136,15 +137,12 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           selectAllLabel={t('ssh.contextMenuSelectAll')}
           clearTerminalLabel={t('ssh.contextMenuClearTerminal')}
           clearTerminalShortcutLabel={clearTerminalShortcutLabel}
-          previousCommandLabel={previousCommandLabel}
-          nextCommandLabel={nextCommandLabel}
           splitTerminalLabel={t('ssh.contextMenuSplitTerminal')}
           closeTerminalLabel={t('ssh.contextMenuCloseTerminal')}
           remoteEnhancementsDebugLabel={remoteEnhancementsDebugLabel}
           canSplitTerminal={canSplitTerminal}
           canCloseTerminal={terminalPaneIds.length > 1}
           canOpenDirectoryInSftp={activePaneId === paneId && canOpenDirectoryInSftp}
-          canNavigateCommands={activePaneId === paneId && canNavigateCommands}
           rightClickAction={rightClickAction}
           onCopy={() => onCopy(paneId)}
           onCopyAsHtml={() => onCopyAsHtml(paneId)}
@@ -154,8 +152,6 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           onFind={() => onFind(paneId)}
           onSelectAll={() => onSelectAll(paneId)}
           onClearTerminal={() => onClearTerminal(paneId)}
-          onPreviousCommand={() => onNavigateCommand(paneId, 'previous')}
-          onNextCommand={() => onNavigateCommand(paneId, 'next')}
           onSplitTerminal={() => onSplitPane(paneId)}
           onCloseTerminal={() => onClosePane(paneId)}
           onToggleRemoteEnhancementsDebug={
@@ -163,16 +159,27 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           }
         >
           <div
-            ref={(element) => {
-              setPaneContainerElement(paneId, element);
-              if (isPrimaryPane) {
-                setPrimaryPaneContainer(element);
-              }
-            }}
-            className="h-full w-full p-2"
+            className="flex h-full min-h-0 w-full min-w-0"
             onMouseDown={() => onPaneActivate(paneId)}
             onContextMenu={() => onPaneActivate(paneId)}
-          />
+          >
+            <div
+              ref={(element) => {
+                setPaneContainerElement(paneId, element);
+                if (isPrimaryPane) {
+                  setPrimaryPaneContainer(element);
+                }
+              }}
+              className="h-full min-w-0 flex-1 p-2"
+            />
+            {commandTimelineModel?.visible ? (
+              <TerminalCommandTimeline
+                model={commandTimelineModel}
+                onNavigate={(direction) => onNavigateCommand(paneId, direction)}
+                onSelectCommand={(commandId) => onSelectCommand(paneId, commandId)}
+              />
+            ) : null}
+          </div>
         </TerminalContextMenu>
       </div>
     );
