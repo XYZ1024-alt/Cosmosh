@@ -7,6 +7,7 @@ import {
   createTerminalPasteWarningRequest,
   reconcileSecondaryPaneRuntimes,
   resolveAutocompleteCommandPrefix,
+  resolvePromptCommandStartOffset,
   resolveSftpDirectoryPathFromSelection,
   resolveTerminalPaneCloseTransition,
   shouldReconnectTerminalPaneOnActivation,
@@ -178,6 +179,14 @@ test('paste warning request returns null when no enabled reason matches', () => 
     }),
     null,
   );
+});
+
+test('prompt boundary skips virtual environment decoration only with shell prompt context', () => {
+  const renderedInput = '(base) xyz10@DESKTOP:~$ sudo ss -tlnp | grep :22';
+  const commandStartOffset = resolvePromptCommandStartOffset(renderedInput);
+
+  assert.equal(renderedInput.slice(commandStartOffset), 'sudo ss -tlnp | grep :22');
+  assert.equal(resolvePromptCommandStartOffset('(base) echo value'), 0);
 });
 
 test('autocomplete command prefix uses local shadow for normal typing', () => {
