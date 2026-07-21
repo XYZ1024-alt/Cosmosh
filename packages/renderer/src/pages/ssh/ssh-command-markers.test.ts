@@ -223,17 +223,17 @@ const recordTrustedCommand = (harness: RuntimeHarness, spec: TrustedCommandSpec)
 };
 
 test('trusted lifecycle promotes pending input and retains the complete compound command', () => {
-  const harness = createRuntimeHarness([{ text: 'dev@host:~$ echo a && git status' }, { text: '' }]);
+  const harness = createRuntimeHarness([{ text: '(base) xyz10@DESKTOP:~$ sudo ss -tlnp | grep :22' }, { text: '' }]);
   harness.setCursorLine(0);
   assert.equal(recordPendingCommandMarker(harness.runtime, 1_000), true);
 
   harness.setCursorLine(1);
-  const commandStart = createCommandStart('cmd-1', 'echo');
+  const commandStart = createCommandStart('cmd-1', 'sudo');
   assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, commandStart, 1_500), true);
   assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, commandStart, 1_600), false);
   assert.equal(harness.runtime.pendingCommandMarkers.length, 0);
   assert.equal(harness.runtime.commandMarkers.length, 1);
-  assert.equal(harness.runtime.commandMarkers[0]?.command, 'echo a && git status');
+  assert.equal(harness.runtime.commandMarkers[0]?.command, 'sudo ss -tlnp | grep :22');
   assert.equal(harness.runtime.commandMarkers[0]?.inputMarker.line, 0);
   assert.equal(harness.runtime.commandMarkers[0]?.outputStartMarker.line, 1);
 
@@ -244,7 +244,7 @@ test('trusted lifecycle promotes pending input and retains the complete compound
       {
         ...REMOTE_EVENT_BASE,
         event: 'command-end',
-        command: 'echo',
+        command: 'sudo',
         commandId: 'cmd-1',
         durationMs: 250,
         exitCode: 0,

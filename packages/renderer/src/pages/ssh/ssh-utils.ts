@@ -11,6 +11,7 @@ const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngi
 
 const PROMPT_TERMINATOR_CHARS = new Set<string>(['$', '#', '>', '%', '❯', '➜', 'λ']);
 const MAX_PROMPT_TOKENS_TO_SCAN = 12;
+const PROMPT_DECORATION_TOKEN_PATTERN = /^\([^()\s]{1,64}\)$/u;
 const SHELL_QUOTED_PATH_PATTERN = /^(['"])([\s\S]+)\1$/;
 const SHELL_FILE_URL_PATTERN = /^file:\/\/([^?#]*)/i;
 const REMOTE_DIRECTORY_PATH_PATTERN = /^(?:\/|~(?=\/|$)|\.{1,2}(?=\/|$)).*/;
@@ -402,6 +403,38 @@ const isLikelyPromptStartToken = (token: string): boolean => {
 };
 
 /**
+ * Detects a standalone environment decoration that may precede shell identity.
+ *
+ * Conda and Python virtual environments commonly prepend tokens such as
+ * `(base)` or `(.venv)` before the user/host prompt. The decoration alone is
+ * insufficient evidence of a prompt and must be followed by prompt context.
+ *
+ * @param token Candidate leading token.
+ * @returns `true` when the token is a bounded parenthesized decoration.
+ */
+const isPromptDecorationToken = (token: string): boolean => PROMPT_DECORATION_TOKEN_PATTERN.test(token);
+
+/**
+ * Locates prompt identity after any leading environment decorations.
+ *
+ * @param tokens Whitespace-preserving tokens from one logical terminal line.
+ * @returns Prompt-context token index, or `-1` when the line looks like user input.
+ */
+const resolvePromptContextTokenIndex = (tokens: PromptBoundaryToken[]): number => {
+  const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+  let tokenIndex = 0;
+  while (tokenIndex < scanLimit && isPromptDecorationToken(tokens[tokenIndex]?.value ?? '')) {
+    tokenIndex += 1;
+  }
+
+  if (tokenIndex >= scanLimit) {
+    return -1;
+  }
+
+  return isLikelyPromptStartToken(tokens[tokenIndex]?.value ?? '') ? tokenIndex : -1;
+};
+
+/**
  * Decides whether a token can be treated as one prompt terminator fragment.
  *
  * @param token Candidate token in prompt segment.
@@ -569,14 +602,14 @@ const resolveHeuristicPromptOffset = (linePrefix: string): number => {
     return 0;
   }
 
-  const firstToken = tokens[0]?.value ?? '';
-  if (!isLikelyPromptStartToken(firstToken)) {
+  const promptContextTokenIndex = resolvePromptContextTokenIndex(tokens);
+  if (promptContextTokenIndex < 0) {
     return 0;
   }
 
   let lastPromptTerminatorIndex = -1;
   const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
-  for (let tokenIndex = 0; tokenIndex < scanLimit; tokenIndex += 1) {
+  for (let tokenIndex = promptContextTokenIndex; tokenIndex < scanLimit; tokenIndex += 1) {
     const currentToken = tokens[tokenIndex]?.value ?? '';
     if (!isPromptTerminatorToken(currentToken)) {
       continue;
@@ -586,13 +619,16 @@ const resolveHeuristicPromptOffset = (linePrefix: string): number => {
   }
 
   const nextCommandToken =
-    lastPromptTerminatorIndex >= 0 ? (tokens[lastPromptTerminatorIndex + 1] ?? null) : (tokens[1] ?? null);
+    lastPromptTerminatorIndex >= 0
+      ? (tokens[lastPromptTerminatorIndex + 1] ?? null)
+      : (tokens[promptContextTokenIndex + 1] ?? null);
   if (lastPromptTerminatorIndex >= 0 && !nextCommandToken) {
     // Prompt-only frame (no echoed command text yet): anchor command start at prompt end.
     return Math.max(0, linePrefix.length);
   }
 
-  if (tokens.length === 1 && isPromptTerminatorToken(firstToken)) {
+  const promptContextToken = tokens[promptContextTokenIndex]?.value ?? '';
+  if (tokens.length === promptContextTokenIndex + 1 && isPromptTerminatorToken(promptContextToken)) {
     return Math.max(0, linePrefix.length);
   }
 
@@ -710,9 +746,10 @@ export const resolvePromptCommandStartOffset = (line: string, options?: CommandS
   // A strong shell terminator ends prompt parsing immediately, preventing
   // command operators such as `&&` from being mistaken for later prompt tokens.
   const tokens = tokenizeWhitespace(line);
-  if (tokens.length > 0 && isLikelyPromptStartToken(tokens[0]?.value ?? '')) {
+  const promptContextTokenIndex = resolvePromptContextTokenIndex(tokens);
+  if (promptContextTokenIndex >= 0) {
     const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
-    for (let tokenIndex = 0; tokenIndex < scanLimit; tokenIndex += 1) {
+    for (let tokenIndex = promptContextTokenIndex; tokenIndex < scanLimit; tokenIndex += 1) {
       const token = tokens[tokenIndex]?.value ?? '';
       const lastChar = token[token.length - 1] ?? '';
       if (!isPromptTerminatorChar(lastChar)) {
