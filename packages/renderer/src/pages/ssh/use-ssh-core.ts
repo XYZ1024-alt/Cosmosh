@@ -879,7 +879,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       if (payload.type === 'output') {
         terminal.write(payload.data);
         notifyAutocompleteOutputEchoRef.current(paneId);
-        if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
+        // Only the active pane may open the secret-prompt suggestion flow:
+        // a background pane's password prompt must not cancel or close the
+        // autocomplete session the user is interacting with.
+        if (paneId === activePaneIdRef.current && SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
           scheduleAutocompleteRequestRef.current(paneId, 'secretPrompt');
         }
         return;
@@ -929,6 +932,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     },
     [
       dispatchPaneState,
+      activePaneIdRef,
       handleCompletionResponse,
       notifyAutocompleteOutputEchoRef,
       paneRuntimeMapRef,
