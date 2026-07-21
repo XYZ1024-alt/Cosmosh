@@ -187,7 +187,12 @@ __cosmosh_prompt_ready() {
 
 __cosmosh_prompt_ready_for_ps1() {
   __COSMOSH_CAPTURED_PROMPT_EVENT=1
-  __cosmosh_prompt_ready "$1"
+  __cosmosh_finish_active_command "$1"
+  __cosmosh_emit_remote_shell_event cwd
+  # PS1 command substitution runs in a subshell, so a generation counter can
+  # never advance in the parent shell; emit without the optional field
+  # instead of reporting a constant.
+  __cosmosh_emit_remote_shell_event prompt-ready
 }
 `
 
