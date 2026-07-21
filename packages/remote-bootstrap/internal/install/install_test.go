@@ -310,6 +310,35 @@ func TestFishHelperNeverAssignsReadOnlyStatusVariable(t *testing.T) {
 	assertFileContains(t, helperPath, `\"exitCode\":$exit_status`)
 }
 
+func TestFishHelperStripsBase64LineWrapping(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	err := Run(Options{
+		Shell:   "fish",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// GNU base64 wraps at 76 columns and fish `string replace` reading stdin
+	// operates per line, so wrapped output became a multi-element list that
+	// interpolation joined with spaces — failing Backend's canonical base64
+	// check. Both encode sites must strip wrapping with tr like the POSIX
+	// helper does.
+	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.fish")
+	assertFileNotContains(t, helperPath, "string replace -a \\n")
+	assertFileContains(t, helperPath, `printf '%s' "$argv[1]" | base64 | tr -d '\r\n'`)
+	assertFileContains(t, helperPath, `printf '%s' "$json" | base64 | tr -d '\r\n'`)
+}
+
 func TestRunInstallsShAshDegradedPromptHooks(t *testing.T) {
 	for _, shell := range []string{"sh", "ash"} {
 		t.Run(shell, func(t *testing.T) {

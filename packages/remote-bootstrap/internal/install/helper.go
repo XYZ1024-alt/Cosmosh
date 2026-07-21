@@ -332,7 +332,7 @@ set -gx __COSMOSH_CAPABILITIES_JSON %s
 
 const fishHelperBody = `
 function __cosmosh_base64_value
-  printf '%s' "$argv[1]" | base64 | string collect | string replace -a \n '' | string replace -a \r ''
+  printf '%s' "$argv[1]" | base64 | tr -d '\r\n'
 end
 
 function __cosmosh_now_ms
@@ -409,7 +409,7 @@ function __cosmosh_emit_remote_shell_event
   end
 
   set json "$json}"
-  set -l payload (printf '%s' "$json" | base64 | string collect | string replace -a \n '' | string replace -a \r '')
+  set -l payload (printf '%s' "$json" | base64 | tr -d '\r\n')
   printf '\e]777;cosmosh;%s\a' "$payload"
 end
 
