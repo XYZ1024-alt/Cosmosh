@@ -190,6 +190,27 @@ test('prompt boundary skips virtual environment decoration only with shell promp
   assert.equal(resolvePromptCommandStartOffset('(base) echo value'), 0);
 });
 
+test('prompt boundary strips through trailing status glyphs of glyph-led prompts', () => {
+  const renderedInput = '➜  myrepo git:(main) ✗ ls -la';
+  assert.equal(renderedInput.slice(resolvePromptCommandStartOffset(renderedInput)), 'ls -la');
+
+  const promptOnly = '➜  myrepo git:(main) ✗';
+  assert.equal(resolvePromptCommandStartOffset(promptOnly), promptOnly.length);
+});
+
+test('prompt boundary stops at shell operators inside command text', () => {
+  const compound = 'user@host:~$ (cd /tmp && make)';
+  assert.equal(compound.slice(resolvePromptCommandStartOffset(compound)), '(cd /tmp && make)');
+
+  const redirect = '$ sort > out.txt';
+  assert.equal(redirect.slice(resolvePromptCommandStartOffset(redirect)), 'sort > out.txt');
+});
+
+test('prompt boundary ignores ascii symbolic arguments', () => {
+  const line = '$ ls -- *';
+  assert.equal(line.slice(resolvePromptCommandStartOffset(line)), 'ls -- *');
+});
+
 test('autocomplete command prefix uses local shadow for normal typing', () => {
   assert.equal(resolveAutocompleteCommandPrefix('ec', 'echo'), 'echo');
 });
