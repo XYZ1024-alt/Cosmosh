@@ -149,6 +149,17 @@ test('parser drops oversized Cosmosh payloads until sequence terminator', () => 
   assert.deepEqual(result, [{ type: 'output', data: 'beforeafter' }]);
 });
 
+test('parser recovers when the payload cap lands on the ESC of an ST terminator', () => {
+  const parser = new RemoteShellEventOscParser();
+  // Payload exactly at the cap: the ST terminator's ESC is the byte that
+  // crosses it, so discard mode must remember the half-seen terminator.
+  const cappedPayload = 'x'.repeat(REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES);
+  const result = parser.parse(`before${ESCAPE}]777;cosmosh;${cappedPayload}${ESCAPE}\\after`);
+
+  assert.deepEqual(result, [{ type: 'output', data: 'beforeafter' }]);
+  assert.deepEqual(parser.parse('SUBSEQUENT-OUTPUT'), [{ type: 'output', data: 'SUBSEQUENT-OUTPUT' }]);
+});
+
 test('parser streams non-Cosmosh OSC without retaining its unbounded payload', () => {
   const parser = new RemoteShellEventOscParser();
   const nonterminatedOsc = `${ESCAPE}]0;${'x'.repeat(256 * 1024)}`;

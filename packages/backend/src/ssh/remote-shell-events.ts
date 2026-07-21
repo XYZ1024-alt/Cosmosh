@@ -236,6 +236,9 @@ export class RemoteShellEventOscParser {
       this.pendingCosmoshOsc = null;
       this.pendingCosmoshPayloadBytes = 0;
       this.discardingOversizedCosmoshOsc = true;
+      // The byte that crossed the cap may be the ESC of an ST terminator;
+      // forgetting it would blackhole output until an unrelated BEL arrives.
+      this.discardSawEscape = char === ESCAPE;
     }
 
     return null;
@@ -249,7 +252,9 @@ export class RemoteShellEventOscParser {
    */
   private consumeDiscardedOscChar(char: string): void {
     if (this.discardSawEscape) {
-      this.discardSawEscape = false;
+      // A run of ESC bytes keeps the terminator candidate alive: only the
+      // final ESC can pair with the backslash that ends the sequence.
+      this.discardSawEscape = char === ESCAPE;
       if (char === '\\') {
         this.discardingOversizedCosmoshOsc = false;
       }
