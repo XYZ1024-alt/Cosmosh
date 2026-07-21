@@ -394,3 +394,41 @@ test('connection cleanup disposes pending and confirmed markers and blanks retai
   );
   assert.equal(clearTerminalCommandMarkers(harness.runtime), false);
 });
+
+test('queued command-start synthesizes an anchor after its Enter marker was cleared', () => {
+  const harness = createRuntimeHarness([
+    { text: 'dev@host:~$ cmd1' },
+    { text: 'out1' },
+    { text: 'dev@host:~$ cmd2' },
+    { text: '' },
+  ]);
+  harness.setCursorLine(0);
+  assert.equal(recordPendingCommandMarker(harness.runtime, 1_000), true);
+  harness.setCursorLine(1);
+  assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, createCommandStart('cmd-1', 'cmd1'), 1_500), true);
+
+  // prompt-ready after cmd1 leaves nothing pending for the queued cmd2.
+  applyRemoteCommandMarkerEvent(harness.runtime, { ...REMOTE_EVENT_BASE, event: 'prompt-ready' }, 1_600);
+  assert.equal(harness.runtime.pendingCommandMarkers.length, 0);
+
+  // cmd2's command-start arrives with its echoed input right above the cursor.
+  harness.setCursorLine(3);
+  assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, createCommandStart('cmd-2', 'cmd2'), 2_000), true);
+  assert.equal(harness.runtime.commandMarkers.length, 2);
+  assert.equal(harness.runtime.commandMarkers[1]?.command, 'cmd2');
+  assert.equal(harness.runtime.commandMarkers[1]?.inputMarker.line, 2);
+  assert.equal(harness.runtime.pendingCommandMarkers.length, 0);
+});
+
+test('synthesized anchor walks wrapped echoed input to its first physical row', () => {
+  const harness = createRuntimeHarness([
+    { text: 'dev@host:~$ echo aaaa' },
+    { text: 'aaaa-continued', isWrapped: true },
+    { text: '' },
+  ]);
+  harness.setCursorLine(2);
+  assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, createCommandStart('cmd-9', 'echo'), 3_000), true);
+  assert.equal(harness.runtime.commandMarkers.length, 1);
+  assert.equal(harness.runtime.commandMarkers[0]?.command, 'echo aaaaaaaa-continued');
+  assert.equal(harness.runtime.commandMarkers[0]?.inputMarker.line, 0);
+});

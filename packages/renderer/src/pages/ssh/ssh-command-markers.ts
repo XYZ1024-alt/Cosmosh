@@ -45,12 +45,59 @@ export const recordPendingCommandMarker = (runtime: TerminalPaneRuntime, recorde
 };
 
 /**
+ * Anchors a queued command whose Enter marker is already gone.
+ *
+ * Rapid input can outrun the helper round-trip: command B's Enter marker is
+ * consumed by command A's start or cleared by A's prompt-ready before B's own
+ * `command-start` arrives. At event time the shell has just echoed B's input,
+ * so the logical line above the cursor (or the cursor line while output has
+ * not started) is the trustworthy anchor.
+ *
+ * @param runtime Source pane runtime.
+ * @param recordedAt Local event receipt timestamp.
+ * @returns Synthetic pending entry, or `null` when no anchor can be created.
+ */
+const synthesizeQueuedCommandMarker = (
+  runtime: TerminalPaneRuntime,
+  recordedAt: number,
+): { marker: IMarker; recordedAt: number } | null => {
+  const buffer = runtime.terminal.buffer.active;
+  if (buffer.type !== 'normal') {
+    return null;
+  }
+
+  const cursorLine = buffer.baseY + buffer.cursorY;
+  let inputLine = cursorLine;
+  const cursorRowText = buffer.getLine(cursorLine)?.translateToString(true) ?? '';
+  if (inputLine > 0 && !(buffer.getLine(inputLine)?.isWrapped ?? false) && cursorRowText.length === 0) {
+    inputLine -= 1;
+  }
+  while (inputLine > 0 && (buffer.getLine(inputLine)?.isWrapped ?? false)) {
+    inputLine -= 1;
+  }
+
+  const marker = runtime.terminal.registerMarker(inputLine - cursorLine);
+  if (!marker || marker.line < 0) {
+    return null;
+  }
+
+  const entry = { marker, recordedAt };
+  runtime.pendingCommandMarkers.push(entry);
+  marker.onDispose(() => {
+    removeDisposedInputMarker(runtime, marker);
+  });
+  return entry;
+};
+
+/**
  * Applies a trusted remote shell lifecycle event to one pane's command markers.
  *
- * A command becomes visible only when `command-start` can consume a local Enter
- * marker. The helper's sanitized executable name is intentionally not used as
- * display text; the complete rendered input is reconstructed from xterm and
- * remains renderer-memory-only.
+ * A command becomes visible when `command-start` can consume a local Enter
+ * marker, or — for rapidly queued input whose marker was already consumed or
+ * cleared — through a synthetic anchor at the freshly echoed input line. The
+ * helper's sanitized executable name is intentionally not used as display
+ * text; the complete rendered input is reconstructed from xterm and remains
+ * renderer-memory-only.
  *
  * @param runtime Source pane runtime.
  * @param payload Trusted command lifecycle or prompt event.
@@ -73,9 +120,9 @@ export const applyRemoteCommandMarkerEvent = (
       return false;
     }
 
-    const pendingCandidate = runtime.pendingCommandMarkers.find(
-      (entry) => entry.marker.line >= 0 && entry.recordedAt <= receivedAt,
-    );
+    const pendingCandidate =
+      runtime.pendingCommandMarkers.find((entry) => entry.marker.line >= 0 && entry.recordedAt <= receivedAt) ??
+      synthesizeQueuedCommandMarker(runtime, receivedAt);
     if (!pendingCandidate) {
       return false;
     }
