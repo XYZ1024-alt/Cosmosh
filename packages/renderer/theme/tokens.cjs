@@ -18,6 +18,9 @@ const base = {
     xl: '18px',
     'xl-2': '20px',
   },
+  blur: {
+    transition: '1px',
+  },
   colors: {
     text: {
       DEFAULT: standardTextColorDefault,
@@ -102,13 +105,6 @@ const base = {
         DEFAULT: '#cccccc',
         split: {
           divider: '#2a2a2a',
-        },
-        'command-timeline': {
-          marker: '#687180',
-          'marker-hover': '#c4cad4',
-          'marker-active': '#3b9eff',
-          control: '#8d97a6',
-          'control-hover': '#eeeeee',
         },
       },
     },
@@ -315,13 +311,6 @@ const light = {
       terminal: {
         split: {
           divider: '#d9dde6',
-        },
-        'command-timeline': {
-          marker: '#8a94a3',
-          'marker-hover': '#3e4a5b',
-          'marker-active': '#1473e6',
-          control: '#697586',
-          'control-hover': '#111827',
         },
       },
     },

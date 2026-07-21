@@ -10,7 +10,6 @@ import {
   applyRemoteCommandMarkerEvent,
   clearTerminalCommandMarkers,
   createTerminalCommandTimelineModel,
-  navigateTerminalCommandMarker,
   recordPendingCommandMarker,
   scrollToTerminalCommandMarker,
 } from './ssh-command-markers';
@@ -330,14 +329,6 @@ export type SshCoreActions = {
    * @returns Nothing.
    */
   clearTerminalScreen: () => void;
-  /**
-   * Scrolls one pane to an adjacent retained command marker.
-   *
-   * @param paneId Source pane id.
-   * @param direction Previous or next command relative to the viewport.
-   * @returns Nothing.
-   */
-  navigatePaneCommand: (paneId: string, direction: 'previous' | 'next') => void;
   /**
    * Scrolls one pane to a command selected directly from its timeline.
    *
@@ -662,8 +653,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
         alternateScreenActive: false,
         items: [],
         activeCommandId: null,
-        canNavigatePrevious: false,
-        canNavigateNext: false,
       };
       return;
     }
@@ -673,6 +662,15 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       supportsTrustedCommandTimeline(paneStateMap[paneId]?.remoteEnhancementRuntimeStatus),
     );
   });
+  /**
+   * Changes only when CSS starts or stops reserving the pane-local command rail.
+   *
+   * The xterm host keeps a stable outer width, so this explicit layout signal
+   * lets the existing fit pipeline observe descendant padding changes.
+   */
+  const commandTimelineRailReservationKey = terminalPaneIds
+    .filter((paneId) => commandTimelineModels[paneId]?.railReserved)
+    .join('|');
 
   /**
    * Dispatches pane state synchronously to the imperative routing ref and React reducer.
@@ -1193,6 +1191,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     isActive,
     sessionTargetReady,
     terminalPaneIds,
+    terminalLayoutRevision: commandTimelineRailReservationKey,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
     characterWidthCompatibilityModeEnabledRef,
@@ -1432,26 +1431,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   }, [sendInput]);
 
   /**
-   * Reveals the adjacent retained command marker in an explicitly addressed pane.
-   *
-   * @param paneId Source pane id.
-   * @param direction Previous or next command relative to the viewport.
-   * @returns Nothing.
-   */
-  const navigatePaneCommand = React.useCallback(
-    (paneId: string, direction: 'previous' | 'next'): void => {
-      const paneRuntime = paneRuntimeMapRef.current.get(paneId);
-      if (!paneRuntime) {
-        return;
-      }
-
-      activatePane(paneId);
-      navigateTerminalCommandMarker(paneRuntime, direction);
-    },
-    [activatePane, paneRuntimeMapRef],
-  );
-
-  /**
    * Reveals one directly selected command input marker in an explicitly addressed pane.
    *
    * @param paneId Source pane id.
@@ -1466,7 +1445,9 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       }
 
       activatePane(paneId);
-      scrollToTerminalCommandMarker(paneRuntime, commandId);
+      if (scrollToTerminalCommandMarker(paneRuntime, commandId)) {
+        paneRuntime.terminal.focus();
+      }
     },
     [activatePane, paneRuntimeMapRef],
   );
@@ -1589,7 +1570,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
-      navigatePaneCommand,
       scrollToPaneCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,

@@ -8,7 +8,7 @@ import type { TerminalCommandTimelineModel } from './ssh-types';
 import { TerminalCommandTimeline } from './TerminalCommandTimeline';
 
 type PaneActionHandler = (paneId: string) => void;
-type PaneCommandNavigationHandler = (paneId: string, direction: 'previous' | 'next') => void;
+type PaneCommandActionHandler = (paneId: string, command: string) => void;
 type PaneCommandSelectionHandler = (paneId: string, commandId: string) => void;
 
 type SSHTerminalPaneLayoutProps = {
@@ -38,7 +38,9 @@ type SSHTerminalPaneLayoutProps = {
   onFind: PaneActionHandler;
   onSelectAll: PaneActionHandler;
   onClearTerminal: PaneActionHandler;
-  onNavigateCommand: PaneCommandNavigationHandler;
+  onCopyCommand: PaneCommandActionHandler;
+  onFocusPane: PaneActionHandler;
+  onInsertCommand: PaneCommandActionHandler;
   onSelectCommand: PaneCommandSelectionHandler;
   onSplitPane: PaneActionHandler;
   onClosePane: PaneActionHandler;
@@ -78,7 +80,9 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.onFind Callback for find action.
  * @param props.onSelectAll Callback for select-all action.
  * @param props.onClearTerminal Callback for clear-screen action.
- * @param props.onNavigateCommand Callback for previous/next command navigation.
+ * @param props.onCopyCommand Callback for copying one retained command.
+ * @param props.onFocusPane Callback for restoring focus to one pane's xterm.
+ * @param props.onInsertCommand Callback for inserting one retained command without submitting it.
  * @param props.onSelectCommand Callback for direct command-marker selection.
  * @param props.onSplitPane Callback for split action.
  * @param props.onClosePane Callback for close-pane action.
@@ -112,7 +116,9 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   onFind,
   onSelectAll,
   onClearTerminal,
-  onNavigateCommand,
+  onCopyCommand,
+  onFocusPane,
+  onInsertCommand,
   onSelectCommand,
   onSplitPane,
   onClosePane,
@@ -158,10 +164,14 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
             onToggleRemoteEnhancementsDebug ? () => onToggleRemoteEnhancementsDebug(paneId) : undefined
           }
         >
-          <div
-            className="flex h-full min-h-0 w-full min-w-0"
-            onMouseDown={() => onPaneActivate(paneId)}
-            onContextMenu={() => onPaneActivate(paneId)}
+          <TerminalCommandTimeline
+            model={commandTimelineModel}
+            isConnected={isConnected}
+            onActivate={() => onPaneActivate(paneId)}
+            onCopyCommand={(command) => onCopyCommand(paneId, command)}
+            onFocusTerminal={() => onFocusPane(paneId)}
+            onInsertCommand={(command) => onInsertCommand(paneId, command)}
+            onSelectCommand={(commandId) => onSelectCommand(paneId, commandId)}
           >
             <div
               ref={(element) => {
@@ -170,16 +180,9 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
                   setPrimaryPaneContainer(element);
                 }
               }}
-              className="h-full min-w-0 flex-1 p-2"
+              className="h-full min-w-0 flex-1 py-2 pl-2"
             />
-            {commandTimelineModel?.railReserved ? (
-              <TerminalCommandTimeline
-                model={commandTimelineModel}
-                onNavigate={(direction) => onNavigateCommand(paneId, direction)}
-                onSelectCommand={(commandId) => onSelectCommand(paneId, commandId)}
-              />
-            ) : null}
-          </div>
+          </TerminalCommandTimeline>
         </TerminalContextMenu>
       </div>
     );

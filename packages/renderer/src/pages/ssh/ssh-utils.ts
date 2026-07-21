@@ -1172,6 +1172,7 @@ export const applyTerminalRuntimeOptions = (terminal: Terminal, options: ITermin
   terminal.options.macOptionClickForcesSelection = options.macOptionClickForcesSelection;
   terminal.options.macOptionIsMeta = options.macOptionIsMeta;
   terminal.options.minimumContrastRatio = options.minimumContrastRatio;
+  terminal.options.overviewRuler = options.overviewRuler;
   terminal.options.rightClickSelectsWord = options.rightClickSelectsWord;
   terminal.options.screenReaderMode = options.screenReaderMode;
   terminal.options.scrollback = options.scrollback;

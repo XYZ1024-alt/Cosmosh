@@ -151,7 +151,7 @@ export type TerminalPendingCommandMarker = {
  *
  * The renderer keeps the full command only in memory. Separate xterm markers
  * preserve the input row used for navigation and the output interval used for
- * the timeline width without retaining command output.
+ * lifecycle cleanup without retaining command output.
  */
 export type TerminalCommandMarker = {
   commandId: string;
@@ -171,9 +171,6 @@ export type TerminalCommandMarker = {
 export type TerminalCommandTimelineItem = {
   commandId: string;
   command: string;
-  inputLine: number;
-  outputRows: number;
-  barWidth: number;
 };
 
 /**
@@ -182,13 +179,11 @@ export type TerminalCommandTimelineItem = {
 export type TerminalCommandTimelineModel = {
   /** Whether the pane reserves the fixed command timeline rail. */
   railReserved: boolean;
-  /** Whether the rail currently exposes command markers and navigation controls. */
+  /** Whether the pane has at least one trusted command available outside alternate-screen mode. */
   historyVisible: boolean;
   alternateScreenActive: boolean;
   items: TerminalCommandTimelineItem[];
   activeCommandId: string | null;
-  canNavigatePrevious: boolean;
-  canNavigateNext: boolean;
 };
 
 /**
