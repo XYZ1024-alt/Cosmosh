@@ -241,6 +241,34 @@ export const createTerminalPasteWarningRequest = (
   };
 };
 
+/** Matches a rendered shell continuation prompt (`> `, zsh `pipe> `) at line start. */
+const COMMAND_CONTINUATION_PROMPT_PATTERN = /^[a-z]*> /;
+
+/**
+ * Flattens one retained command into a single-line terminal input payload.
+ *
+ * Timeline entries retain rendered continuation lines (heredocs, quoted
+ * strings), and a PTY treats every embedded newline as Enter, so writing the
+ * retained text verbatim would submit it immediately. Continuation-prompt
+ * decorations on follow-up lines are shell chrome rather than user input.
+ *
+ * @param command Retained command text possibly spanning terminal lines.
+ * @returns Single-line payload safe to insert without submitting.
+ */
+export const flattenCommandForTerminalInput = (command: string): string => {
+  const lines = command.split(TERMINAL_MULTILINE_PATTERN);
+  const flattened: string[] = [];
+  lines.forEach((line, lineIndex) => {
+    const withoutContinuationPrompt = lineIndex > 0 ? line.replace(COMMAND_CONTINUATION_PROMPT_PATTERN, '') : line;
+    const trimmed = withoutContinuationPrompt.trim();
+    if (trimmed.length > 0) {
+      flattened.push(trimmed);
+    }
+  });
+
+  return flattened.join(' ');
+};
+
 /**
  * Formats bytes in a compact terminal-style representation.
  *
