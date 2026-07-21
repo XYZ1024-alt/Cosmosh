@@ -31,6 +31,7 @@ import { RemoteEnhancementsDebugPanel } from './ssh/RemoteEnhancementsDebugPanel
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import {
   createTerminalPasteWarningRequest,
+  flattenCommandForTerminalInput,
   parseOptionalNumberSetting,
   resolveSearchUrl,
   resolveSftpDirectoryPathFromSelection,
@@ -1133,14 +1134,18 @@ const SSH: React.FC<SSHProps> = ({
   );
 
   /**
-   * Converts sidebar command actions into terminal input payloads.
+   * Converts sidebar and timeline command actions into terminal input payloads.
    *
-   * @param command Raw command text selected from history.
+   * Retained timeline commands can span rendered lines; embedded newlines are
+   * flattened so the insert path never auto-submits through the PTY.
+   *
+   * @param command Raw command text selected from history or the timeline.
    * @param shouldRun Whether command should auto-submit with Enter.
    * @returns Input payload written to terminal websocket.
    */
   const buildRecentCommandPayload = React.useCallback((command: string, shouldRun: boolean): string => {
-    return shouldRun ? `${command}\r` : command;
+    const flattenedCommand = flattenCommandForTerminalInput(command);
+    return shouldRun ? `${flattenedCommand}\r` : flattenedCommand;
   }, []);
 
   /**

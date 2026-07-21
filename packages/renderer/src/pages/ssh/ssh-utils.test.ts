@@ -5,6 +5,7 @@ import {
   calibrateAutocompleteCommandPrefix,
   containsTerminalControlContent,
   createTerminalPasteWarningRequest,
+  flattenCommandForTerminalInput,
   reconcileSecondaryPaneRuntimes,
   resolveAutocompleteCommandPrefix,
   resolvePromptCommandStartOffset,
@@ -226,4 +227,27 @@ test('autocomplete command prefix uses trusted line-state cursor only when lengt
     }),
     'git status --short',
   );
+});
+
+test('flatten keeps single-line commands untouched', () => {
+  assert.equal(flattenCommandForTerminalInput('git status --short'), 'git status --short');
+});
+
+test('flatten joins retained continuation lines without submitting newlines', () => {
+  assert.equal(flattenCommandForTerminalInput('cat <<EOF\n> line1\n> EOF'), 'cat <<EOF line1 EOF');
+  assert.equal(flattenCommandForTerminalInput('echo start\r\n> --flag'), 'echo start --flag');
+});
+
+test('flatten strips zsh-style named continuation prompts on follow-up lines', () => {
+  assert.equal(flattenCommandForTerminalInput("echo 'a\nquote> b'"), "echo 'a b'");
+  assert.equal(flattenCommandForTerminalInput('ls |\npipe> wc -l'), 'ls | wc -l');
+});
+
+test('flatten preserves first-line content that resembles a continuation prompt', () => {
+  assert.equal(flattenCommandForTerminalInput('sort > out.txt'), 'sort > out.txt');
+  assert.equal(flattenCommandForTerminalInput('a\nb > c'), 'a b > c');
+});
+
+test('flatten drops blank continuation lines', () => {
+  assert.equal(flattenCommandForTerminalInput('one\n\n> two\n   \n> three'), 'one two three');
 });
