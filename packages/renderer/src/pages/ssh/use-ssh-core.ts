@@ -615,6 +615,15 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     () => compilePromptPrefixRegex(terminalAutoCompletePromptRegex),
     [terminalAutoCompletePromptRegex],
   );
+  // Read through a ref inside pane message handling so a settings edit never
+  // changes handlePaneServerMessage identity: the primary-session effect
+  // depends on that callback and would otherwise dispose and reconnect every
+  // live terminal.
+  const compiledPromptPrefixRegexRef = React.useRef<RegExp | null>(compiledPromptPrefixRegex);
+
+  React.useEffect(() => {
+    compiledPromptPrefixRegexRef.current = compiledPromptPrefixRegex;
+  }, [compiledPromptPrefixRegex]);
 
   /**
    * Coalesces xterm write, scroll, and marker-disposal updates into one React
@@ -896,7 +905,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
               return;
             }
 
-            applyRemoteCommandMarkerEvent(paneRuntime, payload, receivedAt, compiledPromptPrefixRegex);
+            applyRemoteCommandMarkerEvent(paneRuntime, payload, receivedAt, compiledPromptPrefixRegexRef.current);
           });
         }
       }
@@ -910,7 +919,6 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     },
     [
       dispatchPaneState,
-      compiledPromptPrefixRegex,
       handleCompletionResponse,
       notifyAutocompleteOutputEchoRef,
       paneRuntimeMapRef,
