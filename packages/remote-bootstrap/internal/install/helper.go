@@ -282,7 +282,7 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
   }
 
   __cosmosh_zsh_hook_ok=1
-  if autoload -Uz add-zsh-hook 2>/dev/null; then
+  if autoload -Uz +X add-zsh-hook 2>/dev/null; then
     add-zsh-hook precmd __cosmosh_zsh_precmd || __cosmosh_zsh_hook_ok=0
     add-zsh-hook chpwd __cosmosh_zsh_chpwd || __cosmosh_zsh_hook_ok=0
     add-zsh-hook preexec __cosmosh_zsh_preexec || __cosmosh_zsh_hook_ok=0
@@ -292,11 +292,14 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
     preexec_functions=(${preexec_functions[@]} __cosmosh_zsh_preexec)
   fi
 
-  if zmodload zsh/datetime 2>/dev/null && autoload -Uz add-zle-hook-widget 2>/dev/null; then
+  # +X loads the widget helper's definition immediately: plain autoload
+  # succeeds even when no definition file exists (zsh < 5.3) and would defer
+  # the failure to call time, printing a visible error on every startup.
+  if zmodload zsh/datetime 2>/dev/null && autoload -Uz +X add-zle-hook-widget 2>/dev/null; then
     __cosmosh_now_ms() {
       printf '%.0f' "$((EPOCHREALTIME * 1000))"
     }
-    add-zle-hook-widget line-pre-redraw __cosmosh_zsh_line_pre_redraw || __cosmosh_zsh_hook_ok=0
+    add-zle-hook-widget line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null || __cosmosh_zsh_hook_ok=0
   else
     __cosmosh_zsh_hook_ok=0
   fi
@@ -304,6 +307,12 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
   if [ "$__cosmosh_zsh_hook_ok" = "1" ]; then
     __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
     __cosmosh_emit_remote_shell_event integration-ready
+  else
+    # Without integration-ready the runtime stays disabled, so the prompt
+    # hooks would only fork per prompt for events nothing accepts.
+    precmd_functions=(${precmd_functions[@]:#__cosmosh_zsh_precmd})
+    chpwd_functions=(${chpwd_functions[@]:#__cosmosh_zsh_chpwd})
+    preexec_functions=(${preexec_functions[@]:#__cosmosh_zsh_preexec})
   fi
 fi
 `
