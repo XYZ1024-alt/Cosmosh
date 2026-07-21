@@ -332,11 +332,12 @@ Notes:
 
 ## 6.3 Trusted Command Timeline
 
-- Each SSH pane exposes a narrow command timeline on its right edge only while that pane's authenticated Remote Enhancements runtime is active and advertises `command-start`. Ordinary SSH, local terminals, disabled helpers, failed handshakes, and helpers without that capability do not get a fallback timeline.
+- Each SSH pane reserves a 40 px command timeline rail on its right edge only while that pane's authenticated Remote Enhancements runtime is active and advertises `command-start`. Ordinary SSH, local terminals, disabled helpers, failed handshakes, and helpers without that capability do not get a fallback timeline.
 - Pressing Enter records a hidden pane-local xterm input marker. A trusted `command-start` consumes the oldest pending marker only after earlier terminal output has been parsed, records the output-start row, and reconstructs the complete displayed command from xterm rows. The helper's sanitized executable remains lifecycle metadata and never replaces the displayed input. `command-end` records the output-end row.
-- Commands are equally spaced in the rail. Each line uses `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS pixels, hover reveals the complete original command, clicking reveals its input row, and the top/bottom chevrons move to the bounded previous/next item without wrapping. The marker nearest the viewport center is highlighted as current.
+- The rail remains empty until it retains at least three trusted commands and the normal xterm buffer has scrollback (`baseY > 0`). Visible commands stay in submission order inside a vertically centered group whose height is `min(availableHeight, commandCount * 16px)`; the group grows equally upward and downward, compresses only at its height limit, and keeps the newest command at the bottom.
+- Each line uses `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS pixels, hover reveals the complete original command, clicking reveals its input row, and the top/bottom chevrons move to the bounded previous/next item without wrapping. The newest marker is current while xterm is at the bottom; after the user scrolls upward, the marker nearest the viewport center becomes current.
 - Full command strings stay in renderer memory only. They are never persisted, logged, sent, added to telemetry, or copied into Remote Enhancements diagnostics. Trust loss, reconnect/reset, pane disposal, or xterm scrollback disposal releases both markers and command text; entries therefore belong only to the current pane, current connection, and retained normal-buffer scrollback.
-- Alternate-screen programs hide the timeline controls while retaining rail width, preventing TUI entry/exit from changing PTY columns. Primary and secondary runtimes refresh the model after parsed writes, scrolling, buffer changes, and marker disposal.
+- Alternate-screen programs hide the timeline content while retaining rail width, preventing TUI entry/exit from changing PTY columns. Primary and secondary runtimes refresh the model after parsed writes, scrolling, resizing, buffer changes, and marker disposal.
 
 ## 7. Developer Debug Checklist
 
@@ -429,6 +430,7 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend parsing rules:
 
 - `SshSessionService` streams SSH output through `RemoteShellEventOscParser` before writing to xterm.
+- The parser returns an ordered sequence of visible-output and helper-event frames, and `SshSessionService` forwards those frames without regrouping them by type. Visible bytes before an event, especially the echoed input/newline before `command-start`, must reach xterm first so renderer markers capture valid input/output boundaries.
 - Cosmosh OSC sequences are stripped from visible terminal output and decoded, but events are forwarded and applied only after the backend runtime gate becomes `active`.
 - The gate starts `pending` only after pre-shell status validation. It becomes `active` on a matching `integration-ready`. If no valid handshake arrives within 10 seconds, it changes to `disabled` with `HELPER_HANDSHAKE_TIMEOUT`; any shell, helper-version, protocol-version, or capability mismatch also changes it to `disabled` and clears helper-derived state.
 - Non-Cosmosh OSC sequences and ordinary ANSI output stream through visibly and unchanged, including sequences split across SSH chunks.

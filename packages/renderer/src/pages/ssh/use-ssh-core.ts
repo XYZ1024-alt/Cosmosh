@@ -657,7 +657,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     const paneRuntime = paneRuntimeMapRef.current.get(paneId);
     if (!paneRuntime) {
       commandTimelineModels[paneId] = {
-        visible: false,
+        railReserved: false,
+        historyVisible: false,
         alternateScreenActive: false,
         items: [],
         activeCommandId: null,

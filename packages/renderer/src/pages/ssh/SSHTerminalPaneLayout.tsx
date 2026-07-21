@@ -172,7 +172,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
               }}
               className="h-full min-w-0 flex-1 p-2"
             />
-            {commandTimelineModel?.visible ? (
+            {commandTimelineModel?.railReserved ? (
               <TerminalCommandTimeline
                 model={commandTimelineModel}
                 onNavigate={(direction) => onNavigateCommand(paneId, direction)}

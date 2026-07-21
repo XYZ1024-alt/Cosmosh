@@ -830,14 +830,14 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
    * @returns Nothing.
    */
   private handleShellOutput(session: SshLiveSession, data: string): void {
-    const parsed = session.remoteShellEventParser.parse(data);
+    const frames = session.remoteShellEventParser.parse(data);
 
-    for (const event of parsed.events) {
-      this.handleRemoteShellEvent(session, event);
-    }
-
-    if (parsed.output) {
-      this.handleVisibleShellOutput(session, parsed.output);
+    for (const frame of frames) {
+      if (frame.type === 'event') {
+        this.handleRemoteShellEvent(session, frame.event);
+      } else {
+        this.handleVisibleShellOutput(session, frame.data);
+      }
     }
   }
 

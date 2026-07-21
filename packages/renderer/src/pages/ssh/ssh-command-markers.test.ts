@@ -25,6 +25,27 @@ type MarkerHarness = {
   wasDisposed: () => boolean;
 };
 
+/** Mutable xterm runtime facade used by command timeline tests. */
+type RuntimeHarness = {
+  runtime: TerminalPaneRuntime;
+  markers: MarkerHarness[];
+  scrollTargets: number[];
+  getRefreshCount: () => number;
+  setActiveBuffer: (type: 'normal' | 'alternate') => void;
+  setBaseY: (line: number) => void;
+  setCursorLine: (line: number) => void;
+  setLine: (line: number, value: BufferLineSpec) => void;
+  setViewportY: (line: number) => void;
+};
+
+/** Input geometry used to add one trusted command to a runtime harness. */
+type TrustedCommandSpec = {
+  id: string;
+  inputLine: number;
+  outputLine: number;
+  command: string;
+};
+
 /**
  * Creates the minimal mutable xterm pane runtime required by marker utilities.
  *
@@ -32,23 +53,12 @@ type MarkerHarness = {
  * @param terminalRows Visible terminal row count used for active-marker selection.
  * @returns Runtime plus controls for cursor, viewport, buffer, and marker state.
  */
-const createRuntimeHarness = (
-  initialLines: BufferLineSpec[] = [],
-  terminalRows = 4,
-): {
-  runtime: TerminalPaneRuntime;
-  markers: MarkerHarness[];
-  scrollTargets: number[];
-  getRefreshCount: () => number;
-  setActiveBuffer: (type: 'normal' | 'alternate') => void;
-  setCursorLine: (line: number) => void;
-  setLine: (line: number, value: BufferLineSpec) => void;
-  setViewportY: (line: number) => void;
-} => {
+const createRuntimeHarness = (initialLines: BufferLineSpec[] = [], terminalRows = 4): RuntimeHarness => {
   const lines = [...initialLines];
   const markers: MarkerHarness[] = [];
   const scrollTargets: number[] = [];
   let activeBufferType: 'normal' | 'alternate' = 'normal';
+  let baseY = 0;
   let cursorLine = 0;
   let viewportY = 0;
   let refreshCount = 0;
@@ -75,7 +85,9 @@ const createRuntimeHarness = (
     get viewportY(): number {
       return viewportY;
     },
-    baseY: 0,
+    get baseY(): number {
+      return baseY;
+    },
     get length(): number {
       return lines.length;
     },
@@ -152,6 +164,9 @@ const createRuntimeHarness = (
     setActiveBuffer: (type) => {
       activeBufferType = type;
     },
+    setBaseY: (line) => {
+      baseY = line;
+    },
     setCursorLine: (line) => {
       cursorLine = line;
     },
@@ -187,6 +202,25 @@ const createCommandStart = (commandId: string, command: string): RemoteShellEven
   command,
   commandId,
 });
+
+/**
+ * Adds one locally entered command and promotes it with a trusted lifecycle event.
+ *
+ * @param harness Mutable runtime harness that owns the xterm markers.
+ * @param spec Command text and input/output row geometry.
+ * @returns Nothing.
+ */
+const recordTrustedCommand = (harness: RuntimeHarness, spec: TrustedCommandSpec): void => {
+  harness.setLine(spec.inputLine, { text: `dev@host:~$ ${spec.command}` });
+  harness.setLine(spec.outputLine, { text: '' });
+  harness.setCursorLine(spec.inputLine);
+  assert.equal(recordPendingCommandMarker(harness.runtime, spec.inputLine), true);
+  harness.setCursorLine(spec.outputLine);
+  assert.equal(
+    applyRemoteCommandMarkerEvent(harness.runtime, createCommandStart(spec.id, spec.command), spec.outputLine),
+    true,
+  );
+};
 
 test('trusted lifecycle promotes pending input and retains the complete compound command', () => {
   const harness = createRuntimeHarness([{ text: 'dev@host:~$ echo a && git status' }, { text: '' }]);
@@ -267,6 +301,48 @@ test('prompt-ready clears unmatched input and alternate-screen input is ignored'
   assert.equal(harness.markers.length, 1);
 });
 
+test('timeline reserves its rail and reveals three commands only after normal-buffer overflow', () => {
+  const harness = createRuntimeHarness([], 4);
+  const commands = [
+    { id: 'cmd-1', inputLine: 2, outputLine: 3, command: 'one' },
+    { id: 'cmd-2', inputLine: 8, outputLine: 9, command: 'two' },
+    { id: 'cmd-3', inputLine: 15, outputLine: 16, command: 'three' },
+  ];
+
+  const unavailableModel = createTerminalCommandTimelineModel(harness.runtime, false);
+  assert.equal(unavailableModel.railReserved, false);
+  assert.equal(unavailableModel.historyVisible, false);
+
+  commands.slice(0, 2).forEach((spec) => recordTrustedCommand(harness, spec));
+  harness.setBaseY(20);
+  harness.setViewportY(20);
+  const twoCommandModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(twoCommandModel.railReserved, true);
+  assert.equal(twoCommandModel.historyVisible, false);
+
+  harness.setBaseY(0);
+  const thirdCommand = commands[2];
+  assert.ok(thirdCommand);
+  recordTrustedCommand(harness, thirdCommand);
+  const noOverflowModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(noOverflowModel.historyVisible, false);
+
+  harness.setBaseY(20);
+  harness.setViewportY(20);
+  const bottomModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(bottomModel.historyVisible, true);
+  assert.equal(bottomModel.items.length, 3);
+  assert.equal(bottomModel.activeCommandId, 'cmd-3');
+  assert.equal(bottomModel.canNavigatePrevious, true);
+  assert.equal(bottomModel.canNavigateNext, false);
+
+  harness.setViewportY(2);
+  const scrolledModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(scrolledModel.activeCommandId, 'cmd-1');
+  assert.equal(scrolledModel.canNavigatePrevious, false);
+  assert.equal(scrolledModel.canNavigateNext, true);
+});
+
 test('timeline navigation uses pane-local adjacent commands without wrapping', () => {
   const harness = createRuntimeHarness([], 4);
   const commands = [
@@ -275,14 +351,7 @@ test('timeline navigation uses pane-local adjacent commands without wrapping', (
     { id: 'cmd-3', inputLine: 15, outputLine: 16, command: 'three' },
   ];
 
-  commands.forEach(({ id, inputLine, outputLine, command }) => {
-    harness.setLine(inputLine, { text: `dev@host:~$ ${command}` });
-    harness.setLine(outputLine, { text: '' });
-    harness.setCursorLine(inputLine);
-    assert.equal(recordPendingCommandMarker(harness.runtime, inputLine), true);
-    harness.setCursorLine(outputLine);
-    assert.equal(applyRemoteCommandMarkerEvent(harness.runtime, createCommandStart(id, command), outputLine), true);
-  });
+  commands.forEach((spec) => recordTrustedCommand(harness, spec));
 
   harness.setViewportY(8);
   assert.equal(navigateTerminalCommandMarker(harness.runtime, 'previous'), true);
@@ -304,7 +373,8 @@ test('timeline reserves alternate-screen state and clears command text with scro
   assert.ok(retainedEntry);
   harness.setActiveBuffer('alternate');
   const alternateModel = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(alternateModel.visible, true);
+  assert.equal(alternateModel.railReserved, true);
+  assert.equal(alternateModel.historyVisible, false);
   assert.equal(alternateModel.alternateScreenActive, true);
   assert.equal(alternateModel.items.length, 1);
 

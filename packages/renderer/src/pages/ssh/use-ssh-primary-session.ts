@@ -558,6 +558,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     const disposeCommandTimelineBuffer = terminal.buffer.onBufferChange(() => {
       refreshRuntimeCommandTimeline();
     });
+    const disposeCommandTimelineResize = terminal.onResize(refreshRuntimeCommandTimeline);
     const handleWindowResize = (): void => {
       refreshSelectionAnchor();
     };
@@ -650,6 +651,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       disposeSelectionRender.dispose();
       disposeCommandTimelineWrite.dispose();
       disposeCommandTimelineBuffer.dispose();
+      disposeCommandTimelineResize.dispose();
       containerElement.removeEventListener('pointerup', trackPointerPosition);
       containerElement.removeEventListener('mouseup', trackPointerPosition);
       containerElement.removeEventListener('keydown', handleAutocompleteKeyDown, true);
