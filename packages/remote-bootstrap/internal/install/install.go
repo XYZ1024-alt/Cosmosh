@@ -395,10 +395,46 @@ func resolvePreservedAtomicTargetPath(targetPath string, preserveExistingMode bo
 	}
 
 	resolvedPath, err := filepath.EvalSymlinks(targetPath)
-	if err != nil {
+	if err == nil {
+		return resolvedPath, nil
+	}
+	if !os.IsNotExist(err) {
 		return "", err
 	}
-	return resolvedPath, nil
+
+	// A dangling chain (dotfile managers before their first sync) must still
+	// install: follow the link targets manually and create the managed file,
+	// matching what a direct write through the symlink would have done.
+	return resolveDanglingSymlinkTargetPath(targetPath)
+}
+
+// resolveDanglingSymlinkTargetPath follows a symlink chain whose final target does
+// not exist yet and returns the path installation should create.
+func resolveDanglingSymlinkTargetPath(linkPath string) (string, error) {
+	currentPath := linkPath
+	for hop := 0; hop < 16; hop++ {
+		info, err := os.Lstat(currentPath)
+		if os.IsNotExist(err) {
+			return currentPath, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return currentPath, nil
+		}
+
+		linkTarget, err := os.Readlink(currentPath)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(linkTarget) {
+			linkTarget = filepath.Join(filepath.Dir(currentPath), linkTarget)
+		}
+		currentPath = linkTarget
+	}
+
+	return "", fmt.Errorf("profile symlink chain at %s exceeds resolution limit", linkPath)
 }
 
 func createAtomicTarget(targetPath string, mode os.FileMode, preserveExistingMode bool) (*os.File, string, error) {

@@ -145,6 +145,41 @@ func TestRunPreservesSymlinkedBashProfile(t *testing.T) {
 	}
 }
 
+func TestRunInstallsThroughDanglingProfileSymlink(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("profile symlink semantics are validated on POSIX hosts")
+	}
+
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	// Dotfile managers link profiles before the target exists; installation
+	// must create the managed file instead of aborting the whole bootstrap.
+	targetPath := filepath.Join(homeDir, "dotfiles", "bashrc")
+	profilePath := filepath.Join(homeDir, ".bashrc")
+	if err := os.Symlink(targetPath, profilePath); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Run(Options{Shell: "bash", Version: "1.2.3", Stdout: &bytes.Buffer{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	linkInfo, err := os.Lstat(profilePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if linkInfo.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("expected dangling .bashrc symlink to remain intact")
+	}
+	assertFileContains(t, targetPath, markerStart)
+}
+
 func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	homeDir := t.TempDir()
 	dataDir := filepath.Join(homeDir, "data")
