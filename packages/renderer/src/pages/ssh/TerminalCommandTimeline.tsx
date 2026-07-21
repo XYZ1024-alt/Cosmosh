@@ -99,6 +99,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   const pointerOpenedMenuRef = React.useRef(false);
   const pointerExitPortalMountedRef = React.useRef(false);
   const terminalFocusRequestedRef = React.useRef(false);
+  const hoverOpenFocusReturnFrameRef = React.useRef<number | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   const menuContentRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -195,6 +196,17 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
    */
   const closeMenus = React.useCallback(
     (retainPointerExit = false): void => {
+      // A hover-opened menu can still hold focus after a click inside it; the
+      // retained/inert close paths never run Radix close-autofocus, so hand
+      // focus back to the terminal before it silently falls to <body>.
+      if (
+        pointerOpenedMenuRef.current &&
+        menuContentRef.current &&
+        menuContentRef.current.contains(document.activeElement)
+      ) {
+        terminalFocusRequestedRef.current = true;
+        onFocusTerminal();
+      }
       const shouldResetContextMenu = actionMenuOpenRef.current;
       const shouldRetainPointerExit =
         retainPointerExit &&
@@ -221,7 +233,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
       }
       markActivity();
     },
-    [markActivity, releasePointerExitPortal],
+    [markActivity, onFocusTerminal, releasePointerExitPortal],
   );
 
   /**
@@ -248,6 +260,30 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   );
 
   /**
+   * Returns keyboard focus to xterm right after a hover-open mounts the menu.
+   *
+   * Radix menus always focus their content on mount and expose no public way
+   * to prevent it, so gliding the pointer across the rail while typing would
+   * silently redirect keystrokes into menu typeahead. The frame callback runs
+   * after Radix's mount focus; keyboard opens keep content focus for arrow
+   * navigation.
+   *
+   * @returns Nothing.
+   */
+  const scheduleHoverOpenFocusReturn = React.useCallback((): void => {
+    if (hoverOpenFocusReturnFrameRef.current !== null) {
+      return;
+    }
+
+    hoverOpenFocusReturnFrameRef.current = window.requestAnimationFrame(() => {
+      hoverOpenFocusReturnFrameRef.current = null;
+      if (pointerOpenedMenuRef.current && menuOpenRef.current) {
+        onFocusTerminal();
+      }
+    });
+  }, [onFocusTerminal]);
+
+  /**
    * Opens the recent-command menu from pointer hover or pointer motion.
    *
    * Normal open mounting lets `@starting-style` provide a reliable first frame;
@@ -265,7 +301,8 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
 
     releasePointerExitPortal();
     handleMenuOpenChange(true);
-  }, [cancelPointerClose, handleMenuOpenChange, releasePointerExitPortal]);
+    scheduleHoverOpenFocusReturn();
+  }, [cancelPointerClose, handleMenuOpenChange, releasePointerExitPortal, scheduleHoverOpenFocusReturn]);
 
   /**
    * Opens the menu when the pointer enters the compact line-group target.
@@ -559,6 +596,9 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
       }
       if (scrollFrameRef.current !== null) {
         cancelAnimationFrame(scrollFrameRef.current);
+      }
+      if (hoverOpenFocusReturnFrameRef.current !== null) {
+        cancelAnimationFrame(hoverOpenFocusReturnFrameRef.current);
       }
     },
     [],
