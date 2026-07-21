@@ -403,6 +403,32 @@ const isSymbolicToken = (token: string): boolean => {
   return token.length > 0 && /^[^A-Za-z0-9_]+$/u.test(token);
 };
 
+/** Exact operator tokens that mark command text rather than prompt context. */
+const SHELL_OPERATOR_TOKEN_SET = new Set<string>(['&&', '||', '|', ';', ';;', '&', '>', '>>', '<', '<<']);
+
+/**
+ * Checks whether a token is a glyph-only prompt status suffix such as `✗`.
+ *
+ * Restricting the match to non-ASCII symbols keeps ASCII arguments like `--`
+ * or `*` from being mistaken for prompt decoration.
+ *
+ * @param token Candidate token inside the leading prompt run.
+ * @returns `true` when token reads as a prompt status glyph.
+ */
+const isPromptStatusSymbolToken = (token: string): boolean => {
+  if (token.length > 3 || !isSymbolicToken(token)) {
+    return false;
+  }
+
+  for (const character of token) {
+    if ((character.codePointAt(0) ?? 0) > 0x7f) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 /**
  * Decides whether a token can be interpreted as prompt start context.
  *
@@ -771,20 +797,29 @@ export const resolvePromptCommandStartOffset = (line: string, options?: CommandS
     return Math.max(0, configuredOffset);
   }
 
-  // A strong shell terminator ends prompt parsing immediately, preventing
-  // command operators such as `&&` from being mistaken for later prompt tokens.
+  // Prompt parsing takes the last terminator inside the leading prompt run but
+  // hard-stops at shell operator tokens, so `&&` in a compound command never
+  // reads as prompt context while glyph-led prompts (`➜ repo git:(main) ✗`)
+  // still strip through their trailing status symbols.
   const tokens = tokenizeWhitespace(line);
   const promptContextTokenIndex = resolvePromptContextTokenIndex(tokens);
   if (promptContextTokenIndex >= 0) {
     const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+    let lastPromptTerminatorTokenIndex = -1;
     for (let tokenIndex = promptContextTokenIndex; tokenIndex < scanLimit; tokenIndex += 1) {
       const token = tokens[tokenIndex]?.value ?? '';
-      const lastChar = token[token.length - 1] ?? '';
-      if (!isPromptTerminatorChar(lastChar)) {
-        continue;
+      if (SHELL_OPERATOR_TOKEN_SET.has(token)) {
+        break;
       }
 
-      return tokens[tokenIndex + 1]?.start ?? line.length;
+      const lastChar = token[token.length - 1] ?? '';
+      if (isPromptTerminatorChar(lastChar) || isPromptStatusSymbolToken(token)) {
+        lastPromptTerminatorTokenIndex = tokenIndex;
+      }
+    }
+
+    if (lastPromptTerminatorTokenIndex >= 0) {
+      return tokens[lastPromptTerminatorTokenIndex + 1]?.start ?? line.length;
     }
   }
 
