@@ -283,6 +283,33 @@ func TestRunInstallsFishRemoteShellHelperHooks(t *testing.T) {
 	assertTextOrder(t, readFileString(t, helperPath), "function __cosmosh_on_pwd --on-variable PWD", "__cosmosh_emit_remote_shell_event integration-ready")
 }
 
+func TestFishHelperNeverAssignsReadOnlyStatusVariable(t *testing.T) {
+	homeDir := t.TempDir()
+	dataDir := filepath.Join(homeDir, "data")
+	configDir := filepath.Join(homeDir, "config")
+	t.Setenv("HOME", homeDir)
+	t.Setenv("USERPROFILE", homeDir)
+	t.Setenv("XDG_DATA_HOME", dataDir)
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+
+	err := Run(Options{
+		Shell:   "fish",
+		Version: "1.2.3",
+		Stdout:  &bytes.Buffer{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// fish's `status` is a read-only special variable: `set -l status` fails at
+	// runtime, prints an error to the PTY, and leaves $status pointing at the
+	// last internal command instead of the captured exit code.
+	helperPath := filepath.Join(configDir, "cosmosh", "bootstrap", "helper.fish")
+	assertFileNotContains(t, helperPath, "set -l status ")
+	assertFileContains(t, helperPath, "set -l exit_status $argv[2]")
+	assertFileContains(t, helperPath, `\"exitCode\":$exit_status`)
+}
+
 func TestRunInstallsShAshDegradedPromptHooks(t *testing.T) {
 	for _, shell := range []string{"sh", "ash"} {
 		t.Run(shell, func(t *testing.T) {

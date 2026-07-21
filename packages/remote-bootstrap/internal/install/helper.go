@@ -384,7 +384,7 @@ function __cosmosh_emit_remote_shell_event
   end
 
   set -l event $argv[1]
-  set -l status $argv[2]
+  set -l exit_status $argv[2]
   set -l command_name $argv[3]
   set -l command_id $argv[4]
   set -l duration $argv[5]
@@ -403,7 +403,7 @@ function __cosmosh_emit_remote_shell_event
       set json "$json,\"commandBase64\":\"$command_base64\",\"commandId\":\"$command_id\""
     case command-end
       set -l command_base64 (__cosmosh_base64_value "$command_name")
-      set json "$json,\"commandBase64\":\"$command_base64\",\"commandId\":\"$command_id\",\"exitCode\":$status,\"durationMs\":$duration"
+      set json "$json,\"commandBase64\":\"$command_base64\",\"commandId\":\"$command_id\",\"exitCode\":$exit_status,\"durationMs\":$duration"
     case prompt-ready
       set json "$json,\"promptGeneration\":$prompt_generation"
   end
