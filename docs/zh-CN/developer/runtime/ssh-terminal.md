@@ -549,7 +549,7 @@ Backend 状态模型：
 | Bootstrap binary | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/cosmosh-bootstrap` 或 `~/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap` |
 | Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` 或 `~/.local/share/cosmosh/bootstrap/bin/.version` |
 | POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` 或 `~/.config/cosmosh/bootstrap/helper.sh` |
-| Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` 或 `~/.config/cosmosh/bootstrap/helper.fish` |
+| Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` 或 `~/.config/fish/conf.d/cosmosh.fish` |
 | Bash hooks | `~/.bashrc`，以及当前 login profile（优先 `~/.bash_profile`，其次 `~/.bash_login`，否则 `~/.profile`）内的 Cosmosh marker block |
 | Zsh hook | `~/.zshrc` 内的 Cosmosh marker block |
 | Sh/Ash hook | `~/.profile` 内的 Cosmosh marker block |
