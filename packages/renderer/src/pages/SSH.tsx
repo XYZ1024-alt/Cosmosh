@@ -3,13 +3,12 @@ import './ssh/terminal-image-layer.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
-import { CaseSensitive, RefreshCw, Regex } from 'lucide-react';
+import { CaseSensitive, Regex } from 'lucide-react';
 import React from 'react';
 
 import { TerminalAutocompleteMenu } from '../components/terminal/terminal-autocomplete-menu';
 import { TerminalSelectionBar } from '../components/terminal/terminal-selection-bar';
 import { TerminalTextDropZone } from '../components/terminal/terminal-text-drop-zone';
-import { Button } from '../components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,6 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
-import { Menubar } from '../components/ui/menubar';
 import { type SearchReplaceFilterOption, SearchReplacePanel } from '../components/ui/search-replace-panel';
 import { useDateTimeFormatter } from '../lib/date-time-format';
 import { t } from '../lib/i18n';
@@ -405,7 +403,7 @@ const SSH: React.FC<SSHProps> = ({
       terminalPaneIds,
       activePaneId,
       connectionState,
-      connectionError,
+      paneConnectionStates,
       telemetryState,
       remoteBootstrapStatus,
       remoteEnhancementRuntimeStatus,
@@ -424,7 +422,7 @@ const SSH: React.FC<SSHProps> = ({
       activatePane,
       splitPane,
       closePane,
-      retryConnection,
+      retryPaneConnection,
       sendInput,
       pasteInput,
       deleteHistoryCommand,
@@ -1416,7 +1414,6 @@ const SSH: React.FC<SSHProps> = ({
           terminalPaneIds={terminalPaneIds}
           activePaneId={activePaneId}
           hasSelection={!!selectionAnchor?.selectionText}
-          isConnected={connectionState === 'connected'}
           canSplitTerminal={canSplitTerminal}
           copyShortcutLabel={terminalCopyShortcutLabel}
           pasteShortcutLabel={terminalPasteShortcutLabel}
@@ -1430,9 +1427,11 @@ const SSH: React.FC<SSHProps> = ({
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
           commandTimelineModels={commandTimelineModels}
+          paneConnectionStates={paneConnectionStates}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
+          onRetryPane={retryPaneConnection}
           onCopy={(paneId) => {
             activatePane(paneId);
             handleContextMenuCopy();
@@ -1615,28 +1614,6 @@ const SSH: React.FC<SSHProps> = ({
         onSplitTerminalAndRunRecentCommand={handleSplitTerminalAndRunRecentCommand}
         onDeleteRecentCommand={handleDeleteRecentCommand}
       />
-
-      {connectionState !== 'connected' ? (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-between bg-bg px-4 py-12">
-          <div></div>
-          <div className="text-sm text-header-text">
-            {connectionState === 'connecting' ? t('ssh.connecting') : connectionError}
-          </div>
-          <div
-            className={classNames(
-              'flex items-center justify-center',
-              connectionState === 'connecting' ? 'invisible' : '',
-            )}
-          >
-            <Menubar>
-              <Button onClick={retryConnection}>
-                <RefreshCw size={16} />
-                {t('ssh.retry')}
-              </Button>
-            </Menubar>
-          </div>
-        </div>
-      ) : null}
 
       <Dialog
         open={hostFingerprintPrompt !== null}

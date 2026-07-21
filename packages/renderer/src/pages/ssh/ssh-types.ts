@@ -24,6 +24,15 @@ export type SshServerListItem = components['schemas']['SshServerListItem'];
  */
 export type ClientOutboundMessage = TerminalClientMessage;
 
+/** Transport lifecycle state owned by one terminal pane. */
+export type SshConnectionState = 'connecting' | 'connected' | 'failed';
+
+/** Per-pane transport snapshot consumed by pane-scoped connection overlays. */
+export type SshPaneConnectionSnapshot = {
+  connectionState: SshConnectionState;
+  connectionError: string;
+};
+
 /**
  * Websocket payloads received by renderer from backend session runtime.
  */
