@@ -363,14 +363,16 @@ flowchart LR
 
 开发环境默认 manifest URL 为 `https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json`。只有需要覆盖默认值时才需要在启动 Cosmosh 的同一个终端里设置 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，例如测试分支专用临时 prerelease：
 
-  ```powershell
-  $env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
-  pnpm dev:main
-  ```
+先启动 `pnpm dev:renderer` 并等待 `http://127.0.0.1:2767` 就绪，再在第二个终端启动 `pnpm dev:main`。远端增强必须在 Electron 窗口中测试：直接打开 Vite URL 不具备 preload bridge，也不会启动由 Main 管理的 backend 子进程，因此仅在浏览器中运行 renderer 无法完成 bootstrap 或创建 SSH 会话。
 
-  ```sh
-  COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
-  ```
+```powershell
+$env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
+pnpm dev:main
+```
+
+```sh
+COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
+```
 
 ### 8.2 会话流程
 

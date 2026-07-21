@@ -363,14 +363,16 @@ Remote Enhancements are the optional runtime layer for host-aware SSH features s
 
 During development, the default manifest URL is `https://github.com/agoudbg/Cosmosh/releases/download/remote-bootstrap-dev/cosmosh-remote-bootstrap-manifest.json`. Set `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` in the same terminal that launches Cosmosh only when you need to override that default, for example to test a branch-scoped temporary prerelease:
 
-  ```powershell
-  $env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
-  pnpm dev:main
-  ```
+Start `pnpm dev:renderer` first and wait for `http://127.0.0.1:2767`, then start `pnpm dev:main` in a second terminal. Remote Enhancements must be tested in the Electron window: opening the Vite URL directly has no preload bridge and does not start Main's managed backend child, so renderer-only browser testing cannot complete bootstrap or create an SSH session.
 
-  ```sh
-  COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
-  ```
+```powershell
+$env:COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>"
+pnpm dev:main
+```
+
+```sh
+COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL="<manifest-url>" pnpm dev:main
+```
 
 ### 8.2 Session Flow
 

@@ -156,6 +156,7 @@ sequenceDiagram
 ### Backend 访问边界
 
 - 后端 HTTP 在所有运行模式下都显式绑定 IPv4 loopback 接口（`127.0.0.1`）。监听器不得依赖 Node server 默认值，因为默认值可能将 standalone 开发 API 暴露到非 loopback 网卡。
+- Vite renderer 开发服务器同样显式绑定 `127.0.0.1`。Electron 开发加载 URL、renderer 弹窗可信 origin、renderer CSP 与 Backend CORS 必须使用这一精确 origin 和共享的 `COSMOSH_RENDERER_DEV_PORT`；`localhost` 不能作为可互换的开发 origin。
 - electron-main 模式还会使用内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护 `/api/v1/*`。standalone 模式即使不要求该 token，也必须保持仅 loopback 可访问。
 - Main 进程注入头信息，不向 renderer 暴露内部 token。
 - 开发态请求镜像：在未打包的开发运行中，Main 会把已经发生的 backend proxy 请求记录为脱敏后的内存 ring buffer，并通过 debug IPC 暴露给自定义 DevTools 面板。它不改变真实请求链路（`renderer -> preload IPC -> main -> backend`），不发送 mirror fetch，也不会在原生 Network tab 里增加伪造请求行。镜像数据在进入 renderer/DevTools 前会移除内部鉴权头、secret-like payload key 与本地绝对路径。生产包不会采集 trace，也不会加载 extension。如果开发态没有看到 `Cosmosh Requests` 面板，先查看 main 进程终端里的 `[debug]` extension load/skip 日志。

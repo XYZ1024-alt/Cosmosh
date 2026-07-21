@@ -76,6 +76,10 @@ pnpm dev:main
 pnpm dev:backend
 ```
 
+The renderer development server listens on `http://127.0.0.1:2767`. Open the app through the Electron window
+started by `pnpm dev:main`; loading the renderer URL directly in a browser does not provide the preload bridge or
+start Main's managed backend child.
+
 Optional override: set `COSMOSH_RENDERER_DEV_PORT` before starting dev services.
 
 `pnpm dev:main` validates that the SQLCipher native addon matches the system Node.js runtime used by the
