@@ -180,7 +180,10 @@ export type TerminalCommandTimelineItem = {
  * Pane-local command timeline state consumed by the SSH pane layout.
  */
 export type TerminalCommandTimelineModel = {
-  visible: boolean;
+  /** Whether the pane reserves the fixed command timeline rail. */
+  railReserved: boolean;
+  /** Whether the rail currently exposes command markers and navigation controls. */
+  historyVisible: boolean;
   alternateScreenActive: boolean;
   items: TerminalCommandTimelineItem[];
   activeCommandId: string | null;

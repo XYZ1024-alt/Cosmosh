@@ -27,9 +27,20 @@ const REMOTE_SHELL_CWD_MAX_BYTES = 4 * 1024;
 const REMOTE_SHELL_COMMAND_MAX_BYTES = 255;
 const REMOTE_SHELL_LINE_LENGTH_MAX = 1024 * 1024;
 
-type ParseResult = {
+/**
+ * One ordered item recovered from the SSH PTY stream.
+ *
+ * Visible output and trusted helper events must remain interleaved so renderer
+ * xterm geometry reflects every byte that preceded a lifecycle event.
+ */
+export type RemoteShellEventStreamFrame =
+  | { type: 'output'; data: string }
+  | { type: 'event'; event: RemoteShellEventMessage };
+
+/** Parsed representation of one completed OSC sequence. */
+type ParsedOscSequence = {
   output: string;
-  events: RemoteShellEventMessage[];
+  event: RemoteShellEventMessage | null;
 };
 
 /**
@@ -56,11 +67,31 @@ export class RemoteShellEventOscParser {
    * Parses one SSH output chunk.
    *
    * @param chunk Raw UTF-8 terminal output chunk.
-   * @returns Visible terminal output plus normalized remote shell events.
+   * @returns Ordered visible-output and normalized-event frames.
    */
-  public parse(chunk: string): ParseResult {
+  public parse(chunk: string): RemoteShellEventStreamFrame[] {
     let output = '';
-    const events: RemoteShellEventMessage[] = [];
+    const frames: RemoteShellEventStreamFrame[] = [];
+
+    /**
+     * Flushes visible bytes before appending the event that followed them in
+     * the same PTY stream chunk.
+     *
+     * @param parsed Completed OSC parse result.
+     * @returns Nothing.
+     */
+    const appendParsedOsc = (parsed: ParsedOscSequence): void => {
+      output += parsed.output;
+      if (!parsed.event) {
+        return;
+      }
+
+      if (output) {
+        frames.push({ type: 'output', data: output });
+        output = '';
+      }
+      frames.push({ type: 'event', event: parsed.event });
+    };
 
     for (let index = 0; index < chunk.length; index += 1) {
       const char = chunk[index] ?? '';
@@ -76,9 +107,7 @@ export class RemoteShellEventOscParser {
           continue;
         }
 
-        const parsed = this.parseCompletedOsc(completedSequence);
-        output += parsed.output;
-        events.push(...parsed.events);
+        appendParsedOsc(this.parseCompletedOsc(completedSequence));
         continue;
       }
 
@@ -86,9 +115,7 @@ export class RemoteShellEventOscParser {
         const prefixResult = this.appendOscPrefixChar(char);
         output += prefixResult.output;
         if (prefixResult.completedSequence) {
-          const parsed = this.parseCompletedOsc(prefixResult.completedSequence);
-          output += parsed.output;
-          events.push(...parsed.events);
+          appendParsedOsc(this.parseCompletedOsc(prefixResult.completedSequence));
         }
         continue;
       }
@@ -112,7 +139,10 @@ export class RemoteShellEventOscParser {
       output += char;
     }
 
-    return { output, events };
+    if (output) {
+      frames.push({ type: 'output', data: output });
+    }
+    return frames;
   }
 
   /**
@@ -242,20 +272,19 @@ export class RemoteShellEventOscParser {
    * @param sequence Full OSC bytes including ESC prefix and terminator.
    * @returns Visible output plus any decoded Cosmosh events.
    */
-  private parseCompletedOsc(sequence: string): ParseResult {
+  private parseCompletedOsc(sequence: string): ParsedOscSequence {
     if (!sequence.startsWith(COSMOSH_OSC_PREFIX)) {
-      return { output: sequence, events: [] };
+      return { output: sequence, event: null };
     }
 
     const payload = sequence.slice(COSMOSH_OSC_PREFIX.length, readSequencePayloadEnd(sequence));
     if (Buffer.byteLength(payload, 'utf8') > REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES) {
-      return { output: '', events: [] };
+      return { output: '', event: null };
     }
 
-    const event = parseRemoteShellEventPayload(payload);
     return {
       output: '',
-      events: event ? [event] : [],
+      event: parseRemoteShellEventPayload(payload),
     };
   }
 }

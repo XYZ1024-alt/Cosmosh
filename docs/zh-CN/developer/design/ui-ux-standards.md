@@ -106,9 +106,10 @@ SSH 页面中的终端文本选区交互必须满足以下规则：
 - SSH 分屏分隔线应使用专用 token `color.ssh.terminal.split.divider`（Tailwind 类：`border-ssh-terminal-split-divider`），不要复用 Home/Card 通用分隔色。
 - 每个分屏 pane 都是独立命令操作面，因此针对同一已解析目标分别持有 xterm、backend session、WebSocket、补全/状态与命令 marker。UI 动作与浮层必须通过明确 pane id 路由。
 - 每个 pane 右键菜单都应提供关闭入口，但界面上至少保留一个可见 pane。关闭任意 pane（包括原始 primary）必须保留其余 pane id 与运行时。
-- 上一条/下一条命令动作不属于终端右键菜单。可信命令时间线使用固定宽度轨道放在每个符合条件的 pane 右侧，所有点击与导航动作都必须携带该 pane 的明确 id。
-- 时间线 marker 采用等间距横线，宽度使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素，并使用语义 token `color.ssh.terminal.command-timeline.*`。悬浮展示完整命令，点击定位输入行，顶部/底部箭头无循环导航，当前 marker 使用 active token。
-- 只有通过认证的远端增强处于 active 状态并声明 `command-start` 时才显示时间线。Alternate-screen 程序运行时隐藏控件但保留轨道宽度，避免 xterm/PTY 列数变化。
+- 上一条/下一条命令动作不属于终端右键菜单。通过认证的远端增强处于 active 状态并声明 `command-start` 后，每个符合条件的 pane 都在右侧预留固定 40 px 轨道；所有点击与导航动作都必须携带该 pane 的明确 id。
+- 只有 pane 保留至少三条可信命令且 xterm normal buffer 已产生 scrollback（`baseY > 0`）时才显示时间线内容。低于门槛或运行 alternate-screen 程序时保持轨道为空，从而避免内容显隐改变 xterm/PTY 列数。
+- 时间线 marker 按提交顺序排列在垂直居中的自适应组内。组高度为 `min(availableHeight, commandCount * 16px)`，达到可用高度上限前同时向上、向下扩展，达到上限后才压缩间距；最新命令固定在最下面一行。
+- Marker 宽度使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素，并使用语义 token `color.ssh.terminal.command-timeline.*`。悬浮展示完整命令，点击定位输入行，顶部/底部箭头无循环导航。Scrollback 位于底部时最新命令使用 active token；向上滚动后改为激活视口中心所在命令。
 - 仅当 `remoteEnhancementsDebugEnabled` 启用时显示`远端增强调试`，并且必须展示来源/活动 pane 数据，不得回退到 primary pane 数据。
 
 ## 7.2 Tab 重排运行时连续性

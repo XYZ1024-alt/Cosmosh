@@ -274,6 +274,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       const disposeCommandTimelineBuffer = terminal.buffer.onBufferChange(() => {
         refreshRuntimeCommandTimeline();
       });
+      const disposeCommandTimelineResize = terminal.onResize(refreshRuntimeCommandTimeline);
 
       // The timeline rail can change pane width without resizing the outer SSH
       // workbench, so secondary panes observe their own xterm host geometry.
@@ -496,6 +497,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
         disposeSelectionRender.dispose();
         disposeCommandTimelineWrite.dispose();
         disposeCommandTimelineBuffer.dispose();
+        disposeCommandTimelineResize.dispose();
         paneResizeObserver.disconnect();
         containerElement.removeEventListener('pointerup', trackPointerPosition);
         containerElement.removeEventListener('mouseup', trackPointerPosition);

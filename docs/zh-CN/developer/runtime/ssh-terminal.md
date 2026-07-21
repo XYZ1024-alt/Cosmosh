@@ -332,11 +332,12 @@ flowchart LR
 
 ## 6.3 可信命令时间线
 
-- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，SSH pane 右侧才会显示窄命令时间线。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 时间线。
+- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，SSH pane 才会在右侧预留 40 px 命令时间线轨道。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 时间线。
 - 用户按 Enter 时先记录隐藏的 pane-local xterm 输入 marker。可信 `command-start` 会在此前终端输出完成解析后消费最早的待确认 marker，记录输出起始行，并从 xterm 行重建完整的已显示命令。Helper 发出的已清洗可执行文件名只作为生命周期 metadata，绝不会替代界面中的完整输入。`command-end` 负责记录输出结束行。
-- 轨道中的命令线等间距排列。每条线宽使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素；悬浮显示完整原始命令，点击定位到命令输入行，顶部/底部箭头在不循环的前提下移动到上一条/下一条；最接近视口中心的 marker 高亮为当前命令。
+- 只有轨道保留至少三条可信命令且 xterm normal buffer 已产生 scrollback（`baseY > 0`）时才显示内容。可见命令按提交顺序排列在垂直居中的组内，组高度为 `min(availableHeight, commandCount * 16px)`；它同时向上、向下增长，只在达到高度上限后压缩间距，并将最新命令固定在最下面。
+- 每条线宽使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素；悬浮显示完整原始命令，点击定位到命令输入行，顶部/底部箭头在不循环的前提下移动到上一条/下一条。Xterm 位于底部时最新 marker 高亮为当前命令；用户向上滚动后改为高亮最接近视口中心的 marker。
 - 完整命令字符串只保存在 renderer 内存中，绝不持久化、记录日志、发送、加入 telemetry，也不复制到远端增强调试记录。信任丢失、重连/重置、pane 释放或 xterm scrollback 回收都会同时释放 marker 与命令文本，因此条目只属于当前 pane、当前连接与 normal buffer 仍保留的 scrollback。
-- Alternate-screen 程序会隐藏时间线控件但保留轨道宽度，避免进入/退出 TUI 时改变 PTY 列数。Primary 与 secondary runtime 都会在 write 解析完成、滚动、buffer 切换和 marker 释放后刷新模型。
+- Alternate-screen 程序会隐藏时间线内容但保留轨道宽度，避免进入/退出 TUI 时改变 PTY 列数。Primary 与 secondary runtime 都会在 write 解析完成、滚动、调整尺寸、buffer 切换和 marker 释放后刷新模型。
 
 ## 7. 开发排查清单
 
@@ -429,6 +430,7 @@ ESC ] 777 ; cosmosh ; <base64-json> BEL
 Backend 解析规则：
 
 - `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
+- Parser 会返回按原始顺序排列的可见输出/helper 事件 frame，`SshSessionService` 不得再按类型对它们分组。事件之前的可见字节，尤其是 `command-start` 之前的输入回显与换行，必须先进入 xterm，renderer marker 才能捕获有效的输入/输出边界。
 - Cosmosh OSC 会从可见终端输出中剥离并解码，但只有 backend 运行时 gate 进入 `active` 后，事件才会应用并转发。
 - Gate 只有在交互 shell 打开前 status 校验成功后才以 `pending` 开始；匹配的 `integration-ready` 会将其切换为 `active`。如果 10 秒内没有收到有效握手，则以 `HELPER_HANDSHAKE_TIMEOUT` 切换为 `disabled`；任何 shell、helper version、protocol version 或 capability 不匹配也会切换为 `disabled` 并清空 helper 派生状态。
 - 非 Cosmosh OSC 与普通 ANSI 输出会保持可见、原样流式透传，包括跨 SSH chunk 拆分的序列。

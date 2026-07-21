@@ -30,7 +30,7 @@ const encodeCosmoshOsc = (value: Record<string, unknown>): string => {
   return `${ESCAPE}]777;cosmosh;${encoded}${BELL}`;
 };
 
-test('parser strips one or more Cosmosh OSC events from visible output', () => {
+test('parser strips Cosmosh OSC events while preserving their position among visible output', () => {
   const parser = new RemoteShellEventOscParser();
   const firstEvent = {
     ...RUNTIME_CONTRACT,
@@ -52,27 +52,35 @@ test('parser strips one or more Cosmosh OSC events from visible output', () => {
 
   const result = parser.parse(`before${encodeCosmoshOsc(firstEvent)} middle ${encodeCosmoshOsc(secondEvent)}after`);
 
-  assert.equal(result.output, 'before middle after');
-  assert.deepEqual(result.events, [
+  assert.deepEqual(result, [
+    { type: 'output', data: 'before' },
     {
-      type: 'remote-shell-event',
-      ...RUNTIME_CONTRACT,
-      event: 'cwd',
-      shell: 'zsh',
-      cwd: '/tmp\tworkspace',
-      timestamp: 1_717_000_000_000,
+      type: 'event',
+      event: {
+        type: 'remote-shell-event',
+        ...RUNTIME_CONTRACT,
+        event: 'cwd',
+        shell: 'zsh',
+        cwd: '/tmp\tworkspace',
+        timestamp: 1_717_000_000_000,
+      },
     },
+    { type: 'output', data: ' middle ' },
     {
-      type: 'remote-shell-event',
-      ...RUNTIME_CONTRACT,
-      event: 'command-end',
-      shell: 'zsh',
-      command: 'false',
-      exitCode: 1,
-      durationMs: 42,
-      commandId: 'cmd-1',
-      timestamp: 1_717_000_000_100,
+      type: 'event',
+      event: {
+        type: 'remote-shell-event',
+        ...RUNTIME_CONTRACT,
+        event: 'command-end',
+        shell: 'zsh',
+        command: 'false',
+        exitCode: 1,
+        durationMs: 42,
+        commandId: 'cmd-1',
+        timestamp: 1_717_000_000_100,
+      },
     },
+    { type: 'output', data: 'after' },
   ]);
 });
 
@@ -81,8 +89,7 @@ test('parser preserves non-Cosmosh OSC sequences and normal ANSI text', () => {
   const nonCosmoshOsc = `${ESCAPE}]0;window title${BELL}`;
   const result = parser.parse(`plain ${ESCAPE}[31mred${ESCAPE}[0m ${nonCosmoshOsc} tail`);
 
-  assert.equal(result.output, `plain ${ESCAPE}[31mred${ESCAPE}[0m ${nonCosmoshOsc} tail`);
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, [{ type: 'output', data: `plain ${ESCAPE}[31mred${ESCAPE}[0m ${nonCosmoshOsc} tail` }]);
 });
 
 test('parser decodes Cosmosh OSC split across chunks', () => {
@@ -96,17 +103,19 @@ test('parser decodes Cosmosh OSC split across chunks', () => {
   const first = parser.parse(`left${sequence.slice(0, 16)}`);
   const second = parser.parse(`${sequence.slice(16)}right`);
 
-  assert.equal(first.output, 'left');
-  assert.deepEqual(first.events, []);
-  assert.equal(second.output, 'right');
-  assert.deepEqual(second.events, [
+  assert.deepEqual(first, [{ type: 'output', data: 'left' }]);
+  assert.deepEqual(second, [
     {
-      type: 'remote-shell-event',
-      ...RUNTIME_CONTRACT,
-      event: 'prompt-ready',
-      shell: 'bash',
-      timestamp: 1_717_000_000_000,
+      type: 'event',
+      event: {
+        type: 'remote-shell-event',
+        ...RUNTIME_CONTRACT,
+        event: 'prompt-ready',
+        shell: 'bash',
+        timestamp: 1_717_000_000_000,
+      },
     },
+    { type: 'output', data: 'right' },
   ]);
 });
 
@@ -115,8 +124,7 @@ test('parser drops invalid Cosmosh JSON without affecting surrounding output', (
   const invalidPayload = Buffer.from('{bad json', 'utf8').toString('base64');
   const result = parser.parse(`before${ESCAPE}]777;cosmosh;${invalidPayload}${BELL}after`);
 
-  assert.equal(result.output, 'beforeafter');
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, [{ type: 'output', data: 'beforeafter' }]);
 });
 
 test('parser drops legacy helper events without a runtime contract', () => {
@@ -130,8 +138,7 @@ test('parser drops legacy helper events without a runtime contract', () => {
     }),
   );
 
-  assert.equal(result.output, '');
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, []);
 });
 
 test('parser drops oversized Cosmosh payloads until sequence terminator', () => {
@@ -139,8 +146,7 @@ test('parser drops oversized Cosmosh payloads until sequence terminator', () => 
   const oversizedPayload = 'x'.repeat(REMOTE_SHELL_EVENT_OSC_PAYLOAD_MAX_BYTES + 1);
   const result = parser.parse(`before${ESCAPE}]777;cosmosh;${oversizedPayload}${BELL}after`);
 
-  assert.equal(result.output, 'beforeafter');
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, [{ type: 'output', data: 'beforeafter' }]);
 });
 
 test('parser streams non-Cosmosh OSC without retaining its unbounded payload', () => {
@@ -148,8 +154,7 @@ test('parser streams non-Cosmosh OSC without retaining its unbounded payload', (
   const nonterminatedOsc = `${ESCAPE}]0;${'x'.repeat(256 * 1024)}`;
   const result = parser.parse(`before${nonterminatedOsc}`);
 
-  assert.equal(result.output, `before${nonterminatedOsc}`);
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, [{ type: 'output', data: `before${nonterminatedOsc}` }]);
   assert.equal(parser.flush(), '');
 });
 
@@ -158,7 +163,6 @@ test('parser flushes an incomplete prefix that may still belong to Cosmosh', () 
   const candidate = `${ESCAPE}]777;cos`;
   const result = parser.parse(`before${candidate}`);
 
-  assert.equal(result.output, 'before');
-  assert.deepEqual(result.events, []);
+  assert.deepEqual(result, [{ type: 'output', data: 'before' }]);
   assert.equal(parser.flush(), candidate);
 });

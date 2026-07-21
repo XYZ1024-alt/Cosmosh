@@ -11,6 +11,7 @@ import { resolvePromptCommandStartOffset } from './ssh-utils';
 const COMMAND_TIMELINE_MIN_BAR_WIDTH = 8;
 const COMMAND_TIMELINE_MAX_BAR_WIDTH = 28;
 const COMMAND_TIMELINE_BAR_GROWTH = 4;
+const COMMAND_TIMELINE_MIN_VISIBLE_COMMANDS = 3;
 
 /**
  * Records the current normal-buffer input row until a trusted helper confirms
@@ -177,17 +178,18 @@ export const clearTerminalCommandMarkers = (runtime: TerminalPaneRuntime): boole
  * Creates the pane-local model rendered by the right-side command timeline.
  *
  * @param runtime Source pane runtime.
- * @param visible Whether trusted Remote Enhancements currently advertise `command-start`.
- * @returns Timeline items, alternate-screen state, active item, and navigation bounds.
+ * @param railReserved Whether trusted Remote Enhancements currently reserve the command rail.
+ * @returns Rail/content visibility, timeline items, active item, and navigation bounds.
  */
 export const createTerminalCommandTimelineModel = (
   runtime: TerminalPaneRuntime,
-  visible: boolean,
+  railReserved: boolean,
 ): TerminalCommandTimelineModel => {
   const alternateScreenActive = runtime.terminal.buffer.active.type === 'alternate';
-  if (!visible) {
+  if (!railReserved) {
     return {
-      visible: false,
+      railReserved: false,
+      historyVisible: false,
       alternateScreenActive,
       items: [],
       activeCommandId: null,
@@ -207,15 +209,20 @@ export const createTerminalCommandTimelineModel = (
       barWidth: resolveCommandTimelineBarWidth(outputRows),
     };
   });
+  const historyVisible =
+    !alternateScreenActive &&
+    entries.length >= COMMAND_TIMELINE_MIN_VISIBLE_COMMANDS &&
+    runtime.terminal.buffer.normal.baseY > 0;
   const activeIndex = resolveActiveCommandIndex(runtime.terminal, entries);
 
   return {
-    visible: true,
+    railReserved: true,
+    historyVisible,
     alternateScreenActive,
     items,
-    activeCommandId: activeIndex >= 0 ? (entries[activeIndex]?.commandId ?? null) : null,
-    canNavigatePrevious: activeIndex > 0,
-    canNavigateNext: activeIndex >= 0 && activeIndex < entries.length - 1,
+    activeCommandId: historyVisible && activeIndex >= 0 ? (entries[activeIndex]?.commandId ?? null) : null,
+    canNavigatePrevious: historyVisible && activeIndex > 0,
+    canNavigateNext: historyVisible && activeIndex >= 0 && activeIndex < entries.length - 1,
   };
 };
 
@@ -394,7 +401,12 @@ const resolveActiveCommandIndex = (terminal: Terminal, entries: TerminalCommandM
     return -1;
   }
 
-  const viewportAnchorLine = terminal.buffer.normal.viewportY + Math.floor(terminal.rows / 2);
+  const normalBuffer = terminal.buffer.normal;
+  if (normalBuffer.baseY > 0 && normalBuffer.viewportY === normalBuffer.baseY) {
+    return entries.length - 1;
+  }
+
+  const viewportAnchorLine = normalBuffer.viewportY + Math.floor(terminal.rows / 2);
   let activeIndex = 0;
   entries.forEach((entry, index) => {
     if (entry.inputMarker.line <= viewportAnchorLine) {

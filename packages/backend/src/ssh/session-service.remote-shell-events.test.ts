@@ -5,7 +5,7 @@ import type { RemoteShellCapability } from '@cosmosh/api-contract';
 
 import type { RemoteBootstrapResult, RemoteBootstrapStatus } from '../remote-bootstrap/service.js';
 import type { OpenSshClientResult } from './connect.js';
-import type { RemoteShellEventMessage } from './remote-shell-events.js';
+import type { RemoteShellEventMessage, RemoteShellEventStreamFrame } from './remote-shell-events.js';
 import {
   resolveRemoteEnhancementsSessionGate,
   SshSessionService,
@@ -45,6 +45,18 @@ type RemoteShellEventServiceHarness = {
   handleRemoteShellEvent(session: RemoteShellEventSessionHarness, event: RemoteShellEventMessage): void;
   flushPendingRemoteShellEvents(session: RemoteShellEventSessionHarness): void;
   startRemoteEnhancementHandshakeTimeout(session: RemoteShellEventSessionHarness, timeoutMs?: number): void;
+};
+
+/** Minimal parser-owning session used to verify output/event forwarding order. */
+type RemoteShellOutputSessionHarness = {
+  remoteShellEventParser: {
+    parse(data: string): RemoteShellEventStreamFrame[];
+  };
+};
+
+/** Private session-service surface exercised by the ordered stream regression test. */
+type RemoteShellOutputServiceHarness = {
+  handleShellOutput(session: RemoteShellOutputSessionHarness, data: string): void;
 };
 
 type RemoteBootstrapEnsureServiceHarness = {
@@ -129,6 +141,39 @@ test('structured command lifecycle becomes authoritative only after matching cap
   assert.equal(usesStructuredRemoteCommandLifecycle('disabled', ['command-start']), false);
   assert.equal(usesStructuredRemoteCommandLifecycle('active', ['cwd', 'prompt-ready']), false);
   assert.equal(usesStructuredRemoteCommandLifecycle('active', ['command-start', 'command-end']), true);
+});
+
+test('SshSessionService forwards visible output and helper events in original PTY order', () => {
+  const commandStart = createRemoteShellEvent({
+    event: 'command-start',
+    command: 'echo',
+    commandId: 'cmd-1',
+    cwd: undefined,
+  });
+  const frames: RemoteShellEventStreamFrame[] = [
+    { type: 'output', data: '\r\n' },
+    { type: 'event', event: commandStart },
+    { type: 'output', data: 'result\r\n' },
+  ];
+  const forwarded: string[] = [];
+  const serviceHarness = SshSessionService.prototype as unknown as RemoteShellOutputServiceHarness;
+  const serviceContext = {
+    handleVisibleShellOutput: (_session: RemoteShellOutputSessionHarness, data: string): void => {
+      forwarded.push(`output:${JSON.stringify(data)}`);
+    },
+    handleRemoteShellEvent: (_session: RemoteShellOutputSessionHarness, event: RemoteShellEventMessage): void => {
+      forwarded.push(`event:${event.event}`);
+    },
+  };
+  const session: RemoteShellOutputSessionHarness = {
+    remoteShellEventParser: {
+      parse: () => frames,
+    },
+  };
+
+  serviceHarness.handleShellOutput.call(serviceContext, session, 'raw-pty-chunk');
+
+  assert.deepEqual(forwarded, ['output:"\\r\\n"', 'event:command-start', 'output:"result\\r\\n"']);
 });
 
 test('SshSessionService ignores remote shell events while the runtime is disabled', () => {
