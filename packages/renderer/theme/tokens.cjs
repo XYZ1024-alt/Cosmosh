@@ -18,9 +18,6 @@ const base = {
     xl: '18px',
     'xl-2': '20px',
   },
-  blur: {
-    transition: '1px',
-  },
   colors: {
     text: {
       DEFAULT: standardTextColorDefault,

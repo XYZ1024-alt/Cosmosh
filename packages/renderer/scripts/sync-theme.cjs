@@ -26,7 +26,6 @@ const buildVars = (tokens) => {
   const entries = [];
   collectVars(tokens.font, ['font'], entries);
   collectVars(tokens.radius, ['radius'], entries);
-  collectVars(tokens.blur, ['blur'], entries);
   collectVars(tokens.colors, ['color'], entries);
   collectVars(tokens.shadow, ['shadow'], entries);
   return entries;
