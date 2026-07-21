@@ -19,6 +19,7 @@ import {
   resolveCommandTimelineEntryHitHeight,
   resolveCommandTimelineIdleDelay,
   selectCommandTimelineEntryItems,
+  selectCommandTimelineMenuItems,
   shouldAllowCommandTimelineEntryPointerEvents,
   shouldShowCommandTimelineEntry,
 } from './terminal-command-timeline-state';
@@ -605,6 +606,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   );
 
   const entryItems = selectCommandTimelineEntryItems(model.items);
+  const menuItems = selectCommandTimelineMenuItems(model.items);
   const entryVisible = shouldShowCommandTimelineEntry(model.historyVisible, activityVisible, menuOpen);
   const entryPointerEnabled = shouldAllowCommandTimelineEntryPointerEvents(model.historyVisible);
   const entryHitHeight = resolveCommandTimelineEntryHitHeight(entryItems.length);
@@ -698,7 +700,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
                     className="terminal-command-timeline-menu-items"
                     onContextMenuCapture={handleCommandContextMenuCapture}
                   >
-                    {model.items.map((item) => {
+                    {menuItems.map((item) => {
                       const isActive = item.commandId === model.activeCommandId;
                       return (
                         <DropdownMenuItem

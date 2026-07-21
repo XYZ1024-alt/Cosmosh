@@ -25,11 +25,27 @@ export const COMMAND_TIMELINE_IDLE_TIMEOUT_MS = 5_000;
 /** Grace window for crossing between the inline trigger and portaled menu. */
 export const COMMAND_TIMELINE_POINTER_LEAVE_GRACE_MS = 80;
 
+/** Maximum command rows mounted in the expanded recent-command menu. */
+export const COMMAND_TIMELINE_MENU_ITEM_LIMIT = 100;
+
+/**
+ * Selects the newest commands rendered inside the expanded menu.
+ *
+ * Marker survival inside scrollback is the only other bound (10k+ rows by
+ * default), and the menu is hover-opened, so mounting thousands of rows would
+ * jank exactly the interaction that must feel instant.
+ *
+ * @param items Complete command collection in submission order.
+ * @returns At most the newest hundred commands, preserving submission order.
+ */
+export const selectCommandTimelineMenuItems = <T>(items: readonly T[]): T[] =>
+  items.slice(-COMMAND_TIMELINE_MENU_ITEM_LIMIT);
+
 /**
  * Selects the newest commands represented by the compact timeline entry.
  *
- * The expanded menu still receives the complete retained collection. Keeping
- * this projection separate prevents the visual cap from truncating navigation.
+ * The expanded menu still receives its own larger projection. Keeping these
+ * projections separate prevents the visual cap from truncating navigation.
  *
  * @param items Complete command collection in submission order.
  * @returns At most the newest eight commands, preserving submission order.
