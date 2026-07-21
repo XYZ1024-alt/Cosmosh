@@ -8,11 +8,6 @@ import type {
 } from './ssh-types';
 import { resolvePromptCommandStartOffset } from './ssh-utils';
 
-const COMMAND_TIMELINE_MIN_BAR_WIDTH = 8;
-const COMMAND_TIMELINE_MAX_BAR_WIDTH = 28;
-const COMMAND_TIMELINE_BAR_GROWTH = 4;
-const COMMAND_TIMELINE_MIN_VISIBLE_COMMANDS = 3;
-
 /**
  * Records the current normal-buffer input row until a trusted helper confirms
  * that the submitted line started a command.
@@ -193,26 +188,15 @@ export const createTerminalCommandTimelineModel = (
       alternateScreenActive,
       items: [],
       activeCommandId: null,
-      canNavigatePrevious: false,
-      canNavigateNext: false,
     };
   }
 
   const entries = resolveValidCommandMarkers(runtime);
-  const items = entries.map((entry) => {
-    const outputRows = resolveOutputRowCount(runtime.terminal, entry);
-    return {
-      commandId: entry.commandId,
-      command: entry.command,
-      inputLine: entry.inputMarker.line,
-      outputRows,
-      barWidth: resolveCommandTimelineBarWidth(outputRows),
-    };
-  });
-  const historyVisible =
-    !alternateScreenActive &&
-    entries.length >= COMMAND_TIMELINE_MIN_VISIBLE_COMMANDS &&
-    runtime.terminal.buffer.normal.baseY > 0;
+  const items = entries.map((entry) => ({
+    commandId: entry.commandId,
+    command: entry.command,
+  }));
+  const historyVisible = !alternateScreenActive && entries.length > 0;
   const activeIndex = resolveActiveCommandIndex(runtime.terminal, entries);
 
   return {
@@ -221,27 +205,7 @@ export const createTerminalCommandTimelineModel = (
     alternateScreenActive,
     items,
     activeCommandId: historyVisible && activeIndex >= 0 ? (entries[activeIndex]?.commandId ?? null) : null,
-    canNavigatePrevious: historyVisible && activeIndex > 0,
-    canNavigateNext: historyVisible && activeIndex >= 0 && activeIndex < entries.length - 1,
   };
-};
-
-/**
- * Maps command output rows to the compact logarithmic marker width required by
- * the timeline visual contract.
- *
- * @param outputRows Number of normal-buffer rows produced by the command.
- * @returns Width in CSS pixels, clamped to the 8-28 px range.
- */
-export const resolveCommandTimelineBarWidth = (outputRows: number): number => {
-  const normalizedRows = Math.max(0, outputRows);
-  return Math.min(
-    COMMAND_TIMELINE_MAX_BAR_WIDTH,
-    Math.max(
-      COMMAND_TIMELINE_MIN_BAR_WIDTH,
-      COMMAND_TIMELINE_MIN_BAR_WIDTH + COMMAND_TIMELINE_BAR_GROWTH * Math.log2(normalizedRows + 1),
-    ),
-  );
 };
 
 /**
@@ -253,31 +217,6 @@ export const resolveCommandTimelineBarWidth = (outputRows: number): number => {
  */
 export const scrollToTerminalCommandMarker = (runtime: TerminalPaneRuntime, commandId: string): boolean => {
   const target = resolveValidCommandMarkers(runtime).find((entry) => entry.commandId === commandId);
-  if (!target) {
-    return false;
-  }
-
-  runtime.terminal.scrollToLine(target.inputMarker.line);
-  runtime.refreshCommandTimeline();
-  return true;
-};
-
-/**
- * Scrolls one pane to the adjacent trusted command without wrapping at either
- * end of the timeline.
- *
- * @param runtime Source pane runtime.
- * @param direction Direction relative to the command at the viewport anchor.
- * @returns `true` when an adjacent marker was found and revealed.
- */
-export const navigateTerminalCommandMarker = (
-  runtime: TerminalPaneRuntime,
-  direction: 'previous' | 'next',
-): boolean => {
-  const entries = resolveValidCommandMarkers(runtime);
-  const activeIndex = resolveActiveCommandIndex(runtime.terminal, entries);
-  const targetIndex = direction === 'previous' ? activeIndex - 1 : activeIndex + 1;
-  const target = entries[targetIndex];
   if (!target) {
     return false;
   }
@@ -414,22 +353,6 @@ const resolveActiveCommandIndex = (terminal: Terminal, entries: TerminalCommandM
     }
   });
   return activeIndex;
-};
-
-/**
- * Measures output using completed lifecycle geometry or the current normal
- * cursor for a running command.
- *
- * @param terminal Source terminal instance.
- * @param entry Confirmed command marker.
- * @returns Non-negative output row count.
- */
-const resolveOutputRowCount = (terminal: Terminal, entry: TerminalCommandMarker): number => {
-  const outputEndLine =
-    entry.outputEndMarker && entry.outputEndMarker.line >= 0
-      ? entry.outputEndMarker.line
-      : terminal.buffer.normal.baseY + terminal.buffer.normal.cursorY;
-  return Math.max(0, outputEndLine - entry.outputStartMarker.line);
 };
 
 /**

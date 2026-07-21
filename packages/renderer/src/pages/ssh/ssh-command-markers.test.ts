@@ -8,9 +8,7 @@ import {
   applyRemoteCommandMarkerEvent,
   clearTerminalCommandMarkers,
   createTerminalCommandTimelineModel,
-  navigateTerminalCommandMarker,
   recordPendingCommandMarker,
-  resolveCommandTimelineBarWidth,
   scrollToTerminalCommandMarker,
 } from './ssh-command-markers';
 import type { TerminalPaneRuntime } from './ssh-types';
@@ -254,9 +252,6 @@ test('trusted lifecycle promotes pending input and retains the complete compound
     true,
   );
 
-  const model = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(model.items[0]?.outputRows, 4);
-  assert.equal(model.items[0]?.barWidth, resolveCommandTimelineBarWidth(4));
   assert.equal(harness.runtime.commandMarkers[0]?.durationMs, 250);
   assert.equal(harness.runtime.commandMarkers[0]?.exitCode, 0);
 });
@@ -301,7 +296,7 @@ test('prompt-ready clears unmatched input and alternate-screen input is ignored'
   assert.equal(harness.markers.length, 1);
 });
 
-test('timeline reserves its rail and reveals three commands only after normal-buffer overflow', () => {
+test('timeline reserves its rail and exposes the first trusted command without requiring scrollback', () => {
   const harness = createRuntimeHarness([], 4);
   const commands = [
     { id: 'cmd-1', inputLine: 2, outputLine: 3, command: 'one' },
@@ -313,37 +308,29 @@ test('timeline reserves its rail and reveals three commands only after normal-bu
   assert.equal(unavailableModel.railReserved, false);
   assert.equal(unavailableModel.historyVisible, false);
 
-  commands.slice(0, 2).forEach((spec) => recordTrustedCommand(harness, spec));
-  harness.setBaseY(20);
-  harness.setViewportY(20);
-  const twoCommandModel = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(twoCommandModel.railReserved, true);
-  assert.equal(twoCommandModel.historyVisible, false);
+  const firstCommand = commands[0];
+  assert.ok(firstCommand);
+  recordTrustedCommand(harness, firstCommand);
+  const firstCommandModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(firstCommandModel.railReserved, true);
+  assert.equal(firstCommandModel.historyVisible, true);
+  assert.deepEqual(firstCommandModel.items, [{ commandId: 'cmd-1', command: 'one' }]);
+  assert.equal(firstCommandModel.activeCommandId, 'cmd-1');
 
-  harness.setBaseY(0);
-  const thirdCommand = commands[2];
-  assert.ok(thirdCommand);
-  recordTrustedCommand(harness, thirdCommand);
-  const noOverflowModel = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(noOverflowModel.historyVisible, false);
-
+  commands.slice(1).forEach((spec) => recordTrustedCommand(harness, spec));
   harness.setBaseY(20);
   harness.setViewportY(20);
   const bottomModel = createTerminalCommandTimelineModel(harness.runtime, true);
   assert.equal(bottomModel.historyVisible, true);
   assert.equal(bottomModel.items.length, 3);
   assert.equal(bottomModel.activeCommandId, 'cmd-3');
-  assert.equal(bottomModel.canNavigatePrevious, true);
-  assert.equal(bottomModel.canNavigateNext, false);
 
   harness.setViewportY(2);
   const scrolledModel = createTerminalCommandTimelineModel(harness.runtime, true);
   assert.equal(scrolledModel.activeCommandId, 'cmd-1');
-  assert.equal(scrolledModel.canNavigatePrevious, false);
-  assert.equal(scrolledModel.canNavigateNext, true);
 });
 
-test('timeline navigation uses pane-local adjacent commands without wrapping', () => {
+test('timeline direct navigation resolves pane-local command ids', () => {
   const harness = createRuntimeHarness([], 4);
   const commands = [
     { id: 'cmd-1', inputLine: 2, outputLine: 3, command: 'one' },
@@ -353,13 +340,10 @@ test('timeline navigation uses pane-local adjacent commands without wrapping', (
 
   commands.forEach((spec) => recordTrustedCommand(harness, spec));
 
-  harness.setViewportY(8);
-  assert.equal(navigateTerminalCommandMarker(harness.runtime, 'previous'), true);
-  assert.equal(navigateTerminalCommandMarker(harness.runtime, 'previous'), false);
-  assert.equal(navigateTerminalCommandMarker(harness.runtime, 'next'), true);
+  assert.equal(scrollToTerminalCommandMarker(harness.runtime, 'missing'), false);
+  assert.equal(scrollToTerminalCommandMarker(harness.runtime, 'cmd-1'), true);
   assert.equal(scrollToTerminalCommandMarker(harness.runtime, 'cmd-3'), true);
-  assert.equal(navigateTerminalCommandMarker(harness.runtime, 'next'), false);
-  assert.deepEqual(harness.scrollTargets, [2, 8, 15]);
+  assert.deepEqual(harness.scrollTargets, [2, 15]);
 });
 
 test('timeline reserves alternate-screen state and clears command text with scrollback disposal', () => {

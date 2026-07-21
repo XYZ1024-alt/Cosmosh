@@ -24,6 +24,7 @@ type UseSshMirrorPanesParams = {
   isActive: boolean;
   sessionTargetReady: boolean;
   terminalPaneIds: string[];
+  terminalLayoutRevision: string;
   terminalInitOptionsRef: React.RefObject<ITerminalOptions>;
   hardwareAccelerationStateRef: React.RefObject<TerminalHardwareAccelerationState>;
   characterWidthCompatibilityModeEnabledRef: React.RefObject<boolean>;
@@ -77,6 +78,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
     isActive,
     sessionTargetReady,
     terminalPaneIds,
+    terminalLayoutRevision,
     terminalInitOptionsRef,
     hardwareAccelerationStateRef,
     characterWidthCompatibilityModeEnabledRef,
@@ -612,5 +614,5 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       resizeObserver?.disconnect();
       window.removeEventListener('resize', scheduleFitRefresh);
     };
-  }, [fitAllTerminalPanes, terminalPaneIds, wrapperRef]);
+  }, [fitAllTerminalPanes, terminalLayoutRevision, terminalPaneIds, wrapperRef]);
 };

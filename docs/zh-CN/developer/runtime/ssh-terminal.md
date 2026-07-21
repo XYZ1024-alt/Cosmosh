@@ -332,12 +332,14 @@ flowchart LR
 
 ## 6.3 可信命令时间线
 
-- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，SSH pane 才会在右侧预留 40 px 命令时间线轨道。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 时间线。
-- 用户按 Enter 时先记录隐藏的 pane-local xterm 输入 marker。可信 `command-start` 会在此前终端输出完成解析后消费最早的待确认 marker，记录输出起始行，并从 xterm 行重建完整的已显示命令。Helper 发出的已清洗可执行文件名只作为生命周期 metadata，绝不会替代界面中的完整输入。`command-end` 负责记录输出结束行。
-- 只有轨道保留至少三条可信命令且 xterm normal buffer 已产生 scrollback（`baseY > 0`）时才显示内容。可见命令按提交顺序排列在垂直居中的组内，组高度为 `min(availableHeight, commandCount * 16px)`；它同时向上、向下增长，只在达到高度上限后压缩间距，并将最新命令固定在最下面。
-- 每条线宽使用 `clamp(8 + 4 * log2(outputRows + 1), 8, 28)` CSS 像素；悬浮显示完整原始命令，点击定位到命令输入行，顶部/底部箭头在不循环的前提下移动到上一条/下一条。Xterm 位于底部时最新 marker 高亮为当前命令；用户向上滚动后改为高亮最接近视口中心的 marker。
+- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，符合条件的 SSH pane 才会在右侧使用 40 px 命令槽。该槽由左侧 34 px 最近命令轨道和右侧 xterm 6 px 滚动条组成。Renderer 通过 xterm 内边距预留轨道，并把 xterm scrollable element 扩展到完整命令槽，使原生滚动条继续留在负责其悬浮显示、轨道点击和滑块拖动的节点内。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 轨道；所有终端仍使用窄滚动条。
+- 用户按 Enter 时先记录隐藏的 pane-local xterm 输入 marker。可信 `command-start` 会在此前终端输出完成解析后消费最早的待确认 marker，记录输出起始行，并从 xterm 行中仅重建已提交的命令。命令保留前会通过配置项或启发式 prompt 解析移除虚拟环境装饰以及用户、主机、工作目录等 prompt metadata。Helper 发出的已清洗可执行文件名只作为生命周期 metadata，绝不会替代界面中的完整输入。`command-end` 负责记录输出结束行。
+- 保留一条可信命令即可启用最近命令入口。在 normal buffer 中，终端内的鼠标移动、键盘/IME 输入或粘贴会显示入口，连续五秒无输入和鼠标移动后隐藏。闲置状态会对可见与键盘用户隐藏线条，但仅保留其紧凑鼠标命中区域，使命中区域上的鼠标移动无需等待新的 `pointerenter` 即可恢复悬浮。命令列表或命令行操作菜单打开期间，入口保持可见。运行 alternate-screen 程序时隐藏并禁用入口，但继续保留固定轨道。
+- 居中的入口最多呈现最新八条统一线条，每条宽 12 px、高 2 px，间距 10 px，以约 60% 透明度使用 `color.text`。这些线共同构成一个菜单入口，不再编码输出量，也不提供逐线的上一条/下一条导航。
+- 鼠标悬浮时，整组线条会 morph 为一个受视口边界约束的共享菜单卡片。靠近滚动条的一侧保持固定，卡片覆盖轨道并向左展开。正常挂载的 Portal 配合 CSS `@starting-style` 完成 180 ms transform/opacity 入场，只有鼠标离开的退场会保留 Portal 以执行 140 ms 反向过渡。`relatedTarget` 判断与 80 ms 离开宽限覆盖入口到 Portal 的边界，快速重新进入会从当前过渡状态继续，而不是重新开始。键盘打开保持即时，`prefers-reduced-motion` 仅保留短暂透明度过渡。
+- 卡片展示来源 pane 中仍有效的全部 marker，并按从旧到新的顺序排列。菜单打开或内容更新时自动滚动到底部。选择命令行会对其输入 marker 调用 `scrollToLine` 并恢复 xterm 焦点；右键菜单可复制内存中的命令，或将命令插入同一 pane 且不附加 Enter。鼠标离开或按 Escape 会关闭各层菜单。
 - 完整命令字符串只保存在 renderer 内存中，绝不持久化、记录日志、发送、加入 telemetry，也不复制到远端增强调试记录。信任丢失、重连/重置、pane 释放或 xterm scrollback 回收都会同时释放 marker 与命令文本，因此条目只属于当前 pane、当前连接与 normal buffer 仍保留的 scrollback。
-- Alternate-screen 程序会隐藏时间线内容但保留轨道宽度，避免进入/退出 TUI 时改变 PTY 列数。Primary 与 secondary runtime 都会在 write 解析完成、滚动、调整尺寸、buffer 切换和 marker 释放后刷新模型。
+- Primary 与 secondary runtime 都会在 write 解析完成、滚动、调整尺寸、buffer 切换和 marker 释放后刷新模型。由于后代 xterm 的内边距变化本身不会调整稳定 host 的尺寸，轨道预留状态变化会显式进入现有 pane fit/resize 流程。Xterm host 与固定轨道在信任、活动、菜单和 alternate-screen 状态变化期间保持稳定 DOM 祖先，确保 TUI 进出与闲置显隐既不会重建运行时，也不会让 PTY 列数失步。
 
 ## 7. 开发排查清单
 

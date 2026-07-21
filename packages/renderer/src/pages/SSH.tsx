@@ -43,6 +43,7 @@ import {
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
 import type { TerminalInlineImageSettings, TerminalWebLinksPlatform } from './ssh/terminal-addons';
+import { COMMAND_TIMELINE_SCROLLBAR_WIDTH_PX } from './ssh/terminal-command-timeline-state';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
@@ -242,6 +243,9 @@ const SSH: React.FC<SSHProps> = ({
       macOptionClickForcesSelection: terminalForceSelectionModifier === 'alt',
       macOptionIsMeta: terminalForceSelectionModifier === 'alt' ? false : undefined,
       minimumContrastRatio,
+      overviewRuler: {
+        width: COMMAND_TIMELINE_SCROLLBAR_WIDTH_PX,
+      },
       rightClickSelectsWord: terminalRightClickSelectsWord,
       screenReaderMode: settingsValues.terminalScreenReaderMode,
       scrollback: sshMaxRows,
@@ -429,7 +433,6 @@ const SSH: React.FC<SSHProps> = ({
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
-      navigatePaneCommand,
       scrollToPaneCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,
@@ -1462,7 +1465,17 @@ const SSH: React.FC<SSHProps> = ({
             activatePane(paneId);
             handleContextMenuClearTerminal();
           }}
-          onNavigateCommand={navigatePaneCommand}
+          onCopyCommand={(paneId, command) => {
+            activatePane(paneId);
+            void copyTextToClipboard(command);
+          }}
+          onFocusPane={(paneId) => {
+            activatePane(paneId);
+            focusActiveTerminal();
+          }}
+          onInsertCommand={(paneId, command) => {
+            dispatchRecentCommandToPane(command, paneId, false);
+          }}
           onSelectCommand={scrollToPaneCommand}
           onSplitPane={(paneId) => {
             activatePane(paneId);
