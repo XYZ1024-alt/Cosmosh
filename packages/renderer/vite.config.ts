@@ -8,6 +8,7 @@ import themeWatcher from './scripts/vite-theme-watcher.js';
 const workspaceRoot = path.resolve(__dirname, '../..');
 const i18nSourceEntry = path.resolve(workspaceRoot, 'packages/i18n/src/index.ts');
 const i18nLocalesRoot = path.resolve(workspaceRoot, 'packages/i18n/locales');
+const DEFAULT_RENDERER_DEV_HOST = '127.0.0.1';
 const DEFAULT_RENDERER_DEV_PORT = 2767;
 
 const resolveRendererDevPort = (): number => {
@@ -28,14 +29,14 @@ const createCspHtmlPlugin = (cspPolicy: string) => {
   };
 };
 
-const resolveCspPolicy = (mode: string, rendererDevPort: number): string => {
+const resolveCspPolicy = (mode: string): string => {
   const env = loadEnv(mode, process.cwd(), 'VITE_');
   const runtimeTarget = (env.VITE_RUNTIME_TARGET ?? 'electron').toLowerCase();
 
   const defaultConnectSrc =
     runtimeTarget === 'browser'
       ? "'self' https: wss: http://localhost:* ws://localhost:*"
-      : `'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:${rendererDevPort} ws://localhost:${rendererDevPort}`;
+      : "'self' http://127.0.0.1:* ws://127.0.0.1:*";
 
   const connectSrc = env.VITE_CSP_CONNECT_SRC?.trim() || defaultConnectSrc;
 
@@ -54,7 +55,7 @@ const resolveCspPolicy = (mode: string, rendererDevPort: number): string => {
 // https://vite.dev/config/
 export default defineConfig(({ command, mode }) => {
   const rendererDevPort = resolveRendererDevPort();
-  const cspPolicy = resolveCspPolicy(mode, rendererDevPort);
+  const cspPolicy = resolveCspPolicy(mode);
 
   return {
     plugins: [themeWatcher(), react(), createCspHtmlPlugin(cspPolicy)],
@@ -77,6 +78,7 @@ export default defineConfig(({ command, mode }) => {
       emptyOutDir: true,
     },
     server: {
+      host: DEFAULT_RENDERER_DEV_HOST,
       port: rendererDevPort,
       strictPort: true,
       fs: {

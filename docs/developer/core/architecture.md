@@ -156,6 +156,7 @@ sequenceDiagram
 ### Backend Access Boundary
 
 - Backend HTTP explicitly binds to the IPv4 loopback interface (`127.0.0.1`) in every runtime mode. The listener must never rely on the Node server default, which can expose standalone development APIs on non-loopback interfaces.
+- The Vite renderer development server also binds explicitly to `127.0.0.1`. Electron's development load URL, renderer popup trust origin, renderer CSP, and Backend CORS must use that exact origin and the shared `COSMOSH_RENDERER_DEV_PORT`; `localhost` is not an interchangeable development origin.
 - Electron-main mode additionally guards `/api/v1/*` with an internal runtime token (`COSMOSH_INTERNAL_TOKEN`). Standalone mode remains loopback-only even though it does not require that token.
 - Main process injects headers and never exposes internal token to renderer.
 - Development request mirror: in unpackaged development runs, Main records sanitized mirrors of backend proxy requests into an in-memory ring buffer and exposes them to the custom DevTools panel through debug IPC. This does not change the real request path (`renderer -> preload IPC -> main -> backend`), does not issue mirror fetches, and does not add fake rows to the native Network tab. The mirror redacts internal auth headers, secret-like payload keys, and local absolute paths before renderer/DevTools visibility. Production packages do not collect traces or load the extension. If the `Cosmosh Requests` panel is missing in development, check the main-process terminal for the `[debug]` extension load/skip log first.
