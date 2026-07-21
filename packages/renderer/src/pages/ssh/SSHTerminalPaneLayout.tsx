@@ -1,10 +1,13 @@
 import type { TerminalRightClickAction } from '@cosmosh/api-contract';
 import classNames from 'classnames';
+import { RefreshCw } from 'lucide-react';
 import React from 'react';
 
 import { TerminalContextMenu } from '../../components/terminal/terminal-context-menu';
+import { Button } from '../../components/ui/button';
+import { Menubar } from '../../components/ui/menubar';
 import { t } from '../../lib/i18n';
-import type { TerminalCommandTimelineModel } from './ssh-types';
+import type { SshPaneConnectionSnapshot, TerminalCommandTimelineModel } from './ssh-types';
 import { TerminalCommandTimeline } from './TerminalCommandTimeline';
 
 type PaneActionHandler = (paneId: string) => void;
@@ -15,7 +18,6 @@ type SSHTerminalPaneLayoutProps = {
   terminalPaneIds: string[];
   activePaneId: string;
   hasSelection: boolean;
-  isConnected: boolean;
   canSplitTerminal: boolean;
   copyShortcutLabel: string;
   pasteShortcutLabel: string;
@@ -27,9 +29,11 @@ type SSHTerminalPaneLayoutProps = {
   remoteEnhancementsDebugLabel?: string;
   canOpenDirectoryInSftp: boolean;
   commandTimelineModels: Record<string, TerminalCommandTimelineModel>;
+  paneConnectionStates: Record<string, SshPaneConnectionSnapshot>;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
+  onRetryPane: PaneActionHandler;
   onCopy: PaneActionHandler;
   onCopyAsHtml: PaneActionHandler;
   onPaste: PaneActionHandler;
@@ -57,7 +61,6 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.terminalPaneIds Ordered pane ids.
  * @param props.activePaneId Current active pane id.
  * @param props.hasSelection Whether active pane has selected text.
- * @param props.isConnected Whether terminal transport is connected.
  * @param props.canSplitTerminal Whether split action is currently allowed.
  * @param props.copyShortcutLabel Platform-resolved copy shortcut label.
  * @param props.pasteShortcutLabel Platform-resolved paste shortcut label.
@@ -69,9 +72,11 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.remoteEnhancementsDebugLabel Optional label for the Remote Enhancements debug panel action.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
  * @param props.commandTimelineModels Pane-indexed trusted command timeline models.
+ * @param props.paneConnectionStates Pane-indexed transport snapshots driving pane-scoped overlays.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
+ * @param props.onRetryPane Callback that reconnects one failed pane.
  * @param props.onCopy Callback that copies selection from pane.
  * @param props.onCopyAsHtml Callback that copies selection HTML from pane.
  * @param props.onPaste Callback that pastes text into pane.
@@ -93,7 +98,6 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   terminalPaneIds,
   activePaneId,
   hasSelection,
-  isConnected,
   canSplitTerminal,
   copyShortcutLabel,
   pasteShortcutLabel,
@@ -105,9 +109,11 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   remoteEnhancementsDebugLabel,
   canOpenDirectoryInSftp,
   commandTimelineModels,
+  paneConnectionStates,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
+  onRetryPane,
   onCopy,
   onCopyAsHtml,
   onPaste,
@@ -126,11 +132,16 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
 }) => {
   const renderTerminalPane = (paneId: string, isPrimaryPane: boolean): React.ReactNode => {
     const commandTimelineModel = commandTimelineModels[paneId];
+    const paneConnection: SshPaneConnectionSnapshot = paneConnectionStates[paneId] ?? {
+      connectionState: 'connecting',
+      connectionError: '',
+    };
+    const paneIsConnected = paneConnection.connectionState === 'connected';
     return (
-      <div className="h-full min-h-0 w-full min-w-0 overflow-hidden">
+      <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden">
         <TerminalContextMenu
           hasSelection={activePaneId === paneId && hasSelection}
-          isConnected={isConnected}
+          isConnected={paneIsConnected}
           copyLabel={t('ssh.contextMenuCopy')}
           copyShortcutLabel={copyShortcutLabel}
           copyAsHtmlLabel={t('ssh.contextMenuCopyAsHtml')}
@@ -166,7 +177,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
         >
           <TerminalCommandTimeline
             model={commandTimelineModel}
-            isConnected={isConnected}
+            isConnected={paneIsConnected}
             onActivate={() => onPaneActivate(paneId)}
             onCopyCommand={(command) => onCopyCommand(paneId, command)}
             onFocusTerminal={() => onFocusPane(paneId)}
@@ -184,6 +195,24 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
             />
           </TerminalCommandTimeline>
         </TerminalContextMenu>
+        {!paneIsConnected ? (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-bg px-4">
+            <div className="text-center text-sm text-header-text">
+              {paneConnection.connectionState === 'connecting' ? t('ssh.connecting') : paneConnection.connectionError}
+            </div>
+            {paneConnection.connectionState === 'failed' ? (
+              <Menubar>
+                <Button onClick={() => onRetryPane(paneId)}>
+                  <RefreshCw size={16} />
+                  {t('ssh.retry')}
+                </Button>
+                {terminalPaneIds.length > 1 ? (
+                  <Button onClick={() => onClosePane(paneId)}>{t('ssh.contextMenuCloseTerminal')}</Button>
+                ) : null}
+              </Menubar>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };

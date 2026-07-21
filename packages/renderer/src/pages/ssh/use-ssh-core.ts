@@ -27,6 +27,8 @@ import {
   type RemoteEnhancementsDebugEvent,
   type ResolvedTerminalTarget,
   type ServerInboundMessage,
+  type SshConnectionState,
+  type SshPaneConnectionSnapshot,
   type SshTelemetryState,
   type TerminalAutocompleteAnchor,
   type TerminalCommandTimelineModel,
@@ -56,10 +58,8 @@ import { useSshPrimarySession } from './use-ssh-primary-session';
 import { useSshSelectionBar } from './use-ssh-selection-bar';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
 
-/**
- * Connection lifecycle states for SSH page sessions.
- */
-export type SshConnectionState = 'connecting' | 'connected' | 'failed';
+/** Re-exported pane transport types for existing hook-API consumers. */
+export type { SshConnectionState, SshPaneConnectionSnapshot } from './ssh-types';
 export type TerminalSearchDirection = 'previous' | 'next' | 'first' | 'last';
 export type TerminalSearchOptions = Pick<ISearchOptions, 'caseSensitive' | 'regex'>;
 
@@ -233,6 +233,7 @@ export type SshCoreState = {
   activePaneId: string;
   connectionState: SshConnectionState;
   connectionError: string;
+  paneConnectionStates: Record<string, SshPaneConnectionSnapshot>;
   telemetryState: SshTelemetryState;
   remoteBootstrapStatus: RemoteBootstrapStatus | null;
   remoteEnhancementRuntimeStatus: RemoteEnhancementRuntimeStatus | null;
@@ -273,11 +274,12 @@ export type SshCoreActions = {
    */
   closePane: (paneId: string) => void;
   /**
-   * Retries session connection when page is in failed state.
+   * Retries one pane's failed session using that pane's own connector.
    *
+   * @param paneId Logical pane identifier to reconnect.
    * @returns Nothing.
    */
-  retryConnection: () => void;
+  retryPaneConnection: (paneId: string) => void;
   /**
    * Sends raw input data to current active pane session.
    *
@@ -611,6 +613,14 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   const remoteEnhancementRuntimeStatus: RemoteEnhancementRuntimeStatus | null =
     activePaneState.remoteEnhancementRuntimeStatus;
   const remoteEnhancementsDebugEvents: RemoteEnhancementsDebugEvent[] = activePaneState.remoteEnhancementsDebugEvents;
+  const paneConnectionStates: Record<string, SshPaneConnectionSnapshot> = {};
+  terminalPaneIds.forEach((paneId) => {
+    const paneState = paneStateMap[paneId] ?? createSshPaneState();
+    paneConnectionStates[paneId] = {
+      connectionState: paneState.connectionState,
+      connectionError: paneState.connectionError,
+    };
+  });
   const compiledPromptPrefixRegex = React.useMemo(
     () => compilePromptPrefixRegex(terminalAutoCompletePromptRegex),
     [terminalAutoCompletePromptRegex],
@@ -1283,17 +1293,22 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
   }, [connectionState, terminalPaneIds, activePaneId]);
 
   /**
-   * Retries failed terminal connection using current session connector.
+   * Retries one pane's failed terminal connection using that pane's connector.
    *
+   * @param paneId Logical pane identifier to reconnect.
    * @returns Nothing.
    */
-  const retryConnection = React.useCallback(() => {
-    if (connectionState === 'connecting' || connectionState === 'connected') {
-      return;
-    }
+  const retryPaneConnection = React.useCallback(
+    (paneId: string): void => {
+      const paneConnectionState = paneStateMapRef.current[paneId]?.connectionState;
+      if (paneConnectionState === 'connecting' || paneConnectionState === 'connected') {
+        return;
+      }
 
-    paneRuntimeMapRef.current.get(activePaneIdRef.current)?.reconnect();
-  }, [activePaneIdRef, connectionState, paneRuntimeMapRef]);
+      paneRuntimeMapRef.current.get(paneId)?.reconnect();
+    },
+    [paneRuntimeMapRef, paneStateMapRef],
+  );
 
   /**
    * Sends input bytes to active pane websocket.
@@ -1551,6 +1566,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       activePaneId,
       connectionState,
       connectionError,
+      paneConnectionStates,
       telemetryState,
       remoteBootstrapStatus,
       remoteEnhancementRuntimeStatus,
@@ -1569,7 +1585,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       activatePane,
       splitPane,
       closePane,
-      retryConnection,
+      retryPaneConnection,
       sendInput,
       pasteInput,
       deleteHistoryCommand,
