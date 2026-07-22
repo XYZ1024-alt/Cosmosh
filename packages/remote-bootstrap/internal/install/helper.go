@@ -287,6 +287,7 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
   }
 
   __cosmosh_zsh_hook_ok=1
+  __cosmosh_zsh_zle_hook_installed=0
   if autoload -Uz +X add-zsh-hook 2>/dev/null; then
     add-zsh-hook precmd __cosmosh_zsh_precmd || __cosmosh_zsh_hook_ok=0
     add-zsh-hook chpwd __cosmosh_zsh_chpwd || __cosmosh_zsh_hook_ok=0
@@ -304,7 +305,11 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
     __cosmosh_now_ms() {
       printf '%.0f' "$((EPOCHREALTIME * 1000))"
     }
-    add-zle-hook-widget line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null || __cosmosh_zsh_hook_ok=0
+    if add-zle-hook-widget line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null; then
+      __cosmosh_zsh_zle_hook_installed=1
+    else
+      __cosmosh_zsh_hook_ok=0
+    fi
   else
     __cosmosh_zsh_hook_ok=0
   fi
@@ -314,7 +319,10 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
     __cosmosh_emit_remote_shell_event integration-ready
   else
     # Without integration-ready the runtime stays disabled, so the prompt
-    # hooks would only fork per prompt for events nothing accepts.
+    # and ZLE hooks would only run for events nothing accepts.
+    if [ "$__cosmosh_zsh_zle_hook_installed" = "1" ]; then
+      add-zle-hook-widget -d line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null
+    fi
     precmd_functions=(${precmd_functions[@]:#__cosmosh_zsh_precmd})
     chpwd_functions=(${chpwd_functions[@]:#__cosmosh_zsh_chpwd})
     preexec_functions=(${preexec_functions[@]:#__cosmosh_zsh_preexec})

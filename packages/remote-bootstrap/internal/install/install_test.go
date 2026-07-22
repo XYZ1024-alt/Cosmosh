@@ -180,6 +180,44 @@ func TestRunInstallsThroughDanglingProfileSymlink(t *testing.T) {
 	assertFileContains(t, targetPath, markerStart)
 }
 
+func TestRunSelectsDanglingBashLoginProfileSymlinks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("profile symlink semantics are validated on POSIX hosts")
+	}
+
+	for _, profileName := range []string{".bash_profile", ".bash_login"} {
+		t.Run(profileName, func(t *testing.T) {
+			homeDir := t.TempDir()
+			dataDir := filepath.Join(homeDir, "data")
+			configDir := filepath.Join(homeDir, "config")
+			t.Setenv("HOME", homeDir)
+			t.Setenv("USERPROFILE", homeDir)
+			t.Setenv("XDG_DATA_HOME", dataDir)
+			t.Setenv("XDG_CONFIG_HOME", configDir)
+
+			targetPath := filepath.Join(homeDir, "dotfiles", strings.TrimPrefix(profileName, "."))
+			profilePath := filepath.Join(homeDir, profileName)
+			if err := os.Symlink(targetPath, profilePath); err != nil {
+				t.Fatal(err)
+			}
+
+			if err := Run(Options{Shell: "bash", Version: "1.2.3", Stdout: &bytes.Buffer{}}); err != nil {
+				t.Fatal(err)
+			}
+
+			linkInfo, err := os.Lstat(profilePath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if linkInfo.Mode()&os.ModeSymlink == 0 {
+				t.Fatalf("expected dangling %s symlink to remain intact", profileName)
+			}
+			assertFileContains(t, targetPath, markerStart)
+			assertFileNotExists(t, filepath.Join(homeDir, ".profile"))
+		})
+	}
+}
+
 func TestRunInstallsBashRemoteShellHelperHooks(t *testing.T) {
 	homeDir := t.TempDir()
 	dataDir := filepath.Join(homeDir, "data")
@@ -288,9 +326,58 @@ func TestRunInstallsZshRemoteShellHelperHooks(t *testing.T) {
 	// per-prompt hooks instead of forking forever for rejected events.
 	assertFileContains(t, helperPath, "autoload -Uz +X add-zsh-hook")
 	assertFileContains(t, helperPath, "autoload -Uz +X add-zle-hook-widget")
+	assertFileContains(t, helperPath, "add-zle-hook-widget -d line-pre-redraw __cosmosh_zsh_line_pre_redraw")
 	assertFileContains(t, helperPath, "precmd_functions=(${precmd_functions[@]:#__cosmosh_zsh_precmd})")
 	assertFileContains(t, helperPath, `__COSMOSH_CAPABILITIES_JSON='["cwd","command-start","command-end","foreground-command","prompt-ready","line-state"]'`)
 	assertTextOrder(t, readFileString(t, helperPath), "add-zle-hook-widget line-pre-redraw", "__cosmosh_emit_remote_shell_event integration-ready")
+}
+
+func TestZshHelperRemovesZleHookAfterPartialRegistrationFailure(t *testing.T) {
+	zshPath, err := exec.LookPath("zsh")
+	if err != nil {
+		t.Skip("zsh is unavailable")
+	}
+
+	helper, err := BuildHelper("zsh", "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	logPath := filepath.Join(t.TempDir(), "zle-hooks.log")
+	script := `
+autoload() { return 0 }
+zmodload() { return 0 }
+add-zsh-hook() {
+  [ "$1" != "precmd" ]
+}
+add-zle-hook-widget() {
+  printf '%s\n' "$*" >> "$COSMOSH_ZLE_HOOK_LOG"
+  return 0
+}
+` + helper + `
+test "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1"
+`
+	command := exec.Command(zshPath, "-f", "-s")
+	command.Env = append(os.Environ(), "COSMOSH_ZLE_HOOK_LOG="+logPath)
+	command.Stdin = strings.NewReader(script)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("expected partial Zsh hook registration to fail closed: %v\n%s", err, output)
+	}
+
+	logContent := readFileString(t, logPath)
+	logLines := strings.Split(strings.TrimSpace(logContent), "\n")
+	expectedLogLines := []string{
+		"line-pre-redraw __cosmosh_zsh_line_pre_redraw",
+		"-d line-pre-redraw __cosmosh_zsh_line_pre_redraw",
+	}
+	if len(logLines) != len(expectedLogLines) {
+		t.Fatalf("expected one ZLE registration and cleanup, got %q", logContent)
+	}
+	for index, expectedLine := range expectedLogLines {
+		if logLines[index] != expectedLine {
+			t.Fatalf("expected ZLE hook log line %d to be %q, got %q", index, expectedLine, logLines[index])
+		}
+	}
 }
 
 func TestRunInstallsFishRemoteShellHelperHooks(t *testing.T) {

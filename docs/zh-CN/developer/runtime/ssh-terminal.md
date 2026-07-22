@@ -58,7 +58,7 @@ Locale 行为：
 - 路径：`/ws/ssh/{sessionId}?token=...`
 - 非法或编码畸形的路径、token、session 直接拒绝（`1008`），URL 解码错误不得逃逸出连接边界。
 - 若已有附加 socket，将被替换（`1012`），保持单活连接。连接所有权切换后，旧 socket 的 close/error 事件不得清理新连接持有的会话。
-- 会话 attach 前输出会缓存，ready 后统一回放。
+- 会话 attach 前，可见输出与可信 helper 事件共用一个保持到达顺序的有界 stream-frame 队列（2,048 个 frame、1 MiB）。Attach 会先发送 `ready`、待发送 bootstrap 状态与当前增强运行时状态，再回放保留的 frame；超限时按到达顺序淘汰最旧的完整 frame，不会重新分组剩余输出与事件。
 
 ### 关闭会话
 
@@ -435,6 +435,7 @@ Backend 解析规则：
 
 - `SshSessionService` 会先把 SSH 输出流经过 `RemoteShellEventOscParser`，再写入 xterm。
 - Parser 会返回按原始顺序排列的可见输出/helper 事件 frame，`SshSessionService` 不得再按类型对它们分组。事件之前的可见字节，尤其是 `command-start` 之前的输入回显与换行，必须先进入 xterm，renderer marker 才能捕获有效的输入/输出边界。
+- WebSocket 未 attach 时同样遵循该顺序契约：可见输出与已接受的 helper 事件进入同一个有界 pending-frame 队列，并在 attach 控制消息之后按到达顺序回放。若运行时信任在 attach 前被禁用，只移除队列中的 helper 事件，普通终端输出仍可回放。
 - Cosmosh OSC 会从可见终端输出中剥离并解码，但只有 backend 运行时 gate 进入 `active` 后，事件才会应用并转发。
 - Gate 只有在交互 shell 打开前 status 校验成功后才以 `pending` 开始；匹配的 `integration-ready` 会将其切换为 `active`。如果 10 秒内没有收到有效握手，则以 `HELPER_HANDSHAKE_TIMEOUT` 切换为 `disabled`；任何 shell、helper version、protocol version 或 capability 不匹配也会切换为 `disabled` 并清空 helper 派生状态。
 - 非 Cosmosh OSC 与普通 ANSI 输出会保持可见、原样流式透传，包括跨 SSH chunk 拆分的序列。
@@ -476,7 +477,7 @@ type RemoteShellEventMessage = {
 当前第一期 helper 行为：
 
 - Bash 使用 `PROMPT_COMMAND` 保留已有 prompt hook，随后发送 `cwd`、`prompt-ready`，以及带匹配 command id、exit code 和 duration 的 `command-end`。受保护的 `DEBUG` trap 会在 prompt 设置完成后，为每条已提交命令行发送一次 `command-start` 与一次 `foreground-command`。
-- Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，并通过 `line-pre-redraw` 提供 line length/cursor 校准。只有所有必需 hook 都注册成功后 helper 才进入 ready。
+- Zsh 使用 `precmd`、`preexec` 与 `chpwd` hook，并通过 `line-pre-redraw` 提供 line length/cursor 校准。只有所有必需 hook 都注册成功后 helper 才进入 ready；若出现部分注册失败，会在保持集成禁用前同时移除已成功注册的 `line-pre-redraw` widget 与 prompt hook。
 - Fish 使用 `fish_preexec`、`fish_prompt`、`fish_postexec` 与 `PWD` variable event。
 - Sh/Ash 安装 prompt-capture fallback，并且只声明 `cwd` 与 `prompt-ready`；不声明命令生命周期支持。
 - 所有 shell 都只在其声明的 hook 集合成功安装后发送 `integration-ready`。非交互 shell 不发送 OSC 事件。
@@ -555,7 +556,7 @@ Backend 状态模型：
 | Sh/Ash hook | `~/.profile` 内的 Cosmosh marker block |
 | Fish hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` 或 `~/.config/fish/conf.d/cosmosh.fish` |
 
-安装器具备幂等性。只有已安装 version、binary 精确内容、Go 生成的 helper 精确内容与所有必需 shell hook 均为最新时才会发送 `skipped`。Bash login-profile block 会检查 `BASH_VERSION`，因此由 Dash 读取的通用 `.profile` 不会加载 Bash helper。Binary/helper/version/profile 都采用原子替换；已有 profile 权限与符号链接目标会被保留。Version marker 只会在所有文件安装与 profile 更新成功后写入。`status` 同时报告兼容字段 `profilePath` 与完整 `profilePaths` 集合。
+安装器具备幂等性。只有已安装 version、binary 精确内容、Go 生成的 helper 精确内容与所有必需 shell hook 均为最新时才会发送 `skipped`。Bash login-profile block 会检查 `BASH_VERSION`，因此由 Dash 读取的通用 `.profile` 不会加载 Bash helper。选择 login profile 时会检查 `.bash_profile` 与 `.bash_login` 目录项本身，因此 dotfile manager 创建的悬空符号链接仍是有效的 Bash 候选；安装器会创建其目标，而不会错误回退到 `.profile`。Binary/helper/version/profile 都采用原子替换；已有 profile 权限与符号链接目标会被保留。Version marker 只会在所有文件安装与 profile 更新成功后写入。`status` 同时报告兼容字段 `profilePath` 与完整 `profilePaths` 集合。
 
 ### 8.5 安全与失败模型
 

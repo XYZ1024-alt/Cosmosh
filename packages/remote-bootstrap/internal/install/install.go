@@ -535,6 +535,9 @@ func helperName(shell string) string {
 	return "helper.sh"
 }
 
+// resolveProfilePaths selects every startup file that must load the shell helper.
+// Bash login candidates use Lstat so dotfile-manager symlinks remain authoritative
+// even before their managed targets have been created.
 func resolveProfilePaths(homeDir string, configRoot string, shell string) []string {
 	if shell == "fish" {
 		return []string{filepath.Join(configRoot, "fish", "conf.d", "cosmosh.fish")}
@@ -548,7 +551,7 @@ func resolveProfilePaths(homeDir string, configRoot string, shell string) []stri
 		loginProfilePath := filepath.Join(homeDir, ".profile")
 		for _, candidate := range []string{".bash_profile", ".bash_login"} {
 			candidatePath := filepath.Join(homeDir, candidate)
-			if _, err := os.Stat(candidatePath); err == nil {
+			if _, err := os.Lstat(candidatePath); err == nil {
 				loginProfilePath = candidatePath
 				break
 			}

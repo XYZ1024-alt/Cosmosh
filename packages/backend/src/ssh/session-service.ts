@@ -56,7 +56,7 @@ import {
 } from './connect.js';
 import { executeBoundedSshCommand } from './exec.js';
 import type { SshProxyMetadata } from './proxy.js';
-import { RemoteShellEventOscParser } from './remote-shell-events.js';
+import { RemoteShellEventOscParser, type RemoteShellEventStreamFrame } from './remote-shell-events.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -172,7 +172,9 @@ type SshLiveSession = TerminalManagedSessionBase & {
   completionPromptState: CompletionPromptState;
   completionSecretValue: string | null;
   remoteShellEventParser: RemoteShellEventOscParser;
-  pendingRemoteShellEvents: RemoteShellEventMessage[];
+  pendingStreamFrames: RemoteShellEventStreamFrame[];
+  pendingStreamFrameBytes: number;
+  pendingStreamFrameDropCount: number;
   remoteShellReady: boolean;
   remoteShellCwd: string | null;
   remoteShellForegroundCommand: string | null;
@@ -209,9 +211,25 @@ const REMOTE_SHELL_UTF8_ENV = {
 const REMOTE_COMPLETION_CWD_PROBE_COMMAND = 'sh -lc \'printf "%s\\n%s\\n" "$PWD" "$HOME"\'';
 const SSH_COMPLETION_EXEC_TIMEOUT_MS = 3_000;
 const SSH_TYPING_PATH_PROVIDER_TIMEOUT_MS = 1_200;
-const SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT = 128;
+const SSH_PENDING_STREAM_FRAME_MAX_COUNT = TERMINAL_PENDING_OUTPUT_MAX_CHUNKS;
+const SSH_PENDING_STREAM_FRAME_MAX_BYTES = TERMINAL_PENDING_OUTPUT_MAX_BYTES;
 const SSH_REMOTE_BOOTSTRAP_ENSURE_TIMEOUT_MS = 15_000;
 const SSH_REMOTE_ENHANCEMENT_HANDSHAKE_TIMEOUT_MS = 10_000;
+
+/**
+ * Measures one detached SSH stream frame against the bounded queue budget.
+ *
+ * Visible output retains the existing raw UTF-8 byte accounting. Helper events
+ * use their serialized WebSocket payload size so both frame kinds share one
+ * meaningful memory bound.
+ *
+ * @param frame Parsed visible-output or trusted helper-event frame.
+ * @returns UTF-8 payload bytes retained by the pending queue.
+ */
+const getPendingStreamFrameBytes = (frame: RemoteShellEventStreamFrame): number => {
+  const payload = frame.type === 'output' ? frame.data : JSON.stringify(frame.event);
+  return Buffer.byteLength(payload, 'utf8');
+};
 
 /** Error used to distinguish the optional pre-shell budget from bootstrap failures. */
 class RemoteBootstrapEnsureTimeoutError extends Error {
@@ -632,7 +650,9 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       },
       completionSecretValue: shellResult.completionSecretValue,
       remoteShellEventParser: new RemoteShellEventOscParser(),
-      pendingRemoteShellEvents: [],
+      pendingStreamFrames: [],
+      pendingStreamFrameBytes: 0,
+      pendingStreamFrameDropCount: pendingOutputDropCount,
       remoteShellReady: false,
       remoteShellCwd: null,
       remoteShellForegroundCommand: null,
@@ -659,7 +679,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     const rawPendingOutput = [...pendingOutput];
     liveSession.pendingOutput = [];
     liveSession.pendingOutputBytes = 0;
-    liveSession.pendingOutputDropCount = pendingOutputDropCount;
+    liveSession.pendingOutputDropCount = 0;
     rawPendingOutput.forEach((chunk) => {
       this.handleShellOutput(liveSession, chunk);
     });
@@ -806,7 +826,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
   }
 
   protected onSessionAttached(session: SshLiveSession): void {
-    // Reattached clients must receive ready signal first, then buffered stream chunks in order.
+    // Control state must establish trust before ordered PTY frames reach the renderer.
     this.sendServerMessage(session, { type: 'ready' });
     while (session.pendingRemoteBootstrapStatuses.length > 0) {
       const status = session.pendingRemoteBootstrapStatuses.shift();
@@ -815,11 +835,35 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
       }
     }
     this.sendRemoteEnhancementRuntimeStatus(session);
-    this.flushPendingOutput(session, (data) => ({
-      type: 'output',
-      data,
-    }));
-    this.flushPendingRemoteShellEvents(session);
+    this.flushPendingStreamFrames(session);
+  }
+
+  /**
+   * Sends attached messages immediately while retaining detached SSH stream
+   * output and helper events in one arrival-ordered queue.
+   *
+   * Control messages keep the base service's detached-drop semantics because
+   * current bootstrap/runtime state is emitted explicitly on every attach.
+   *
+   * @param session Live SSH session receiving the payload.
+   * @param payload Backend-to-renderer WebSocket message.
+   * @returns Nothing.
+   */
+  protected override sendServerMessage(session: SshLiveSession, payload: ServerOutboundMessage): void {
+    if (session.disposed) {
+      return;
+    }
+
+    if (!session.socket || session.socket.readyState !== session.socket.OPEN) {
+      if (payload.type === 'output') {
+        this.bufferPendingStreamFrame(session, { type: 'output', data: payload.data });
+      } else if (payload.type === 'remote-shell-event') {
+        this.bufferPendingStreamFrame(session, { type: 'event', event: payload });
+      }
+      return;
+    }
+
+    super.sendServerMessage(session, payload);
   }
 
   /**
@@ -896,40 +940,92 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
 
     this.applyRemoteShellEventState(session, event);
 
-    if (!session.socket || session.socket.readyState !== session.socket.OPEN) {
-      session.pendingRemoteShellEvents.push(event);
-      if (session.pendingRemoteShellEvents.length > SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT) {
-        session.pendingRemoteShellEvents.splice(
-          0,
-          session.pendingRemoteShellEvents.length - SSH_PENDING_REMOTE_SHELL_EVENT_MAX_COUNT,
-        );
-      }
-      return;
-    }
-
     this.sendServerMessage(session, event);
   }
 
   /**
-   * Flushes remote shell events captured before renderer attach.
+   * Pushes one detached stream frame into the shared bounded SSH queue.
    *
-   * @param session Live SSH session.
+   * Dropping the oldest whole frame preserves the relative order of every
+   * retained output/event boundary instead of regrouping the two frame kinds.
+   *
+   * @param session Live SSH session that owns the pending queue.
+   * @param frame Parsed visible-output or trusted helper-event frame.
    * @returns Nothing.
    */
-  private flushPendingRemoteShellEvents(session: SshLiveSession): void {
-    if (session.remoteEnhancementsRuntimeState !== 'active') {
-      session.pendingRemoteShellEvents = [];
-      return;
-    }
+  private bufferPendingStreamFrame(session: SshLiveSession, frame: RemoteShellEventStreamFrame): void {
+    const frameBytes = getPendingStreamFrameBytes(frame);
+    session.pendingStreamFrames.push(frame);
+    session.pendingStreamFrameBytes += frameBytes;
 
-    while (session.pendingRemoteShellEvents.length > 0) {
-      const event = session.pendingRemoteShellEvents.shift();
-      if (!event) {
-        continue;
+    while (
+      session.pendingStreamFrames.length > SSH_PENDING_STREAM_FRAME_MAX_COUNT ||
+      session.pendingStreamFrameBytes > SSH_PENDING_STREAM_FRAME_MAX_BYTES
+    ) {
+      const droppedFrame = session.pendingStreamFrames.shift();
+      if (!droppedFrame) {
+        break;
       }
 
-      this.sendServerMessage(session, event);
+      session.pendingStreamFrameBytes = Math.max(
+        0,
+        session.pendingStreamFrameBytes - getPendingStreamFrameBytes(droppedFrame),
+      );
+      session.pendingStreamFrameDropCount += 1;
     }
+  }
+
+  /**
+   * Flushes detached visible output and trusted helper events in arrival order.
+   *
+   * @param session Attached SSH session that owns the pending queue.
+   * @returns Nothing.
+   */
+  private flushPendingStreamFrames(session: SshLiveSession): void {
+    while (
+      session.pendingStreamFrames.length > 0 &&
+      session.socket &&
+      session.socket.readyState === session.socket.OPEN
+    ) {
+      const frame = session.pendingStreamFrames.shift();
+      if (!frame) {
+        break;
+      }
+
+      session.pendingStreamFrameBytes = Math.max(
+        0,
+        session.pendingStreamFrameBytes - getPendingStreamFrameBytes(frame),
+      );
+
+      if (frame.type === 'output') {
+        super.sendServerMessage(session, { type: 'output', data: frame.data });
+      } else if (session.remoteEnhancementsRuntimeState === 'active') {
+        super.sendServerMessage(session, frame.event);
+      }
+    }
+
+    if (session.pendingStreamFrames.length === 0 && session.pendingStreamFrameDropCount > 0) {
+      console.warn('[ssh][pending-stream] Dropped buffered stream frames while detached.', {
+        sessionId: session.sessionId,
+        droppedFrames: session.pendingStreamFrameDropCount,
+      });
+      session.pendingStreamFrameDropCount = 0;
+    }
+  }
+
+  /**
+   * Removes queued helper events after the runtime trust gate closes while
+   * retaining ordinary terminal output in its original relative order.
+   *
+   * @param session SSH session whose helper runtime is being disabled.
+   * @returns Nothing.
+   */
+  private discardPendingRemoteShellEventFrames(session: SshLiveSession): void {
+    session.pendingStreamFrames = session.pendingStreamFrames.filter((frame) => frame.type === 'output');
+    session.pendingStreamFrameBytes = session.pendingStreamFrames.reduce(
+      (total, frame) => total + getPendingStreamFrameBytes(frame),
+      0,
+    );
   }
 
   /**
@@ -1304,7 +1400,7 @@ export class SshSessionService extends BaseTerminalSessionService<SshLiveSession
     session.remoteEnhancementsRuntimeState = 'disabled';
     session.remoteEnhancementsRuntimeCode = code;
     session.remoteEnhancementsRuntimeMessage = message;
-    session.pendingRemoteShellEvents = [];
+    this.discardPendingRemoteShellEventFrames(session);
     session.remoteShellReady = false;
     session.remoteShellCwd = null;
     session.remoteShellForegroundCommand = null;

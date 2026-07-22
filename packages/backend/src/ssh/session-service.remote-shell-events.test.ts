@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { RemoteShellCapability } from '@cosmosh/api-contract';
+import type { RemoteShellCapability, SshTerminalServerMessage } from '@cosmosh/api-contract';
 
 import type { RemoteBootstrapResult, RemoteBootstrapStatus } from '../remote-bootstrap/service.js';
 import type { OpenSshClientResult } from './connect.js';
@@ -24,7 +24,10 @@ type RemoteShellEventSessionHarness = {
   remoteEnhancementsRuntimeCode: string | null;
   remoteEnhancementsRuntimeMessage: string | null;
   remoteEnhancementsHandshakeTimeout: NodeJS.Timeout | null;
-  pendingRemoteShellEvents: RemoteShellEventMessage[];
+  pendingStreamFrames: RemoteShellEventStreamFrame[];
+  pendingStreamFrameBytes: number;
+  pendingStreamFrameDropCount: number;
+  pendingRemoteBootstrapStatuses: RemoteBootstrapStatus[];
   completionWorkingDirectory: string | null;
   completionPendingCwdCommands: string[];
   remoteShellReady: boolean;
@@ -35,7 +38,11 @@ type RemoteShellEventSessionHarness = {
   lastExitCode: number | null;
   lastCommandDurationMs: number | null;
   commandCount: number;
-  socket: null;
+  socket: {
+    OPEN: number;
+    readyState: number;
+    send(payload: string): void;
+  } | null;
   disposed: boolean;
 };
 
@@ -43,7 +50,8 @@ type RemoteShellEventServiceHarness = {
   applyRemoteShellEventState(session: RemoteShellEventSessionHarness, event: RemoteShellEventMessage): void;
   disableRemoteEnhancementsRuntime(session: RemoteShellEventSessionHarness, code: string, message: string): void;
   handleRemoteShellEvent(session: RemoteShellEventSessionHarness, event: RemoteShellEventMessage): void;
-  flushPendingRemoteShellEvents(session: RemoteShellEventSessionHarness): void;
+  onSessionAttached(session: RemoteShellEventSessionHarness): void;
+  sendServerMessage(session: RemoteShellEventSessionHarness, payload: SshTerminalServerMessage): void;
   startRemoteEnhancementHandshakeTimeout(session: RemoteShellEventSessionHarness, timeoutMs?: number): void;
 };
 
@@ -92,7 +100,10 @@ const createSessionHarness = (
   remoteEnhancementsRuntimeCode: null,
   remoteEnhancementsRuntimeMessage: null,
   remoteEnhancementsHandshakeTimeout: null,
-  pendingRemoteShellEvents: [],
+  pendingStreamFrames: [],
+  pendingStreamFrameBytes: 0,
+  pendingStreamFrameDropCount: 0,
+  pendingRemoteBootstrapStatuses: [],
   completionWorkingDirectory: null,
   completionPendingCwdCommands: [],
   remoteShellReady: false,
@@ -185,19 +196,71 @@ test('SshSessionService ignores remote shell events while the runtime is disable
 
   assert.equal(session.remoteShellCwd, null);
   assert.equal(session.remoteShellReady, false);
-  assert.deepEqual(session.pendingRemoteShellEvents, []);
+  assert.deepEqual(session.pendingStreamFrames, []);
 });
 
-test('SshSessionService clears pending remote shell events when Remote Enhancements runtime is disabled', () => {
+test('SshSessionService preserves detached output and helper event ordering on attach', () => {
   const serviceHarness = SshSessionService.prototype as unknown as RemoteShellEventServiceHarness;
-  const event = createRemoteShellEvent();
-  const session = createSessionHarness({
-    pendingRemoteShellEvents: [event],
+  const sentMessages: SshTerminalServerMessage[] = [];
+  const commandStart = createRemoteShellEvent({
+    event: 'command-start',
+    command: 'echo',
+    commandId: 'cmd-1',
+    cwd: undefined,
   });
+  const transportedCommandStart = JSON.parse(JSON.stringify(commandStart)) as RemoteShellEventMessage;
+  const session = createSessionHarness({ remoteEnhancementsRuntimeState: 'active' });
 
-  serviceHarness.flushPendingRemoteShellEvents(session);
+  serviceHarness.sendServerMessage(session, { type: 'output', data: '\r\n' });
+  serviceHarness.sendServerMessage(session, commandStart);
+  serviceHarness.sendServerMessage(session, { type: 'output', data: 'result\r\n' });
 
-  assert.deepEqual(session.pendingRemoteShellEvents, []);
+  assert.deepEqual(
+    session.pendingStreamFrames.map((frame) => frame.type),
+    ['output', 'event', 'output'],
+  );
+
+  session.socket = {
+    OPEN: 1,
+    readyState: 1,
+    send: (payload: string): void => {
+      sentMessages.push(JSON.parse(payload) as SshTerminalServerMessage);
+    },
+  };
+  serviceHarness.onSessionAttached(session);
+
+  assert.deepEqual(
+    sentMessages.map((message) => message.type),
+    ['ready', 'remote-enhancement-runtime-status', 'output', 'remote-shell-event', 'output'],
+  );
+  assert.deepEqual(sentMessages.slice(2), [
+    { type: 'output', data: '\r\n' },
+    transportedCommandStart,
+    { type: 'output', data: 'result\r\n' },
+  ]);
+  assert.deepEqual(session.pendingStreamFrames, []);
+  assert.equal(session.pendingStreamFrameBytes, 0);
+});
+
+test('SshSessionService bounds the detached stream queue by frame count and bytes', () => {
+  const serviceHarness = SshSessionService.prototype as unknown as RemoteShellEventServiceHarness;
+  const countBoundSession = createSessionHarness({ remoteEnhancementsRuntimeState: 'active' });
+  for (let index = 0; index < 2_049; index += 1) {
+    serviceHarness.sendServerMessage(countBoundSession, { type: 'output', data: `line-${index}` });
+  }
+
+  assert.equal(countBoundSession.pendingStreamFrames.length, 2_048);
+  assert.ok(countBoundSession.pendingStreamFrameBytes <= 1024 * 1024);
+  assert.equal(countBoundSession.pendingStreamFrameDropCount, 1);
+  assert.deepEqual(countBoundSession.pendingStreamFrames[0], { type: 'output', data: 'line-1' });
+
+  const byteBoundSession = createSessionHarness({ remoteEnhancementsRuntimeState: 'active' });
+  serviceHarness.sendServerMessage(byteBoundSession, { type: 'output', data: 'a'.repeat(700 * 1024) });
+  serviceHarness.sendServerMessage(byteBoundSession, { type: 'output', data: 'b'.repeat(700 * 1024) });
+
+  assert.equal(byteBoundSession.pendingStreamFrames.length, 1);
+  assert.ok(byteBoundSession.pendingStreamFrameBytes <= 1024 * 1024);
+  assert.equal(byteBoundSession.pendingStreamFrameDropCount, 1);
 });
 
 test('SshSessionService activates only after a matching integration-ready handshake', () => {
@@ -257,7 +320,12 @@ test('SshSessionService resets remote shell state when Remote Enhancements runti
     lastCommandDurationMs: 25,
     lastExitCode: 1,
     lastRemoteCommand: 'false',
-    pendingRemoteShellEvents: [event],
+    pendingStreamFrames: [
+      { type: 'output', data: 'before' },
+      { type: 'event', event },
+      { type: 'output', data: 'after' },
+    ],
+    pendingStreamFrameBytes: 999,
     remoteEnhancementsRuntimeState: 'active',
     remoteShellCwd: '/tmp',
     remoteShellForegroundCommand: 'vim',
@@ -269,7 +337,11 @@ test('SshSessionService resets remote shell state when Remote Enhancements runti
   assert.equal(session.remoteEnhancementsRuntimeState, 'disabled');
   assert.equal(session.remoteEnhancementsRuntimeCode, 'TEST_DISABLED');
   assert.equal(session.remoteEnhancementsHandshakeTimeout, null);
-  assert.deepEqual(session.pendingRemoteShellEvents, []);
+  assert.deepEqual(session.pendingStreamFrames, [
+    { type: 'output', data: 'before' },
+    { type: 'output', data: 'after' },
+  ]);
+  assert.equal(session.pendingStreamFrameBytes, 11);
   assert.equal(session.remoteShellReady, false);
   assert.equal(session.remoteShellCwd, null);
   assert.equal(session.remoteShellForegroundCommand, null);
