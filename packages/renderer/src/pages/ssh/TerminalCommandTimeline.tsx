@@ -97,12 +97,14 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   const scrollFrameRef = React.useRef<number | null>(null);
   const pointerInsideTriggerRef = React.useRef(false);
   const pointerInsideContentRef = React.useRef(false);
+  const pointerInsideActionMenuRef = React.useRef(false);
   const pointerOpenedMenuRef = React.useRef(false);
   const pointerExitPortalMountedRef = React.useRef(false);
   const terminalFocusRequestedRef = React.useRef(false);
   const hoverOpenFocusReturnFrameRef = React.useRef<number | null>(null);
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   const menuContentRef = React.useRef<HTMLDivElement | null>(null);
+  const actionMenuContentRef = React.useRef<HTMLDivElement | null>(null);
 
   /**
    * Schedules one idle check and lets that check reschedule itself only when
@@ -193,10 +195,11 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
    * selection, Escape, and programmatic closes keep Radix's immediate lifecycle.
    *
    * @param retainPointerExit Whether CSS needs the closed portal for exit motion.
+   * @param revealEntryAfterClose Whether closing starts a fresh pointer-activity window.
    * @returns Nothing.
    */
   const closeMenus = React.useCallback(
-    (retainPointerExit = false): void => {
+    (retainPointerExit = false, revealEntryAfterClose = true): void => {
       // A hover-opened menu can still hold focus after a click inside it; the
       // retained/inert close paths never run Radix close-autofocus, so hand
       // focus back to the terminal before it silently falls to <body>.
@@ -217,6 +220,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
       actionMenuOpenRef.current = false;
       actionCommandRef.current = null;
       pointerInsideContentRef.current = false;
+      pointerInsideActionMenuRef.current = false;
       menuOpenRef.current = false;
 
       if (shouldRetainPointerExit) {
@@ -232,9 +236,45 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
         // the only close path needed for pointer-leave dismissal initiated by us.
         setContextMenuResetKey((previous) => previous + 1);
       }
-      markActivity();
+      if (revealEntryAfterClose) {
+        markActivity();
+      }
     },
     [markActivity, onFocusTerminal, releasePointerExitPortal],
+  );
+
+  /**
+   * Immediately hides the recent-command surface when xterm receives input.
+   *
+   * Menu keyboard navigation is intentionally excluded: only events originating
+   * inside xterm represent terminal input and should dismiss the entry.
+   *
+   * @param event Captured keyboard, IME, input, or paste event.
+   * @returns Nothing.
+   */
+  const hideForTerminalInput = React.useCallback(
+    (event: React.SyntheticEvent<HTMLElement>): void => {
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('.xterm') === null) {
+        return;
+      }
+
+      if (idleTimerRef.current !== null) {
+        window.clearTimeout(idleTimerRef.current);
+        idleTimerRef.current = null;
+      }
+
+      lastActivityAtRef.current = 0;
+      if (menuOpenRef.current) {
+        terminalFocusRequestedRef.current = true;
+        closeMenus(false, false);
+      }
+      if (activityVisibleRef.current) {
+        activityVisibleRef.current = false;
+        setActivityVisible(false);
+      }
+    },
+    [closeMenus],
   );
 
   /**
@@ -346,13 +386,13 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
    * @returns Nothing.
    */
   const schedulePointerClose = React.useCallback((): void => {
-    if (pointerCloseTimerRef.current !== null || actionMenuOpenRef.current) {
+    if (pointerCloseTimerRef.current !== null) {
       return;
     }
 
     pointerCloseTimerRef.current = window.setTimeout(() => {
       pointerCloseTimerRef.current = null;
-      if (!pointerInsideTriggerRef.current && !pointerInsideContentRef.current && !actionMenuOpenRef.current) {
+      if (!pointerInsideTriggerRef.current && !pointerInsideContentRef.current && !pointerInsideActionMenuRef.current) {
         closeMenus(true);
       }
     }, COMMAND_TIMELINE_POINTER_LEAVE_GRACE_MS);
@@ -396,6 +436,45 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   const handleContentPointerLeave = React.useCallback(
     (event: React.PointerEvent<HTMLDivElement>): void => {
       pointerInsideContentRef.current = false;
+      if (containsRelatedPointerTarget(triggerRef.current, event.relatedTarget)) {
+        pointerInsideTriggerRef.current = true;
+        cancelPointerClose();
+        return;
+      }
+      if (containsRelatedPointerTarget(actionMenuContentRef.current, event.relatedTarget)) {
+        pointerInsideActionMenuRef.current = true;
+        cancelPointerClose();
+        return;
+      }
+      schedulePointerClose();
+    },
+    [cancelPointerClose, schedulePointerClose],
+  );
+
+  /**
+   * Keeps both menu layers mounted while the pointer is inside row actions.
+   *
+   * @returns Nothing.
+   */
+  const handleActionMenuPointerEnter = React.useCallback((): void => {
+    pointerInsideActionMenuRef.current = true;
+    cancelPointerClose();
+  }, [cancelPointerClose]);
+
+  /**
+   * Applies the shared Portal-crossing grace when leaving row actions.
+   *
+   * @param event Pointer transition emitted by the portaled action menu.
+   * @returns Nothing.
+   */
+  const handleActionMenuPointerLeave = React.useCallback(
+    (event: React.PointerEvent<HTMLDivElement>): void => {
+      pointerInsideActionMenuRef.current = false;
+      if (containsRelatedPointerTarget(menuContentRef.current, event.relatedTarget)) {
+        pointerInsideContentRef.current = true;
+        cancelPointerClose();
+        return;
+      }
       if (containsRelatedPointerTarget(triggerRef.current, event.relatedTarget)) {
         pointerInsideTriggerRef.current = true;
         cancelPointerClose();
@@ -480,6 +559,19 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
   );
 
   /**
+   * Keeps the row action menu open when its hover-opened parent restores xterm focus.
+   *
+   * Pointer departure, outside interaction, Escape, and item selection retain
+   * their explicit dismissal paths; only Radix's focus-out dismissal is blocked.
+   *
+   * @param event Radix focus-outside event for the portaled action menu.
+   * @returns Nothing.
+   */
+  const handleActionMenuFocusOutside = React.useCallback((event: Event): void => {
+    event.preventDefault();
+  }, []);
+
+  /**
    * Copies the command selected by the nested context menu.
    *
    * @returns Nothing.
@@ -538,17 +630,6 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
     },
     [onSelectCommand],
   );
-
-  /**
-   * Closes a pointer-abandoned action menu and restores its source terminal.
-   *
-   * @returns Nothing.
-   */
-  const handleActionMenuPointerLeave = React.useCallback((): void => {
-    terminalFocusRequestedRef.current = true;
-    closeMenus();
-    onFocusTerminal();
-  }, [closeMenus, onFocusTerminal]);
 
   React.useLayoutEffect(() => {
     if (!menuOpen) {
@@ -619,14 +700,14 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
     <div
       data-rail-reserved={model.railReserved ? 'true' : 'false'}
       style={rootStyle}
-      className="terminal-command-timeline relative flex h-full min-h-0 w-full min-w-0 pr-2"
+      className="terminal-command-timeline relative flex h-full min-h-0 w-full min-w-0"
       onMouseDown={onActivate}
       onContextMenu={onActivate}
       onPointerEnter={markActivity}
       onPointerMoveCapture={markActivity}
-      onKeyDownCapture={markActivity}
-      onInputCapture={markActivity}
-      onPasteCapture={markActivity}
+      onKeyDownCapture={hideForTerminalInput}
+      onInputCapture={hideForTerminalInput}
+      onPasteCapture={hideForTerminalInput}
     >
       {children}
 
@@ -650,7 +731,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
                 data-motion={menuMotion}
                 style={{ height: `${entryHitHeight}px` }}
                 className={classNames(
-                  'terminal-command-timeline-entry pointer-events-auto absolute left-0 top-1/2 flex max-h-full w-full -translate-y-1/2 items-center justify-center outline-none transition-opacity disabled:pointer-events-none',
+                  'terminal-command-timeline-entry pointer-events-auto absolute left-0 top-1/2 flex max-h-full w-full -translate-y-1/2 cursor-default items-center justify-center outline-none transition-opacity disabled:pointer-events-none',
                   entryVisible ? 'opacity-100' : 'opacity-0',
                 )}
                 onKeyDown={handleTriggerKeyDown}
@@ -685,7 +766,7 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
                 closeMotion="none"
                 forceMountPortal={pointerExitPortalMounted}
                 data-motion={menuMotion}
-                className="terminal-command-timeline-menu w-80"
+                className="terminal-command-timeline-menu w-64"
                 aria-label={t('ssh.commandTimelineLabel')}
                 inert={menuOpen ? undefined : true}
                 onPointerEnter={handleContentPointerEnter}
@@ -720,7 +801,10 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
               </DropdownMenuContent>
 
               <ContextMenuContent
+                ref={actionMenuContentRef}
+                onPointerEnter={handleActionMenuPointerEnter}
                 onPointerLeave={handleActionMenuPointerLeave}
+                onFocusOutside={handleActionMenuFocusOutside}
                 onCloseAutoFocus={(event) => event.preventDefault()}
               >
                 <ContextMenuItem

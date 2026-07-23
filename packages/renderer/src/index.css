@@ -457,7 +457,7 @@ body {
 }
 
 .terminal-command-timeline-rail {
-  right: calc(0.5rem + var(--terminal-command-timeline-scrollbar-width));
+  right: var(--terminal-command-timeline-scrollbar-width);
   width: var(--terminal-command-timeline-rail-width);
 }
 
