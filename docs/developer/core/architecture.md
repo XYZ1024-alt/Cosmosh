@@ -184,10 +184,11 @@ sequenceDiagram
 
 - Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption. Missing the deadline yields `HELPER_HANDSHAKE_TIMEOUT`. Every OSC event must match the pre-shell helper version, protocol version, shell, and capability set. Manifest/install/settings failure, legacy events without contract fields, a missing handshake, or a runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored.
 - Renderer keeps the latest backend runtime status independently from its bounded 200-entry diagnostic history, so long sessions retain authoritative current diagnostics after older events are evicted.
-- SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
+- SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, batch file operations, and asynchronous remote archive jobs.
+- Remote archive jobs reuse the active SFTP tab's authenticated SSH client but run only backend-generated POSIX command templates. `SftpArchiveService` probes a fixed tool list, owns one archive job per session, stages output beside the destination, creates validated missing destination directories, and exposes only structured state through HTTP/IPC. Extraction runs as a directly signallable remote executable, followed by a cancellable staged-tree verification phase that reuses SFTP directory metadata. Renderer input never becomes a command or flag.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With, resolves the PowerShell primary route and rundll32/shell32 fallback independently from the kernel-owned `GLOBALROOT\SystemRoot\System32` namespace instead of inherited environment/PATH/CWD values, and enriches the primary child environment through Windows known-folder APIs. A blocked or unavailable PowerShell route cannot prevent the validated rundll32 fallback from running with a kernel-anchored minimal environment. Packaged macOS runs accept only the compiled NSWorkspace helper under `process.resourcesPath`; repository binary/source fallbacks are development-only and unavailable when `app.isPackaged` is true. Linux omits Open With.
-- SFTP directory upload/download, chmod, byte-level transfer progress/cancellation, richer transfer queues, and SSH terminal session reuse remain planned follow-up work.
+- SFTP directory upload/download, chmod, generalized byte-transfer cancellation/resume, richer persisted transfer queues, and SSH terminal session reuse remain planned follow-up work. Archive jobs have their own bounded cancellation protocol and do not reuse a terminal shell.
 
 ## 5.1 SSH Port Forwarding Runtime (Implemented)
 
@@ -310,7 +311,36 @@ sequenceDiagram
 - Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
 - This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
 
-### 6.4 Failure Boundary Model
+### 6.4 SFTP Remote Archive Data Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer FIFO Task
+  participant MP as Main/Preload Proxy
+  participant API as Backend Archive Routes
+  participant AS as SftpArchiveService
+  participant RH as Remote POSIX Host
+
+  UI->>MP: structured compress/extract request
+  MP->>API: POST archive-operations
+  API->>AS: start one session-scoped job
+  AS->>RH: fixed exec template on the SFTP tab SSH client
+  loop every 750 ms
+    UI->>API: GET operation status
+    API-->>UI: stage/state/conflicts/result only
+  end
+  opt destination conflict
+    UI->>API: overwrite / keep-both / cancel
+    API->>AS: resume staged commit
+  end
+  AS->>RH: commit and clean known temporary paths
+```
+
+- The remote command, tool output, and random staging paths are backend-private. Public contracts carry paths, format, level, destination mode, phase, conflict summaries, and stable errors only.
+- One archive job may run per SFTP session. Renderer archive requests still enter the tab-local FIFO so multi-archive extraction remains ordered with existing file operations.
+- Closing a session first requests archive cancellation and bounded cleanup, then disconnects SSH. Bulk session close waits for sessions in parallel and preserves the existing active-connection count contract.
+
+### 6.5 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.

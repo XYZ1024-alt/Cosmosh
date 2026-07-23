@@ -24,9 +24,11 @@ import type {
 
 export const SFTP_TASK_STATUS_ORDER: Record<SftpTaskStatus, number> = {
   running: 0,
-  queued: 1,
-  failed: 2,
-  success: 3,
+  waiting: 1,
+  queued: 2,
+  failed: 3,
+  cancelled: 4,
+  success: 5,
 };
 
 const TEXT_PREVIEW_EXTENSIONS = new Set([

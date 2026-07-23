@@ -75,10 +75,10 @@ export const registerSystemRoutes = (app: BackendHttpApp, context: BackendAppCon
     return c.json(payload);
   });
 
-  app.delete(API_PATHS.runtimeCloseActiveConnections, (c) => {
+  app.delete(API_PATHS.runtimeCloseActiveConnections, async (c) => {
     const t = getTranslator(c);
     const sshCount = context.sshSessionService.closeAllSessions();
-    const sftpCount = context.sftpSessionService.closeAllSessions();
+    const sftpCount = await context.sftpSessionService.closeAllSessions();
     const payload: ApiRuntimeActiveConnectionsCloseResponse = createApiSuccess({
       code: API_CODES.runtimeActiveConnectionsCloseOk,
       message: t('success.system.activeConnectionsClosed'),

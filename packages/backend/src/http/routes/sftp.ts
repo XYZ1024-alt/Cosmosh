@@ -3,6 +3,18 @@ import crypto from 'node:crypto';
 import {
   API_CODES,
   API_PATHS,
+  type ApiSftpArchiveCancelResponse,
+  type ApiSftpArchiveCapabilitiesResponse,
+  type ApiSftpArchiveCompressionLevel,
+  type ApiSftpArchiveConflictResolution,
+  type ApiSftpArchiveConflictResolutionRequest,
+  type ApiSftpArchiveConflictResolutionResponse,
+  type ApiSftpArchiveDestinationMode,
+  type ApiSftpArchiveFormat,
+  type ApiSftpArchiveOperationAcceptedResponse,
+  type ApiSftpArchiveOperationData,
+  type ApiSftpArchiveOperationRequest,
+  type ApiSftpArchiveOperationStatusResponse,
   type ApiSftpBatchOperationResponse,
   type ApiSftpCopyResponse,
   type ApiSftpCreateDirectoryResponse,
@@ -22,6 +34,7 @@ import {
   MAX_SYSTEM_PROXY_RULES_LENGTH,
 } from '@cosmosh/api-contract';
 
+import { SftpArchiveError } from '../../sftp/archive-service.js';
 import type {
   CreateSftpSessionInput,
   RunSftpBatchOperationInput,
@@ -87,6 +100,8 @@ type NormalizedSftpEntryDetailsRequest = {
 
 type NormalizedSftpBatchOperationRequest = RunSftpBatchOperationInput;
 
+type NormalizedSftpArchiveOperationRequest = ApiSftpArchiveOperationRequest;
+
 type SuccessfulSftpBatchOperationResult = Extract<SftpBatchOperationResult, { type: 'success' }>;
 
 type ApiSftpOperationResponse =
@@ -106,6 +121,22 @@ const isSftpEntryType = (value: unknown): value is SftpEntryType => {
 
 const isSftpBatchOperation = (value: unknown): value is SftpBatchOperation => {
   return value === 'copy' || value === 'move' || value === 'delete' || value === 'link';
+};
+
+const isSftpArchiveFormat = (value: unknown): value is ApiSftpArchiveFormat => {
+  return ['tar', 'tar-gzip', 'zip', 'tar-xz', 'tar-bzip2', '7z'].includes(String(value));
+};
+
+const isSftpArchiveCompressionLevel = (value: unknown): value is ApiSftpArchiveCompressionLevel => {
+  return ['store', 'fast', 'standard', 'maximum'].includes(String(value));
+};
+
+const isSftpArchiveDestinationMode = (value: unknown): value is ApiSftpArchiveDestinationMode => {
+  return ['smart', 'current-directory', 'archive-name-directory'].includes(String(value));
+};
+
+const isSftpArchiveConflictResolution = (value: unknown): value is ApiSftpArchiveConflictResolution => {
+  return ['overwrite', 'keep-both', 'cancel'].includes(String(value));
 };
 
 /**
@@ -560,6 +591,176 @@ const parseSftpBatchOperationRequest = (payload: unknown): ValidationResult<Norm
 
   return {
     value,
+  };
+};
+
+/**
+ * Parses a discriminated archive operation without accepting tool flags or shell fragments.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized archive request or validation error.
+ */
+const parseSftpArchiveOperationRequest = (
+  payload: unknown,
+): ValidationResult<NormalizedSftpArchiveOperationRequest> => {
+  if (!isRecord(payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Request body must be a JSON object.'),
+    };
+  }
+
+  if (payload.type === 'compress') {
+    const targetDirectoryPath = normalizeOptionalString(payload.targetDirectoryPath);
+    const archiveName = normalizeOptionalString(payload.archiveName);
+    if (!Array.isArray(payload.sourcePaths) || payload.sourcePaths.length === 0) {
+      return {
+        error: buildValidationError(
+          'errors.sftp.archiveSourcesRequired',
+          'sourcePaths must contain at least one item.',
+        ),
+      };
+    }
+    const sourcePaths = payload.sourcePaths.map(normalizeOptionalString);
+    if (sourcePaths.some((sourcePath) => !sourcePath)) {
+      return { error: buildValidationError('errors.sftp.pathRequired', 'path is required.') };
+    }
+    if (!targetDirectoryPath || !archiveName) {
+      return {
+        error: buildValidationError(
+          'errors.sftp.archiveTargetRequired',
+          'targetDirectoryPath and archiveName are required.',
+        ),
+      };
+    }
+    if (!isSftpArchiveFormat(payload.format) || !isSftpArchiveCompressionLevel(payload.compressionLevel)) {
+      return {
+        error: buildValidationError(
+          'errors.sftp.archiveOptionsInvalid',
+          'Archive format or compression level is invalid.',
+        ),
+      };
+    }
+    return {
+      value: {
+        type: 'compress',
+        sourcePaths: sourcePaths as string[],
+        targetDirectoryPath,
+        archiveName,
+        format: payload.format,
+        compressionLevel: payload.compressionLevel,
+      },
+    };
+  }
+
+  if (payload.type === 'extract') {
+    const archivePath = normalizeOptionalString(payload.archivePath);
+    const targetDirectoryPath = normalizeOptionalString(payload.targetDirectoryPath);
+    if (!archivePath || !targetDirectoryPath || !isSftpArchiveDestinationMode(payload.destinationMode)) {
+      return {
+        error: buildValidationError(
+          'errors.sftp.archiveExtractOptionsInvalid',
+          'archivePath, targetDirectoryPath, and destinationMode are required.',
+        ),
+      };
+    }
+    return {
+      value: {
+        type: 'extract',
+        archivePath,
+        targetDirectoryPath,
+        destinationMode: payload.destinationMode,
+      },
+    };
+  }
+
+  return {
+    error: buildValidationError('errors.sftp.archiveTypeInvalid', 'type must be compress or extract.'),
+  };
+};
+
+/**
+ * Parses one task-wide conflict decision.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized resolution request or validation error.
+ */
+const parseSftpArchiveConflictResolutionRequest = (
+  payload: unknown,
+): ValidationResult<ApiSftpArchiveConflictResolutionRequest> => {
+  if (!isRecord(payload) || !isSftpArchiveConflictResolution(payload.resolution)) {
+    return {
+      error: buildValidationError(
+        'errors.sftp.archiveConflictResolutionInvalid',
+        'resolution must be overwrite, keep-both, or cancel.',
+      ),
+    };
+  }
+  return { value: { resolution: payload.resolution } };
+};
+
+/** Maps stable archive errors to the public HTTP status family. */
+const getArchiveErrorStatus = (error: SftpArchiveError): 400 | 404 | 409 => {
+  if (error.code === API_CODES.sftpArchiveOperationNotFound) return 404;
+  if (
+    error.code === API_CODES.sftpArchiveBusy ||
+    error.code === API_CODES.sftpArchiveTargetExists ||
+    error.code === API_CODES.sftpArchiveCancelFailed
+  ) {
+    return 409;
+  }
+  return 400;
+};
+
+/** Returns a localized public summary for one stable archive error code. */
+const translateArchiveError = (t: BackendTranslator, code: string, fallback: string): string => {
+  switch (code) {
+    case API_CODES.sftpArchiveUnsupported:
+      return t('errors.sftp.archiveUnsupported');
+    case API_CODES.sftpArchiveBusy:
+      return t('errors.sftp.archiveBusy');
+    case API_CODES.sftpArchiveTargetExists:
+      return t('errors.sftp.archiveTargetExists');
+    case API_CODES.sftpArchiveUnsafeEntry:
+      return t('errors.sftp.archiveUnsafeEntry');
+    case API_CODES.sftpArchiveOperationNotFound:
+      return t('errors.sftp.archiveOperationNotFound');
+    case API_CODES.sftpArchiveOperationFailed:
+      return t('errors.sftp.archiveOperationFailed');
+    case API_CODES.sftpArchiveTimeout:
+      return t('errors.sftp.archiveTimeout');
+    case API_CODES.sftpArchiveCancelFailed:
+      return t('errors.sftp.archiveCancelFailed');
+    case API_CODES.sftpValidationFailed:
+      return t('errors.sftp.archiveValidationFailed');
+    default:
+      return fallback;
+  }
+};
+
+/** Localizes terminal task errors without exposing command output or staging paths. */
+const localizeArchiveOperation = (
+  t: BackendTranslator,
+  operation: ApiSftpArchiveOperationData,
+): ApiSftpArchiveOperationData => {
+  if (!operation.errorCode || !operation.errorMessage) return operation;
+  return {
+    ...operation,
+    errorMessage: translateArchiveError(t, operation.errorCode, operation.errorMessage),
+  };
+};
+
+/** Normalizes unexpected archive route failures into a stable public envelope. */
+const buildArchiveErrorResponse = (
+  t: BackendTranslator,
+  error: unknown,
+): { payload: ReturnType<typeof buildErrorPayload>; status: 400 | 404 | 409 } => {
+  const archiveError =
+    error instanceof SftpArchiveError
+      ? error
+      : new SftpArchiveError(API_CODES.sftpArchiveOperationFailed, 'The archive operation failed.');
+  return {
+    payload: buildErrorPayload(archiveError.code, translateArchiveError(t, archiveError.code, archiveError.message)),
+    status: getArchiveErrorStatus(archiveError),
   };
 };
 
@@ -1102,11 +1303,141 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
     return c.json(buildSftpBatchOperationSuccess(t, result));
   });
 
+  app.get(API_PATHS.sftpGetArchiveCapabilities.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+    const capabilities = await context.sftpSessionService.getArchiveCapabilities(sessionId);
+    if (!capabilities) {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+    const payload: ApiSftpArchiveCapabilitiesResponse = createApiSuccess({
+      code: API_CODES.sftpArchiveCapabilitiesOk,
+      message: t('success.sftp.archiveCapabilitiesLoaded'),
+      data: capabilities,
+    });
+    return c.json(payload);
+  });
+
+  app.post(API_PATHS.sftpStartArchiveOperation.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+    const parsed = parseSftpArchiveOperationRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    try {
+      const operation = await context.sftpSessionService.startArchiveOperation(sessionId, parsed.value);
+      if (!operation) {
+        return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+      }
+      const payload: ApiSftpArchiveOperationAcceptedResponse = createApiSuccess({
+        code: API_CODES.sftpArchiveOperationAccepted,
+        message: t('success.sftp.archiveOperationAccepted'),
+        data: operation,
+      });
+      return c.json(payload, 202);
+    } catch (error: unknown) {
+      const failure = buildArchiveErrorResponse(t, error);
+      return c.json(failure.payload, failure.status);
+    }
+  });
+
+  app.get(
+    API_PATHS.sftpGetArchiveOperation.replace('{sessionId}', ':sessionId').replace('{operationId}', ':operationId'),
+    (c) => {
+      const t = getTranslator(c);
+      const sessionId = c.req.param('sessionId');
+      const operationId = c.req.param('operationId');
+      if (!sessionId || !operationId || !UUID_PATTERN.test(operationId)) {
+        return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.validation.invalidPayload')), 400);
+      }
+      try {
+        const operation = context.sftpSessionService.getArchiveOperation(sessionId, operationId);
+        if (!operation) {
+          return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+        }
+        const payload: ApiSftpArchiveOperationStatusResponse = createApiSuccess({
+          code: API_CODES.sftpArchiveOperationStatusOk,
+          message: t('success.sftp.archiveOperationStatusLoaded'),
+          data: localizeArchiveOperation(t, operation),
+        });
+        return c.json(payload);
+      } catch (error: unknown) {
+        const failure = buildArchiveErrorResponse(t, error);
+        return c.json(failure.payload, failure.status);
+      }
+    },
+  );
+
+  app.post(
+    API_PATHS.sftpResolveArchiveConflict.replace('{sessionId}', ':sessionId').replace('{operationId}', ':operationId'),
+    async (c) => {
+      const t = getTranslator(c);
+      const sessionId = c.req.param('sessionId');
+      const operationId = c.req.param('operationId');
+      if (!sessionId || !operationId || !UUID_PATTERN.test(operationId)) {
+        return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.validation.invalidPayload')), 400);
+      }
+      const parsed = parseSftpArchiveConflictResolutionRequest(await c.req.json().catch(() => undefined));
+      if (!parsed.value) return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+      try {
+        const operation = context.sftpSessionService.resolveArchiveConflict(
+          sessionId,
+          operationId,
+          parsed.value.resolution,
+        );
+        if (!operation) {
+          return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+        }
+        const payload: ApiSftpArchiveConflictResolutionResponse = createApiSuccess({
+          code: API_CODES.sftpArchiveOperationStatusOk,
+          message: t('success.sftp.archiveConflictResolved'),
+          data: localizeArchiveOperation(t, operation),
+        });
+        return c.json(payload);
+      } catch (error: unknown) {
+        const failure = buildArchiveErrorResponse(t, error);
+        return c.json(failure.payload, failure.status);
+      }
+    },
+  );
+
+  app.delete(
+    API_PATHS.sftpCancelArchiveOperation.replace('{sessionId}', ':sessionId').replace('{operationId}', ':operationId'),
+    (c) => {
+      const t = getTranslator(c);
+      const sessionId = c.req.param('sessionId');
+      const operationId = c.req.param('operationId');
+      if (!sessionId || !operationId || !UUID_PATTERN.test(operationId)) {
+        return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.validation.invalidPayload')), 400);
+      }
+      try {
+        const operation = context.sftpSessionService.cancelArchiveOperation(sessionId, operationId);
+        if (!operation) {
+          return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+        }
+        const payload: ApiSftpArchiveCancelResponse = createApiSuccess({
+          code: API_CODES.sftpArchiveOperationStatusOk,
+          message: t('success.sftp.archiveCancellationRequested'),
+          data: localizeArchiveOperation(t, operation),
+        });
+        return c.json(payload, 202);
+      } catch (error: unknown) {
+        const failure = buildArchiveErrorResponse(t, error);
+        return c.json(failure.payload, failure.status);
+      }
+    },
+  );
+
   app.delete(API_PATHS.sftpCloseSession.replace('{sessionId}', ':sessionId'), async (c) => {
     const t = getTranslator(c);
     const sessionId = c.req.param('sessionId');
 
-    if (!sessionId || !context.sftpSessionService.closeSession(sessionId)) {
+    if (!sessionId || !(await context.sftpSessionService.closeSession(sessionId))) {
       return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
     }
 

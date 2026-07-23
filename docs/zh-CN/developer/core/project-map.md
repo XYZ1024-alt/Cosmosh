@@ -68,7 +68,7 @@ flowchart TB
 - **角色**：React UI 层。
 - **关键目录**：
   - `src/pages`：功能页面（`Home`、`SSH`、`SFTP`、`Settings`、`SettingsEditor`等）。Home 负责 SSH 服务器、钥匙链与端口转发管理界面。
-  - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务队列、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。
+  - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、归档 Dialog 与归档任务轮询、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务排队/取消、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
   - `src/components/CloseWindowConfirmationDialog.tsx`：为 Main 持有的活动会话关闭决策提供共享 Renderer `Dialog` 界面。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
@@ -86,7 +86,7 @@ flowchart TB
   - `src/ssh`：SSH 认证/会话逻辑（`ssh2`、known-host 信任、遥测、钥匙链凭据解析），以及供 shell 与非 shell transport 共用的已认证连接 helper。该 helper 会为每条 transport 创建新的 proxy socket，并支持 attempt 级压缩策略与取消信号。
   - `src/remote-bootstrap`：交互 shell 打开前的远端增强编排。它负责加载部署 manifest，通过与交互 client 隔离的临时 SSH transport 探测远端平台，校验已安装 Go binary 的运行时状态，仅在安装缺失或陈旧时注入下载 wrapper，向 `SshSessionService` 返回可信 helper 契约，转发 `bootstrap-status` WS 消息，并记录 bootstrap 终态审计。
   - `src/port-forward`：SSH 端口转发规则校验、SOCKS5 解析与活动运行时会话服务。
-  - `src/sftp`：SFTP 浏览、下载与文件操作会话逻辑（`ssh2.sftp`、路径归一化、条目映射与会话清理），包含单文件传输的短期内存字节进度记录。
+  - `src/sftp`：SFTP 浏览、下载、文件操作与远端归档会话逻辑。`session-service.ts` 负责会话授权/生命周期与普通 `ssh2.sftp` 操作；`archive-service.ts` 负责固定 POSIX 命令构造、能力探测、异步归档状态、暂存/提交、冲突合并、取消、审计与清理。单文件传输继续使用既有短期内存字节进度记录。
   - `src/settings`：设置默认值、请求校验解析，以及供 HTTP 路由和运行时服务复用的 AppSettings 读取器。
   - `src/validation-utils.ts`：后端 HTTP 边界校验共享原语，供路由与领域 payload 解析器复用。
   - `src/local-terminal`：本地 PTY 会话逻辑（`node-pty`）。
@@ -149,7 +149,7 @@ flowchart TD
 
 ## 5. 尚未实现（规划中）
 
-- 完整的 backend SFTP 传输队列模块（目录上传/下载、取消/续传、通用重试策略与持久化传输历史）。单文件上传/下载的字节进度与速度观测已经实现，但不包含 backend 调度。
+- 完整的 backend SFTP 传输队列模块（目录上传/下载、通用取消/续传、重试策略与持久化传输历史）。单文件上传/下载进度与远端归档任务分别以有界内存流程实现，不包含持久化调度。
 - 尚无独立 `common` 共享包；当前共享通过 `api-contract` + `i18n` 实现。
 
 ## 6. 常见改动场景

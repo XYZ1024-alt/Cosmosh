@@ -14,6 +14,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -137,6 +144,18 @@ export type BackendClient = {
     sessionId: string,
     payload: ApiSftpBatchOperationRequest,
   ) => Promise<ApiSftpBatchOperationResponse>;
+  getSftpArchiveCapabilities: (sessionId: string) => Promise<ApiSftpArchiveCapabilitiesResponse>;
+  startSftpArchiveOperation: (
+    sessionId: string,
+    payload: ApiSftpArchiveOperationRequest,
+  ) => Promise<ApiSftpArchiveOperationAcceptedResponse>;
+  getSftpArchiveOperation: (sessionId: string, operationId: string) => Promise<ApiSftpArchiveOperationStatusResponse>;
+  resolveSftpArchiveConflict: (
+    sessionId: string,
+    operationId: string,
+    payload: ApiSftpArchiveConflictResolutionRequest,
+  ) => Promise<ApiSftpArchiveConflictResolutionResponse>;
+  cancelSftpArchiveOperation: (sessionId: string, operationId: string) => Promise<ApiSftpArchiveCancelResponse>;
   trustSshFingerprint: (payload: ApiSshTrustFingerprintRequest) => Promise<ApiSshTrustFingerprintResponse>;
   listLocalTerminalProfiles: () => Promise<LocalTerminalListResponse>;
   createLocalTerminalSession: (
@@ -512,6 +531,21 @@ export const createBackendClient = (): BackendClient => {
     },
     runSftpBatchOperation: async (sessionId, requestPayload) => {
       return unwrapApiResponse(await transport.runSftpBatchOperation(sessionId, requestPayload));
+    },
+    getSftpArchiveCapabilities: async (sessionId) => {
+      return unwrapApiResponse(await transport.getSftpArchiveCapabilities(sessionId));
+    },
+    startSftpArchiveOperation: async (sessionId, requestPayload) => {
+      return unwrapApiResponse(await transport.startSftpArchiveOperation(sessionId, requestPayload));
+    },
+    getSftpArchiveOperation: async (sessionId, operationId) => {
+      return unwrapApiResponse(await transport.getSftpArchiveOperation(sessionId, operationId));
+    },
+    resolveSftpArchiveConflict: async (sessionId, operationId, requestPayload) => {
+      return unwrapApiResponse(await transport.resolveSftpArchiveConflict(sessionId, operationId, requestPayload));
+    },
+    cancelSftpArchiveOperation: async (sessionId, operationId) => {
+      return unwrapApiResponse(await transport.cancelSftpArchiveOperation(sessionId, operationId));
     },
     listLocalTerminalProfiles: async () => {
       const payload = await transport.listLocalTerminalProfiles();

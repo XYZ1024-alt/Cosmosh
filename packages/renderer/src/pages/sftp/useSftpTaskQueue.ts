@@ -29,6 +29,17 @@ type UseSftpTaskQueueResult = {
 };
 
 /**
+ * Signals that a queued task reached a confirmed cancelled backend state.
+ */
+export class SftpTaskCancelledError extends Error {
+  /** Creates the renderer task cancellation sentinel. */
+  public constructor() {
+    super('SFTP task cancelled.');
+    this.name = 'SftpTaskCancelledError';
+  }
+}
+
+/**
  * Owns serialized renderer-side SFTP operations and transient toolbar task state.
  *
  * @param params File-action readiness and error reporter.
@@ -128,6 +139,7 @@ export const useSftpTaskQueue = ({
                       ...task,
                       status: 'success',
                       finishedAt: Date.now(),
+                      cancel: undefined,
                     }
                   : task,
               ),
@@ -137,20 +149,24 @@ export const useSftpTaskQueue = ({
               continue;
             }
 
+            const isCancelled = error instanceof SftpTaskCancelledError;
             const message = error instanceof Error ? error.message : t('sftp.operationFailed');
             setSftpTasks((previous) =>
               previous.map((task) =>
                 task.id === nextTask.id
                   ? {
                       ...task,
-                      status: 'failed',
-                      errorMessage: message,
+                      status: isCancelled ? 'cancelled' : 'failed',
+                      errorMessage: isCancelled ? undefined : message,
                       finishedAt: Date.now(),
+                      cancel: undefined,
                     }
                   : task,
               ),
             );
-            notifyError(t('sftp.tasks.failureFeedback', { operation: nextTask.label, reason: message }));
+            if (!isCancelled) {
+              notifyError(t('sftp.tasks.failureFeedback', { operation: nextTask.label, reason: message }));
+            }
           } finally {
             if (taskQueueGenerationRef.current === activeGeneration) {
               scheduleTaskRetentionCleanup(nextTask.id);
@@ -187,7 +203,7 @@ export const useSftpTaskQueue = ({
         label: options.label,
         run: async () => {
           const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
-          const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress' | 'errorMessage'>>): void => {
+          const update: SftpTaskContext['update'] = (patch): void => {
             if (!isCurrent()) {
               return;
             }
@@ -197,7 +213,14 @@ export const useSftpTaskQueue = ({
             );
           };
 
-          await operation({ taskId, isCurrent, update });
+          const registerCancel = (cancel: () => void): void => {
+            if (!isCurrent()) return;
+            setSftpTasks((previous) =>
+              previous.map((currentTask) => (currentTask.id === taskId ? { ...currentTask, cancel } : currentTask)),
+            );
+          };
+
+          await operation({ taskId, isCurrent, registerCancel, update });
         },
       });
       flushSftpTaskQueue();
@@ -235,7 +258,7 @@ export const useSftpTaskQueue = ({
 
       const taskGeneration = taskQueueGenerationRef.current;
       const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
-      const update = (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress'>>): void => {
+      const update: SftpTaskContext['update'] = (patch): void => {
         if (!isCurrent()) {
           return;
         }
@@ -245,7 +268,7 @@ export const useSftpTaskQueue = ({
         );
       };
 
-      return operation({ taskId, isCurrent, update })
+      return operation({ taskId, isCurrent, registerCancel: () => undefined, update })
         .then((nextSessionId) => {
           if (isCurrent()) {
             setSftpTasks((previous) =>
@@ -291,7 +314,7 @@ export const useSftpTaskQueue = ({
   );
 
   const runningTaskCount = React.useMemo(
-    () => sftpTasks.filter((task) => task.status === 'running').length,
+    () => sftpTasks.filter((task) => task.status === 'running' || task.status === 'waiting').length,
     [sftpTasks],
   );
   const queuedTaskCount = React.useMemo(() => sftpTasks.filter((task) => task.status === 'queued').length, [sftpTasks]);

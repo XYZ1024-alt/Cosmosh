@@ -541,6 +541,75 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/archive-capabilities': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Probe archive formats supported by the remote SFTP session. */
+    get: operations['sftpGetArchiveCapabilities'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/archive-operations': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start one controlled remote archive operation. */
+    post: operations['sftpStartArchiveOperation'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the current state of an archive operation. */
+    get: operations['sftpGetArchiveOperation'];
+    put?: never;
+    post?: never;
+    /** Request cancellation of an archive operation. */
+    delete: operations['sftpCancelArchiveOperation'];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Resolve all pending destination conflicts for one archive operation. */
+    post: operations['sftpResolveArchiveConflict'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}': {
     parameters: {
       query?: never;
@@ -716,6 +785,14 @@ export interface components {
         | 'SFTP_VALIDATION_FAILED'
         | 'SFTP_OPERATION_FAILED'
         | 'SFTP_UPLOAD_CONFLICT'
+        | 'SFTP_ARCHIVE_UNSUPPORTED'
+        | 'SFTP_ARCHIVE_BUSY'
+        | 'SFTP_ARCHIVE_TARGET_EXISTS'
+        | 'SFTP_ARCHIVE_UNSAFE_ENTRY'
+        | 'SFTP_ARCHIVE_OPERATION_NOT_FOUND'
+        | 'SFTP_ARCHIVE_OPERATION_FAILED'
+        | 'SFTP_ARCHIVE_TIMEOUT'
+        | 'SFTP_ARCHIVE_CANCEL_FAILED'
         | 'AUDIT_VALIDATION_FAILED'
         | 'AUDIT_EVENT_NOT_FOUND'
         | 'LOCAL_TERMINAL_VALIDATION_FAILED'
@@ -1205,6 +1282,74 @@ export interface components {
       message?: string;
     };
     /** @enum {string} */
+    SftpArchiveFormat: 'tar' | 'tar-gzip' | 'zip' | 'tar-xz' | 'tar-bzip2' | '7z';
+    /** @enum {string} */
+    SftpArchiveCompressionLevel: 'store' | 'fast' | 'standard' | 'maximum';
+    /** @enum {string} */
+    SftpArchiveDestinationMode: 'smart' | 'current-directory' | 'archive-name-directory';
+    /** @enum {string} */
+    SftpArchiveConflictResolution: 'overwrite' | 'keep-both' | 'cancel';
+    /** @enum {string} */
+    SftpArchiveOperationType: 'compress' | 'extract';
+    /** @enum {string} */
+    SftpArchiveOperationState: 'running' | 'awaiting-conflict' | 'succeeded' | 'failed' | 'cancelled';
+    /** @enum {string} */
+    SftpArchiveOperationStage:
+      | 'preparing'
+      | 'compressing'
+      | 'extracting'
+      | 'verifying'
+      | 'awaiting-conflict'
+      | 'committing'
+      | 'cleaning'
+      | 'completed';
+    /** @enum {string} */
+    SftpArchiveErrorCode:
+      | 'SFTP_ARCHIVE_UNSUPPORTED'
+      | 'SFTP_ARCHIVE_BUSY'
+      | 'SFTP_ARCHIVE_TARGET_EXISTS'
+      | 'SFTP_ARCHIVE_UNSAFE_ENTRY'
+      | 'SFTP_ARCHIVE_OPERATION_NOT_FOUND'
+      | 'SFTP_ARCHIVE_OPERATION_FAILED'
+      | 'SFTP_ARCHIVE_TIMEOUT'
+      | 'SFTP_ARCHIVE_CANCEL_FAILED'
+      | 'SFTP_VALIDATION_FAILED';
+    SftpArchiveCompressRequest: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'compress';
+      sourcePaths: string[];
+      targetDirectoryPath: string;
+      archiveName: string;
+      format: components['schemas']['SftpArchiveFormat'];
+      compressionLevel: components['schemas']['SftpArchiveCompressionLevel'];
+    };
+    SftpArchiveExtractRequest: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'extract';
+      /** @description Absolute POSIX path of a regular archive file in the active SFTP session. */
+      archivePath: string;
+      /** @description Absolute POSIX destination directory in the active SFTP session. Missing path segments are created; the remote root is rejected. */
+      targetDirectoryPath: string;
+      destinationMode: components['schemas']['SftpArchiveDestinationMode'];
+    };
+    SftpArchiveOperationRequest:
+      | components['schemas']['SftpArchiveCompressRequest']
+      | components['schemas']['SftpArchiveExtractRequest'];
+    SftpArchiveConflictResolutionRequest: {
+      resolution: components['schemas']['SftpArchiveConflictResolution'];
+    };
+    SftpArchiveConflict: {
+      path: string;
+      targetPath: string;
+      type: components['schemas']['SftpEntryType'];
+    };
+    /** @enum {string} */
     SftpEntryType: 'directory' | 'file' | 'symlink' | 'other';
     SftpEntry: {
       name: string;
@@ -1297,6 +1442,24 @@ export interface components {
       skippedCount: number;
       stoppedOnFailure: boolean;
       results: components['schemas']['SftpBatchOperationItemResult'][];
+    };
+    SftpArchiveCapabilitiesData: {
+      sessionId: string;
+      canExec: boolean;
+      createFormats: components['schemas']['SftpArchiveFormat'][];
+      extractFormats: components['schemas']['SftpArchiveFormat'][];
+    };
+    SftpArchiveOperationData: {
+      sessionId: string;
+      operationId: string;
+      type: components['schemas']['SftpArchiveOperationType'];
+      state: components['schemas']['SftpArchiveOperationState'];
+      stage: components['schemas']['SftpArchiveOperationStage'];
+      cancelRequested: boolean;
+      conflicts?: components['schemas']['SftpArchiveConflict'][];
+      resultPaths?: string[];
+      errorCode?: components['schemas']['SftpArchiveErrorCode'];
+      errorMessage?: string;
     };
     SftpReadFileData: {
       sessionId: string;
@@ -1578,6 +1741,27 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpBatchOperationData'];
+    };
+    SftpArchiveCapabilitiesSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_ARCHIVE_CAPABILITIES_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpArchiveCapabilitiesData'];
+    };
+    SftpArchiveOperationAcceptedSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_ARCHIVE_OPERATION_ACCEPTED';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpArchiveOperationData'];
+    };
+    SftpArchiveOperationStatusSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_ARCHIVE_OPERATION_STATUS_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpArchiveOperationData'];
     };
     SftpReadFileSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -3556,6 +3740,263 @@ export interface operations {
         };
       };
       /** @description Session or entry not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpGetArchiveCapabilities: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archive capabilities were probed or returned from the session cache. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpArchiveCapabilitiesSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpStartArchiveOperation: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpArchiveOperationRequest'];
+      };
+    };
+    responses: {
+      /** @description Archive operation accepted and started asynchronously. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpArchiveOperationAcceptedSuccess'];
+        };
+      };
+      /** @description Validation failed or the requested archive format is unsupported. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or source entry not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Another archive operation is active or the target already exists. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpGetArchiveOperation: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+        operationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Archive operation status returned. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpArchiveOperationStatusSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or archive operation not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpCancelArchiveOperation: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+        operationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Cancellation requested. Poll the operation until it reaches a terminal state. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpArchiveOperationStatusSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or archive operation not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description The operation could not be cancelled. */
+      409: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpResolveArchiveConflict: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+        operationId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpArchiveConflictResolutionRequest'];
+      };
+    };
+    responses: {
+      /** @description Conflict resolution accepted and the operation resumed or was cancelled. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpArchiveOperationStatusSuccess'];
+        };
+      };
+      /** @description Validation failed or the operation is not waiting for a conflict decision. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or archive operation not found. */
       404: {
         headers: {
           [name: string]: unknown;

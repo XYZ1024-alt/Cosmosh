@@ -51,7 +51,7 @@ const dedupeEntries = (entries) => {
 };
 
 const extractCapabilities = () => {
-  const capabilitiesMatch = source.match(/capabilities:[\s\S]*?enum:\s*\[(.*?)\]/m);
+  const capabilitiesMatch = source.match(/TestPingData:[\s\S]*?capabilities:[\s\S]*?enum:\s*\[(.*?)\]/m);
   if (!capabilitiesMatch?.[1]) {
     return ['ssh', 'sftp'];
   }

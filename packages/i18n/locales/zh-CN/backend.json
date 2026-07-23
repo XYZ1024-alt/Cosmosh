@@ -39,6 +39,21 @@
       "rowNotPersisted": "设置未保存。"
     },
     "sftp": {
+      "archiveBusy": "当前 SFTP 会话已有归档任务正在运行。",
+      "archiveCancelFailed": "无法安全取消归档任务。",
+      "archiveConflictResolutionInvalid": "归档冲突处理方式无效。",
+      "archiveExtractOptionsInvalid": "归档解压选项无效。",
+      "archiveOperationFailed": "远端归档任务执行失败。",
+      "archiveOperationNotFound": "归档任务已不可用。",
+      "archiveOptionsInvalid": "归档格式或压缩级别无效。",
+      "archiveSourcesRequired": "请至少选择一个压缩源。",
+      "archiveTargetExists": "归档目标位置已存在同名条目。",
+      "archiveTargetRequired": "必须提供归档目标目录和名称。",
+      "archiveTimeout": "远端归档任务已超时。",
+      "archiveTypeInvalid": "归档操作必须是压缩或解压。",
+      "archiveUnsafeEntry": "归档中包含不安全的成员路径。",
+      "archiveUnsupported": "当前远端不支持该归档格式或缺少所需工具。",
+      "archiveValidationFailed": "归档请求包含无效路径或选项。",
       "batchEntriesRequired": "至少需要包含一个条目。",
       "batchOperationRequired": "操作必须是复制、移动、删除或创建链接之一。",
       "batchSkippedAfterFailure": "操作已跳过，因为上一个批量操作失败。",
@@ -160,6 +175,11 @@
       "updated": "设置已更新。"
     },
     "sftp": {
+      "archiveCancellationRequested": "已请求取消归档任务。",
+      "archiveCapabilitiesLoaded": "归档能力已加载。",
+      "archiveConflictResolved": "已接受归档冲突处理方式。",
+      "archiveOperationAccepted": "归档任务已启动。",
+      "archiveOperationStatusLoaded": "归档任务状态已加载。",
       "batchOperationCompleted": "批量操作完成。",
       "directoryCreated": "目录已创建。",
       "directoryListed": "目录已加载。",

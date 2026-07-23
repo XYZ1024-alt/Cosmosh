@@ -184,10 +184,11 @@ sequenceDiagram
 
 - 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费；错过 deadline 会得到 `HELPER_HANDSHAKE_TIMEOUT`。每条 OSC 事件都必须匹配交互 shell 打开前确认的 helper version、protocol version、shell 与 capability 集合。Manifest/安装/设置失败、缺少契约字段的旧事件、缺少握手或运行期契约不匹配都不会影响普通 SSH，但会让 helper 派生状态保持不可用。
 - Renderer 会把最新 backend 运行状态与最多 200 条诊断历史分别保存，因此长会话淘汰旧事件后仍保留权威的当前诊断状态。
-- SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除与批量文件操作。
+- SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除、批量文件操作与异步远端归档任务。
+- 远端归档任务复用当前 SFTP 标签页已认证的 SSH client，但只执行 backend 生成的固定 POSIX 命令模板。`SftpArchiveService` 探测固定工具集合、为每个会话持有至多一个归档任务、在目标同级暂存输出、创建经过校验的缺失目标目录，并且只通过 HTTP/IPC 暴露结构化状态。解压使用可直接接收信号的远端可执行进程，随后进入可取消且复用 SFTP 目录元数据的暂存树校验阶段。Renderer 输入永远不会成为命令或 flag。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
 - SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；PowerShell 主路径与 rundll32/shell32 fallback 会分别从内核所有的 `GLOBALROOT\SystemRoot\System32` 命名空间解析，不信任继承的环境变量、PATH 或 CWD，主路径再通过 Windows known-folder API 补充子进程环境。PowerShell 被阻止或不可用时，已校验的 rundll32 fallback 仍可使用内核锚定的最小环境运行。macOS 打包运行只接受 `process.resourcesPath` 下已编译的 NSWorkspace helper；仓库内二进制/源码 fallback 仅供开发态使用，在 `app.isPackaged` 为 true 时不可用。Linux 不显示打开方式。
-- SFTP 目录上传/下载、chmod、字节级传输进度/取消、更完整的传输队列与 SSH terminal 会话复用仍属于后续规划。
+- SFTP 目录上传/下载、chmod、通用字节传输取消/续传、更完整的持久化传输队列与 SSH terminal 会话复用仍属于后续规划。归档任务拥有独立的有界取消协议，不复用 terminal shell。
 
 ## 5.1 SSH 端口转发运行时（已实现）
 
@@ -310,7 +311,36 @@ sequenceDiagram
 - Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
 - 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
 
-### 6.4 失败边界模型
+### 6.4 SFTP 远端归档数据流
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer FIFO 任务
+  participant MP as Main/Preload 代理
+  participant API as Backend 归档路由
+  participant AS as SftpArchiveService
+  participant RH as 远端 POSIX 主机
+
+  UI->>MP: 结构化压缩/解压请求
+  MP->>API: POST archive-operations
+  API->>AS: 启动会话级单任务
+  AS->>RH: 在 SFTP 标签页 SSH client 上执行固定模板
+  loop 每 750 ms
+    UI->>API: GET 任务状态
+    API-->>UI: 仅返回阶段/状态/冲突/结果
+  end
+  opt 目标冲突
+    UI->>API: 覆盖 / 保留两者 / 取消
+    API->>AS: 恢复暂存提交
+  end
+  AS->>RH: 提交并清理已知临时路径
+```
+
+- 远端命令、工具输出与随机暂存路径只存在于 backend。公共契约仅传递路径、格式、级别、目标模式、阶段、冲突摘要与稳定错误。
+- 每个 SFTP 会话最多运行一个归档任务。Renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
+- 关闭会话时先请求取消归档任务并进行有界清理，再断开 SSH。批量关闭会并行等待各会话，并保持既有活动连接计数契约。
+
+### 6.5 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。

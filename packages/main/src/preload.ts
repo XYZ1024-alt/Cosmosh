@@ -17,6 +17,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -665,6 +672,45 @@ contextBridge.exposeInMainWorld('electron', {
       'backend:sftp-batch-operation',
       sessionId,
       payload,
+    );
+  },
+  backendSftpGetArchiveCapabilities: (sessionId: string) => {
+    return invokeIpc<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>(
+      'backend:sftp-get-archive-capabilities',
+      sessionId,
+    );
+  },
+  backendSftpStartArchiveOperation: (sessionId: string, payload: ApiSftpArchiveOperationRequest) => {
+    return invokeIpc<ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse>(
+      'backend:sftp-start-archive-operation',
+      sessionId,
+      payload,
+    );
+  },
+  backendSftpGetArchiveOperation: (sessionId: string, operationId: string) => {
+    return invokeIpc<ApiSftpArchiveOperationStatusResponse | ApiErrorResponse>(
+      'backend:sftp-get-archive-operation',
+      sessionId,
+      operationId,
+    );
+  },
+  backendSftpResolveArchiveConflict: (
+    sessionId: string,
+    operationId: string,
+    payload: ApiSftpArchiveConflictResolutionRequest,
+  ) => {
+    return invokeIpc<ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse>(
+      'backend:sftp-resolve-archive-conflict',
+      sessionId,
+      operationId,
+      payload,
+    );
+  },
+  backendSftpCancelArchiveOperation: (sessionId: string, operationId: string) => {
+    return invokeIpc<ApiSftpArchiveCancelResponse | ApiErrorResponse>(
+      'backend:sftp-cancel-archive-operation',
+      sessionId,
+      operationId,
     );
   },
   backendSftpCloseSession: (sessionId: string) => {

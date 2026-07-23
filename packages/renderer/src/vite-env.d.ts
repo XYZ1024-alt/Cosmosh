@@ -17,6 +17,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -290,6 +297,26 @@ declare global {
         sessionId: string,
         payload: ApiSftpBatchOperationRequest,
       ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
+      backendSftpGetArchiveCapabilities: (
+        sessionId: string,
+      ) => Promise<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>;
+      backendSftpStartArchiveOperation: (
+        sessionId: string,
+        payload: ApiSftpArchiveOperationRequest,
+      ) => Promise<ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse>;
+      backendSftpGetArchiveOperation: (
+        sessionId: string,
+        operationId: string,
+      ) => Promise<ApiSftpArchiveOperationStatusResponse | ApiErrorResponse>;
+      backendSftpResolveArchiveConflict: (
+        sessionId: string,
+        operationId: string,
+        payload: ApiSftpArchiveConflictResolutionRequest,
+      ) => Promise<ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse>;
+      backendSftpCancelArchiveOperation: (
+        sessionId: string,
+        operationId: string,
+      ) => Promise<ApiSftpArchiveCancelResponse | ApiErrorResponse>;
       backendSftpCloseSession: (sessionId: string) => Promise<{ success: boolean }>;
       backendSshDeleteServer: (serverId: string) => Promise<{ success: boolean }>;
       backendSshDeleteFolder: (folderId: string) => Promise<{ success: boolean }>;

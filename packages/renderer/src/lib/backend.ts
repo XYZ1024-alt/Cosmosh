@@ -13,6 +13,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -302,6 +309,39 @@ export const runSftpBatchOperation = async (
   payload: ApiSftpBatchOperationRequest,
 ): Promise<ApiSftpBatchOperationResponse> => {
   return backendClient.runSftpBatchOperation(sessionId, payload);
+};
+
+export const getSftpArchiveCapabilities = async (sessionId: string): Promise<ApiSftpArchiveCapabilitiesResponse> => {
+  return backendClient.getSftpArchiveCapabilities(sessionId);
+};
+
+export const startSftpArchiveOperation = async (
+  sessionId: string,
+  payload: ApiSftpArchiveOperationRequest,
+): Promise<ApiSftpArchiveOperationAcceptedResponse> => {
+  return backendClient.startSftpArchiveOperation(sessionId, payload);
+};
+
+export const getSftpArchiveOperation = async (
+  sessionId: string,
+  operationId: string,
+): Promise<ApiSftpArchiveOperationStatusResponse> => {
+  return backendClient.getSftpArchiveOperation(sessionId, operationId);
+};
+
+export const resolveSftpArchiveConflict = async (
+  sessionId: string,
+  operationId: string,
+  payload: ApiSftpArchiveConflictResolutionRequest,
+): Promise<ApiSftpArchiveConflictResolutionResponse> => {
+  return backendClient.resolveSftpArchiveConflict(sessionId, operationId, payload);
+};
+
+export const cancelSftpArchiveOperation = async (
+  sessionId: string,
+  operationId: string,
+): Promise<ApiSftpArchiveCancelResponse> => {
+  return backendClient.cancelSftpArchiveOperation(sessionId, operationId);
 };
 
 export const closeSftpSession = async (sessionId: string): Promise<{ success: boolean }> => {

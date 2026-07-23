@@ -17,6 +17,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -88,7 +95,7 @@ export type RegisterBackendIpcHandlersOptions = {
   requestBackend: <TSuccess>(
     path: string,
     options: {
-      method: 'GET' | 'POST' | 'PUT';
+      method: 'DELETE' | 'GET' | 'POST' | 'PUT';
       body?: unknown;
     },
   ) => Promise<TSuccess | ApiErrorResponse>;
@@ -580,6 +587,66 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
         method: 'POST',
         body: payload,
       });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-get-archive-capabilities',
+    async (_event, sessionId: string): Promise<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse> => {
+      const path = replaceApiPathToken(API_PATHS.sftpGetArchiveCapabilities, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpArchiveCapabilitiesResponse>(path, { method: 'GET' });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-start-archive-operation',
+    async (
+      _event,
+      sessionId: string,
+      payload: ApiSftpArchiveOperationRequest,
+    ): Promise<ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse> => {
+      const path = replaceApiPathToken(API_PATHS.sftpStartArchiveOperation, 'sessionId', sessionId);
+      return options.requestBackend<ApiSftpArchiveOperationAcceptedResponse>(path, { method: 'POST', body: payload });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-get-archive-operation',
+    async (
+      _event,
+      sessionId: string,
+      operationId: string,
+    ): Promise<ApiSftpArchiveOperationStatusResponse | ApiErrorResponse> => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpGetArchiveOperation, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return options.requestBackend<ApiSftpArchiveOperationStatusResponse>(path, { method: 'GET' });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-resolve-archive-conflict',
+    async (
+      _event,
+      sessionId: string,
+      operationId: string,
+      payload: ApiSftpArchiveConflictResolutionRequest,
+    ): Promise<ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse> => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpResolveArchiveConflict, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return options.requestBackend<ApiSftpArchiveConflictResolutionResponse>(path, { method: 'POST', body: payload });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-cancel-archive-operation',
+    async (
+      _event,
+      sessionId: string,
+      operationId: string,
+    ): Promise<ApiSftpArchiveCancelResponse | ApiErrorResponse> => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpCancelArchiveOperation, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return options.requestBackend<ApiSftpArchiveCancelResponse>(path, { method: 'DELETE' });
     },
   );
 

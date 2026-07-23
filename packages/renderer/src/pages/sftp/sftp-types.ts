@@ -265,7 +265,7 @@ export type InlineEditMenuAction = () => void | Promise<void>;
 /**
  * Renderer-local lifecycle state for one queued SFTP operation.
  */
-export type SftpTaskStatus = 'queued' | 'running' | 'success' | 'failed';
+export type SftpTaskStatus = 'queued' | 'running' | 'waiting' | 'success' | 'failed' | 'cancelled';
 
 /**
  * Task progress shown in the SFTP toolbar task list.
@@ -290,6 +290,8 @@ export type SftpTaskState = {
   finishedAt?: number;
   progress?: SftpTaskProgress;
   errorMessage?: string;
+  cancel?: () => void;
+  cancelRequested?: boolean;
 };
 
 /**
@@ -307,7 +309,10 @@ export type SftpTaskOptions = {
 export type SftpTaskContext = {
   taskId: string;
   isCurrent: () => boolean;
-  update: (patch: Partial<Pick<SftpTaskState, 'detail' | 'progress' | 'errorMessage'>>) => void;
+  registerCancel: (cancel: () => void) => void;
+  update: (
+    patch: Partial<Pick<SftpTaskState, 'detail' | 'progress' | 'errorMessage' | 'status' | 'cancelRequested'>>,
+  ) => void;
 };
 
 /**

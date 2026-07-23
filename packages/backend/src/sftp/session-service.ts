@@ -5,7 +5,13 @@ import path from 'node:path';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { sortSftpEntriesByBrowserOrder } from '@cosmosh/api-contract';
+import {
+  type ApiSftpArchiveCapabilitiesData,
+  type ApiSftpArchiveConflictResolution,
+  type ApiSftpArchiveOperationData,
+  type ApiSftpArchiveOperationRequest,
+  sortSftpEntriesByBrowserOrder,
+} from '@cosmosh/api-contract';
 import type { Prisma, PrismaClient } from '@prisma/client';
 import { Client, type ConnectConfig, type SFTPWrapper, type Stats } from 'ssh2';
 
@@ -15,6 +21,7 @@ import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
 import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from '../ssh/proxy.js';
+import { quotePosixShellToken, SftpArchiveService } from './archive-service.js';
 
 type GetDbClient = () => PrismaClient;
 
@@ -703,7 +710,7 @@ export const formatSftpPermissionOctal = (mode: number): string => {
  * @returns Single-quoted shell token.
  */
 export const escapeSftpShellPath = (targetPath: string): string => {
-  return `'${targetPath.replace(/'/g, "'\\''")}'`;
+  return quotePosixShellToken(targetPath);
 };
 
 /**
@@ -718,6 +725,8 @@ export class SftpSessionService {
 
   private readonly sftpTemporaryRootPath: string;
 
+  private readonly archiveService: SftpArchiveService;
+
   private readonly sessions = new Map<string, SftpLiveSession>();
 
   private readonly transfers = new Map<string, SftpTransferRecord>();
@@ -730,6 +739,7 @@ export class SftpSessionService {
   }) {
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
+    this.archiveService = new SftpArchiveService({ auditEventService: options.auditEventService });
     this.credentialEncryptionKey = options.credentialEncryptionKey;
     this.sftpTemporaryRootPath = validateConfiguredSftpTemporaryRootPath(
       options.sftpTemporaryRootPath ?? process.env[SFTP_TEMP_ROOT_ENV_NAME],
@@ -855,7 +865,7 @@ export class SftpSessionService {
     const resolvedInitialPath = await this.resolveRealPath(session, initialPath);
 
     if (!resolvedInitialPath) {
-      this.closeSession(sessionId);
+      await this.closeSession(sessionId);
       return {
         type: 'failed',
         message: i18n.t('errors.sftp.directoryListFailedNoReason'),
@@ -1197,7 +1207,7 @@ export class SftpSessionService {
       const message = this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason'));
       this.failTransfer(transferId, message);
       if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
-        this.closeSession(sessionId);
+        await this.closeSession(sessionId);
         return { type: 'not-found' };
       }
 
@@ -1351,7 +1361,7 @@ export class SftpSessionService {
       const message = this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileUploadFailedNoReason'));
       this.failTransfer(options.transferId, message);
       if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
-        this.closeSession(sessionId);
+        await this.closeSession(sessionId);
         return { type: 'not-found' };
       }
 
@@ -1785,12 +1795,78 @@ export class SftpSessionService {
   }
 
   /**
+   * Returns remote archive capabilities for one active SFTP session.
+   *
+   * @param sessionId Live SFTP session id.
+   * @returns Capability payload, or null when the session is unavailable.
+   */
+  public async getArchiveCapabilities(sessionId: string): Promise<ApiSftpArchiveCapabilitiesData | null> {
+    const session = this.getOpenSession(sessionId);
+    return session ? this.archiveService.getCapabilities(session) : null;
+  }
+
+  /**
+   * Starts one structured remote archive operation.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param request Validated archive request.
+   * @returns Initial operation state, or null when the session is unavailable.
+   */
+  public async startArchiveOperation(
+    sessionId: string,
+    request: ApiSftpArchiveOperationRequest,
+  ): Promise<ApiSftpArchiveOperationData | null> {
+    const session = this.getOpenSession(sessionId);
+    return session ? this.archiveService.startOperation(session, request) : null;
+  }
+
+  /**
+   * Reads a retained archive operation for one active session.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param operationId Archive operation id.
+   * @returns Public archive operation state, or null when the session is unavailable.
+   */
+  public getArchiveOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData | null {
+    return this.getOpenSession(sessionId) ? this.archiveService.getOperation(sessionId, operationId) : null;
+  }
+
+  /**
+   * Resolves all pending conflicts for one archive operation.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param operationId Archive operation id.
+   * @param resolution Decision applied to the operation.
+   * @returns Updated operation state, or null when the session is unavailable.
+   */
+  public resolveArchiveConflict(
+    sessionId: string,
+    operationId: string,
+    resolution: ApiSftpArchiveConflictResolution,
+  ): ApiSftpArchiveOperationData | null {
+    return this.getOpenSession(sessionId)
+      ? this.archiveService.resolveConflict(sessionId, operationId, resolution)
+      : null;
+  }
+
+  /**
+   * Requests cancellation of one archive operation.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param operationId Archive operation id.
+   * @returns Updated operation state, or null when the session is unavailable.
+   */
+  public cancelArchiveOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData | null {
+    return this.getOpenSession(sessionId) ? this.archiveService.cancelOperation(sessionId, operationId) : null;
+  }
+
+  /**
    * Closes one SFTP session and releases its SSH connection.
    *
    * @param sessionId Live SFTP session id.
-   * @returns True when a session was found and closed.
+   * @returns Promise resolving true when a session was found and closed.
    */
-  public closeSession(sessionId: string): boolean {
+  public async closeSession(sessionId: string): Promise<boolean> {
     const session = this.sessions.get(sessionId);
     if (!session) {
       return false;
@@ -1798,6 +1874,7 @@ export class SftpSessionService {
 
     this.sessions.delete(sessionId);
     session.isClosed = true;
+    await this.archiveService.closeSession(sessionId);
     try {
       session.client.end();
     } catch (error: unknown) {
@@ -1819,18 +1896,11 @@ export class SftpSessionService {
   /**
    * Closes every active SFTP session without stopping the service.
    *
-   * @returns Number of sessions closed by this call.
+   * @returns Promise resolving to the number of sessions closed by this call.
    */
-  public closeAllSessions(): number {
-    let closedCount = 0;
-
-    for (const sessionId of [...this.sessions.keys()]) {
-      if (this.closeSession(sessionId)) {
-        closedCount += 1;
-      }
-    }
-
-    return closedCount;
+  public async closeAllSessions(): Promise<number> {
+    const results = await Promise.all([...this.sessions.keys()].map((sessionId) => this.closeSession(sessionId)));
+    return results.filter(Boolean).length;
   }
 
   /**
@@ -1839,9 +1909,7 @@ export class SftpSessionService {
    * @returns Promise resolved after best-effort cleanup.
    */
   public async stop(): Promise<void> {
-    for (const sessionId of [...this.sessions.keys()]) {
-      this.closeSession(sessionId);
-    }
+    await this.closeAllSessions();
     this.transfers.clear();
   }
 
@@ -1880,6 +1948,7 @@ export class SftpSessionService {
       if (this.sessions.get(session.sessionId) === session) {
         this.sessions.delete(session.sessionId);
       }
+      this.archiveService.handleTransportClosed(session.sessionId);
     };
 
     session.client.once('close', markClosed);

@@ -28,6 +28,7 @@ import {
   Trash2,
   Undo2,
   Upload,
+  X,
 } from 'lucide-react';
 import React from 'react';
 
@@ -322,7 +323,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                 className="divide-y divide-menu-divider"
               >
                 {sortedSftpTasks.map((task) => {
-                  const isRunningTask = task.status === 'running';
+                  const isRunningTask = task.status === 'running' || task.status === 'waiting';
                   const progressLabel = formatSftpTaskProgressLabel(task.progress);
                   const progressPercent =
                     task.progress && task.progress.total > 0
@@ -340,7 +341,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                         <span className="flex h-5 w-4 shrink-0 items-center justify-center text-header-text-muted">
                           {task.status === 'running' ? (
                             <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : task.status === 'queued' ? (
+                          ) : task.status === 'queued' || task.status === 'waiting' ? (
                             <Hourglass className="h-3.5 w-3.5" />
                           ) : task.status === 'success' ? (
                             <CircleCheck className="h-3.5 w-3.5 text-header-text" />
@@ -357,32 +358,51 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
                             </div>
                           ) : null}
                         </div>
-                        <span className="shrink-0 self-start text-xs text-header-text-muted">
-                          {t(`sftp.tasks.status.${task.status}`)}
-                        </span>
-                        <div className="col-span-2 col-start-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
-                          <div
-                            role="progressbar"
-                            aria-label={task.label}
-                            aria-valuemin={task.progress ? 0 : undefined}
-                            aria-valuemax={task.progress ? task.progress.total : undefined}
-                            aria-valuenow={task.progress ? task.progress.completed : undefined}
-                            className="h-1 flex-1 overflow-hidden rounded-sm-2 bg-menu-control-hover"
-                          >
-                            <div
-                              className={
-                                isRunningTask && progressPercent === undefined
-                                  ? 'h-full w-1/2 animate-pulse rounded-sm-2 bg-header-text transition-[width] duration-200'
-                                  : 'h-full rounded-sm-2 bg-header-text transition-[width] duration-200'
-                              }
-                              style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
-                            />
-                          </div>
-                          <span className="min-w-9 shrink-0 text-right text-xs text-header-text-muted">
-                            {progressPercent === undefined ? '...' : `${progressPercent}%`}
+                        <div className="flex shrink-0 items-start gap-1">
+                          <span className="pt-0.5 text-xs text-header-text-muted">
+                            {t(`sftp.tasks.status.${task.status}`)}
                           </span>
-                          <span className="col-span-2 truncate text-xs text-header-text-muted">{progressLabel}</span>
+                          {task.cancel && isRunningTask ? (
+                            <Button
+                              aria-label={t('sftp.tasks.cancel')}
+                              variant="ghostIcon"
+                              className="h-6 w-6"
+                              disabled={task.cancelRequested}
+                              onClick={(event) => {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                task.cancel?.();
+                              }}
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          ) : null}
                         </div>
+                        {task.progress ? (
+                          <div className="col-span-2 col-start-2 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1">
+                            <div
+                              role="progressbar"
+                              aria-label={task.label}
+                              aria-valuemin={0}
+                              aria-valuemax={task.progress.total}
+                              aria-valuenow={task.progress.completed}
+                              className="h-1 flex-1 overflow-hidden rounded-sm-2 bg-menu-control-hover"
+                            >
+                              <div
+                                className={
+                                  isRunningTask && progressPercent === undefined
+                                    ? 'h-full w-1/2 animate-pulse rounded-sm-2 bg-header-text transition-[width] duration-200'
+                                    : 'h-full rounded-sm-2 bg-header-text transition-[width] duration-200'
+                                }
+                                style={progressPercent === undefined ? undefined : { width: `${progressPercent}%` }}
+                              />
+                            </div>
+                            <span className="min-w-9 shrink-0 text-right text-xs text-header-text-muted">
+                              {progressPercent === undefined ? '...' : `${progressPercent}%`}
+                            </span>
+                            <span className="col-span-2 truncate text-xs text-header-text-muted">{progressLabel}</span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                   );
