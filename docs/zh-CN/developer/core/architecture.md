@@ -185,12 +185,13 @@ sequenceDiagram
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
 - 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 manifest URL 均允许时，SSH 会话会在主 transport 认证后、PTY 创建前 ensure 用户级远端增强运行时。第一次需要远端命令时才会懒创建独立 bootstrap transport；所有 probe/install/status `exec` channel 都只运行在该 transport，并在 `shell()` 成为主 transport 的第一个 session channel 前启动关闭。这个可选的 shell 打开前路径对设置读取、manifest I/O、bootstrap transport/proxy 建连和 exec 工作共享同一个 15 秒总预算。超时会取消活动工作、销毁临时 client，并以 `BOOTSTRAP_ENSURE_TIMEOUT` 打开普通 PTY。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置会在创建任何 bootstrap transport 或远端 probe 前作为明确失败状态上报。Backend 会先查询已安装 Go binary；version、manifest asset SHA-256、protocol、helper 与 profile 状态均匹配时跳过下载，状态缺失或属于旧格式时触发重装并在安装后复验。正式 tag release 安装包、`main` 构建产物以及显式启用发布路径的 remote-bootstrap 分支构建，可以通过 packaged `remote-bootstrap/manifest-url.json` 资源提供默认 manifest URL，而 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 仍是显式 override。未打包开发运行在没有 override 或 packaged resource 时使用 `remote-bootstrap-dev`。普通 PR 与分支构建默认不打入 manifest URL。Go 安装器只写入远端用户 XDG/home 文件与 shell profile hook；模块契约见 `packages/remote-bootstrap/README.md`。
 
-- 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费。协议 v2 事件必须匹配 shell/version/capability 契约及 capability 专属必填字段。Manifest/安装/设置失败、缺少握手或任何运行期不匹配都不会影响普通 SSH，但会忽略 helper 派生状态，并清除 renderer 的可信 cwd/line 校准。
-- Renderer 为每个 pane 分别保存当前 backend 运行状态与最多 200 条诊断历史。结构化命令生命周期驱动 backend 命令计数/history 刷新及 pane-local xterm 命令时间线。Backend 命令计数/history 刷新可以保留原始 Enter 解析作为降级路径，但 renderer 时间线没有本地 fallback：只有通过认证且处于 active 状态的 helper 声明 `command-start` 时才显示。
-- SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除与批量文件操作。
+- 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费，错过 deadline 会得到 `HELPER_HANDSHAKE_TIMEOUT`。协议 v2 事件必须匹配交互 shell 打开前确认的 helper version、protocol version、shell、capability 集合及 capability 专属必填字段。Manifest/安装/设置失败、缺少契约字段的旧事件、缺少握手或任何运行期契约不匹配都不会影响普通 SSH，但会忽略 helper 派生状态，并清除 renderer 的可信 cwd/line 校准。
+- Renderer 为每个 pane 分别保存当前 backend 运行状态与最多 200 条诊断历史，因此长会话淘汰旧事件后仍保留权威的当前诊断状态。结构化命令生命周期驱动 backend 命令计数/history 刷新及 pane-local xterm 命令时间线。Backend 命令计数/history 刷新可以保留原始 Enter 解析作为降级路径，但 renderer 时间线没有本地 fallback：只有通过认证且处于 active 状态的 helper 声明 `command-start` 时才显示。
+- SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除、批量文件操作与异步远端归档任务。
+- 远端归档任务复用当前 SFTP 标签页已认证的 SSH client，但只执行 backend 生成的固定 POSIX 命令模板。`SftpArchiveService` 探测固定工具集合、为每个会话持有至多一个归档任务、在目标同级暂存输出、创建经过校验的缺失目标目录，并且只通过 HTTP/IPC 暴露结构化状态。解压使用可直接接收信号的远端可执行进程，随后进入可取消且复用 SFTP 目录元数据的暂存树校验阶段。Renderer 输入永远不会成为命令或 flag。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
 - SFTP 本地系统打开流程会通过现有 backend 下载端点将普通文件下载到 Cosmosh 受控临时根目录，再通过 main 进程 app utility IPC 仅打开已校验的临时文件。Windows 的打开方式使用 shell `openas` verb；PowerShell 主路径与 rundll32/shell32 fallback 会分别从内核所有的 `GLOBALROOT\SystemRoot\System32` 命名空间解析，不信任继承的环境变量、PATH 或 CWD，主路径再通过 Windows known-folder API 补充子进程环境。PowerShell 被阻止或不可用时，已校验的 rundll32 fallback 仍可使用内核锚定的最小环境运行。macOS 打包运行只接受 `process.resourcesPath` 下已编译的 NSWorkspace helper；仓库内二进制/源码 fallback 仅供开发态使用，在 `app.isPackaged` 为 true 时不可用。Linux 不显示打开方式。
-- SFTP 目录上传/下载、chmod、字节级传输进度/取消、更完整的传输队列与 SSH terminal 会话复用仍属于后续规划。
+- SFTP 目录上传/下载、chmod、通用字节传输取消/续传、更完整的持久化传输队列与 SSH terminal 会话复用仍属于后续规划。归档任务拥有独立的有界取消协议，不复用 terminal shell。
 
 ## 5.1 SSH 端口转发运行时（已实现）
 
@@ -317,7 +318,36 @@ sequenceDiagram
 - Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
 - 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
 
-### 6.4 失败边界模型
+### 6.4 SFTP 远端归档数据流
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer FIFO 任务
+  participant MP as Main/Preload 代理
+  participant API as Backend 归档路由
+  participant AS as SftpArchiveService
+  participant RH as 远端 POSIX 主机
+
+  UI->>MP: 结构化压缩/解压请求
+  MP->>API: POST archive-operations
+  API->>AS: 启动会话级单任务
+  AS->>RH: 在 SFTP 标签页 SSH client 上执行固定模板
+  loop 每 750 ms
+    UI->>API: GET 任务状态
+    API-->>UI: 仅返回阶段/状态/冲突/结果
+  end
+  opt 目标冲突
+    UI->>API: 覆盖 / 保留两者 / 取消
+    API->>AS: 恢复暂存提交
+  end
+  AS->>RH: 提交并清理已知临时路径
+```
+
+- 远端命令、工具输出与随机暂存路径只存在于 backend。公共契约仅传递路径、格式、级别、目标模式、阶段、冲突摘要与稳定错误。
+- 每个 SFTP 会话最多运行一个归档任务。Renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
+- 关闭会话时先请求取消归档任务并进行有界清理，再断开 SSH。批量关闭会并行等待各会话，并保持既有活动连接计数契约。
+
+### 6.5 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。

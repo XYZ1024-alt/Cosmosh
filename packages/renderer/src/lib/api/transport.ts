@@ -18,6 +18,13 @@ import type {
   ApiSettingsGetResponse,
   ApiSettingsUpdateRequest,
   ApiSettingsUpdateResponse,
+  ApiSftpArchiveCancelResponse,
+  ApiSftpArchiveCapabilitiesResponse,
+  ApiSftpArchiveConflictResolutionRequest,
+  ApiSftpArchiveConflictResolutionResponse,
+  ApiSftpArchiveOperationAcceptedResponse,
+  ApiSftpArchiveOperationRequest,
+  ApiSftpArchiveOperationStatusResponse,
   ApiSftpBatchOperationRequest,
   ApiSftpBatchOperationResponse,
   ApiSftpCopyRequest,
@@ -109,6 +116,11 @@ type ApiResponse =
   | ApiSftpCopyResponse
   | ApiSftpDeleteResponse
   | ApiSftpBatchOperationResponse
+  | ApiSftpArchiveCapabilitiesResponse
+  | ApiSftpArchiveCancelResponse
+  | ApiSftpArchiveConflictResolutionResponse
+  | ApiSftpArchiveOperationAcceptedResponse
+  | ApiSftpArchiveOperationStatusResponse
   | ApiSshListServersResponse
   | ApiSshCreateServerResponse
   | ApiSshUpdateServerResponse
@@ -225,6 +237,24 @@ export type ApiTransport = {
     sessionId: string,
     payload: ApiSftpBatchOperationRequest,
   ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
+  getSftpArchiveCapabilities: (sessionId: string) => Promise<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>;
+  startSftpArchiveOperation: (
+    sessionId: string,
+    payload: ApiSftpArchiveOperationRequest,
+  ) => Promise<ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse>;
+  getSftpArchiveOperation: (
+    sessionId: string,
+    operationId: string,
+  ) => Promise<ApiSftpArchiveOperationStatusResponse | ApiErrorResponse>;
+  resolveSftpArchiveConflict: (
+    sessionId: string,
+    operationId: string,
+    payload: ApiSftpArchiveConflictResolutionRequest,
+  ) => Promise<ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse>;
+  cancelSftpArchiveOperation: (
+    sessionId: string,
+    operationId: string,
+  ) => Promise<ApiSftpArchiveCancelResponse | ApiErrorResponse>;
   trustSshFingerprint: (
     payload: ApiSshTrustFingerprintRequest,
   ) => Promise<ApiSshTrustFingerprintResponse | ApiErrorResponse>;
@@ -448,6 +478,31 @@ const createElectronTransport = (): ApiTransport => {
     runSftpBatchOperation: async (sessionId, payload) => {
       return (await window.electron!.backendSftpBatchOperation(sessionId, payload)) as
         | ApiSftpBatchOperationResponse
+        | ApiErrorResponse;
+    },
+    getSftpArchiveCapabilities: async (sessionId) => {
+      return (await window.electron!.backendSftpGetArchiveCapabilities(sessionId)) as
+        | ApiSftpArchiveCapabilitiesResponse
+        | ApiErrorResponse;
+    },
+    startSftpArchiveOperation: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpStartArchiveOperation(sessionId, payload)) as
+        | ApiSftpArchiveOperationAcceptedResponse
+        | ApiErrorResponse;
+    },
+    getSftpArchiveOperation: async (sessionId, operationId) => {
+      return (await window.electron!.backendSftpGetArchiveOperation(sessionId, operationId)) as
+        | ApiSftpArchiveOperationStatusResponse
+        | ApiErrorResponse;
+    },
+    resolveSftpArchiveConflict: async (sessionId, operationId, payload) => {
+      return (await window.electron!.backendSftpResolveArchiveConflict(sessionId, operationId, payload)) as
+        | ApiSftpArchiveConflictResolutionResponse
+        | ApiErrorResponse;
+    },
+    cancelSftpArchiveOperation: async (sessionId, operationId) => {
+      return (await window.electron!.backendSftpCancelArchiveOperation(sessionId, operationId)) as
+        | ApiSftpArchiveCancelResponse
         | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
@@ -688,6 +743,33 @@ const createBrowserTransport = (): ApiTransport => {
     runSftpBatchOperation: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpBatchOperationResponse | ApiErrorResponse;
+    },
+    getSftpArchiveCapabilities: async (sessionId) => {
+      const path = replaceApiPathToken(API_PATHS.sftpGetArchiveCapabilities, 'sessionId', sessionId);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse;
+    },
+    startSftpArchiveOperation: async (sessionId, payload) => {
+      const path = replaceApiPathToken(API_PATHS.sftpStartArchiveOperation, 'sessionId', sessionId);
+      return (await callBrowserApi(path, 'POST', payload)) as
+        | ApiSftpArchiveOperationAcceptedResponse
+        | ApiErrorResponse;
+    },
+    getSftpArchiveOperation: async (sessionId, operationId) => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpGetArchiveOperation, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpArchiveOperationStatusResponse | ApiErrorResponse;
+    },
+    resolveSftpArchiveConflict: async (sessionId, operationId, payload) => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpResolveArchiveConflict, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return (await callBrowserApi(path, 'POST', payload)) as
+        | ApiSftpArchiveConflictResolutionResponse
+        | ApiErrorResponse;
+    },
+    cancelSftpArchiveOperation: async (sessionId, operationId) => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpCancelArchiveOperation, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
+      return (await callBrowserApi(path, 'DELETE')) as ApiSftpArchiveCancelResponse | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
       return createBrowserFallbackError('Local terminal profiles are only available in Electron runtime.');

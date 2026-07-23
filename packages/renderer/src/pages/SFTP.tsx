@@ -84,6 +84,11 @@ import {
 } from './sftp/sftp-utils';
 import { flattenVisibleSftpTreeRows } from './sftp/sftp-virtualization';
 import { SftpActionMenuItems } from './sftp/SftpActionMenuItems';
+import {
+  SftpArchiveCompressionDialog,
+  SftpArchiveConflictDialog,
+  SftpArchiveDestinationDialog,
+} from './sftp/SftpArchiveDialogs';
 import type { SftpPreviewEditorHandle } from './sftp/SftpCodeMirrorPreviewEditor';
 import { SftpDetailPanel } from './sftp/SftpDetailPanel';
 import {
@@ -97,6 +102,7 @@ import { SftpDropOperationMenu } from './sftp/SftpDropOperationMenu';
 import { SftpToolbar } from './sftp/SftpToolbar';
 import { SftpTreePanel, type SftpTreePanelHandle } from './sftp/SftpTreePanel';
 import { useSftpAddressInputController } from './sftp/useSftpAddressInputController';
+import { useSftpArchiveActions } from './sftp/useSftpArchiveActions';
 import { useSftpConfirmationPrompts } from './sftp/useSftpConfirmationPrompts';
 import { useSftpDirectoryListPreferences } from './sftp/useSftpDirectoryListPreferences';
 import { useSftpDragDropController } from './sftp/useSftpDragDropController';
@@ -2505,6 +2511,29 @@ const SFTP: React.FC<SFTPProps> = ({
     [hasSftpSession, notifyError, sessionId],
   );
 
+  const {
+    canCreateArchives,
+    canExtractArchives,
+    closeCompressionPrompt,
+    closeDestinationPrompt,
+    compressionPrompt,
+    conflictPrompt,
+    destinationPrompt,
+    extractArchives,
+    openCustomExtraction,
+    openCompression,
+    resolveConflict,
+    startCustomExtraction,
+    startCompression,
+  } = useSftpArchiveActions({
+    currentPath,
+    directoryEntries: entries,
+    notifyError,
+    onOperationCompleted: handleRefresh,
+    runSftpOperation,
+    sessionId,
+  });
+
   const renderSftpActionMenuItems = React.useCallback(
     ({
       contextEntry,
@@ -2519,6 +2548,8 @@ const SFTP: React.FC<SFTPProps> = ({
           beginCreateEntryInDirectory={beginCreateEntryInDirectory}
           beginRenameEntry={beginRenameEntry}
           canUploadLocalFiles={canUploadLocalFiles}
+          canCreateArchives={canCreateArchives}
+          canExtractArchives={canExtractArchives}
           canUseFileActions={canUseFileActions}
           canUseSftpOpenWith={canUseSftpOpenWith}
           clipboardState={clipboardState}
@@ -2530,6 +2561,9 @@ const SFTP: React.FC<SFTPProps> = ({
           handleCopyRemotePath={handleCopyRemotePath}
           handleCutEntries={handleCutEntries}
           handleDeleteEntries={handleDeleteEntries}
+          handleCompressEntries={openCompression}
+          handleExtractEntries={extractArchives}
+          handleExtractEntriesToCustomDirectory={openCustomExtraction}
           handleDownloadEntry={handleDownloadEntry}
           handleOpenDirectoryInNewTab={handleOpenDirectoryInNewTab}
           handleOpenEntry={handleOpenEntry}
@@ -2559,6 +2593,8 @@ const SFTP: React.FC<SFTPProps> = ({
       beginCreateEntryInDirectory,
       beginRenameEntry,
       canUploadLocalFiles,
+      canCreateArchives,
+      canExtractArchives,
       canUseFileActions,
       canUseSftpOpenWith,
       clipboardState,
@@ -2569,6 +2605,8 @@ const SFTP: React.FC<SFTPProps> = ({
       handleCopyRemotePath,
       handleCutEntries,
       handleDeleteEntries,
+      extractArchives,
+      openCustomExtraction,
       handleDownloadEntry,
       handleOpenDirectoryInNewTab,
       handleOpenEntry,
@@ -2577,6 +2615,7 @@ const SFTP: React.FC<SFTPProps> = ({
       handleOpenProperties,
       handleOpenSshAtEntryLocation,
       handleOpenSymlinkTargetLocation,
+      openCompression,
       handlePasteEntry,
       handleUploadFiles,
       loadOpenWithApplications,
@@ -3092,6 +3131,20 @@ const SFTP: React.FC<SFTPProps> = ({
       <SftpUploadConflictConfirmationDialog
         prompt={uploadConflictConfirmationPrompt}
         onResolve={resolveUploadConflictConfirmationPrompt}
+      />
+      <SftpArchiveCompressionDialog
+        prompt={compressionPrompt}
+        onCancel={closeCompressionPrompt}
+        onSubmit={startCompression}
+      />
+      <SftpArchiveDestinationDialog
+        prompt={destinationPrompt}
+        onCancel={closeDestinationPrompt}
+        onSubmit={startCustomExtraction}
+      />
+      <SftpArchiveConflictDialog
+        prompt={conflictPrompt}
+        onResolve={resolveConflict}
       />
     </>
   );

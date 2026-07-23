@@ -68,6 +68,11 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                       | Copy one remote file or directory tree.                                                                                                         |
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`             | Delete one remote file, symlink, or directory tree.                                                                                             |
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                      | Run one ordered batch copy, move, link, or delete operation across multiple remote entries.                                                     |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`       | Probe and cache remote POSIX archive tools for the active session.                                                                              |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`         | Start one structured asynchronous compress or extract operation.                                                                                |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}` | Poll archive state, stage, conflicts, results, or a stable error.                                                                          |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution` | Apply one overwrite, keep-both, or cancel decision to all pending conflicts.                                              |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}` | Request bounded cancellation and cleanup.                                                                                                 |
 | `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                            | Close one SFTP session and release the SSH connection.                                                                                          |
 
 Success codes:
@@ -77,6 +82,9 @@ Success codes:
 - `SFTP_ENTRY_DETAILS_OK`
 - `SFTP_FILE_READ_OK`
 - `SFTP_OPERATION_OK`
+- `SFTP_ARCHIVE_CAPABILITIES_OK`
+- `SFTP_ARCHIVE_OPERATION_ACCEPTED`
+- `SFTP_ARCHIVE_OPERATION_STATUS_OK`
 
 SFTP-specific error codes:
 
@@ -84,6 +92,14 @@ SFTP-specific error codes:
 - `SFTP_VALIDATION_FAILED`
 - `SFTP_OPERATION_FAILED`
 - `SFTP_UPLOAD_CONFLICT`
+- `SFTP_ARCHIVE_UNSUPPORTED`
+- `SFTP_ARCHIVE_BUSY`
+- `SFTP_ARCHIVE_TARGET_EXISTS`
+- `SFTP_ARCHIVE_UNSAFE_ENTRY`
+- `SFTP_ARCHIVE_OPERATION_NOT_FOUND`
+- `SFTP_ARCHIVE_OPERATION_FAILED`
+- `SFTP_ARCHIVE_TIMEOUT`
+- `SFTP_ARCHIVE_CANCEL_FAILED`
 
 Host fingerprint trust failures reuse the SSH host-trust envelope and code because SFTP uses the same SSH transport security model.
 
@@ -121,7 +137,7 @@ Lifecycle rules:
 - SSH Orbit Bar and terminal context-menu handoffs always create a new SFTP tab with the selected directory path, even when another SFTP tab for the same server is already open.
 - Explicit new-tab actions create a new SFTP tab and therefore a separate backend SFTP session.
 - Hidden SFTP tabs remain mounted and keep their session alive.
-- Closing the tab or changing its connection intent closes the previous SFTP session on a best-effort basis.
+- Closing the tab or changing its connection intent first cancels and cleans an active archive job within a bounded wait, then closes the previous SFTP SSH connection.
 - `SftpSessionService` watches the underlying `ssh2` client and SFTP stream for `close`, `end`, and `error`. Once either transport becomes unusable, the session is evicted from the registry so later requests return `SFTP_SESSION_NOT_FOUND` quickly instead of hanging behind a dead socket.
 - `sftpReconnectMode` defaults to `passive`. In passive mode, renderer SFTP requests that receive `SFTP_SESSION_NOT_FOUND` create one replacement session, update the tab `sessionId`, and retry the original request once.
 - Explicit download tasks keep the Main-issued exact local-path authorization bound to the same renderer and `transferId` for at most one reconnect retry. The retry becomes usable only after `SFTP_SESSION_NOT_FOUND`, expires after 60 seconds, and is revoked immediately by any other terminal response.
@@ -131,6 +147,7 @@ Lifecycle rules:
 - Main treats every entry still held by `SftpSessionService` as active when evaluating a window/app close. When shown, the renderer warning dialog intentionally summarizes all in-progress sessions without exposing per-protocol counts.
 - The General > Behavior `Ask Before Closing Window` setting defaults on. When disabled, Main skips the renderer dialog but still closes active SFTP sessions through the bulk-close endpoint before continuing the close; setting read failures retain the warning.
 - After confirmation, or immediately when confirmation is disabled, `DELETE /api/v1/runtime/active-connections` closes each registered SFTP SSH client before window destruction. This is required on macOS, where closing the last window does not quit the application or stop Backend.
+- Bulk SFTP close runs session cleanup in parallel; activity counts and the close-warning contract remain session-based rather than task-based.
 
 ## 5. Directory Listing And File Operations
 
@@ -201,6 +218,26 @@ Mutation rules:
 - On Windows, `Open With...` is a plain menu item with no submenu and first uses the shell `openas` verb through a hidden PowerShell process. Main resolves the kernel-owned `\\?\GLOBALROOT\SystemRoot\System32` namespace to the canonical System32 directory, then independently verifies the PowerShell primary route and the rundll32/shell32 fallback as regular files inside that real, non-symlink directory. Inherited `SystemRoot`, `WINDIR`, PATH, and CWD values never select these commands. Before opening, trusted PowerShell queries `Environment.SpecialFolder` APIs for Program Files, Common Files, ProgramData, and user-profile paths; main validates the bounded output and uses it to enrich the child environment required by registered Shell handlers. Child processes use canonical System32 as CWD, set `shell: false`, and still omit PATH, PATHEXT, ComSpec, and PowerShell module lookup variables. The validated temp file path is passed through the child environment to avoid PowerShell argument parsing edge cases. If PowerShell is unavailable, known-folder discovery fails, or the PowerShell shell verb is rejected, main invokes the independently validated rundll32/shell32 fallback. The fallback reuses the enriched environment when discovery succeeded and otherwise runs with only canonical system-root variables plus the validated target path. On macOS, `Open With...` is a submenu populated by the NSWorkspace helper in `packages/main/resources/helpers`; `prebuild` compiles the helper binary on macOS. Packaged runs accept only a real, executable helper inside `process.resourcesPath/helpers` and fail closed when it is unavailable; only unpackaged development may fall back to repository binaries or the Swift source. Linux does not render the Open With action.
 - Successful operations invalidate the current directory cache and revalidate the visible listing in the background, preserving the current list, filter, and selection until the server result arrives.
 
+### Remote Compression And Extraction
+
+`SftpArchiveService` is a dedicated backend service. `SftpSessionService` authorizes the active session and delegates its `ssh2.Client`/`SFTPWrapper`; renderer and preload never receive an exec primitive.
+
+Supported canonical formats are `tar`, `tar-gzip` (`.tar.gz`/`.tgz`), `zip`, `tar-xz` (`.tar.xz`/`.txz`), `tar-bzip2` (`.tar.bz2`/`.tbz2`), and `7z`. Creation/extraction availability is derived from a fixed `command -v` probe for `tar`, `gzip`, `xz`, `bzip2`, `zip`, `unzip`, `7z`, and `7zz`. Missing optional executables are normal probe results and do not fail the probe; only an exec/channel/timeout or command failure disables archive operations. Native `zip`/`unzip` are preferred; 7-Zip is the fallback for ZIP. A failed or disabled exec probe returns no archive formats and does not affect ordinary SFTP.
+
+Runtime rules:
+
+1. Only one archive operation may be active per SFTP session. Requests are also serialized by the existing renderer tab FIFO; multiple archives extract in selection order.
+2. Compression accepts only non-empty structured paths from one source directory, a basename archive name, a canonical format, and `store`/`fast`/`standard`/`maximum`. Output at `/` or `.` is rejected. The backend writes a random `.cosmosh-*` sibling file, rechecks non-existence, then renames it to the final archive.
+3. Extraction accepts one regular archive file plus an absolute destination directory in the active SFTP session; missing destination segments are created with directory-only validation, while the remote root is rejected. Directories created by an operation remain provisional until commit and are removed on failure/cancellation only while still empty. The archive and destination may be in different directories. The backend combines compound extension detection, a bounded header check, and a tool list/test command. The complete member list must fit the validation output bound; truncation fails closed before extraction. Absolute/traversal members and staged symbolic links that escape the random `0700` extraction directory are rejected before commit.
+4. Smart extraction commits one top-level entry directly to the current directory. Empty or multi-top-level output is renamed to an archive-named directory, using `name (2)`, `name (3)`, and so on when necessary. Explicit current/archive-name modes suspend on conflicts. Custom destinations use current-directory commit and conflict semantics inside the selected remote directory, creating that directory when necessary.
+5. `overwrite` recursively merges directories, replaces colliding entries, and preserves unrelated destination content. `keep-both` chooses numbered siblings. One decision applies to the task. Waiting conflicts expire after 10 minutes.
+6. Public phases are `preparing`, `compressing`, `extracting`, `verifying`, `awaiting-conflict`, `committing`, `cleaning`, and `completed`; no percentage is invented. Post-extraction verification reuses `readdir` mode data instead of issuing one `lstat` per ordinary file. Renderer polls every 750 ms. Terminal state is retained for 60 seconds.
+7. Each operation receives one absolute 24-hour deadline shared by remote exec, SFTP validation and commit requests, conflict waiting, and cleanup. Deadline expiry fails with `SFTP_ARCHIVE_TIMEOUT` and releases the session archive slot even when a remote callback never arrives. Cancellation requests `TERM` even when the exec callback arrives after the request, and always retains the three-second channel-close fallback when the remote server rejects that signal. Fixed extraction commands replace the remote shell process with the archive executable so signals reach the active tool. Verification and commit loops, including recursive overwrite merges, check cancellation between SFTP requests. Once all requested output has been committed, a late cancellation does not relabel the completed result as cancelled. The operation otherwise reaches `cancelled` only after command termination and cleanup. Renderer keeps the cancelling label while polling; if the cancellation HTTP request itself fails, it re-enables the task action so the user can retry. Normal failure, cancellation, conflict cancellation, and session close clean only paths registered by the operation while deadline time remains. Session close shares the operation's active cleanup attempt and stops waiting at its bounded close deadline so SSH transport shutdown can continue when a remote SFTP request stalls.
+
+Commands come from fixed backend templates. Every path token uses POSIX single-quote escaping, `--`, and `./basename`; renderer flags and arbitrary commands are impossible by contract. Remote command output is bounded; archive-member list truncation is a hard validation failure, while diagnostic output is reduced to a sanitized summary. Status responses never include commands, full output, credentials, or staging paths. Audit events record operation type, format, source count, target, result, and stable error code only.
+
+Windows remote shells, local streaming fallback, passwords/encrypted archives, split volumes, RAR, raw single-file gzip/xz/bzip2, resume, persistence, percentage progress, and archive browsing are out of scope. Hard app/host/network crashes can leave random hidden staging entries; v1 intentionally does not perform a broad directory sweep that could delete user data.
+
 ## 6. Security And Error Model
 
 SFTP uses the same server, keychain, credential decryption, and host fingerprint trust model as SSH:
@@ -222,7 +259,7 @@ Error mapping:
 Security constraints:
 
 - Renderer and preload never receive decrypted SSH credentials.
-- SFTP paths are passed as structured API payloads, not shell commands.
+- Ordinary SFTP paths are passed as structured API payloads, not shell commands. Remote archives are the narrow exception: backend-only code turns validated structured paths into fixed POSIX templates; no shell string or flag crosses the renderer/preload contract.
 - Internal drag payloads are renderer-local structured data with the source SFTP `sessionId`; directory drop targets accept them only when the payload session matches the current tab.
 - Local save destinations are selected or resolved by main/preload and passed to backend as explicit paths; renderer does not receive filesystem write primitives.
 - Main owns one per-run SFTP temp root created with `mkdtemp` under Electron's temp directory. Main validates the root with `lstat` and `realpath`, rejects symlink roots, uses private POSIX modes for the root, child temp directories, and staged files, then passes the canonical root to backend through `COSMOSH_SFTP_TEMP_ROOT`. Backend refuses to start with a missing, symlinked, non-directory, or non-private root on POSIX platforms.
@@ -250,6 +287,7 @@ The SFTP page follows Cosmosh workbench layout rules:
 - The back and forward toolbar controls use plain directional arrow icons. Left-click jumps one step; right-click opens a context menu only when reachable history targets exist, listing them in nearest-first order to match desktop file-manager navigation.
 - Use `MenubarSeparator` for toolbar separators so divider metrics and colors stay aligned with shared menu tokens.
 - Show the SFTP task trigger only while the tab has active or recently completed tasks. The trigger belongs between the address control and file-operation buttons, uses `ListTodo`/spinner iconography, and opens a right-aligned dense task menu with per-task status text and compact progress bars. Byte transfers show percentage plus `transferred / total · speed`; failures keep the original file detail, add the localized backend reason in the error color, and also raise the shared error toast.
+- Archive jobs reuse this task menu but show named phases instead of a fabricated percentage. Running and conflict-waiting archive tasks expose a compact cancel icon. Row context menus expose `Compress...`; recognized archives expose `Smart Extract Here` plus an `Extract...` submenu for current-directory, archive-named-directory, and custom remote directory modes. A missing custom directory is created by the operation. Compression, destination, and conflict choices use shared `Dialog`, `Input`, and `Select` wrappers.
 - Reconnect progress must use that task trigger instead of adding a separate banner, toast-only state, floating overlay, or persistent warning region.
 - Expose file actions in the center list context menu and toolbar; unavailable actions must be disabled.
 - Expose `Upload Files` as a dedicated toolbar action and in directory-scoped blank-area/tree menus. It is disabled outside the Electron desktop bridge, while multi-file selections are queued in picker order. External local regular files can also be dropped onto tree rows, center-list directory rows, breadcrumb directory segments, address-bar directory dropdown entries, and the center-list blank/empty/search-empty area for the current directory; this external drop path always means upload/copy to remote and is independent of internal move/copy/link settings.

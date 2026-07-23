@@ -137,11 +137,11 @@ test('active session count tracks bulk SFTP session close operations', async () 
   registerTestSession(service, secondSession);
 
   assert.equal(service.getActiveSessionCount(), 2);
-  assert.equal(service.closeAllSessions(), 2);
+  assert.equal(await service.closeAllSessions(), 2);
   assert.equal(service.getActiveSessionCount(), 0);
   assert.equal(firstSession.isClosed, true);
   assert.equal(secondSession.isClosed, true);
-  assert.equal(service.closeAllSessions(), 0);
+  assert.equal(await service.closeAllSessions(), 0);
 
   await service.stop();
 });
@@ -540,7 +540,7 @@ test('SftpSessionService evicts sessions when SSH transport closes', async () =>
   assert.deepEqual(await service.listDirectory(session.sessionId, '/'), { type: 'not-found' });
 });
 
-test('SftpSessionService closeSession remains idempotent for evicted sessions', () => {
+test('SftpSessionService closeSession remains idempotent for evicted sessions', async () => {
   const service = createTestSftpSessionService();
   const session = createTestSftpSession();
   let endCallCount = 0;
@@ -549,8 +549,8 @@ test('SftpSessionService closeSession remains idempotent for evicted sessions', 
   };
   registerTestSession(service, session);
 
-  assert.equal(service.closeSession(session.sessionId), true);
-  assert.equal(service.closeSession(session.sessionId), false);
+  assert.equal(await service.closeSession(session.sessionId), true);
+  assert.equal(await service.closeSession(session.sessionId), false);
   assert.equal(session.isClosed, true);
   assert.equal(endCallCount, 1);
 });

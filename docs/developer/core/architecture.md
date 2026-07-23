@@ -185,12 +185,13 @@ sequenceDiagram
 - SSH and local terminal sessions use WebSocket data channels for terminal I/O.
 - SSH sessions ensure the user-scoped Remote Enhancements runtime after primary transport authentication and before PTY creation when Settings `remoteEnhancementsEnabled`, the server record `remoteEnhancementsEnabled`, and a manifest URL allow it. The first remote command lazily opens a separate bootstrap transport; all probe/install/status `exec` channels stay there, and its teardown begins before `shell()` becomes the primary transport's first session channel. This optional pre-shell path has a shared 15-second budget across settings, manifest I/O, bootstrap transport/proxy connection, and exec work. Expiry cancels active work, destroys the temporary client, and opens an ordinary PTY with code `BOOTSTRAP_ENSURE_TIMEOUT`. Disabled gates emit `REMOTE_ENHANCEMENTS_DISABLED`; missing manifest configuration remains an explicit failed bootstrap status before any bootstrap transport or remote probe is opened. The installed Go binary is queried first; matching version, manifest asset SHA-256, protocol, helper, and profile state skips download, while missing or legacy status triggers reinstall and post-install verification. Tagged release installers, `main` build artifacts, and opted-in remote-bootstrap branch builds can provide the default manifest URL through the packaged `remote-bootstrap/manifest-url.json` resource, while `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` remains the explicit override. Unpackaged development runs use `remote-bootstrap-dev` when neither override nor packaged resource is present. Ordinary PR and branch builds do not package a default manifest URL. The Go installer writes only remote user XDG/home files and shell profile hooks; see `packages/remote-bootstrap/README.md` for the module contract.
 
-- Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption. Protocol-v2 events must match the pre-shell shell/version/capability contract and their capability-specific required fields. Manifest/install/settings failure, a missing handshake, or any runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored and trusted renderer cwd/line calibration is cleared.
-- Renderer keeps current backend runtime state independently from a bounded 200-entry diagnostic history for each pane. Structured command lifecycle events drive backend count/history refresh and pane-local xterm command timelines. Backend command counting/history refresh may retain raw Enter parsing as a degraded path, but the renderer timeline has no local fallback: it is visible only while an authenticated active helper advertises `command-start`.
-- SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, and batch file operations.
+- Remote helper data uses a fail-closed `pending` → `active` / `disabled` state machine. A successful ensure enters `pending`; only a matching `integration-ready` event within 10 seconds activates consumption, and missing the deadline yields `HELPER_HANDSHAKE_TIMEOUT`. Protocol-v2 events must match the pre-shell helper version, protocol version, shell, capability set, and capability-specific required fields. Manifest/install/settings failure, legacy events without contract fields, a missing handshake, or any runtime mismatch leaves ordinary SSH usable while helper-derived state is ignored and trusted renderer cwd/line calibration is cleared.
+- Renderer keeps current backend runtime state independently from a bounded 200-entry diagnostic history for each pane, so long sessions retain authoritative current diagnostics after older events are evicted. Structured command lifecycle events drive backend count/history refresh and pane-local xterm command timelines. Backend command counting/history refresh may retain raw Enter parsing as a degraded path, but the renderer timeline has no local fallback: it is visible only while an authenticated active helper advertises `command-start`.
+- SFTP uses request/response IPC + backend HTTP routes for directory browsing, local-file upload, download, create, rename, copy, delete, batch file operations, and asynchronous remote archive jobs.
+- Remote archive jobs reuse the active SFTP tab's authenticated SSH client but run only backend-generated POSIX command templates. `SftpArchiveService` probes a fixed tool list, owns one archive job per session, stages output beside the destination, creates validated missing destination directories, and exposes only structured state through HTTP/IPC. Extraction runs as a directly signallable remote executable, followed by a cancellable staged-tree verification phase that reuses SFTP directory metadata. Renderer input never becomes a command or flag.
 - Port Forwarding uses request/response IPC + backend HTTP routes for persisted rule CRUD and manual start/stop. Runtime state stays in backend memory, so app/backend restart resets all rules to stopped.
 - SFTP local OS-open flows download regular files into a Cosmosh-controlled temp root through the existing backend download endpoint, then ask main-process app utility IPC to open only validated temp files. Windows uses the shell `openas` verb for Open With, resolves the PowerShell primary route and rundll32/shell32 fallback independently from the kernel-owned `GLOBALROOT\SystemRoot\System32` namespace instead of inherited environment/PATH/CWD values, and enriches the primary child environment through Windows known-folder APIs. A blocked or unavailable PowerShell route cannot prevent the validated rundll32 fallback from running with a kernel-anchored minimal environment. Packaged macOS runs accept only the compiled NSWorkspace helper under `process.resourcesPath`; repository binary/source fallbacks are development-only and unavailable when `app.isPackaged` is true. Linux omits Open With.
-- SFTP directory upload/download, chmod, byte-level transfer progress/cancellation, richer transfer queues, and SSH terminal session reuse remain planned follow-up work.
+- SFTP directory upload/download, chmod, generalized byte-transfer cancellation/resume, richer persisted transfer queues, and SSH terminal session reuse remain planned follow-up work. Archive jobs have their own bounded cancellation protocol and do not reuse a terminal shell.
 
 ## 5.1 SSH Port Forwarding Runtime (Implemented)
 
@@ -317,7 +318,36 @@ sequenceDiagram
 - Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
 - This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
 
-### 6.4 Failure Boundary Model
+### 6.4 SFTP Remote Archive Data Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer FIFO Task
+  participant MP as Main/Preload Proxy
+  participant API as Backend Archive Routes
+  participant AS as SftpArchiveService
+  participant RH as Remote POSIX Host
+
+  UI->>MP: structured compress/extract request
+  MP->>API: POST archive-operations
+  API->>AS: start one session-scoped job
+  AS->>RH: fixed exec template on the SFTP tab SSH client
+  loop every 750 ms
+    UI->>API: GET operation status
+    API-->>UI: stage/state/conflicts/result only
+  end
+  opt destination conflict
+    UI->>API: overwrite / keep-both / cancel
+    API->>AS: resume staged commit
+  end
+  AS->>RH: commit and clean known temporary paths
+```
+
+- The remote command, tool output, and random staging paths are backend-private. Public contracts carry paths, format, level, destination mode, phase, conflict summaries, and stable errors only.
+- One archive job may run per SFTP session. Renderer archive requests still enter the tab-local FIFO so multi-archive extraction remains ordered with existing file operations.
+- Closing a session first requests archive cancellation and bounded cleanup, then disconnects SSH. Bulk session close waits for sessions in parallel and preserves the existing active-connection count contract.
+
+### 6.5 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.

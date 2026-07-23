@@ -1,5 +1,6 @@
 import type { ApiSftpEntry } from '@cosmosh/api-contract';
 import {
+  Archive,
   Clipboard,
   Copy,
   Download,
@@ -10,6 +11,7 @@ import {
   FolderSearch,
   Info,
   Link2,
+  PackageOpen,
   RefreshCcw,
   Scissors,
   Terminal,
@@ -35,6 +37,7 @@ import {
   DropdownMenuSubTrigger,
 } from '../../components/ui/dropdown-menu';
 import { t } from '../../lib/i18n';
+import { stripSftpArchiveExtension } from './sftp-archive';
 import { SFTP_OPEN_WITH_APPLICATION_ICON_FALLBACK } from './sftp-constants';
 import { isUnsafeDirectorySelfDrop } from './sftp-drag-drop';
 import type {
@@ -56,6 +59,12 @@ type SftpActionMenuHandlers = {
   handleCopyRemotePath: (entry: ApiSftpEntry) => Promise<void>;
   handleCutEntries: (targetEntries: ApiSftpEntry[]) => void;
   handleDeleteEntries: (targetEntries: ApiSftpEntry[]) => Promise<void>;
+  handleCompressEntries: (targetEntries: ApiSftpEntry[]) => void;
+  handleExtractEntries: (
+    targetEntries: ApiSftpEntry[],
+    destinationMode: 'smart' | 'current-directory' | 'archive-name-directory',
+  ) => void;
+  handleExtractEntriesToCustomDirectory: (targetEntries: ApiSftpEntry[]) => void;
   handleDownloadEntry: (entry: ApiSftpEntry, mode: 'downloads' | 'choose') => Promise<void>;
   handleOpenDirectoryInNewTab: (entry: ApiSftpEntry) => void;
   handleOpenEntry: (entry: ApiSftpEntry) => Promise<void>;
@@ -78,6 +87,8 @@ type SftpActionMenuHandlers = {
 type SftpActionMenuItemsProps = SftpActionMenuOptions &
   SftpActionMenuHandlers & {
     canUploadLocalFiles: boolean;
+    canCreateArchives: boolean;
+    canExtractArchives: (targetEntries: ApiSftpEntry[]) => boolean;
     canUseFileActions: boolean;
     canUseSftpOpenWith: boolean;
     clipboardState: ClipboardState | null;
@@ -104,6 +115,8 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   beginCreateEntryInDirectory,
   beginRenameEntry,
   canUploadLocalFiles,
+  canCreateArchives,
+  canExtractArchives,
   canUseFileActions,
   canUseSftpOpenWith,
   clipboardState,
@@ -114,6 +127,9 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   handleCopyRemotePath,
   handleCutEntries,
   handleDeleteEntries,
+  handleCompressEntries,
+  handleExtractEntries,
+  handleExtractEntriesToCustomDirectory,
   handleDownloadEntry,
   handleOpenDirectoryInNewTab,
   handleOpenEntry,
@@ -169,6 +185,11 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const canOpenProperties = canUseFileActions && targetEntries.length > 0;
   const canMutateEntry = canUseFileActions && targetEntries.length > 0;
   const canRenameEntry = canMutateEntry && targetEntries.length === 1;
+  const canCompressEntries =
+    canMutateEntry &&
+    canCreateArchives &&
+    targetEntries.every((entry) => entry.type === 'file' || entry.type === 'directory' || entry.type === 'symlink');
+  const canExtractEntries = canMutateEntry && canExtractArchives(targetEntries);
   const canPaste = canUseFileActions && Boolean(clipboardState);
   const canCreateLinkFromClipboard =
     canUseFileActions &&
@@ -379,6 +400,45 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
       ) : null}
       {shouldShowEntryMutationActions ? (
         <>
+          <ItemComponent
+            icon={Archive}
+            disabled={!canCompressEntries}
+            onSelect={() => handleCompressEntries(targetEntries)}
+          >
+            {t('sftp.actions.compress')}
+          </ItemComponent>
+          {canExtractEntries ? (
+            <>
+              <ItemComponent
+                icon={PackageOpen}
+                onSelect={() => handleExtractEntries(targetEntries, 'smart')}
+              >
+                {t('sftp.actions.smartExtractHere')}
+              </ItemComponent>
+              <SubComponent>
+                <SubTriggerComponent icon={PackageOpen}>{t('sftp.actions.extract')}</SubTriggerComponent>
+                <SubContentComponent>
+                  <ItemComponent onSelect={() => handleExtractEntries(targetEntries, 'current-directory')}>
+                    {t('sftp.actions.extractCurrentDirectory')}
+                  </ItemComponent>
+                  <ItemComponent onSelect={() => handleExtractEntries(targetEntries, 'archive-name-directory')}>
+                    {targetEntries.length === 1
+                      ? t('sftp.actions.extractArchiveDirectory', {
+                          name: stripSftpArchiveExtension(targetEntries[0]?.name ?? ''),
+                        })
+                      : t('sftp.actions.extractEachArchiveDirectory')}
+                  </ItemComponent>
+                  <ItemComponent
+                    icon={FolderOpen}
+                    onSelect={() => handleExtractEntriesToCustomDirectory(targetEntries)}
+                  >
+                    {t('sftp.actions.extractCustomDirectory')}
+                  </ItemComponent>
+                </SubContentComponent>
+              </SubComponent>
+            </>
+          ) : null}
+          <SeparatorComponent />
           <ItemComponent
             icon={Scissors}
             disabled={!canMutateEntry}

@@ -308,6 +308,30 @@ export type ApiSftpBatchOperationRequest =
 export type ApiSftpBatchOperationResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/batch']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpBatchOperationItem = components['schemas']['SftpBatchOperationItemResult'];
+export type ApiSftpArchiveFormat = components['schemas']['SftpArchiveFormat'];
+export type ApiSftpArchiveCompressionLevel = components['schemas']['SftpArchiveCompressionLevel'];
+export type ApiSftpArchiveDestinationMode = components['schemas']['SftpArchiveDestinationMode'];
+export type ApiSftpArchiveErrorCode = components['schemas']['SftpArchiveErrorCode'];
+export type ApiSftpArchiveConflictResolution = components['schemas']['SftpArchiveConflictResolution'];
+export type ApiSftpArchiveOperationState = components['schemas']['SftpArchiveOperationState'];
+export type ApiSftpArchiveOperationStage = components['schemas']['SftpArchiveOperationStage'];
+export type ApiSftpArchiveCompressRequest = components['schemas']['SftpArchiveCompressRequest'];
+export type ApiSftpArchiveExtractRequest = components['schemas']['SftpArchiveExtractRequest'];
+export type ApiSftpArchiveOperationRequest = components['schemas']['SftpArchiveOperationRequest'];
+export type ApiSftpArchiveConflictResolutionRequest = components['schemas']['SftpArchiveConflictResolutionRequest'];
+export type ApiSftpArchiveConflict = components['schemas']['SftpArchiveConflict'];
+export type ApiSftpArchiveCapabilitiesData = components['schemas']['SftpArchiveCapabilitiesData'];
+export type ApiSftpArchiveOperationData = components['schemas']['SftpArchiveOperationData'];
+export type ApiSftpArchiveCapabilitiesResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/archive-capabilities']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpArchiveOperationAcceptedResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/archive-operations']['post']['responses']['202']['content']['application/json'];
+export type ApiSftpArchiveOperationStatusResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpArchiveConflictResolutionResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution']['post']['responses']['200']['content']['application/json'];
+export type ApiSftpArchiveCancelResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}']['delete']['responses']['202']['content']['application/json'];
 export type ApiSftpCloseSessionRequest = paths['/api/v1/sftp/sessions/{sessionId}']['delete']['parameters']['path'];
 export type ApiSftpEntry = components['schemas']['SftpEntry'];
 export type ApiSftpEntryDetailsItem = components['schemas']['SftpEntryDetailsItem'];

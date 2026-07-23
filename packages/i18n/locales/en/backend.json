@@ -39,6 +39,21 @@
       "rowNotPersisted": "Settings were not saved."
     },
     "sftp": {
+      "archiveBusy": "Another archive task is already running in this SFTP session.",
+      "archiveCancelFailed": "The archive task could not be cancelled safely.",
+      "archiveConflictResolutionInvalid": "Archive conflict resolution is invalid.",
+      "archiveExtractOptionsInvalid": "Archive extraction options are invalid.",
+      "archiveOperationFailed": "The remote archive task failed.",
+      "archiveOperationNotFound": "The archive task is no longer available.",
+      "archiveOptionsInvalid": "Archive format or compression level is invalid.",
+      "archiveSourcesRequired": "Select at least one archive source.",
+      "archiveTargetExists": "An item already exists at the archive target.",
+      "archiveTargetRequired": "Archive target directory and name are required.",
+      "archiveTimeout": "The remote archive task timed out.",
+      "archiveTypeInvalid": "Archive operation must be compress or extract.",
+      "archiveUnsafeEntry": "The archive contains an unsafe member path.",
+      "archiveUnsupported": "This archive format or required remote tool is not supported.",
+      "archiveValidationFailed": "The archive request contains an invalid path or option.",
       "batchEntriesRequired": "At least one item is required.",
       "batchOperationRequired": "Operation must be copy, move, delete, or link.",
       "batchSkippedAfterFailure": "Skipped because the previous batch operation failed.",
@@ -160,6 +175,11 @@
       "updated": "Settings updated."
     },
     "sftp": {
+      "archiveCancellationRequested": "Archive cancellation requested.",
+      "archiveCapabilitiesLoaded": "Archive capabilities loaded.",
+      "archiveConflictResolved": "Archive conflict decision accepted.",
+      "archiveOperationAccepted": "Archive operation started.",
+      "archiveOperationStatusLoaded": "Archive operation status loaded.",
       "batchOperationCompleted": "SFTP batch operation completed.",
       "directoryCreated": "Directory created.",
       "directoryListed": "Directory loaded.",
