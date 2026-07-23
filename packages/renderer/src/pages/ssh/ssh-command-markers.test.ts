@@ -296,38 +296,44 @@ test('prompt-ready clears unmatched input and alternate-screen input is ignored'
   assert.equal(harness.markers.length, 1);
 });
 
-test('timeline reserves its rail and exposes the first trusted command without requiring scrollback', () => {
+test('timeline reserves its rail but exposes history only beyond two screens and three trusted commands', () => {
   const harness = createRuntimeHarness([], 4);
   const commands = [
-    { id: 'cmd-1', inputLine: 2, outputLine: 3, command: 'one' },
-    { id: 'cmd-2', inputLine: 8, outputLine: 9, command: 'two' },
-    { id: 'cmd-3', inputLine: 15, outputLine: 16, command: 'three' },
+    { id: 'cmd-1', inputLine: 0, outputLine: 1, command: 'one' },
+    { id: 'cmd-2', inputLine: 2, outputLine: 3, command: 'two' },
+    { id: 'cmd-3', inputLine: 4, outputLine: 5, command: 'three' },
+    { id: 'cmd-4', inputLine: 6, outputLine: 7, command: 'four' },
   ];
 
   const unavailableModel = createTerminalCommandTimelineModel(harness.runtime, false);
   assert.equal(unavailableModel.railReserved, false);
   assert.equal(unavailableModel.historyVisible, false);
 
-  const firstCommand = commands[0];
-  assert.ok(firstCommand);
-  recordTrustedCommand(harness, firstCommand);
-  const firstCommandModel = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(firstCommandModel.railReserved, true);
-  assert.equal(firstCommandModel.historyVisible, true);
-  assert.deepEqual(firstCommandModel.items, [{ commandId: 'cmd-1', command: 'one' }]);
-  assert.equal(firstCommandModel.activeCommandId, 'cmd-1');
+  commands.slice(0, 3).forEach((spec) => recordTrustedCommand(harness, spec));
+  const threeCommandModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(threeCommandModel.railReserved, true);
+  assert.equal(threeCommandModel.historyVisible, false);
+  assert.equal(threeCommandModel.items.length, 3);
+  assert.equal(threeCommandModel.activeCommandId, null);
 
-  commands.slice(1).forEach((spec) => recordTrustedCommand(harness, spec));
-  harness.setBaseY(20);
-  harness.setViewportY(20);
+  const fourthCommand = commands[3];
+  assert.ok(fourthCommand);
+  recordTrustedCommand(harness, fourthCommand);
+  const exactTwoScreenModel = createTerminalCommandTimelineModel(harness.runtime, true);
+  assert.equal(exactTwoScreenModel.historyVisible, false);
+  assert.equal(exactTwoScreenModel.items.length, 4);
+
+  harness.setLine(8, { text: 'content beyond two visible screens' });
+  harness.setBaseY(5);
+  harness.setViewportY(5);
   const bottomModel = createTerminalCommandTimelineModel(harness.runtime, true);
   assert.equal(bottomModel.historyVisible, true);
-  assert.equal(bottomModel.items.length, 3);
-  assert.equal(bottomModel.activeCommandId, 'cmd-3');
+  assert.equal(bottomModel.items.length, 4);
+  assert.equal(bottomModel.activeCommandId, 'cmd-4');
 
-  harness.setViewportY(2);
+  harness.setViewportY(0);
   const scrolledModel = createTerminalCommandTimelineModel(harness.runtime, true);
-  assert.equal(scrolledModel.activeCommandId, 'cmd-1');
+  assert.equal(scrolledModel.activeCommandId, 'cmd-2');
 });
 
 test('timeline direct navigation resolves pane-local command ids', () => {

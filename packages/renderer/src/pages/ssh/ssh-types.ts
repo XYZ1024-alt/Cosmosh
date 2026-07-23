@@ -188,7 +188,7 @@ export type TerminalCommandTimelineItem = {
 export type TerminalCommandTimelineModel = {
   /** Whether the pane reserves the fixed command timeline rail. */
   railReserved: boolean;
-  /** Whether the pane has at least one trusted command available outside alternate-screen mode. */
+  /** Whether normal-buffer depth and retained trusted history exceed the entry thresholds. */
   historyVisible: boolean;
   alternateScreenActive: boolean;
   items: TerminalCommandTimelineItem[];

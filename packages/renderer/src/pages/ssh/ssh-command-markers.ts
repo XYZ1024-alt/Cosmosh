@@ -8,6 +8,12 @@ import type {
 } from './ssh-types';
 import { resolvePromptCommandStartOffset } from './ssh-utils';
 
+/** Visible-screen count that terminal content must strictly exceed before showing the entry. */
+const COMMAND_TIMELINE_ENTRY_MINIMUM_SCREEN_COUNT = 2;
+
+/** Retained-command count that history must strictly exceed before showing the entry. */
+const COMMAND_TIMELINE_ENTRY_MINIMUM_COMMAND_COUNT = 3;
+
 /**
  * Records the current normal-buffer input row until a trusted helper confirms
  * that the submitted line started a command.
@@ -243,7 +249,12 @@ export const createTerminalCommandTimelineModel = (
     commandId: entry.commandId,
     command: entry.command,
   }));
-  const historyVisible = !alternateScreenActive && entries.length > 0;
+  const normalBufferExceedsMinimumScreenCount =
+    runtime.terminal.buffer.normal.length > runtime.terminal.rows * COMMAND_TIMELINE_ENTRY_MINIMUM_SCREEN_COUNT;
+  const historyVisible =
+    !alternateScreenActive &&
+    normalBufferExceedsMinimumScreenCount &&
+    entries.length > COMMAND_TIMELINE_ENTRY_MINIMUM_COMMAND_COUNT;
   const activeIndex = resolveActiveCommandIndex(runtime.terminal, entries);
 
   return {
