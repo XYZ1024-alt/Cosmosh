@@ -7,6 +7,7 @@ import {
   resolveCommandTimelineEntryHitHeight,
   resolveCommandTimelineIdleDelay,
   selectCommandTimelineEntryItems,
+  selectCommandTimelineMenuItems,
   shouldAllowCommandTimelineEntryPointerEvents,
   shouldShowCommandTimelineEntry,
 } from './terminal-command-timeline-state';
@@ -16,6 +17,15 @@ test('timeline entry projects only the newest eight commands in submission order
 
   assert.deepEqual(selectCommandTimelineEntryItems(commands), commands.slice(4));
   assert.deepEqual(selectCommandTimelineEntryItems(commands.slice(0, 3)), commands.slice(0, 3));
+});
+
+test('timeline menu projects only the newest 100 commands in submission order', () => {
+  const commands = Array.from({ length: 105 }, (_, index) => `command-${index + 1}`);
+  const menuItems = selectCommandTimelineMenuItems(commands);
+
+  assert.equal(menuItems.length, 100);
+  assert.deepEqual(menuItems, commands.slice(5));
+  assert.deepEqual(selectCommandTimelineMenuItems(commands.slice(0, 3)), commands.slice(0, 3));
 });
 
 test('timeline entry height matches its capped line and gap geometry', () => {
