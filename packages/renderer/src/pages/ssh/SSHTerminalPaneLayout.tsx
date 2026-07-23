@@ -196,7 +196,7 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
           </TerminalCommandTimeline>
         </TerminalContextMenu>
         {!paneIsConnected ? (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-bg px-4">
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ssh-card-bg-terminal px-4">
             <div className="text-center text-sm text-header-text">
               {paneConnection.connectionState === 'connecting' ? t('ssh.connecting') : paneConnection.connectionError}
             </div>
