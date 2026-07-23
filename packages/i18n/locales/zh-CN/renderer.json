@@ -581,6 +581,10 @@
         "description": "使用 Unicode 11 字符宽度表来改善 CJK 与 emoji 内容的对齐。遇到终端界面错位时可尝试关闭此项并重新连接以使用传统字符宽度模式。",
         "title": "字符宽度兼容模式"
       },
+      "terminalCommandTimelineEnabled": {
+        "description": "在终端右侧显示最近命令列表。需要启用远端增强。",
+        "title": "命令时间线"
+      },
       "terminalContextLaunchBehavior": {
         "description": "设置通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
         "title": "从上下文启动"

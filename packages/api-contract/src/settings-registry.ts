@@ -80,6 +80,7 @@ export interface SettingsValues {
   terminalHardwareAccelerationEnabled: boolean;
   terminalInlineImagesEnabled: boolean;
   terminalInlineImageOptions: TerminalInlineImageOptions;
+  terminalCommandTimelineEnabled: boolean;
   terminalDrawBoldTextInBrightColors: boolean;
   terminalScrollSensitivity: string;
   terminalFastScrollSensitivity: string;
@@ -1240,6 +1241,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.characterWidthCompatibilityMode.enabled',
     commandActionId: 'settings.terminal.runtime.characterWidthCompatibilityMode.enabled.toggle',
     searchTerms: ['terminal', 'unicode 11', 'character width', 'width compatibility', 'alignment'],
+  },
+  {
+    key: 'terminalCommandTimelineEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalCommandTimelineEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalCommandTimelineEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.commandTimeline.enabled',
+    commandActionId: 'settings.terminal.runtime.commandTimeline.enabled.toggle',
+    searchTerms: ['terminal', 'command timeline', 'recent commands', 'command history', 'remote enhancements'],
   },
   {
     key: 'terminalWebLinksEnabled',

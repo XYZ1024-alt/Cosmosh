@@ -184,6 +184,7 @@ const SSH: React.FC<SSHProps> = ({
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
   const terminalInlineImagesEnabled = settingsValues.terminalInlineImagesEnabled;
   const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
+  const terminalCommandTimelineEnabled = settingsValues.terminalCommandTimelineEnabled;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
   const remoteEnhancementsDebugEnabled = settingsValues.remoteEnhancementsDebugEnabled;
@@ -390,6 +391,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalHardwareAccelerationEnabled,
     terminalInlineImageSettings,
     terminalWebLinksSettings,
+    terminalCommandTimelineEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
     onTabTitleChange,

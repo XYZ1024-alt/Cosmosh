@@ -330,9 +330,9 @@ flowchart LR
 - Orbit Bar 与终端右键菜单可以将选中的远程目录交给 SFTP 打开。该动作仅在 SSH 服务器会话中，对显式 POSIX 风格路径（`/path`、`~/path`、`./path`、`../path` 或 `file:///path`）启用。点号相对路径只使用来源 pane 的可信 helper cwd；缺少可信绝对 cwd 时继续采用原有严格规则。裸相对路径仍保持禁用。
 - 从选区在 SFTP 中打开目录时，即使同一服务器已经存在其他 SFTP 标签页，也始终会用该 `initialPath` 创建新的 SFTP 标签页，且不会替换当前 SSH 终端标签页。
 
-## 6.3 可信命令时间线
+## 6.3 命令时间线
 
-- 只有当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，符合条件的 SSH pane 才会在右侧使用 40 px 命令槽。该槽由左侧 34 px 最近命令轨道和右侧 xterm 6 px 滚动条组成，并紧贴 pane 右边缘，不保留根容器尾部内边距。Renderer 通过 xterm 内边距预留轨道，并把 xterm scrollable element 扩展到完整命令槽，使原生滚动条继续留在负责其悬浮显示、轨道点击和滑块拖动的节点内。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 轨道；所有终端仍使用窄滚动条。
+- “命令时间线”位于“设置 > 终端 > 运行时”且默认开启。只有该设置已启用，并且当前 pane 中通过认证的远端增强运行时处于 active 状态并声明 `command-start` 时，符合条件的 SSH pane 才会在右侧使用 40 px 命令槽。该槽由左侧 34 px 最近命令轨道和右侧 xterm 6 px 滚动条组成，并紧贴 pane 右边缘，不保留根容器尾部内边距。Renderer 通过 xterm 内边距预留轨道，并把 xterm scrollable element 扩展到完整命令槽，使原生滚动条继续留在负责其悬浮显示、轨道点击和滑块拖动的节点内。关闭该设置只会移除命令时间线轨道与菜单，不会关闭其他远端增强能力。普通 SSH、本地终端、已禁用 helper、握手失败或未声明该 capability 的 helper 都不会获得 fallback 轨道；所有终端仍使用窄滚动条。
 - 用户按 Enter 时先记录隐藏的 pane-local xterm 输入 marker。可信 `command-start` 会在此前终端输出完成解析后消费最早的待确认 marker，记录输出起始行，并从 xterm 行中仅重建已提交的命令。命令保留前会通过配置项或启发式 prompt 解析移除虚拟环境装饰以及用户、主机、工作目录等 prompt metadata。Helper 发出的已清洗可执行文件名只作为生命周期 metadata，绝不会替代界面中的完整输入。`command-end` 负责记录输出结束行。
 - 只有 normal buffer 内容超过两个可见屏幕且保留的可信命令超过三条后，才启用最近命令入口。该阈值不会改变固定轨道的预留状态，因此入口满足条件时不会改变终端列数。在 normal buffer 中，终端内的鼠标移动会显示符合条件的入口，连续五秒无鼠标移动后隐藏。来自 xterm 内的键盘/IME 输入或粘贴会立即关闭各层菜单并隐藏入口。闲置状态会对可见与键盘用户隐藏线条，但仅保留其紧凑鼠标命中区域，使命中区域上的鼠标移动无需等待新的 `pointerenter` 即可恢复悬浮。命令列表或命令行操作菜单打开期间，入口保持可见，除非被 xterm 输入主动收起。运行 alternate-screen 程序时隐藏并禁用入口，但继续保留固定轨道。
 - 居中的入口最多呈现最新八条统一线条，每条宽 12 px、高 2 px，间距 10 px，以约 60% 透明度使用 `color.text`。这些线共同构成一个菜单入口，不再编码输出量，也不提供逐线的上一条/下一条导航。

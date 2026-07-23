@@ -215,6 +215,7 @@ export type UseSshCoreParams = {
   terminalHardwareAccelerationEnabled: boolean;
   terminalInlineImageSettings: TerminalInlineImageSettings;
   terminalWebLinksSettings: TerminalWebLinksSettings;
+  terminalCommandTimelineEnabled: boolean;
   terminalSelectionBarEnabled: boolean;
   sshReconnectOnFocus: boolean;
   onTabTitleChange?: (title: string) => void;
@@ -468,6 +469,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     terminalHardwareAccelerationEnabled,
     terminalInlineImageSettings,
     terminalWebLinksSettings,
+    terminalCommandTimelineEnabled,
     terminalSelectionBarEnabled,
     sshReconnectOnFocus,
     onTabTitleChange,
@@ -678,7 +680,8 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
 
     commandTimelineModels[paneId] = createTerminalCommandTimelineModel(
       paneRuntime,
-      supportsTrustedCommandTimeline(paneStateMap[paneId]?.remoteEnhancementRuntimeStatus),
+      terminalCommandTimelineEnabled &&
+        supportsTrustedCommandTimeline(paneStateMap[paneId]?.remoteEnhancementRuntimeStatus),
     );
   });
   /**

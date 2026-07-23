@@ -581,6 +581,10 @@
         "description": "Use Unicode 11 width tables to improve CJK and emoji alignment. If terminal output looks misaligned, try disabling this and reconnecting to use legacy width mode.",
         "title": "Character Width Compatibility Mode"
       },
+      "terminalCommandTimelineEnabled": {
+        "description": "Show a list of recent commands on the right side of the terminal. Requires Remote Enhancements.",
+        "title": "Command Timeline"
+      },
       "terminalContextLaunchBehavior": {
         "description": "Set how terminals open from context launch or 'Open terminal in Cosmosh'.",
         "title": "Launch from Context"
