@@ -164,7 +164,9 @@ export const SftpActionMenuItems: React.FC<SftpActionMenuItemsProps> = ({
   const shouldShowPasteAction = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowCreateLinkAction = shouldShowPasteAction || scope === 'toolbarMore';
   const shouldShowUploadAction = scope === 'directory' || isTreeDirectoryScope;
-  const shouldShowRefreshAction = isTreeDirectoryScope;
+  // Blank-area directory menus target the current directory, so they share the
+  // tree-directory refresh path (cache invalidation + forced reload).
+  const shouldShowRefreshAction = scope === 'directory' || isTreeDirectoryScope;
   const shouldShowLocationActions =
     scope === 'entry' || scope === 'toolbarMore' || scope === 'directory' || isTreeDirectoryScope;
   const relativePathOptions = targetEntry ? buildRelativeRemotePathOptions(targetEntry.path) : [];
