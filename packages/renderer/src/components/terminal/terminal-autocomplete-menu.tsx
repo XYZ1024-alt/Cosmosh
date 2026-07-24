@@ -1,3 +1,4 @@
+import type { TerminalCompletionItem } from '@cosmosh/api-contract';
 import classNames from 'classnames';
 import { Clock3, Command, File, Folder, KeyRound, ListTree, ToggleRight } from 'lucide-react';
 import React from 'react';
@@ -6,16 +7,7 @@ import { ContextMenuShortcut } from '../ui/context-menu';
 import { menuStyles } from '../ui/menu-styles';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
-type TerminalAutocompleteItem = {
-  id: string;
-  label: string;
-  insertText: string;
-  replacePrefixLength?: number;
-  detail: string | null;
-  source: 'history' | 'inshellisense' | 'runtime';
-  kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
-  score: number;
-};
+type TerminalAutocompleteItem = TerminalCompletionItem;
 
 type TerminalAutocompleteMenuProps = {
   open: boolean;

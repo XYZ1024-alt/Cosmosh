@@ -16,6 +16,8 @@ type MenuIconComponent = React.ComponentType<{ className?: string }>;
 
 type DropdownMenuHorizontalAlign = 'left' | 'center' | 'right';
 
+type DropdownMenuCloseMotion = 'default' | 'none';
+
 const DROPDOWN_MENU_HORIZONTAL_ALIGN_MAP: Record<DropdownMenuHorizontalAlign, 'start' | 'center' | 'end'> = {
   left: 'start',
   center: 'center',
@@ -88,38 +90,72 @@ const DropdownMenuSubContent = React.forwardRef<
 });
 DropdownMenuSubContent.displayName = DropdownMenuPrimitive.SubContent.displayName;
 
+/**
+ * Renders shared dropdown content with optional feature-owned close motion.
+ *
+ * The `none` mode keeps Radix positioning, collision handling, and menu
+ * semantics intact while allowing a specialized surface to own its transition.
+ *
+ * @param props Dropdown content props and close-motion policy.
+ * @param ref Forwarded Radix content element ref.
+ * @returns Portaled dropdown content.
+ */
 const DropdownMenuContent = React.forwardRef<
   React.ElementRef<typeof DropdownMenuPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DropdownMenuPrimitive.Content> & {
     horizontalAlign?: DropdownMenuHorizontalAlign;
+    /** Disables only the wrapper's shared close animation. */
+    closeMotion?: DropdownMenuCloseMotion;
+    /** Keeps the portal mounted while a feature-owned transition is active. */
+    forceMountPortal?: boolean;
   }
->(({ className, sideOffset = 6, collisionPadding = 8, style, align, horizontalAlign = 'center', ...props }, ref) => {
-  const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.dropdownMenu);
-  const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
-  const resolvedAlign = align ?? DROPDOWN_MENU_HORIZONTAL_ALIGN_MAP[horizontalAlign];
+>(
+  (
+    {
+      className,
+      sideOffset = 6,
+      collisionPadding = 8,
+      style,
+      align,
+      horizontalAlign = 'center',
+      closeMotion = 'default',
+      forceMountPortal = false,
+      ...props
+    },
+    ref,
+  ) => {
+    const viewportBoundsStyle = resolveViewportMenuBounds(MENU_AVAILABLE_SIZE_VARIABLES.dropdownMenu);
+    const hasLeadingVisual = resolveMenuHasLeadingVisual(props.children);
+    const resolvedAlign = align ?? DROPDOWN_MENU_HORIZONTAL_ALIGN_MAP[horizontalAlign];
 
-  return (
-    <DropdownMenuPrimitive.Portal>
-      <DropdownMenuPrimitive.Content
-        ref={ref}
-        forceMount
-        avoidCollisions
-        sideOffset={sideOffset}
-        align={resolvedAlign}
-        sticky="always"
-        collisionPadding={normalizeCollisionPadding(collisionPadding)}
-        style={{
-          ...viewportBoundsStyle,
-          ...style,
-        }}
-        className={classNames(menuStyles.content, menuStyles.scrollContent, menuStyles.contentCloseMotion, className)}
-        {...props}
-      >
-        <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
-      </DropdownMenuPrimitive.Content>
-    </DropdownMenuPrimitive.Portal>
-  );
-});
+    return (
+      <DropdownMenuPrimitive.Portal forceMount={forceMountPortal ? true : undefined}>
+        <DropdownMenuPrimitive.Content
+          ref={ref}
+          forceMount
+          avoidCollisions
+          sideOffset={sideOffset}
+          align={resolvedAlign}
+          sticky="always"
+          collisionPadding={normalizeCollisionPadding(collisionPadding)}
+          style={{
+            ...viewportBoundsStyle,
+            ...style,
+          }}
+          className={classNames(
+            menuStyles.content,
+            menuStyles.scrollContent,
+            closeMotion === 'default' && menuStyles.contentCloseMotion,
+            className,
+          )}
+          {...props}
+        >
+          <MenuIconSlotContext.Provider value={hasLeadingVisual}>{props.children}</MenuIconSlotContext.Provider>
+        </DropdownMenuPrimitive.Content>
+      </DropdownMenuPrimitive.Portal>
+    );
+  },
+);
 DropdownMenuContent.displayName = DropdownMenuPrimitive.Content.displayName;
 
 const DropdownMenuItem = React.forwardRef<

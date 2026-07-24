@@ -433,6 +433,137 @@ body {
   -moz-user-select: none;
 }
 
+.terminal-command-timeline .xterm-decoration-overview-ruler {
+  display: none !important;
+}
+
+.terminal-command-timeline[data-rail-reserved='true'] .xterm {
+  padding-right: var(--terminal-command-timeline-rail-width);
+}
+
+.terminal-command-timeline[data-rail-reserved='true'] .xterm-scrollable-element {
+  width: calc(100% + var(--terminal-command-timeline-rail-width)) !important;
+  padding-right: var(--terminal-command-timeline-rail-width);
+}
+
+.terminal-command-timeline[data-rail-reserved='true'] .xterm-scrollable-element > .scrollbar.vertical {
+  right: 0 !important;
+  width: var(--terminal-command-timeline-scrollbar-width) !important;
+}
+
+.terminal-command-timeline[data-rail-reserved='true'] .xterm-scrollable-element > .scrollbar.vertical > .slider {
+  left: 0 !important;
+  width: var(--terminal-command-timeline-scrollbar-width) !important;
+}
+
+.terminal-command-timeline-rail {
+  right: var(--terminal-command-timeline-scrollbar-width);
+  width: var(--terminal-command-timeline-rail-width);
+}
+
+.terminal-command-timeline-entry-lines {
+  opacity: 1;
+  transform: scaleX(1);
+  transform-origin: center;
+}
+
+.terminal-command-timeline-entry[data-state='open'] .terminal-command-timeline-entry-lines {
+  opacity: 0;
+  transform: scaleX(0.82);
+}
+
+.terminal-command-timeline-entry:focus-visible,
+.terminal-command-timeline-menu:focus-visible,
+.terminal-command-timeline-menu :focus-visible {
+  outline: none;
+}
+
+.terminal-command-timeline-entry:focus-visible .terminal-command-timeline-entry-lines > span {
+  opacity: 1;
+}
+
+.terminal-command-timeline-menu {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  transform-origin: var(--radix-dropdown-menu-content-transform-origin);
+}
+
+.terminal-command-timeline-menu[data-state='closed'] {
+  pointer-events: none;
+  opacity: 0;
+}
+
+.terminal-command-timeline-menu[data-state='closed'][data-side='left'] {
+  transform: translateX(8px) scale(0.97);
+}
+
+.terminal-command-timeline-menu[data-state='closed'][data-side='right'] {
+  transform: translateX(-8px) scale(0.97);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .terminal-command-timeline-entry-lines {
+    transition:
+      opacity 100ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .terminal-command-timeline-menu[data-motion='pointer'] {
+    transition:
+      opacity 180ms cubic-bezier(0.23, 1, 0.32, 1),
+      transform 180ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .terminal-command-timeline-menu[data-motion='pointer'][data-state='closed'] {
+    transition-duration: 140ms, 140ms;
+  }
+
+  @starting-style {
+    .terminal-command-timeline-menu[data-motion='pointer'][data-state='open'][data-side='left'] {
+      opacity: 0;
+      transform: translateX(8px) scale(0.97);
+    }
+
+    .terminal-command-timeline-menu[data-motion='pointer'][data-state='open'][data-side='right'] {
+      opacity: 0;
+      transform: translateX(-8px) scale(0.97);
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-command-timeline-entry-lines {
+    transition: opacity 80ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .terminal-command-timeline-entry[data-state='open'] .terminal-command-timeline-entry-lines {
+    transform: none;
+  }
+
+  .terminal-command-timeline-menu[data-motion='pointer'] {
+    transform: none;
+    transition: opacity 100ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .terminal-command-timeline-menu[data-motion='pointer'][data-state='closed'][data-side='left'],
+  .terminal-command-timeline-menu[data-motion='pointer'][data-state='closed'][data-side='right'] {
+    transform: none;
+  }
+
+  @starting-style {
+    .terminal-command-timeline-menu[data-motion='pointer'][data-state='open'][data-side='left'],
+    .terminal-command-timeline-menu[data-motion='pointer'][data-state='open'][data-side='right'] {
+      opacity: 0;
+      transform: none;
+    }
+  }
+}
+
+.terminal-command-timeline-entry[data-motion='instant'] .terminal-command-timeline-entry-lines,
+.terminal-command-timeline-menu[data-motion='instant'] {
+  transition: none;
+}
+
 #root {
   width: 100vw;
   height: 100vh;

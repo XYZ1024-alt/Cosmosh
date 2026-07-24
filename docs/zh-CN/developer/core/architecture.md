@@ -54,6 +54,8 @@ flowchart LR
 - Windows 终止信号（`SIGBREAK`）与 POSIX 信号共用同一路径，降低数据库文件锁残留概率。
 - 本地终端 profile 发现改为短时内存缓存 + 并行探测，降低 Home/Settings 首次加载时重复扫描带来的等待。
 - 主 SSH transport 认证成功后、交互 PTY 打开前，若全局与服务器级开关允许，`SshSessionService` 会通过 `RemoteBootstrapService` 执行远端增强 ensure。远端命令使用按需懒创建的临时 SSH transport，并复用相同的凭据、host-trust、压缩与代理策略；主 transport 调用 `shell()` 前会先启动临时 transport 的优雅关闭。这样主 transport 永远不会创建 bootstrap `exec` channel，既保留服务端登录消息，也能让新安装的 profile hook 在首次交互 shell 中生效。Backend 负责 manifest 加载、远端探测、已安装状态校验、按需下载编排、状态转发、运行时事件门禁与审计记录；`packages/remote-bootstrap` 负责远端用户级 Go 安装器，以及由 Go 生成的 helper 协议/能力契约。Manifest URL 优先来自 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL`，其次是 packaged CI resource，未打包开发运行则再回退到仅开发使用的 `remote-bootstrap-dev` 默认值。正式 tag release 包指向版本化 release manifest；`main` 包指向固定的 `remote-bootstrap-dev` prerelease manifest；分支名包含 `remote-bootstrap` 的 push 构建可以指向分支专用临时 prerelease manifest，用于端到端 CI 测试。已安装契约为最新时跳过 asset 下载；ensure 失败会启动临时 transport 的关闭、禁用本次会话的增强数据，但不会阻止已认证的主 transport 打开普通 shell。
+- `RemoteShellEventOscParser` 将可见输出与 helper 事件拆开后，`SshSessionService` 仍会保留原始 PTY 顺序，并按有序 frame 转发，而不是按类型重新分组。因此，位于 `command-start` 之前的输入回显与换行会先进入 renderer xterm，再捕获命令 marker 几何信息。WebSocket 未 attach 时，两类 frame 共用一个有界且保持到达顺序的队列；attach 会先发送当前控制状态，再按原顺序回放保留的 frame。
+- `RemoteBootstrapService` 会合并并发 manifest 加载，并只缓存校验成功结果五分钟。Session 取消只停止单个等待者，不会中止共享请求；失败加载可立即重试。
 - 启动阶段在 `initializeDatabase(...)` 内执行幂等 Prisma migration 文件同步，因此无论是安装后首次启动还是后续每次启动，都会在开放 HTTP 路由前将本地数据库结构收敛到当前后端契约。
 - 生产环境使用 `PrismaSqlCipherAdapterFactory` 构造 Prisma；该 factory 会把 `better-sqlite3-multiple-ciphers` native binding 注入 Prisma 的 better-sqlite3 adapter，并在暴露连接前应用数据库密钥。Schema migration 与业务查询因此共享同一条 keyed SQLCipher 连接路径。
 - 标准 SQLite 明文文件头会触发一次性的复制/rekey/校验/替换迁移。未知文件或错误密钥不会进入明文 fallback，固定迁移产物可在下一次启动恢复 rename 中断窗口。
@@ -69,9 +71,9 @@ flowchart LR
 - 非 Home 的渲染页（包括 SSH 与基于 CodeMirror 的设置编辑器）采用懒加载，避免重型资源进入默认启动路径。
 - Renderer 启动优先从本地缓存水合设置，再在后台向 backend 拉取权威值并同步覆盖。
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
-- SSH 页面使用 tab 作用域的连接意图快照模型（不再依赖全局可变目标单例），重试与分屏互不串扰。
-- 隐藏 tab 保留渲染但不会触发新的 SSH 连接副作用，连接流程仅允许 active tab 发起。
-- Renderer 会消费 backend 的 `bootstrap-status`、`remote-enhancement-runtime-status` 与可信 `remote-shell-event` 消息，用于远端增强可观测性，但 v1 不在 SSH 侧栏渲染专用的远端增强卡片。
+- SSH 页面使用 tab 作用域的连接意图快照与 pane 作用域的运行时。每个 primary/secondary pane 独立持有 xterm、WebSocket/session、transport 状态、telemetry、补全状态、远端增强状态、调试历史与可信命令时间线 marker；所有 inbound message 统一经过 pane-aware reducer。时间线中的完整命令从 xterm 已渲染输入重建，并且只保存在对应 pane runtime 的内存中。
+- 隐藏 tab 不会启动新的 SSH 连接副作用。重新激活时，可选的切回重连路径会分别检查每个失败 pane；第一次激活始终启动延迟创建的 primary pane。重试或重连任一 pane 时，所有同级 pane runtime 都会保持存活。
+- Renderer 按 pane 消费 backend 的 `bootstrap-status`、`remote-enhancement-runtime-status` 与可信协议 v2 `remote-shell-event`。调试入口由 `remoteEnhancementsDebugEnabled` 控制，浮层始终展示其来源/活动 pane。
 
 ## 3. IPC 生命周期（当前）
 
@@ -154,6 +156,7 @@ sequenceDiagram
 ### Backend 访问边界
 
 - 后端 HTTP 在所有运行模式下都显式绑定 IPv4 loopback 接口（`127.0.0.1`）。监听器不得依赖 Node server 默认值，因为默认值可能将 standalone 开发 API 暴露到非 loopback 网卡。
+- Vite renderer 开发服务器同样显式绑定 `127.0.0.1`。Electron 开发加载 URL、renderer 弹窗可信 origin、renderer CSP 与 Backend CORS 必须使用这一精确 origin 和共享的 `COSMOSH_RENDERER_DEV_PORT`；`localhost` 不能作为可互换的开发 origin。
 - electron-main 模式还会使用内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护 `/api/v1/*`。standalone 模式即使不要求该 token，也必须保持仅 loopback 可访问。
 - Main 进程注入头信息，不向 renderer 暴露内部 token。
 - 开发态请求镜像：在未打包的开发运行中，Main 会把已经发生的 backend proxy 请求记录为脱敏后的内存 ring buffer，并通过 debug IPC 暴露给自定义 DevTools 面板。它不改变真实请求链路（`renderer -> preload IPC -> main -> backend`），不发送 mirror fetch，也不会在原生 Network tab 里增加伪造请求行。镜像数据在进入 renderer/DevTools 前会移除内部鉴权头、secret-like payload key 与本地绝对路径。生产包不会采集 trace，也不会加载 extension。如果开发态没有看到 `Cosmosh Requests` 面板，先查看 main 进程终端里的 `[debug]` extension load/skip 日志。
@@ -182,8 +185,8 @@ sequenceDiagram
 - SSH 与本地终端会话使用 WebSocket 数据通道承载终端 I/O。
 - 当 Settings `remoteEnhancementsEnabled`、服务器记录 `remoteEnhancementsEnabled` 与 manifest URL 均允许时，SSH 会话会在主 transport 认证后、PTY 创建前 ensure 用户级远端增强运行时。第一次需要远端命令时才会懒创建独立 bootstrap transport；所有 probe/install/status `exec` channel 都只运行在该 transport，并在 `shell()` 成为主 transport 的第一个 session channel 前启动关闭。这个可选的 shell 打开前路径对设置读取、manifest I/O、bootstrap transport/proxy 建连和 exec 工作共享同一个 15 秒总预算。超时会取消活动工作、销毁临时 client，并以 `BOOTSTRAP_ENSURE_TIMEOUT` 打开普通 PTY。开关关闭时会上报 `REMOTE_ENHANCEMENTS_DISABLED`；缺少 manifest 配置会在创建任何 bootstrap transport 或远端 probe 前作为明确失败状态上报。Backend 会先查询已安装 Go binary；version、manifest asset SHA-256、protocol、helper 与 profile 状态均匹配时跳过下载，状态缺失或属于旧格式时触发重装并在安装后复验。正式 tag release 安装包、`main` 构建产物以及显式启用发布路径的 remote-bootstrap 分支构建，可以通过 packaged `remote-bootstrap/manifest-url.json` 资源提供默认 manifest URL，而 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 仍是显式 override。未打包开发运行在没有 override 或 packaged resource 时使用 `remote-bootstrap-dev`。普通 PR 与分支构建默认不打入 manifest URL。Go 安装器只写入远端用户 XDG/home 文件与 shell profile hook；模块契约见 `packages/remote-bootstrap/README.md`。
 
-- 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费；错过 deadline 会得到 `HELPER_HANDSHAKE_TIMEOUT`。每条 OSC 事件都必须匹配交互 shell 打开前确认的 helper version、protocol version、shell 与 capability 集合。Manifest/安装/设置失败、缺少契约字段的旧事件、缺少握手或运行期契约不匹配都不会影响普通 SSH，但会让 helper 派生状态保持不可用。
-- Renderer 会把最新 backend 运行状态与最多 200 条诊断历史分别保存，因此长会话淘汰旧事件后仍保留权威的当前诊断状态。
+- 远端 helper 数据采用 fail-closed 的 `pending` → `active` / `disabled` 状态机。Ensure 成功后先进入 `pending`，只有 10 秒内到达且匹配的 `integration-ready` 事件才能启用消费，错过 deadline 会得到 `HELPER_HANDSHAKE_TIMEOUT`。协议 v2 事件必须匹配交互 shell 打开前确认的 helper version、protocol version、shell、capability 集合及 capability 专属必填字段。Manifest/安装/设置失败、缺少契约字段的旧事件、缺少握手或任何运行期契约不匹配都不会影响普通 SSH，但会忽略 helper 派生状态，并清除 renderer 的可信 cwd/line 校准。
+- Renderer 为每个 pane 分别保存当前 backend 运行状态与最多 200 条诊断历史，因此长会话淘汰旧事件后仍保留权威的当前诊断状态。结构化命令生命周期驱动 backend 命令计数/history 刷新及 pane-local xterm 命令时间线。Backend 命令计数/history 刷新可以保留原始 Enter 解析作为降级路径，但 renderer 时间线没有本地 fallback：只有通过认证且处于 active 状态的 helper 声明 `command-start` 时才显示。
 - SFTP 使用请求/响应式 IPC + backend HTTP route 实现目录浏览、本地文件上传、下载、创建、重命名、复制、删除、批量文件操作与异步远端归档任务。
 - 远端归档任务复用当前 SFTP 标签页已认证的 SSH client，但只执行 backend 生成的固定 POSIX 命令模板。`SftpArchiveService` 探测固定工具集合、为每个会话持有至多一个归档任务、在目标同级暂存输出、创建经过校验的缺失目标目录，并且只通过 HTTP/IPC 暴露结构化状态。解压使用可直接接收信号的远端可执行进程，随后进入可取消且复用 SFTP 目录元数据的暂存树校验阶段。Renderer 输入永远不会成为命令或 flag。
 - Port Forwarding 使用请求/响应式 IPC + backend HTTP route 实现持久化规则 CRUD 与手动 start/stop。运行状态仅保存在 backend 内存中，因此 app/backend 重启后所有规则都会回到 stopped。
@@ -209,7 +212,7 @@ sequenceDiagram
 - Renderer 启动阶段（`packages/renderer/src/main.tsx`）会优先使用缓存设置应用语言与主题，并在后台与 backend 同步。
 - Renderer 时间显示通过 `packages/renderer/src/lib/date-time-format.ts` 使用已持久化的时区、日期格式与时间格式设置；`system` 会保留操作系统时区，Settings UI 会列出当前运行时支持的 IANA 时区及其当前 UTC 偏移。
 - Renderer 终端字符宽度兼容模式通过 `terminalCharacterWidthCompatibilityModeEnabled` 持久化；SSH server 记录可通过 `disableCharacterWidthCompatibilityMode` 按服务器禁用，本地终端只遵循全局设置。
-- 远端增强同时使用全局 Settings 开关 `remoteEnhancementsEnabled` 与每服务器字段 `SshServer.remoteEnhancementsEnabled`。两者默认均为 true，因此 manifest URL 在用户显式关闭任一开关前仍是部署级启用条件。
+- 远端增强使用`全局设置 && 持久化 SshServer 字段 && 请求 override !== false`。请求 override 只能收紧权限，不能重新启用 backend 当前状态中已关闭的服务器。`remoteEnhancementsDebugEnabled` 独立控制 pane 级诊断入口，不会启用远端运行时。
 - 非视觉设置（如 SSH 运行时限制）当前仅做持久化与可发现，部分暂未绑定真实运行时行为。
 - 所有设置定义（类型、默认值、约束、枚举集、JSON schema、UI 元数据、分类）统一存放在单一注册表：`packages/api-contract/src/settings-registry.ts`。增删设置项仅需编辑此文件（加 i18n 语言文件）。
 - `packages/api-contract/src/settings.ts` 中的校验逻辑对通用标量规则采用注册表驱动方式（类型检查、枚举、范围、maxLength），并对需要运行时判断或结构化 JSON 归一化的设置保留窄范围自定义校验，例如 IANA 时区支持和 SFTP 目录列表视图。
@@ -275,13 +278,17 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  XT[xterm.js] --> IN[input events]
-  IN --> WS[WebSocket]
+  XT[活动 pane xterm.js] --> IN[pane input events]
+  IN --> WS[Pane WebSocket]
   WS --> SVC[Backend session runtime]
   SVC --> REM[Remote shell / PTY]
-  REM --> OUT[stdout + stderr]
-  OUT --> WS2[WebSocket output events]
-  WS2 --> XT2[xterm.js write]
+  REM --> PARSER[OSC 777 streaming parser]
+  PARSER --> OUT[可见 stdout + stderr]
+  PARSER --> GATE[契约与信任 gate]
+  OUT --> WS2[Pane WebSocket messages]
+  GATE --> WS2
+  WS2 --> REDUCER[Pane runtime and reducer]
+  REDUCER --> XT2[xterm write、补全、marker 与诊断]
 ```
 
 ### 6.3 SFTP 传输进度数据流

@@ -156,7 +156,7 @@ export const mapServerToFormState = (server: SshServerListItem): ServerEditorFor
     tagIds: (server.tags ?? []).map((tag) => tag.id),
     strictHostKey: server.strictHostKey ?? true,
     enableSshCompression: server.enableSshCompression ?? false,
-    remoteEnhancementsEnabled: server.remoteEnhancementsEnabled ?? true,
+    remoteEnhancementsEnabled: server.remoteEnhancementsEnabled,
     disableCharacterWidthCompatibilityMode: server.disableCharacterWidthCompatibilityMode ?? false,
     terminalClipboardAccess: server.terminalClipboardAccess ?? DEFAULT_TERMINAL_CLIPBOARD_ACCESS,
     proxyMode: server.proxyMode ?? 'default',

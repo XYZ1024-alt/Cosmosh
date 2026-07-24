@@ -3,13 +3,12 @@ import './ssh/terminal-image-layer.css';
 
 import { type ITerminalOptions } from '@xterm/xterm';
 import classNames from 'classnames';
-import { CaseSensitive, RefreshCw, Regex } from 'lucide-react';
+import { CaseSensitive, Regex } from 'lucide-react';
 import React from 'react';
 
 import { TerminalAutocompleteMenu } from '../components/terminal/terminal-autocomplete-menu';
 import { TerminalSelectionBar } from '../components/terminal/terminal-selection-bar';
 import { TerminalTextDropZone } from '../components/terminal/terminal-text-drop-zone';
-import { Button } from '../components/ui/button';
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,6 @@ import {
   DialogTitle,
 } from '../components/ui/dialog';
 import { useDialogExitSnapshot } from '../components/ui/dialog-lifecycle';
-import { Menubar } from '../components/ui/menubar';
 import { type SearchReplaceFilterOption, SearchReplacePanel } from '../components/ui/search-replace-panel';
 import { useDateTimeFormatter } from '../lib/date-time-format';
 import { t } from '../lib/i18n';
@@ -33,6 +31,7 @@ import { RemoteEnhancementsDebugPanel } from './ssh/RemoteEnhancementsDebugPanel
 import { INTERNAL_TERMINAL_TEXT_DRAG_MIME, type TerminalSelectionSettings } from './ssh/ssh-types';
 import {
   createTerminalPasteWarningRequest,
+  flattenCommandForTerminalInput,
   parseOptionalNumberSetting,
   resolveSearchUrl,
   resolveSftpDirectoryPathFromSelection,
@@ -43,6 +42,7 @@ import {
 import { SSHSidebar } from './ssh/SSHSidebar';
 import { SSHTerminalPaneLayout } from './ssh/SSHTerminalPaneLayout';
 import type { TerminalInlineImageSettings, TerminalWebLinksPlatform } from './ssh/terminal-addons';
+import { COMMAND_TIMELINE_SCROLLBAR_WIDTH_PX } from './ssh/terminal-command-timeline-state';
 import { type TerminalSearchDirection, useSshCore } from './ssh/use-ssh-core';
 import { useTerminalClipboardProvider } from './ssh/use-terminal-clipboard-provider';
 
@@ -184,9 +184,10 @@ const SSH: React.FC<SSHProps> = ({
   const terminalHardwareAccelerationEnabled = settingsValues.terminalHardwareAccelerationEnabled;
   const terminalInlineImagesEnabled = settingsValues.terminalInlineImagesEnabled;
   const terminalInlineImageOptions = settingsValues.terminalInlineImageOptions;
+  const terminalCommandTimelineEnabled = settingsValues.terminalCommandTimelineEnabled;
   const terminalWebLinksEnabled = settingsValues.terminalWebLinksEnabled;
   const terminalWebLinksRequireModifierKey = settingsValues.terminalWebLinksRequireModifierKey;
-  const userMenuDebugEntryEnabled = settingsValues.userMenuDebugEntryEnabled;
+  const remoteEnhancementsDebugEnabled = settingsValues.remoteEnhancementsDebugEnabled;
   const terminalWebLinksSettings = React.useMemo(
     () => ({
       enabled: terminalWebLinksEnabled,
@@ -242,6 +243,9 @@ const SSH: React.FC<SSHProps> = ({
       macOptionClickForcesSelection: terminalForceSelectionModifier === 'alt',
       macOptionIsMeta: terminalForceSelectionModifier === 'alt' ? false : undefined,
       minimumContrastRatio,
+      overviewRuler: {
+        width: COMMAND_TIMELINE_SCROLLBAR_WIDTH_PX,
+      },
       rightClickSelectsWord: terminalRightClickSelectsWord,
       screenReaderMode: settingsValues.terminalScreenReaderMode,
       scrollback: sshMaxRows,
@@ -387,6 +391,7 @@ const SSH: React.FC<SSHProps> = ({
     terminalHardwareAccelerationEnabled,
     terminalInlineImageSettings,
     terminalWebLinksSettings,
+    terminalCommandTimelineEnabled,
     terminalSelectionBarEnabled: terminalSelectionSettings.enabled,
     sshReconnectOnFocus,
     onTabTitleChange,
@@ -401,11 +406,13 @@ const SSH: React.FC<SSHProps> = ({
       terminalPaneIds,
       activePaneId,
       connectionState,
-      connectionError,
+      paneConnectionStates,
       telemetryState,
       remoteBootstrapStatus,
       remoteEnhancementRuntimeStatus,
       remoteEnhancementsDebugEvents,
+      trustedCwd,
+      commandTimelineModels,
       hostFingerprintPrompt,
       canSplitTerminal,
       selectionAnchor,
@@ -418,7 +425,7 @@ const SSH: React.FC<SSHProps> = ({
       activatePane,
       splitPane,
       closePane,
-      retryConnection,
+      retryPaneConnection,
       sendInput,
       pasteInput,
       deleteHistoryCommand,
@@ -427,6 +434,7 @@ const SSH: React.FC<SSHProps> = ({
       getSelectionHtml,
       focusActiveTerminal,
       clearTerminalScreen,
+      scrollToPaneCommand,
       findActiveTerminalText,
       clearActiveTerminalSearch,
       setPaneContainerElement,
@@ -501,12 +509,12 @@ const SSH: React.FC<SSHProps> = ({
 
   React.useEffect(() => {
     const isRemoteSshSession = connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
-    if (userMenuDebugEntryEnabled && isRemoteSshSession) {
+    if (remoteEnhancementsDebugEnabled && isRemoteSshSession) {
       return;
     }
 
     setRemoteEnhancementsDebugPanelOpen(false);
-  }, [connectionIntent.lastResolvedSnapshot, userMenuDebugEntryEnabled]);
+  }, [connectionIntent.lastResolvedSnapshot, remoteEnhancementsDebugEnabled]);
 
   React.useEffect(() => {
     const startupCommand = connectionIntent.startupCommand?.trim();
@@ -706,7 +714,7 @@ const SSH: React.FC<SSHProps> = ({
    */
   const openSelectionDirectoryInSftp = React.useCallback(
     (selectionText: string): void => {
-      const directoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+      const directoryPath = resolveSftpDirectoryPathFromSelection(selectionText, trustedCwd);
       const serverSnapshot = connectionIntent.lastResolvedSnapshot;
 
       if (!directoryPath || serverSnapshot?.type !== 'ssh-server' || !onOpenDirectoryInSFTP) {
@@ -717,7 +725,7 @@ const SSH: React.FC<SSHProps> = ({
       onOpenDirectoryInSFTP(serverSnapshot.serverId, serverSnapshot.serverName, directoryPath);
       dismissSelectionBar();
     },
-    [connectionIntent.lastResolvedSnapshot, dismissSelectionBar, notifyWarning, onOpenDirectoryInSFTP],
+    [connectionIntent.lastResolvedSnapshot, dismissSelectionBar, notifyWarning, onOpenDirectoryInSFTP, trustedCwd],
   );
 
   // ---------------------------------------------------------------------------
@@ -1128,14 +1136,18 @@ const SSH: React.FC<SSHProps> = ({
   );
 
   /**
-   * Converts sidebar command actions into terminal input payloads.
+   * Converts sidebar and timeline command actions into terminal input payloads.
    *
-   * @param command Raw command text selected from history.
+   * Retained timeline commands can span rendered lines; embedded newlines are
+   * flattened so the insert path never auto-submits through the PTY.
+   *
+   * @param command Raw command text selected from history or the timeline.
    * @param shouldRun Whether command should auto-submit with Enter.
    * @returns Input payload written to terminal websocket.
    */
   const buildRecentCommandPayload = React.useCallback((command: string, shouldRun: boolean): string => {
-    return shouldRun ? `${command}\r` : command;
+    const flattenedCommand = flattenCommandForTerminalInput(command);
+    return shouldRun ? `${flattenedCommand}\r` : flattenedCommand;
   }, []);
 
   /**
@@ -1355,13 +1367,13 @@ const SSH: React.FC<SSHProps> = ({
 
   const selectionText = selectionAnchor?.selectionText ?? '';
   const selectionLink = resolveSelectionLink(selectionText);
-  const selectedSftpDirectoryPath = resolveSftpDirectoryPathFromSelection(selectionText);
+  const selectedSftpDirectoryPath = resolveSftpDirectoryPathFromSelection(selectionText, trustedCwd);
   const canOpenSelectionDirectoryInSftp =
     Boolean(selectedSftpDirectoryPath) &&
     connectionIntent.lastResolvedSnapshot?.type === 'ssh-server' &&
     Boolean(onOpenDirectoryInSFTP);
   const canShowRemoteEnhancementsDebug =
-    userMenuDebugEntryEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
+    remoteEnhancementsDebugEnabled && connectionIntent.lastResolvedSnapshot?.type === 'ssh-server';
   const remoteEnhancementsDebugContextMenuLabel = remoteEnhancementsDebugPanelOpen
     ? t('ssh.contextMenuCloseRemoteEnhancementsDebug')
     : t('ssh.contextMenuOpenRemoteEnhancementsDebug');
@@ -1409,7 +1421,6 @@ const SSH: React.FC<SSHProps> = ({
           terminalPaneIds={terminalPaneIds}
           activePaneId={activePaneId}
           hasSelection={!!selectionAnchor?.selectionText}
-          isConnected={connectionState === 'connected'}
           canSplitTerminal={canSplitTerminal}
           copyShortcutLabel={terminalCopyShortcutLabel}
           pasteShortcutLabel={terminalPasteShortcutLabel}
@@ -1422,9 +1433,12 @@ const SSH: React.FC<SSHProps> = ({
           searchOnlineLabel={contextMenuSearchLabel}
           openDirectoryInSftpLabel={t('ssh.contextMenuOpenDirectoryInSftp')}
           canOpenDirectoryInSftp={canOpenSelectionDirectoryInSftp}
+          commandTimelineModels={commandTimelineModels}
+          paneConnectionStates={paneConnectionStates}
           setPaneContainerElement={setPaneContainerElement}
           setPrimaryPaneContainer={setPrimaryPaneContainer}
           onPaneActivate={activatePane}
+          onRetryPane={retryPaneConnection}
           onCopy={(paneId) => {
             activatePane(paneId);
             handleContextMenuCopy();
@@ -1457,6 +1471,18 @@ const SSH: React.FC<SSHProps> = ({
             activatePane(paneId);
             handleContextMenuClearTerminal();
           }}
+          onCopyCommand={(paneId, command) => {
+            activatePane(paneId);
+            void copyTextToClipboard(command);
+          }}
+          onFocusPane={(paneId) => {
+            activatePane(paneId);
+            focusActiveTerminal();
+          }}
+          onInsertCommand={(paneId, command) => {
+            dispatchRecentCommandToPane(command, paneId, false);
+          }}
+          onSelectCommand={scrollToPaneCommand}
           onSplitPane={(paneId) => {
             activatePane(paneId);
             splitPane();
@@ -1595,28 +1621,6 @@ const SSH: React.FC<SSHProps> = ({
         onSplitTerminalAndRunRecentCommand={handleSplitTerminalAndRunRecentCommand}
         onDeleteRecentCommand={handleDeleteRecentCommand}
       />
-
-      {connectionState !== 'connected' ? (
-        <div className="absolute inset-0 z-50 flex flex-col items-center justify-between bg-bg px-4 py-12">
-          <div></div>
-          <div className="text-sm text-header-text">
-            {connectionState === 'connecting' ? t('ssh.connecting') : connectionError}
-          </div>
-          <div
-            className={classNames(
-              'flex items-center justify-center',
-              connectionState === 'connecting' ? 'invisible' : '',
-            )}
-          >
-            <Menubar>
-              <Button onClick={retryConnection}>
-                <RefreshCw size={16} />
-                {t('ssh.retry')}
-              </Button>
-            </Menubar>
-          </div>
-        </div>
-      ) : null}
 
       <Dialog
         open={hostFingerprintPrompt !== null}

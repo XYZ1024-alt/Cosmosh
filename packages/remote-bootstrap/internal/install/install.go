@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 )
 
@@ -41,6 +42,7 @@ type InstallationStatus struct {
 	BinaryPath      string   `json:"binaryPath"`
 	HelperPath      string   `json:"helperPath"`
 	ProfilePath     string   `json:"profilePath"`
+	ProfilePaths    []string `json:"profilePaths"`
 }
 
 type statusLine struct {
@@ -53,12 +55,13 @@ type statusLine struct {
 }
 
 type paths struct {
-	binDir      string
-	binaryPath  string
-	versionPath string
-	helperDir   string
-	helperPath  string
-	profilePath string
+	binDir       string
+	binaryPath   string
+	versionPath  string
+	helperDir    string
+	helperPath   string
+	profilePath  string
+	profilePaths []string
 }
 
 // Run installs the current bootstrap binary and shell helper into user scope.
@@ -84,7 +87,7 @@ func Run(options Options) error {
 		return err
 	}
 
-	if err := updateProfile(options, resolvedPaths); err != nil {
+	if err := updateProfiles(options, resolvedPaths); err != nil {
 		writeStatus(options.Stdout, "install", "failed", options.Version, "PROFILE_UPDATE_FAILED", err.Error())
 		return err
 	}
@@ -126,6 +129,7 @@ func Status(stdout io.Writer, shell string) error {
 		BinaryPath:      resolvedPaths.binaryPath,
 		HelperPath:      resolvedPaths.helperPath,
 		ProfilePath:     resolvedPaths.profilePath,
+		ProfilePaths:    append([]string(nil), resolvedPaths.profilePaths...),
 	}
 
 	return json.NewEncoder(stdout).Encode(payload)
@@ -161,13 +165,15 @@ func resolvePaths(shell string) (paths, error) {
 	dataRoot := envOrDefault("XDG_DATA_HOME", filepath.Join(homeDir, ".local", "share"))
 	configRoot := envOrDefault("XDG_CONFIG_HOME", filepath.Join(homeDir, ".config"))
 	helperDir := filepath.Join(configRoot, "cosmosh", "bootstrap")
+	profilePaths := resolveProfilePaths(homeDir, configRoot, shell)
 	return paths{
-		binDir:      filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin"),
-		binaryPath:  filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin", binaryFileName),
-		versionPath: filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin", ".version"),
-		helperDir:   helperDir,
-		helperPath:  filepath.Join(helperDir, helperName(shell)),
-		profilePath: resolveProfilePath(homeDir, configRoot, shell),
+		binDir:       filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin"),
+		binaryPath:   filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin", binaryFileName),
+		versionPath:  filepath.Join(dataRoot, "cosmosh", "bootstrap", "bin", ".version"),
+		helperDir:    helperDir,
+		helperPath:   filepath.Join(helperDir, helperName(shell)),
+		profilePath:  profilePaths[0],
+		profilePaths: profilePaths,
 	}, nil
 }
 
@@ -196,19 +202,28 @@ func helperMatches(options Options, resolvedPaths paths) bool {
 }
 
 func profileHasCurrentHook(options Options, resolvedPaths paths) bool {
-	contentBytes, err := os.ReadFile(resolvedPaths.profilePath)
-	if err != nil {
-		return false
+	for _, profilePath := range resolvedPaths.profilePaths {
+		contentBytes, err := os.ReadFile(profilePath)
+		if err != nil {
+			return false
+		}
+
+		content := string(contentBytes)
+		if options.Shell == "fish" {
+			if !strings.Contains(content, fishProfileBlock(resolvedPaths)) {
+				return false
+			}
+			continue
+		}
+
+		if !strings.Contains(content, markerStart) ||
+			!strings.Contains(content, posixProfileBlock(options.Shell, resolvedPaths)) ||
+			!strings.Contains(content, markerEnd) {
+			return false
+		}
 	}
 
-	content := string(contentBytes)
-	if options.Shell == "fish" {
-		return strings.Contains(content, fishProfileBlock(resolvedPaths))
-	}
-
-	return strings.Contains(content, markerStart) &&
-		strings.Contains(content, posixProfileBlock(resolvedPaths)) &&
-		strings.Contains(content, markerEnd)
+	return true
 }
 
 func installFiles(options Options, resolvedPaths paths) error {
@@ -225,7 +240,7 @@ func installFiles(options Options, resolvedPaths paths) error {
 		return err
 	}
 
-	if err := copyFile(currentBinary, resolvedPaths.binaryPath, 0o700); err != nil {
+	if err := copyFileAtomically(currentBinary, resolvedPaths.binaryPath, 0o700); err != nil {
 		return err
 	}
 
@@ -234,7 +249,7 @@ func installFiles(options Options, resolvedPaths paths) error {
 		return err
 	}
 
-	if err := os.WriteFile(resolvedPaths.helperPath, []byte(helper), 0o600); err != nil {
+	if err := writeFileAtomically(resolvedPaths.helperPath, []byte(helper), 0o600, false); err != nil {
 		return err
 	}
 
@@ -242,29 +257,40 @@ func installFiles(options Options, resolvedPaths paths) error {
 }
 
 func writeVersionFile(options Options, resolvedPaths paths) error {
-	return os.WriteFile(resolvedPaths.versionPath, []byte(options.Version+"\n"), 0o600)
+	return writeFileAtomically(resolvedPaths.versionPath, []byte(options.Version+"\n"), 0o600, false)
 }
 
-func updateProfile(options Options, resolvedPaths paths) error {
-	if options.Shell == "fish" {
-		return writeFishProfile(resolvedPaths)
+func updateProfiles(options Options, resolvedPaths paths) error {
+	for _, profilePath := range resolvedPaths.profilePaths {
+		if options.Shell == "fish" {
+			if err := writeFishProfile(profilePath, resolvedPaths); err != nil {
+				return err
+			}
+			continue
+		}
+
+		existing := ""
+		if content, err := os.ReadFile(profilePath); err == nil {
+			existing = string(content)
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+
+		nextContent := replaceMarkedBlock(existing, posixProfileBlock(options.Shell, resolvedPaths))
+		if err := writeFileAtomically(profilePath, []byte(nextContent), 0o600, true); err != nil {
+			return err
+		}
 	}
 
-	existing := ""
-	if bytes, err := os.ReadFile(resolvedPaths.profilePath); err == nil {
-		existing = string(bytes)
-	}
-
-	nextContent := replaceMarkedBlock(existing, posixProfileBlock(resolvedPaths))
-	return os.WriteFile(resolvedPaths.profilePath, []byte(nextContent), 0o600)
+	return nil
 }
 
-func writeFishProfile(resolvedPaths paths) error {
-	if err := os.MkdirAll(filepath.Dir(resolvedPaths.profilePath), 0o700); err != nil {
+func writeFishProfile(profilePath string, resolvedPaths paths) error {
+	if err := os.MkdirAll(filepath.Dir(profilePath), 0o700); err != nil {
 		return err
 	}
 
-	return os.WriteFile(resolvedPaths.profilePath, []byte(fishProfileBlock(resolvedPaths)), 0o600)
+	return writeFileAtomically(profilePath, []byte(fishProfileBlock(resolvedPaths)), 0o600, true)
 }
 
 func replaceMarkedBlock(existing string, block string) string {
@@ -286,29 +312,186 @@ func replaceMarkedBlock(existing string, block string) string {
 	return existing + separator + markedBlock
 }
 
-func posixProfileBlock(resolvedPaths paths) string {
-	return fmt.Sprintf("export PATH=%q:$PATH\n. %q\n", resolvedPaths.binDir, resolvedPaths.helperPath)
+func posixProfileBlock(shell string, resolvedPaths paths) string {
+	helperSource := fmt.Sprintf("if [ -r %q ]; then . %q; fi\n", resolvedPaths.helperPath, resolvedPaths.helperPath)
+	if shell == "bash" {
+		helperSource = fmt.Sprintf(
+			"if [ -n \"${BASH_VERSION:-}\" ] && [ -r %q ]; then . %q; fi\n",
+			resolvedPaths.helperPath,
+			resolvedPaths.helperPath,
+		)
+	}
+
+	return fmt.Sprintf(
+		"case :$PATH: in *:%q:*) ;; *) export PATH=%q:$PATH ;; esac\n%s",
+		resolvedPaths.binDir,
+		resolvedPaths.binDir,
+		helperSource,
+	)
 }
 
 func fishProfileBlock(resolvedPaths paths) string {
 	return fmt.Sprintf("set -gx PATH %q $PATH\nsource %q\n", resolvedPaths.binDir, resolvedPaths.helperPath)
 }
 
-func copyFile(sourcePath string, targetPath string, mode os.FileMode) error {
+func copyFileAtomically(sourcePath string, targetPath string, mode os.FileMode) error {
 	source, err := os.Open(sourcePath)
 	if err != nil {
 		return err
 	}
 	defer source.Close()
 
-	target, err := os.OpenFile(targetPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	target, tempPath, err := createAtomicTarget(targetPath, mode, false)
 	if err != nil {
 		return err
 	}
-	defer target.Close()
+	defer os.Remove(tempPath)
 
-	_, err = io.Copy(target, source)
-	return err
+	if _, err := io.Copy(target, source); err != nil {
+		_ = target.Close()
+		return err
+	}
+
+	return commitAtomicTarget(target, tempPath, targetPath)
+}
+
+func writeFileAtomically(targetPath string, content []byte, mode os.FileMode, preserveExistingMode bool) error {
+	resolvedTargetPath, err := resolvePreservedAtomicTargetPath(targetPath, preserveExistingMode)
+	if err != nil {
+		return err
+	}
+	targetPath = resolvedTargetPath
+
+	target, tempPath, err := createAtomicTarget(targetPath, mode, preserveExistingMode)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tempPath)
+
+	if _, err := target.Write(content); err != nil {
+		_ = target.Close()
+		return err
+	}
+
+	return commitAtomicTarget(target, tempPath, targetPath)
+}
+
+// resolvePreservedAtomicTargetPath keeps user-managed profile symlinks intact while
+// binary and helper installation paths continue to replace links instead of following them.
+func resolvePreservedAtomicTargetPath(targetPath string, preserveExistingMode bool) (string, error) {
+	if !preserveExistingMode {
+		return targetPath, nil
+	}
+
+	info, err := os.Lstat(targetPath)
+	if os.IsNotExist(err) {
+		return targetPath, nil
+	}
+	if err != nil {
+		return "", err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return targetPath, nil
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(targetPath)
+	if err == nil {
+		return resolvedPath, nil
+	}
+	if !os.IsNotExist(err) {
+		return "", err
+	}
+
+	// A dangling chain (dotfile managers before their first sync) must still
+	// install: follow the link targets manually and create the managed file,
+	// matching what a direct write through the symlink would have done.
+	return resolveDanglingSymlinkTargetPath(targetPath)
+}
+
+// resolveDanglingSymlinkTargetPath follows a symlink chain whose final target does
+// not exist yet and returns the path installation should create.
+func resolveDanglingSymlinkTargetPath(linkPath string) (string, error) {
+	currentPath := linkPath
+	for hop := 0; hop < 16; hop++ {
+		info, err := os.Lstat(currentPath)
+		if os.IsNotExist(err) {
+			return currentPath, nil
+		}
+		if err != nil {
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			return currentPath, nil
+		}
+
+		linkTarget, err := os.Readlink(currentPath)
+		if err != nil {
+			return "", err
+		}
+		if !filepath.IsAbs(linkTarget) {
+			linkTarget = filepath.Join(filepath.Dir(currentPath), linkTarget)
+		}
+		currentPath = linkTarget
+	}
+
+	return "", fmt.Errorf("profile symlink chain at %s exceeds resolution limit", linkPath)
+}
+
+func createAtomicTarget(targetPath string, mode os.FileMode, preserveExistingMode bool) (*os.File, string, error) {
+	parentDir := filepath.Dir(targetPath)
+	if err := os.MkdirAll(parentDir, 0o700); err != nil {
+		return nil, "", err
+	}
+
+	effectiveMode := mode
+	if preserveExistingMode {
+		if info, err := os.Stat(targetPath); err == nil {
+			effectiveMode = info.Mode().Perm()
+		} else if !os.IsNotExist(err) {
+			return nil, "", err
+		}
+	}
+
+	target, err := os.CreateTemp(parentDir, ".cosmosh-install-*")
+	if err != nil {
+		return nil, "", err
+	}
+	if err := target.Chmod(effectiveMode); err != nil {
+		tempPath := target.Name()
+		_ = target.Close()
+		_ = os.Remove(tempPath)
+		return nil, "", err
+	}
+
+	return target, target.Name(), nil
+}
+
+func commitAtomicTarget(target *os.File, tempPath string, targetPath string) error {
+	if err := target.Sync(); err != nil {
+		_ = target.Close()
+		return err
+	}
+	if err := target.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(tempPath, targetPath); err != nil {
+		return err
+	}
+
+	return syncDirectory(filepath.Dir(targetPath))
+}
+
+func syncDirectory(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func filesEqual(firstPath string, secondPath string) bool {
@@ -352,20 +535,32 @@ func helperName(shell string) string {
 	return "helper.sh"
 }
 
-func resolveProfilePath(homeDir string, configRoot string, shell string) string {
+// resolveProfilePaths selects every startup file that must load the shell helper.
+// Bash login candidates use Lstat so dotfile-manager symlinks remain authoritative
+// even before their managed targets have been created.
+func resolveProfilePaths(homeDir string, configRoot string, shell string) []string {
 	if shell == "fish" {
-		return filepath.Join(configRoot, "fish", "conf.d", "cosmosh.fish")
+		return []string{filepath.Join(configRoot, "fish", "conf.d", "cosmosh.fish")}
 	}
 
 	if shell == "zsh" {
-		return filepath.Join(homeDir, ".zshrc")
+		return []string{filepath.Join(homeDir, ".zshrc")}
 	}
 
 	if shell == "bash" {
-		return filepath.Join(homeDir, ".bashrc")
+		loginProfilePath := filepath.Join(homeDir, ".profile")
+		for _, candidate := range []string{".bash_profile", ".bash_login"} {
+			candidatePath := filepath.Join(homeDir, candidate)
+			if _, err := os.Lstat(candidatePath); err == nil {
+				loginProfilePath = candidatePath
+				break
+			}
+		}
+
+		return []string{filepath.Join(homeDir, ".bashrc"), loginProfilePath}
 	}
 
-	return filepath.Join(homeDir, ".profile")
+	return []string{filepath.Join(homeDir, ".profile")}
 }
 
 func writeStatus(stdout io.Writer, phase string, state string, version string, code string, message string) {

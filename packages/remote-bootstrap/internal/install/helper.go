@@ -6,7 +6,7 @@ import (
 )
 
 // RemoteShellProtocolVersion identifies the OSC event contract emitted by installed helpers.
-const RemoteShellProtocolVersion = 1
+const RemoteShellProtocolVersion = 2
 
 var fullRemoteShellCapabilities = []string{
 	"cwd",
@@ -16,19 +16,23 @@ var fullRemoteShellCapabilities = []string{
 	"prompt-ready",
 }
 
+var zshRemoteShellCapabilities = append(append([]string(nil), fullRemoteShellCapabilities...), "line-state")
+
 var degradedRemoteShellCapabilities = []string{
 	"cwd",
-	"command-end",
 	"prompt-ready",
 }
 
-// HelperCapabilities returns the event capabilities installed for a shell.
+// HelperCapabilities returns only the event capabilities installed reliably for a shell.
 func HelperCapabilities(shell string) []string {
-	if shell == "sh" || shell == "ash" {
+	switch shell {
+	case "sh", "ash":
 		return append([]string(nil), degradedRemoteShellCapabilities...)
+	case "zsh":
+		return append([]string(nil), zshRemoteShellCapabilities...)
+	default:
+		return append([]string(nil), fullRemoteShellCapabilities...)
 	}
-
-	return append([]string(nil), fullRemoteShellCapabilities...)
 }
 
 // BuildHelper creates the versioned shell integration owned by the Go bootstrap.
@@ -58,13 +62,18 @@ __COSMOSH_CAPABILITIES_JSON=%s
 `, quotePOSIX(shell), quotePOSIX(version), RemoteShellProtocolVersion, quotePOSIX(capabilities))
 
 	common := `
-__cosmosh_json_escape() {
-  if command -v sed >/dev/null 2>&1; then
-    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
-    return
-  fi
+__cosmosh_base64_value() {
+  printf '%s' "$1" | base64 | tr -d '\r\n'
+}
 
-  return 1
+__cosmosh_now_ms() {
+  __cosmosh_now_value="$(date +%s%3N 2>/dev/null)"
+  case "$__cosmosh_now_value" in
+    ""|*[!0-9]*)
+      __cosmosh_now_value="$(date +%s 2>/dev/null || printf '0')000"
+      ;;
+  esac
+  printf '%s' "$__cosmosh_now_value"
 }
 
 __cosmosh_command_name_from_line() {
@@ -100,21 +109,45 @@ __cosmosh_command_name_from_line() {
 }
 
 __cosmosh_emit_remote_shell_event() {
-  [ -t 1 ] || return 0
+  if [ ! -t 1 ] && [ "${__COSMOSH_CAPTURED_PROMPT_EVENT:-0}" != "1" ]; then
+    return 0
+  fi
   command -v base64 >/dev/null 2>&1 || return 0
-  __cosmosh_event="$1"
+
+  __cosmosh_event="${1:-}"
   __cosmosh_status="${2:-}"
   __cosmosh_command="${3:-}"
-  __cosmosh_timestamp="$(date +%s 2>/dev/null || printf '0')000"
-  __cosmosh_cwd="$(__cosmosh_json_escape "$PWD" 2>/dev/null)" || return 0
-  __cosmosh_json="{\"event\":\"$__cosmosh_event\",\"shell\":\"$__COSMOSH_REMOTE_SHELL\",\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\",\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION,\"capabilities\":$__COSMOSH_CAPABILITIES_JSON,\"cwd\":\"$__cosmosh_cwd\",\"timestamp\":$__cosmosh_timestamp"
-  if [ -n "$__cosmosh_command" ]; then
-    __cosmosh_command="$(__cosmosh_json_escape "$__cosmosh_command" 2>/dev/null)" || return 0
-    __cosmosh_json="$__cosmosh_json,\"command\":\"$__cosmosh_command\""
-  fi
-  if [ -n "$__cosmosh_status" ]; then
-    __cosmosh_json="$__cosmosh_json,\"exitCode\":$__cosmosh_status"
-  fi
+  __cosmosh_command_id="${4:-}"
+  __cosmosh_duration="${5:-}"
+  __cosmosh_prompt_generation="${6:-}"
+  __cosmosh_line_length="${7:-}"
+  __cosmosh_cursor_index="${8:-}"
+  __cosmosh_timestamp="$(__cosmosh_now_ms)" || return 0
+  __cosmosh_json="{\"event\":\"$__cosmosh_event\",\"shell\":\"$__COSMOSH_REMOTE_SHELL\",\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\",\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION,\"capabilities\":$__COSMOSH_CAPABILITIES_JSON,\"timestamp\":$__cosmosh_timestamp"
+
+  case "$__cosmosh_event" in
+    cwd)
+      __cosmosh_cwd_base64="$(__cosmosh_base64_value "$PWD" 2>/dev/null)" || return 0
+      __cosmosh_json="$__cosmosh_json,\"cwdBase64\":\"$__cosmosh_cwd_base64\""
+      ;;
+    command-start|foreground-command)
+      __cosmosh_command_base64="$(__cosmosh_base64_value "$__cosmosh_command" 2>/dev/null)" || return 0
+      __cosmosh_json="$__cosmosh_json,\"commandBase64\":\"$__cosmosh_command_base64\",\"commandId\":\"$__cosmosh_command_id\""
+      ;;
+    command-end)
+      __cosmosh_command_base64="$(__cosmosh_base64_value "$__cosmosh_command" 2>/dev/null)" || return 0
+      __cosmosh_json="$__cosmosh_json,\"commandBase64\":\"$__cosmosh_command_base64\",\"commandId\":\"$__cosmosh_command_id\",\"exitCode\":$__cosmosh_status,\"durationMs\":$__cosmosh_duration"
+      ;;
+    prompt-ready)
+      if [ -n "$__cosmosh_prompt_generation" ]; then
+        __cosmosh_json="$__cosmosh_json,\"promptGeneration\":$__cosmosh_prompt_generation"
+      fi
+      ;;
+    line-state)
+      __cosmosh_json="$__cosmosh_json,\"promptGeneration\":$__cosmosh_prompt_generation,\"lineLength\":$__cosmosh_line_length,\"cursorIndex\":$__cosmosh_cursor_index"
+      ;;
+  esac
+
   __cosmosh_json="$__cosmosh_json}"
   __cosmosh_payload="$(printf '%s' "$__cosmosh_json" | base64 | tr -d '\r\n')" || return 0
   printf '\033]777;cosmosh;%s\007' "$__cosmosh_payload"
@@ -123,18 +156,43 @@ __cosmosh_emit_remote_shell_event() {
 __cosmosh_emit_command_start() {
   __cosmosh_command="$(__cosmosh_command_name_from_line "$1" 2>/dev/null)" || return 0
   [ -n "$__cosmosh_command" ] || return 0
-  __cosmosh_emit_remote_shell_event command-start "" "$__cosmosh_command"
-  __cosmosh_emit_remote_shell_event foreground-command "" "$__cosmosh_command"
+  __COSMOSH_COMMAND_SEQUENCE=$((${__COSMOSH_COMMAND_SEQUENCE:-0} + 1))
+  __COSMOSH_ACTIVE_COMMAND_START_MS="$(__cosmosh_now_ms)"
+  __COSMOSH_ACTIVE_COMMAND_ID="${__COSMOSH_ACTIVE_COMMAND_START_MS}-${__COSMOSH_COMMAND_SEQUENCE}"
+  __COSMOSH_ACTIVE_COMMAND_NAME="$__cosmosh_command"
+  __cosmosh_emit_remote_shell_event command-start "" "$__COSMOSH_ACTIVE_COMMAND_NAME" "$__COSMOSH_ACTIVE_COMMAND_ID"
+  __cosmosh_emit_remote_shell_event foreground-command "" "$__COSMOSH_ACTIVE_COMMAND_NAME" "$__COSMOSH_ACTIVE_COMMAND_ID"
+}
+
+__cosmosh_finish_active_command() {
+  [ -n "${__COSMOSH_ACTIVE_COMMAND_ID:-}" ] || return 0
+  __cosmosh_finished_at="$(__cosmosh_now_ms)"
+  __cosmosh_duration=$((__cosmosh_finished_at - __COSMOSH_ACTIVE_COMMAND_START_MS))
+  if [ "$__cosmosh_duration" -lt 0 ]; then
+    __cosmosh_duration=0
+  fi
+  __cosmosh_emit_remote_shell_event command-end "$1" "$__COSMOSH_ACTIVE_COMMAND_NAME" "$__COSMOSH_ACTIVE_COMMAND_ID" "$__cosmosh_duration"
+  __COSMOSH_ACTIVE_COMMAND_ID=
+  __COSMOSH_ACTIVE_COMMAND_NAME=
+  __COSMOSH_ACTIVE_COMMAND_START_MS=
 }
 
 __cosmosh_prompt_ready() {
   __cosmosh_status="$1"
-  if [ "${__COSMOSH_REMOTE_SHELL_SEEN_PROMPT:-0}" = "1" ]; then
-    __cosmosh_emit_remote_shell_event command-end "$__cosmosh_status"
-  fi
-  __COSMOSH_REMOTE_SHELL_SEEN_PROMPT=1
-  __cosmosh_emit_remote_shell_event cwd ""
-  __cosmosh_emit_remote_shell_event prompt-ready ""
+  __cosmosh_finish_active_command "$__cosmosh_status"
+  __COSMOSH_PROMPT_GENERATION=$((${__COSMOSH_PROMPT_GENERATION:-0} + 1))
+  __cosmosh_emit_remote_shell_event cwd
+  __cosmosh_emit_remote_shell_event prompt-ready "" "" "" "" "$__COSMOSH_PROMPT_GENERATION"
+}
+
+__cosmosh_prompt_ready_for_ps1() {
+  __COSMOSH_CAPTURED_PROMPT_EVENT=1
+  __cosmosh_finish_active_command "$1"
+  __cosmosh_emit_remote_shell_event cwd
+  # PS1 command substitution runs in a subshell, so a generation counter can
+  # never advance in the parent shell; emit without the optional field
+  # instead of reporting a constant.
+  __cosmosh_emit_remote_shell_event prompt-ready
 }
 `
 
@@ -150,9 +208,10 @@ __cosmosh_prompt_ready() {
 
 const bashHelperHooks = `
 __cosmosh_bash_prompt_command() {
-  __cosmosh_status=$?
+  local __cosmosh_bash_prompt_status=$?
   __COSMOSH_BASH_PREEXEC_READY=0
-  __cosmosh_prompt_ready "$__cosmosh_status"
+  __cosmosh_prompt_ready "$__cosmosh_bash_prompt_status"
+  return "$__cosmosh_bash_prompt_status"
 }
 
 __cosmosh_bash_arm_preexec() {
@@ -160,8 +219,7 @@ __cosmosh_bash_arm_preexec() {
 }
 
 if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
-  __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
-  __cosmosh_emit_remote_shell_event integration-ready ""
+  __COSMOSH_BASH_PREEXEC_READY=0
   case "$(declare -p PROMPT_COMMAND 2>/dev/null)" in
     declare\ -*a*PROMPT_COMMAND=*)
       PROMPT_COMMAND=(__cosmosh_bash_prompt_command "${PROMPT_COMMAND[@]}" __cosmosh_bash_arm_preexec)
@@ -176,6 +234,7 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
       fi
       ;;
   esac
+
   __COSMOSH_BASH_PREV_DEBUG_CMD="$(trap -p DEBUG | sed -n "s/^trap -- '\(.*\)' DEBUG$/\1/p")"
   __cosmosh_bash_debug_trap() {
     local __cosmosh_debug_status=$?
@@ -199,43 +258,84 @@ if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
     fi
     return "$__cosmosh_debug_status"
   }
-  trap '__cosmosh_bash_debug_trap' DEBUG
+
+  if trap '__cosmosh_bash_debug_trap' DEBUG; then
+    __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
+    __cosmosh_emit_remote_shell_event integration-ready
+  fi
 fi
 `
 
 const zshHelperHooks = `
 if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
-  __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
-  __cosmosh_emit_remote_shell_event integration-ready ""
   __cosmosh_zsh_precmd() {
     __cosmosh_prompt_ready "$?"
   }
   __cosmosh_zsh_chpwd() {
-    __cosmosh_emit_remote_shell_event cwd ""
+    __cosmosh_emit_remote_shell_event cwd
   }
   __cosmosh_zsh_preexec() {
     __cosmosh_emit_command_start "$1"
   }
-  if autoload -Uz add-zsh-hook 2>/dev/null; then
-    add-zsh-hook precmd __cosmosh_zsh_precmd
-    add-zsh-hook chpwd __cosmosh_zsh_chpwd
-    add-zsh-hook preexec __cosmosh_zsh_preexec
+  __cosmosh_zsh_line_pre_redraw() {
+    if [ "${__COSMOSH_LAST_LINE_LENGTH:-}" = "${#BUFFER}" ] && [ "${__COSMOSH_LAST_CURSOR_INDEX:-}" = "$CURSOR" ]; then
+      return 0
+    fi
+    __COSMOSH_LAST_LINE_LENGTH="${#BUFFER}"
+    __COSMOSH_LAST_CURSOR_INDEX="$CURSOR"
+    __cosmosh_emit_remote_shell_event line-state "" "" "" "" "${__COSMOSH_PROMPT_GENERATION:-0}" "${#BUFFER}" "$CURSOR"
+  }
+
+  __cosmosh_zsh_hook_ok=1
+  __cosmosh_zsh_zle_hook_installed=0
+  if autoload -Uz +X add-zsh-hook 2>/dev/null; then
+    add-zsh-hook precmd __cosmosh_zsh_precmd || __cosmosh_zsh_hook_ok=0
+    add-zsh-hook chpwd __cosmosh_zsh_chpwd || __cosmosh_zsh_hook_ok=0
+    add-zsh-hook preexec __cosmosh_zsh_preexec || __cosmosh_zsh_hook_ok=0
   else
     precmd_functions=(${precmd_functions[@]} __cosmosh_zsh_precmd)
     chpwd_functions=(${chpwd_functions[@]} __cosmosh_zsh_chpwd)
     preexec_functions=(${preexec_functions[@]} __cosmosh_zsh_preexec)
   fi
+
+  # +X loads the widget helper's definition immediately: plain autoload
+  # succeeds even when no definition file exists (zsh < 5.3) and would defer
+  # the failure to call time, printing a visible error on every startup.
+  if zmodload zsh/datetime 2>/dev/null && autoload -Uz +X add-zle-hook-widget 2>/dev/null; then
+    __cosmosh_now_ms() {
+      printf '%.0f' "$((EPOCHREALTIME * 1000))"
+    }
+    if add-zle-hook-widget line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null; then
+      __cosmosh_zsh_zle_hook_installed=1
+    else
+      __cosmosh_zsh_hook_ok=0
+    fi
+  else
+    __cosmosh_zsh_hook_ok=0
+  fi
+
+  if [ "$__cosmosh_zsh_hook_ok" = "1" ]; then
+    __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
+    __cosmosh_emit_remote_shell_event integration-ready
+  else
+    # Without integration-ready the runtime stays disabled, so the prompt
+    # and ZLE hooks would only run for events nothing accepts.
+    if [ "$__cosmosh_zsh_zle_hook_installed" = "1" ]; then
+      add-zle-hook-widget -d line-pre-redraw __cosmosh_zsh_line_pre_redraw 2>/dev/null
+    fi
+    precmd_functions=(${precmd_functions[@]:#__cosmosh_zsh_precmd})
+    chpwd_functions=(${chpwd_functions[@]:#__cosmosh_zsh_chpwd})
+    preexec_functions=(${preexec_functions[@]:#__cosmosh_zsh_preexec})
+  fi
 fi
 `
 
 const degradedPosixHelperHooks = `
-if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ]; then
+if [ "${__COSMOSH_REMOTE_SHELL_HOOK_INSTALLED:-0}" != "1" ] && [ -n "${PS1:-}" ]; then
+  __COSMOSH_ORIGINAL_PS1="$PS1"
+  PS1='$(__cosmosh_prompt_ready_for_ps1 "$?")'"$__COSMOSH_ORIGINAL_PS1"
   __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED=1
-  __cosmosh_emit_remote_shell_event integration-ready ""
-  if [ -n "${PS1:-}" ]; then
-    __COSMOSH_ORIGINAL_PS1="$PS1"
-    PS1='$(__cosmosh_prompt_ready "$?")'"$__COSMOSH_ORIGINAL_PS1"
-  fi
+  __cosmosh_emit_remote_shell_event integration-ready
 fi
 `
 
@@ -253,26 +353,38 @@ set -gx __COSMOSH_CAPABILITIES_JSON %s
 }
 
 const fishHelperBody = `
-function __cosmosh_json_escape
-  string replace -a '\\' '\\\\' -- $argv[1] | string replace -a '"' '\\"'
+function __cosmosh_base64_value
+  printf '%s' "$argv[1]" | base64 | tr -d '\r\n'
+end
+
+function __cosmosh_now_ms
+  set -l value (date +%s%3N 2>/dev/null)
+  if not string match -rq '^[0-9]+$' -- "$value"
+    set value (date +%s 2>/dev/null)
+    if test -z "$value"
+      set value 0
+    end
+    set value "$value"000
+  end
+  printf '%s' "$value"
 end
 
 function __cosmosh_command_name_from_line
-  set -l line (string trim -- $argv[1])
+  set -l line (string trim -- "$argv[1]")
   set -l guard 0
   while test $guard -lt 8
     set guard (math $guard + 1)
-    set line (string replace -r '^[[:space:];|&(){}]*' '' -- $line)
-    set -l word (string replace -r '[[:space:];|&(){}].*$' '' -- $line)
+    set line (string replace -r '^[[:space:];|&(){}]*' '' -- "$line")
+    set -l word (string replace -r '[[:space:];|&(){}].*$' '' -- "$line")
     switch $word
       case ''
         return 1
       case command builtin exec env noglob time '*=*'
-        set line (string replace -r '^[^[:space:];|&(){}]*[[:space:]]*' '' -- $line)
+        set line (string replace -r '^[^[:space:];|&(){}]*[[:space:]]*' '' -- "$line")
         continue
     end
 
-    set -l name (basename -- $word 2>/dev/null)
+    set -l name (basename -- "$word" 2>/dev/null)
     switch $name
       case '' '__cosmosh_*' PROMPT_COMMAND trap
         return 1
@@ -292,58 +404,87 @@ function __cosmosh_emit_remote_shell_event
   if not command -q base64
     return 0
   end
+
   set -l event $argv[1]
-  set -l status $argv[2]
+  set -l exit_status $argv[2]
   set -l command_name $argv[3]
-  set -l timestamp (date +%s 2>/dev/null)
-  if test -z "$timestamp"
-    set timestamp 0
+  set -l command_id $argv[4]
+  set -l duration $argv[5]
+  set -l prompt_generation $argv[6]
+  set -l line_length $argv[7]
+  set -l cursor_index $argv[8]
+  set -l timestamp (__cosmosh_now_ms)
+  set -l json "{\"event\":\"$event\",\"shell\":\"$__COSMOSH_REMOTE_SHELL\",\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\",\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION,\"capabilities\":$__COSMOSH_CAPABILITIES_JSON,\"timestamp\":$timestamp"
+
+  switch $event
+    case cwd
+      set -l cwd_base64 (__cosmosh_base64_value "$PWD")
+      set json "$json,\"cwdBase64\":\"$cwd_base64\""
+    case command-start foreground-command
+      set -l command_base64 (__cosmosh_base64_value "$command_name")
+      set json "$json,\"commandBase64\":\"$command_base64\",\"commandId\":\"$command_id\""
+    case command-end
+      set -l command_base64 (__cosmosh_base64_value "$command_name")
+      set json "$json,\"commandBase64\":\"$command_base64\",\"commandId\":\"$command_id\",\"exitCode\":$exit_status,\"durationMs\":$duration"
+    case prompt-ready
+      set json "$json,\"promptGeneration\":$prompt_generation"
   end
-  set timestamp "$timestamp"000
-  set -l cwd (__cosmosh_json_escape "$PWD")
-  set -l json "{\"event\":\"$event\",\"shell\":\"$__COSMOSH_REMOTE_SHELL\",\"helperVersion\":\"$__COSMOSH_HELPER_VERSION\",\"protocolVersion\":$__COSMOSH_PROTOCOL_VERSION,\"capabilities\":$__COSMOSH_CAPABILITIES_JSON,\"cwd\":\"$cwd\",\"timestamp\":$timestamp"
-  if test -n "$command_name"
-    set -l escaped_command (__cosmosh_json_escape "$command_name")
-    set json "$json,\"command\":\"$escaped_command\""
-  end
-  if test -n "$status"
-    set json "$json,\"exitCode\":$status"
-  end
+
   set json "$json}"
-  set -l payload (printf '%s' "$json" | base64 | string collect | string replace -a \n '')
+  set -l payload (printf '%s' "$json" | base64 | tr -d '\r\n')
   printf '\e]777;cosmosh;%s\a' "$payload"
 end
 
 function __cosmosh_emit_command_start
-  set -l command_name (__cosmosh_command_name_from_line $argv[1])
+  set -l command_name (__cosmosh_command_name_from_line "$argv[1]")
   if test -z "$command_name"
     return 0
   end
 
-  __cosmosh_emit_remote_shell_event command-start "" "$command_name"
-  __cosmosh_emit_remote_shell_event foreground-command "" "$command_name"
+  if not set -q __COSMOSH_COMMAND_SEQUENCE
+    set -g __COSMOSH_COMMAND_SEQUENCE 0
+  end
+  set -g __COSMOSH_COMMAND_SEQUENCE (math $__COSMOSH_COMMAND_SEQUENCE + 1)
+  set -g __COSMOSH_ACTIVE_COMMAND_START_MS (__cosmosh_now_ms)
+  set -g __COSMOSH_ACTIVE_COMMAND_ID "$__COSMOSH_ACTIVE_COMMAND_START_MS-$__COSMOSH_COMMAND_SEQUENCE"
+  set -g __COSMOSH_ACTIVE_COMMAND_NAME "$command_name"
+  __cosmosh_emit_remote_shell_event command-start "" "$command_name" "$__COSMOSH_ACTIVE_COMMAND_ID"
+  __cosmosh_emit_remote_shell_event foreground-command "" "$command_name" "$__COSMOSH_ACTIVE_COMMAND_ID"
 end
 
 if not set -q __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED
-  set -gx __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED 1
-  __cosmosh_emit_remote_shell_event integration-ready
-
   function __cosmosh_on_preexec --on-event fish_preexec
-    __cosmosh_emit_command_start $argv[1]
+    __cosmosh_emit_command_start "$argv[1]"
   end
 
   function __cosmosh_on_prompt --on-event fish_prompt
+    if not set -q __COSMOSH_PROMPT_GENERATION
+      set -g __COSMOSH_PROMPT_GENERATION 0
+    end
+    set -g __COSMOSH_PROMPT_GENERATION (math $__COSMOSH_PROMPT_GENERATION + 1)
     __cosmosh_emit_remote_shell_event cwd
-    __cosmosh_emit_remote_shell_event prompt-ready
+    __cosmosh_emit_remote_shell_event prompt-ready "" "" "" "" "$__COSMOSH_PROMPT_GENERATION"
   end
 
   function __cosmosh_on_postexec --on-event fish_postexec
-    __cosmosh_emit_remote_shell_event command-end $status
+    set -l command_status $status
+    if not set -q __COSMOSH_ACTIVE_COMMAND_ID
+      return 0
+    end
+    set -l finished_at (__cosmosh_now_ms)
+    set -l duration (math "max(0, $finished_at - $__COSMOSH_ACTIVE_COMMAND_START_MS)")
+    __cosmosh_emit_remote_shell_event command-end "$command_status" "$__COSMOSH_ACTIVE_COMMAND_NAME" "$__COSMOSH_ACTIVE_COMMAND_ID" "$duration"
+    set -e __COSMOSH_ACTIVE_COMMAND_ID
+    set -e __COSMOSH_ACTIVE_COMMAND_NAME
+    set -e __COSMOSH_ACTIVE_COMMAND_START_MS
   end
 
   function __cosmosh_on_pwd --on-variable PWD
     __cosmosh_emit_remote_shell_event cwd
   end
+
+  set -gx __COSMOSH_REMOTE_SHELL_HOOK_INSTALLED 1
+  __cosmosh_emit_remote_shell_event integration-ready
 end
 `
 

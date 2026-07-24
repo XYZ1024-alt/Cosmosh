@@ -439,6 +439,10 @@
         "description": "Set clipboard access for local terminal programs only.",
         "title": "Allow Local Terminal Clipboard Access"
       },
+      "remoteEnhancementsDebugEnabled": {
+        "description": "Show pane-specific bootstrap and shell integration diagnostics in SSH terminal menus.",
+        "title": "Remote Enhancements Debug"
+      },
       "remoteEnhancementsEnabled": {
         "description": "Allow Cosmosh to install remote enhancement helpers for SSH sessions. Turning this off may degrade or disable some terminal features.",
         "title": "Remote Enhancements"
@@ -576,6 +580,10 @@
       "terminalCharacterWidthCompatibilityModeEnabled": {
         "description": "Use Unicode 11 width tables to improve CJK and emoji alignment. If terminal output looks misaligned, try disabling this and reconnecting to use legacy width mode.",
         "title": "Character Width Compatibility Mode"
+      },
+      "terminalCommandTimelineEnabled": {
+        "description": "Show a list of recent commands on the right side of the terminal. Requires Remote Enhancements.",
+        "title": "Command Timeline"
       },
       "terminalContextLaunchBehavior": {
         "description": "Set how terminals open from context launch or 'Open terminal in Cosmosh'.",
@@ -1327,6 +1335,10 @@
     "columnName": "Name",
     "columnPort": "Port",
     "columnUser": "Username",
+    "commandTimelineCopyCommand": "Copy Command",
+    "commandTimelineInsertCommand": "Insert into Terminal",
+    "commandTimelineJumpToCommand": "Jump to command: {command}",
+    "commandTimelineLabel": "Recent commands",
     "connecting": "Connecting...",
     "contextMenuClearTerminal": "Clear Terminal",
     "contextMenuCloseRemoteEnhancementsDebug": "Close Remote Enhancements Debug",

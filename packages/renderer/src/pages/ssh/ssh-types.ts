@@ -1,12 +1,18 @@
-import type { components, SettingsValues } from '@cosmosh/api-contract';
+import type {
+  components,
+  RemoteBootstrapStatus as ApiRemoteBootstrapStatus,
+  RemoteEnhancementRuntimeStatus as ApiRemoteEnhancementRuntimeStatus,
+  RemoteShellEventMessage,
+  SettingsValues,
+  SshTerminalServerMessage,
+  TerminalClientMessage,
+} from '@cosmosh/api-contract';
 import type { IClipboardProvider } from '@xterm/addon-clipboard';
 import type { FitAddon } from '@xterm/addon-fit';
 import type { SearchAddon } from '@xterm/addon-search';
 import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { WebglAddon } from '@xterm/addon-webgl';
-import type { Terminal } from '@xterm/xterm';
-
-import type { TerminalAutocompleteItem } from '../../components/terminal/terminal-autocomplete-menu';
+import type { IMarker, Terminal } from '@xterm/xterm';
 
 /**
  * Lightweight SSH server entry used by target resolution and tab title updates.
@@ -16,131 +22,36 @@ export type SshServerListItem = components['schemas']['SshServerListItem'];
 /**
  * Websocket payloads sent from renderer terminal to backend session runtime.
  */
-export type ClientOutboundMessage =
-  | {
-      type: 'input';
-      data: string;
-    }
-  | {
-      type: 'resize';
-      cols: number;
-      rows: number;
-    }
-  | {
-      type: 'close';
-    }
-  | {
-      type: 'ping';
-    }
-  | {
-      type: 'history-delete';
-      command: string;
-    }
-  | {
-      type: 'completion-request';
-      requestId: string;
-      linePrefix: string;
-      cursorIndex: number;
-      workingDirectoryHint?: string;
-      limit?: number;
-      fuzzyMatch?: boolean;
-      includeHistory?: boolean;
-      includeBuiltInCommands?: boolean;
-      includePathSuggestions?: boolean;
-      includePasswordSuggestions?: boolean;
-      trigger: 'typing' | 'manual';
-    };
+export type ClientOutboundMessage = TerminalClientMessage;
+
+/** Transport lifecycle state owned by one terminal pane. */
+export type SshConnectionState = 'connecting' | 'connected' | 'failed';
+
+/** Per-pane transport snapshot consumed by pane-scoped connection overlays. */
+export type SshPaneConnectionSnapshot = {
+  connectionState: SshConnectionState;
+  connectionError: string;
+};
 
 /**
  * Websocket payloads received by renderer from backend session runtime.
  */
-export type ServerInboundMessage =
-  | {
-      type: 'ready';
-    }
-  | {
-      type: 'output';
-      data: string;
-    }
-  | {
-      type: 'error';
-      message: string;
-    }
-  | {
-      type: 'exit';
-      reason: string;
-    }
-  | {
-      type: 'pong';
-    }
-  | {
-      type: 'telemetry';
-      cpuUsagePercent: number | null;
-      memoryUsedBytes: number | null;
-      memoryTotalBytes: number | null;
-      networkRxBytesPerSec: number | null;
-      networkTxBytesPerSec: number | null;
-      recentCommands: string[];
-    }
-  | {
-      type: 'history';
-      recentCommands: string[];
-    }
-  | {
-      type: 'completion-response';
-      requestId: string;
-      replacePrefixLength: number;
-      items: TerminalAutocompleteItem[];
-    }
-  | {
-      type: 'bootstrap-status';
-      phase: 'probe' | 'manifest' | 'download' | 'install' | 'verify';
-      state: 'started' | 'ok' | 'skipped' | 'failed';
-      version?: string;
-      code?: string;
-      message?: string;
-    }
-  | {
-      type: 'remote-shell-event';
-      event: 'integration-ready' | 'prompt-ready' | 'cwd' | 'command-start' | 'command-end' | 'foreground-command';
-      shell: 'bash' | 'zsh' | 'fish' | 'sh' | 'ash';
-      helperVersion: string;
-      protocolVersion: number;
-      capabilities: string[];
-      cwd?: string;
-      command?: string;
-      exitCode?: number;
-      durationMs?: number;
-      commandId?: string;
-      timestamp: number;
-    }
-  | {
-      type: 'remote-enhancement-runtime-status';
-      state: 'pending' | 'active' | 'disabled';
-      helperVersion?: string;
-      protocolVersion?: number;
-      capabilities?: string[];
-      code?: string;
-      message?: string;
-    };
+export type ServerInboundMessage = SshTerminalServerMessage;
 
 /**
  * Latest remote bootstrap status surfaced by backend side-channel installation.
  */
-export type RemoteBootstrapStatus = Extract<ServerInboundMessage, { type: 'bootstrap-status' }>;
+export type RemoteBootstrapStatus = ApiRemoteBootstrapStatus;
 
 /**
  * Remote shell status event emitted by the installed shell helper over OSC 777.
  */
-export type RemoteShellEvent = Extract<ServerInboundMessage, { type: 'remote-shell-event' }>;
+export type RemoteShellEvent = RemoteShellEventMessage;
 
 /**
  * Backend-owned trust state for the installed remote enhancement runtime.
  */
-export type RemoteEnhancementRuntimeStatus = Extract<
-  ServerInboundMessage,
-  { type: 'remote-enhancement-runtime-status' }
->;
+export type RemoteEnhancementRuntimeStatus = ApiRemoteEnhancementRuntimeStatus;
 
 /**
  * Timestamped remote enhancement event retained for SSH debug inspection.
@@ -237,9 +148,58 @@ export type TerminalSelectionBounds = Pick<
 >;
 
 /**
- * Runtime resources owned by each mirrored terminal pane.
+ * Hidden input marker awaiting confirmation from a trusted `command-start` event.
  */
-export type MirrorPaneRuntime = {
+export type TerminalPendingCommandMarker = {
+  marker: IMarker;
+  recordedAt: number;
+};
+
+/**
+ * One trusted user command retained in a pane-local visual timeline.
+ *
+ * The renderer keeps the full command only in memory. Separate xterm markers
+ * preserve the input row used for navigation and the output interval used for
+ * lifecycle cleanup without retaining command output.
+ */
+export type TerminalCommandMarker = {
+  commandId: string;
+  command: string;
+  inputMarker: IMarker;
+  outputStartMarker: IMarker;
+  outputEndMarker: IMarker | null;
+  startedAt: number;
+  endedAt: number | null;
+  durationMs: number | null;
+  exitCode: number | null;
+};
+
+/**
+ * Serializable renderer view of one retained command timeline entry.
+ */
+export type TerminalCommandTimelineItem = {
+  commandId: string;
+  command: string;
+};
+
+/**
+ * Pane-local command timeline state consumed by the SSH pane layout.
+ */
+export type TerminalCommandTimelineModel = {
+  /** Whether the pane reserves the fixed command timeline rail. */
+  railReserved: boolean;
+  /** Whether normal-buffer depth and retained trusted history exceed the entry thresholds. */
+  historyVisible: boolean;
+  alternateScreenActive: boolean;
+  items: TerminalCommandTimelineItem[];
+  activeCommandId: string | null;
+};
+
+/**
+ * Runtime resources owned uniformly by every SSH terminal pane.
+ */
+export type TerminalPaneRuntime = {
+  owner: 'primary' | 'secondary';
   terminal: Terminal;
   fitAddon: FitAddon;
   searchAddon: SearchAddon;
@@ -250,6 +210,10 @@ export type MirrorPaneRuntime = {
   socket: WebSocket | null;
   sessionId: string | null;
   sessionType: 'ssh-server' | 'local-terminal' | null;
+  pendingCommandMarkers: TerminalPendingCommandMarker[];
+  commandMarkers: TerminalCommandMarker[];
+  refreshCommandTimeline: () => void;
+  reconnect: () => void;
   dispose: () => void;
 };
 

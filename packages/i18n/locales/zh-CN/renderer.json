@@ -439,6 +439,10 @@
         "description": "仅设置本地终端程序访问本地剪贴板的权限。",
         "title": "允许本地终端访问本地剪贴板"
       },
+      "remoteEnhancementsDebugEnabled": {
+        "description": "在 SSH 终端菜单中显示当前分屏的引导安装与 Shell 集成诊断信息。",
+        "title": "远端增强调试"
+      },
       "remoteEnhancementsEnabled": {
         "description": "允许 Cosmosh 为 SSH 会话安装远端增强帮助程序来增强终端功能。如果关闭远端增强，部分终端功能可能降级或无法使用。",
         "title": "远端增强"
@@ -576,6 +580,10 @@
       "terminalCharacterWidthCompatibilityModeEnabled": {
         "description": "使用 Unicode 11 字符宽度表来改善 CJK 与 emoji 内容的对齐。遇到终端界面错位时可尝试关闭此项并重新连接以使用传统字符宽度模式。",
         "title": "字符宽度兼容模式"
+      },
+      "terminalCommandTimelineEnabled": {
+        "description": "在终端右侧显示最近命令列表。需要启用远端增强。",
+        "title": "命令时间线"
       },
       "terminalContextLaunchBehavior": {
         "description": "设置通过“在 Cosmosh 中打开终端”或从上下文启动时如何打开终端。",
@@ -1327,6 +1335,10 @@
     "columnName": "名称",
     "columnPort": "端口",
     "columnUser": "用户名",
+    "commandTimelineCopyCommand": "复制命令",
+    "commandTimelineInsertCommand": "插入到终端",
+    "commandTimelineJumpToCommand": "跳转到命令：{command}",
+    "commandTimelineLabel": "最近命令",
     "connecting": "连接中...",
     "contextMenuClearTerminal": "清屏",
     "contextMenuCloseRemoteEnhancementsDebug": "关闭远端增强调试",

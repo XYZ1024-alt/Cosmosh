@@ -113,6 +113,7 @@ flowchart TB
 - Backend, Main IPC proxy, and renderer HTTP callers must use `API_PATHS` and related generated contract exports from `@cosmosh/api-contract` instead of hard-coded route strings.
 - Archive IPC accepts only generated structured paths, enums, and conflict decisions. Remote command text, flags, tool output, and temporary paths never cross the preload boundary.
 - IPC-only payloads that are not generated from OpenAPI, including `AppMenuAction`, `SftpOpenWithApplication`, `SftpTemporaryFileWatchChange`, and `BackendRequestTrace`, are defined in `packages/api-contract/src/ipc.ts` and consumed by main, preload, and renderer type declarations.
+- Terminal WebSocket payloads and Remote Enhancements protocol constants are defined in `packages/api-contract/src/terminal-protocol.ts`; backend and renderer import those discriminated unions directly.
 - `BackendRequestTrace` is development diagnostics only. It is populated by the main-process backend proxy in unpackaged development runs; production packages do not collect traces or load the DevTools extension.
 
 ### 3.1 SSH Visual Metadata Fields
@@ -128,9 +129,9 @@ The following SSH entity payloads now include visual metadata for persistent ico
 
 SSH security policy fields in current contract:
 
-- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: `strictHostKey`, `enableSshCompression`, and renderer-only `disableCharacterWidthCompatibilityMode` booleans.
-- `ApiSshListServersResponse`: each server item includes persisted `strictHostKey`, `enableSshCompression`, and `disableCharacterWidthCompatibilityMode`.
-- `ApiSshCreateSessionRequest`: optional `strictHostKey` and `enableSshCompression` overrides used for one session attempt.
+- `ApiSshCreateServerRequest` / `ApiSshUpdateServerRequest`: host/transport and renderer policy fields include `strictHostKey`, `enableSshCompression`, `remoteEnhancementsEnabled`, `disableCharacterWidthCompatibilityMode`, `terminalClipboardAccess`, and proxy policy.
+- `ApiSshListServersResponse`: every server item requires persisted `strictHostKey`, `enableSshCompression`, `remoteEnhancementsEnabled`, `disableCharacterWidthCompatibilityMode`, `terminalClipboardAccess`, and `proxyMode`; consumers must not fail open with local defaults when a response omits policy.
+- `ApiSshCreateSessionRequest`: optional `strictHostKey`, `enableSshCompression`, and `remoteEnhancementsEnabled` values bind one attempt to its resolved snapshot. The Remote Enhancements request field is disable-only: effective access is the current global setting, persisted server field, and `request !== false`.
 - Character width compatibility is not sent to SSH session creation or terminal WS messages; renderer applies it when creating xterm instances.
 
 ### 3.2 SSH Port Forwarding Contract
@@ -164,7 +165,7 @@ SFTP batch payloads are generated from OpenAPI and used unchanged by renderer, m
 
 ### 3.4 Terminal WebSocket Contract (Renderer ↔ Backend)
 
-Although terminal stream messages are not Electron IPC channels, they are part of the same cross-process contract surface and must be versioned together.
+Although terminal stream messages are not Electron IPC channels, they are part of the same cross-process contract surface. `terminal-protocol.ts` is the source of truth, and the current remote helper protocol version is 2.
 
 - Client to server (`/ws/ssh/{sessionId}` and `/ws/local-terminal/{sessionId}`):
   - `input`, `resize`, `ping`, `close`, `history-delete`
@@ -176,6 +177,13 @@ Although terminal stream messages are not Electron IPC channels, they are part o
   - `remote-enhancement-runtime-status` with backend-owned state (`pending`, `active`, or `disabled`), optional `helperVersion`, `protocolVersion`, `capabilities`, `code`, and `message`
   - `remote-shell-event` for runtime shell state emitted by the installed helper over OSC 777; every event requires `helperVersion`, integer `protocolVersion`, `capabilities`, `shell`, `event`, and `timestamp`
 
+Remote shell event union rules:
+
+- `cwd` requires an absolute decoded `cwd` and the `cwd` capability.
+- `command-start` and `foreground-command` require sanitized `command` plus `commandId`; `command-end` additionally requires integer `exitCode` and `durationMs`.
+- `line-state` requires `lineLength`, `cursorIndex`, and `promptGeneration`, carries no input text, and is currently advertised only by Zsh.
+- Sh/Ash advertise only `cwd` and `prompt-ready`. No event is accepted unless its name and required fields agree with the exact pre-shell capability contract.
+
 Completion item contract notes:
 
 - `items[].source` includes `history`, `inshellisense`, and runtime-computed `runtime`.
@@ -186,7 +194,8 @@ Current implementation note:
 
 - Completion messages are handled in `SshSessionService` and `LocalTerminalSessionService` via shared normalization in `terminal/shared.ts` and shared ranking engine in `terminal/completion/engine.ts`.
 - `remote-enhancement-runtime-status` and `remote-shell-event` are SSH-only and never appear on local-terminal sessions. A successful pre-shell Bootstrap ensure starts the runtime as `pending`; a matching `integration-ready` event within 10 seconds changes it to `active`. Ensure failure, `BOOTSTRAP_ENSURE_TIMEOUT`, `HELPER_HANDSHAKE_TIMEOUT`, or any live contract mismatch changes it to `disabled`. Renderer keeps the latest runtime status separately from bounded event history and must treat it as diagnostics, not as authority to reconstruct backend helper state.
-- `remote-shell-event` payloads may additionally carry cwd, sanitized executable name, command-end exit code, duration, or command ID. They must not carry passwords, secrets, full terminal output, full command lines, or large arbitrary payloads. Backend requires the event contract to match the pre-shell Go Bootstrap status, caps each decoded OSC payload at 8 KiB, and strips Cosmosh OSC sequences before renderer xterm output. Legacy events without version/protocol/capability fields are dropped.
+- `remote-shell-event` payloads must not carry passwords, secrets, full terminal output, full command lines, line-buffer contents, or large arbitrary data. Dynamic helper cwd/command fields are canonical Base64 inside the OSC JSON envelope, then decoded and validated before forwarding. Backend caps decoded OSC payloads at 8 KiB, strips Cosmosh OSC, and streams non-Cosmosh OSC unchanged.
+- Renderer routes the complete server message union through the source pane's runtime/reducer. Completion responses, password prompts, status, telemetry, errors, exits, debug events, reconnect, and command markers must never fall back to primary/active pane state implicitly.
 
 ### 3.5 Main-Owned Active Connection Contract
 

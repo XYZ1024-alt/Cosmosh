@@ -8,21 +8,15 @@ import { closeLocalTerminalSession, closeSshSession } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { resolveConnectMode, withResolvedSnapshot } from '../../lib/ssh-connection-intent';
 import type { SshConnectionIntent, TabIconColorKey, TabIconKey } from '../../types/tabs';
+import { clearTerminalCommandMarkers } from './ssh-command-markers';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import {
   resolveTerminalTargetFromIntent,
   resolveTerminalTargetFromSnapshot,
   toResolvedTargetSnapshot,
 } from './ssh-target';
-import type {
-  RemoteEnhancementRuntimeStatus,
-  RemoteEnhancementsDebugEvent,
-  ResolvedTerminalTarget,
-  ServerInboundMessage,
-  SshTelemetryState,
-} from './ssh-types';
-import { DEFAULT_TELEMETRY_STATE } from './ssh-types';
-import { SECRET_PROMPT_PATTERN, sendClientMessage } from './ssh-utils';
+import type { ResolvedTerminalTarget, ServerInboundMessage, TerminalPaneRuntime } from './ssh-types';
+import { sendClientMessage } from './ssh-utils';
 import {
   applyTerminalCharacterWidthCompatibilityMode,
   createTerminalInstance,
@@ -36,28 +30,6 @@ import {
   type TerminalWebLinksSettings,
 } from './terminal-addons';
 import type { TerminalClipboardProvider } from './use-terminal-clipboard-provider';
-
-const REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT = 200;
-
-/**
- * Appends one diagnostic event while bounding renderer memory and rerender cost.
- *
- * @param previous Existing session-attempt event history.
- * @param payload Newly received bootstrap, runtime, or helper event.
- * @returns Bounded event history with the latest payload appended.
- */
-const appendRemoteEnhancementsDebugEvent = (
-  previous: RemoteEnhancementsDebugEvent[],
-  payload: RemoteEnhancementsDebugEvent['payload'],
-): RemoteEnhancementsDebugEvent[] => {
-  return [
-    ...previous.slice(-(REMOTE_ENHANCEMENTS_DEBUG_EVENT_MAX_COUNT - 1)),
-    {
-      receivedAt: Date.now(),
-      payload,
-    },
-  ];
-};
 
 type UseSshPrimarySessionParams = {
   tabId: string;
@@ -75,30 +47,27 @@ type UseSshPrimarySessionParams = {
   primaryWebglAddonRuntimeRef: React.RefObject<TerminalWebglAddonRuntime>;
   primaryPaneIdRef: React.RefObject<string>;
   activePaneIdRef: React.RefObject<string>;
+  paneRuntimeMapRef: React.RefObject<Map<string, TerminalPaneRuntime>>;
   primarySocketRef: React.RefObject<WebSocket | null>;
   socketRef: React.RefObject<WebSocket | null>;
   resolvedTerminalTargetRef: React.RefObject<ResolvedTerminalTarget | null>;
   sshConnectionTimeoutSecRef: React.RefObject<number>;
-  sshReconnectOnFocusRef: React.RefObject<boolean>;
   terminalClipboardProvider: TerminalClipboardProvider;
   terminalInlineImageSettingsRef: React.RefObject<TerminalInlineImageSettings>;
   terminalWebLinksSettingsRef: React.RefObject<TerminalWebLinksSettings>;
   openExternalLinkRef: React.RefObject<TerminalExternalLinkHandler>;
   scheduleFitAndResizeSyncRef: React.RefObject<(() => void) | null>;
-  connectSessionRef: React.RefObject<(() => void) | null>;
   selectionPointerClientXRef: React.RefObject<number | null>;
   onTabTitleChangeRef: React.RefObject<((title: string) => void) | undefined>;
   onTabVisualChangeRef: React.RefObject<
     ((visual: { iconKey: TabIconKey; iconColorKey?: TabIconColorKey }) => void) | undefined
   >;
-  setConnectionState: React.Dispatch<React.SetStateAction<'connecting' | 'connected' | 'failed'>>;
-  setConnectionError: React.Dispatch<React.SetStateAction<string>>;
-  setTelemetryState: React.Dispatch<React.SetStateAction<SshTelemetryState>>;
-  setRemoteBootstrapStatus: React.Dispatch<
-    React.SetStateAction<Extract<ServerInboundMessage, { type: 'bootstrap-status' }> | null>
-  >;
-  setRemoteEnhancementRuntimeStatus: React.Dispatch<React.SetStateAction<RemoteEnhancementRuntimeStatus | null>>;
-  setRemoteEnhancementsDebugEvents: React.Dispatch<React.SetStateAction<RemoteEnhancementsDebugEvent[]>>;
+  resetPaneState: (paneId: string) => void;
+  setPaneTransportState: (paneId: string, state: 'connecting' | 'connected' | 'failed', error?: string) => void;
+  setSessionTargetReady: (ready: boolean) => void;
+  handlePaneServerMessage: (paneId: string, terminal: Terminal, payload: ServerInboundMessage) => void;
+  recordPaneInputCommandMarker: (paneId: string, inputData: string) => void;
+  refreshCommandTimeline: () => void;
   requestHostFingerprintTrust: (prompt: {
     serverId: string;
     host: string;
@@ -111,14 +80,8 @@ type UseSshPrimarySessionParams = {
   onTerminalSelectionChange: (selectionText: string) => void;
   clearSelectionOverlay: () => void;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
-  notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
-  scheduleAutocompleteRequestRef: React.RefObject<(trigger: 'typing' | 'manual' | 'secretPrompt') => void>;
   handleAutocompleteTerminalKeyDownRef: React.RefObject<(event: KeyboardEvent) => void>;
-  handleCompletionResponse: (
-    payload: Extract<ServerInboundMessage, { type: 'completion-response' }>,
-    paneId: string,
-  ) => void;
   notifyHardwareAccelerationContextLoss: () => void;
 };
 
@@ -145,37 +108,33 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     primaryWebglAddonRuntimeRef,
     primaryPaneIdRef,
     activePaneIdRef,
+    paneRuntimeMapRef,
     primarySocketRef,
     socketRef,
     resolvedTerminalTargetRef,
     sshConnectionTimeoutSecRef,
-    sshReconnectOnFocusRef,
     terminalClipboardProvider,
     terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
     openExternalLinkRef,
     scheduleFitAndResizeSyncRef,
-    connectSessionRef,
     selectionPointerClientXRef,
     onTabTitleChangeRef,
     onTabVisualChangeRef,
-    setConnectionState,
-    setConnectionError,
-    setTelemetryState,
-    setRemoteBootstrapStatus,
-    setRemoteEnhancementRuntimeStatus,
-    setRemoteEnhancementsDebugEvents,
+    resetPaneState,
+    setPaneTransportState,
+    setSessionTargetReady,
+    handlePaneServerMessage,
+    recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     requestHostFingerprintTrust,
     setActivePane,
     refreshSelectionAnchor,
     onTerminalSelectionChange,
     clearSelectionOverlay,
     applyAutocompleteInputData,
-    notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
-    scheduleAutocompleteRequestRef,
     handleAutocompleteTerminalKeyDownRef,
-    handleCompletionResponse,
     notifyHardwareAccelerationContextLoss,
   } = params;
 
@@ -184,7 +143,6 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   const tabIdRef = React.useRef<string>(tabId);
   const onConnectionIntentChangeRef = React.useRef<(nextIntent: SshConnectionIntent) => void>(onConnectionIntentChange);
   const onTerminalSelectionChangeRef = React.useRef<(selectionText: string) => void>(onTerminalSelectionChange);
-  const resumeConnectRef = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
     isActiveRef.current = isActive;
@@ -207,6 +165,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
   }, [onTerminalSelectionChange]);
 
   React.useEffect(() => {
+    const paneId = primaryPaneIdRef.current;
     const terminal = createTerminalInstance(
       terminalInitOptionsRef.current,
       characterWidthCompatibilityModeEnabledRef.current,
@@ -293,6 +252,39 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     let lastSyncedCols: number | null = null;
     let lastSyncedRows: number | null = null;
     let fitFrameId: number | null = null;
+    const paneRuntime: TerminalPaneRuntime = {
+      owner: 'primary',
+      terminal,
+      fitAddon,
+      searchAddon,
+      serializeAddon,
+      clipboardProvider: terminalClipboardProvider,
+      webglAddon: addonRuntime.webglAddon,
+      containerElement,
+      socket: null,
+      sessionId: null,
+      sessionType: null,
+      pendingCommandMarkers: [],
+      commandMarkers: [],
+      refreshCommandTimeline,
+      reconnect: () => undefined,
+      dispose: () => undefined,
+    };
+    paneRuntimeMapRef.current.set(paneId, paneRuntime);
+    refreshCommandTimeline();
+
+    /**
+     * Refreshes declarative timeline geometry only while this pane owns markers.
+     *
+     * @returns Nothing.
+     */
+    const refreshRuntimeCommandTimeline = (): void => {
+      if (paneRuntime.pendingCommandMarkers.length === 0 && paneRuntime.commandMarkers.length === 0) {
+        return;
+      }
+
+      refreshCommandTimeline();
+    };
 
     const isStaleAttempt = (attemptId: number): boolean => {
       return disposed || attemptId !== connectAttemptId;
@@ -361,76 +353,9 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
       try {
         const payload = JSON.parse(event.data) as ServerInboundMessage;
-
-        if (payload.type === 'output') {
-          terminal.write(payload.data);
-          notifyAutocompleteOutputEchoRef.current(primaryPaneIdRef.current);
-          if (SECRET_PROMPT_PATTERN.test(payload.data.trimEnd())) {
-            scheduleAutocompleteRequestRef.current('secretPrompt');
-          }
-          return;
-        }
-
-        if (payload.type === 'error') {
-          setConnectionState('failed');
-          setConnectionError(payload.message);
-          return;
-        }
-
-        if (payload.type === 'exit') {
-          setConnectionState('failed');
-          setConnectionError(payload.reason);
-          return;
-        }
-
-        if (payload.type === 'ready') {
-          return;
-        }
-
-        if (payload.type === 'telemetry') {
-          setTelemetryState({
-            cpuUsagePercent: payload.cpuUsagePercent,
-            memoryUsedBytes: payload.memoryUsedBytes,
-            memoryTotalBytes: payload.memoryTotalBytes,
-            networkRxBytesPerSec: payload.networkRxBytesPerSec,
-            networkTxBytesPerSec: payload.networkTxBytesPerSec,
-            recentCommands: payload.recentCommands,
-          });
-          return;
-        }
-
-        if (payload.type === 'history') {
-          setTelemetryState((previous) => ({
-            ...previous,
-            recentCommands: payload.recentCommands,
-          }));
-          return;
-        }
-
-        if (payload.type === 'bootstrap-status') {
-          setRemoteBootstrapStatus(payload);
-          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
-          return;
-        }
-
-        if (payload.type === 'remote-enhancement-runtime-status') {
-          setRemoteEnhancementRuntimeStatus(payload);
-          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
-          return;
-        }
-
-        if (payload.type === 'remote-shell-event') {
-          setRemoteEnhancementsDebugEvents((previous) => appendRemoteEnhancementsDebugEvent(previous, payload));
-          return;
-        }
-
-        if (payload.type === 'completion-response') {
-          handleCompletionResponse(payload, primaryPaneIdRef.current);
-          return;
-        }
+        handlePaneServerMessage(paneId, terminal, payload);
       } catch {
-        setConnectionState('failed');
-        setConnectionError(t('ssh.websocketMalformedMessage'));
+        setPaneTransportState(paneId, 'failed', t('ssh.websocketMalformedMessage'));
       }
     };
 
@@ -445,12 +370,9 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         connectAttemptId += 1;
         const attemptId = connectAttemptId;
 
-        setConnectionState('connecting');
-        setConnectionError('');
-        setTelemetryState(DEFAULT_TELEMETRY_STATE);
-        setRemoteBootstrapStatus(null);
-        setRemoteEnhancementRuntimeStatus(null);
-        setRemoteEnhancementsDebugEvents([]);
+        resetPaneState(paneId);
+        setPaneTransportState(paneId, 'connecting');
+        setSessionTargetReady(false);
 
         const activeIntent = connectionIntentRef.current;
         if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
@@ -515,8 +437,11 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         sessionType = openedSession.sessionType;
         sessionId = openedSession.sessionId;
         socket = openedSession.socket;
+        paneRuntime.sessionType = sessionType;
+        paneRuntime.sessionId = sessionId;
+        paneRuntime.socket = socket;
         primarySocketRef.current = socket;
-        if (activePaneIdRef.current === primaryPaneIdRef.current) {
+        if (activePaneIdRef.current === paneId) {
           socketRef.current = socket;
         }
         socket.addEventListener('message', (event) => {
@@ -532,8 +457,8 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
             return;
           }
 
-          setConnectionState('connected');
-          setConnectionError('');
+          setPaneTransportState(paneId, 'connected');
+          setSessionTargetReady(true);
           scheduleFitAndResizeSync();
         });
 
@@ -543,12 +468,12 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           }
 
           primarySocketRef.current = null;
-          if (activePaneIdRef.current === primaryPaneIdRef.current) {
+          paneRuntime.socket = null;
+          if (activePaneIdRef.current === paneId) {
             socketRef.current = null;
           }
 
-          setConnectionState('failed');
-          setConnectionError(t('ssh.websocketClosed'));
+          setPaneTransportState(paneId, 'failed', t('ssh.websocketClosed'));
         });
 
         socket.addEventListener('error', () => {
@@ -557,12 +482,12 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           }
 
           primarySocketRef.current = null;
-          if (activePaneIdRef.current === primaryPaneIdRef.current) {
+          paneRuntime.socket = null;
+          if (activePaneIdRef.current === paneId) {
             socketRef.current = null;
           }
 
-          setConnectionState('failed');
-          setConnectionError(t('ssh.websocketTransportFailed'));
+          setPaneTransportState(paneId, 'failed', t('ssh.websocketTransportFailed'));
         });
       } catch (error: unknown) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -570,8 +495,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         }
 
         const message = error instanceof Error ? error.message : t('ssh.sessionInitFailed');
-        setConnectionState('failed');
-        setConnectionError(message);
+        setPaneTransportState(paneId, 'failed', message);
         console.warn('[ssh][connect] Failed to initialize SSH session.', {
           tabId: tabIdRef.current,
           mode,
@@ -588,15 +512,16 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     containerElement.addEventListener('pointerup', trackPointerPosition);
     containerElement.addEventListener('mouseup', trackPointerPosition);
     const disposeTerminalInput = terminal.onData((data) => {
-      if (activePaneIdRef.current !== primaryPaneIdRef.current) {
-        setActivePane(primaryPaneIdRef.current);
+      if (activePaneIdRef.current !== paneId) {
+        setActivePane(paneId);
       }
 
       if (disposed) {
         return;
       }
 
-      const autocompleteInputState = applyAutocompleteInputData(primaryPaneIdRef.current, data);
+      recordPaneInputCommandMarker(paneId, data);
+      const autocompleteInputState = applyAutocompleteInputData(paneId, data);
       if (autocompleteInputState.shouldClose) {
         closeAutocompleteRef.current();
       }
@@ -620,6 +545,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     });
     const disposeSelectionScroll = terminal.onScroll(() => {
       refreshSelectionAnchor();
+      refreshRuntimeCommandTimeline();
     });
     const disposeSelectionRender = terminal.onRender(() => {
       if (!terminal.hasSelection()) {
@@ -628,26 +554,32 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
 
       refreshSelectionAnchor();
     });
+    const disposeCommandTimelineWrite = terminal.onWriteParsed(refreshRuntimeCommandTimeline);
+    const disposeCommandTimelineBuffer = terminal.buffer.onBufferChange(() => {
+      refreshRuntimeCommandTimeline();
+    });
+    const disposeCommandTimelineResize = terminal.onResize(refreshRuntimeCommandTimeline);
     const handleWindowResize = (): void => {
       refreshSelectionAnchor();
     };
     window.addEventListener('resize', handleWindowResize);
     refreshSelectionAnchor();
 
-    connectSessionRef.current = () => {
+    const reconnectPane = (): void => {
       const mode = resolveConnectMode(connectionIntentRef.current, 'retry');
       void connectSession(mode);
     };
-    resumeConnectRef.current = () => {
-      const mode = resolveConnectMode(connectionIntentRef.current, 'retry');
-      void connectSession(mode);
-    };
+    paneRuntime.reconnect = reconnectPane;
 
     if (isActiveRef.current) {
       void connectSession('initial');
     }
 
-    return () => {
+    const disposeRuntime = (): void => {
+      if (disposed) {
+        return;
+      }
+
       disposed = true;
       connectAbortController?.abort();
 
@@ -670,8 +602,12 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         // Ignore websocket close race conditions.
       }
 
-      primarySocketRef.current = null;
-      socketRef.current = null;
+      if (primarySocketRef.current === socket) {
+        primarySocketRef.current = null;
+      }
+      if (activePaneIdRef.current === paneId && socketRef.current === socket) {
+        socketRef.current = null;
+      }
 
       if (sessionId) {
         if (sessionType === 'local-terminal') {
@@ -681,21 +617,41 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         }
       }
 
-      connectSessionRef.current = null;
-      resumeConnectRef.current = null;
       scheduleFitAndResizeSyncRef.current = null;
-      primaryTerminalRef.current = null;
-      primarySearchAddonRef.current = null;
-      primarySerializeAddonRef.current = null;
+      if (primaryTerminalRef.current === terminal) {
+        primaryTerminalRef.current = null;
+      }
+      if (primarySearchAddonRef.current === searchAddon) {
+        primarySearchAddonRef.current = null;
+      }
+      if (primarySerializeAddonRef.current === serializeAddon) {
+        primarySerializeAddonRef.current = null;
+      }
       primaryWebglAddonRuntimeRef.current = { webglAddon: null };
-      terminalRef.current = null;
-      terminalClipboardProvider.setActiveTarget(null);
+      if (terminalRef.current === terminal) {
+        terminalRef.current = null;
+      }
+      if (paneRuntimeMapRef.current.get(paneId) === paneRuntime) {
+        paneRuntimeMapRef.current.delete(paneId);
+      }
+      if (paneRuntimeMapRef.current.size === 0) {
+        terminalClipboardProvider.setActiveTarget(null);
+      }
+      paneRuntime.socket = null;
+      paneRuntime.sessionId = null;
+      paneRuntime.sessionType = null;
+      paneRuntime.reconnect = () => undefined;
+      clearTerminalCommandMarkers(paneRuntime);
+      paneRuntime.refreshCommandTimeline = () => undefined;
       selectionPointerClientXRef.current = null;
       clearSelectionOverlay();
       disposeTerminalInput.dispose();
       disposeSelectionChange.dispose();
       disposeSelectionScroll.dispose();
       disposeSelectionRender.dispose();
+      disposeCommandTimelineWrite.dispose();
+      disposeCommandTimelineBuffer.dispose();
+      disposeCommandTimelineResize.dispose();
       containerElement.removeEventListener('pointerup', trackPointerPosition);
       containerElement.removeEventListener('mouseup', trackPointerPosition);
       containerElement.removeEventListener('keydown', handleAutocompleteKeyDown, true);
@@ -703,18 +659,19 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       disposeResize();
       terminal.dispose();
     };
+    paneRuntime.dispose = disposeRuntime;
+
+    return disposeRuntime;
   }, [
     activePaneIdRef,
     applyAutocompleteInputData,
     characterWidthCompatibilityModeEnabledRef,
     clearSelectionOverlay,
     closeAutocompleteRef,
-    connectSessionRef,
+    handlePaneServerMessage,
     handleAutocompleteTerminalKeyDownRef,
-    handleCompletionResponse,
     hardwareAccelerationStateRef,
     openExternalLinkRef,
-    notifyAutocompleteOutputEchoRef,
     notifyHardwareAccelerationContextLoss,
     onTabTitleChangeRef,
     onTabVisualChangeRef,
@@ -724,19 +681,18 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     primarySearchAddonRef,
     primarySerializeAddonRef,
     primaryWebglAddonRuntimeRef,
+    paneRuntimeMapRef,
+    recordPaneInputCommandMarker,
+    refreshCommandTimeline,
     refreshSelectionAnchor,
+    resetPaneState,
     requestHostFingerprintTrust,
     resolvedTerminalTargetRef,
-    scheduleAutocompleteRequestRef,
     scheduleFitAndResizeSyncRef,
     selectionPointerClientXRef,
     setActivePane,
-    setConnectionError,
-    setConnectionState,
-    setRemoteEnhancementRuntimeStatus,
-    setRemoteEnhancementsDebugEvents,
-    setRemoteBootstrapStatus,
-    setTelemetryState,
+    setPaneTransportState,
+    setSessionTargetReady,
     socketRef,
     sshConnectionTimeoutSecRef,
     terminalContainerRef,
@@ -746,20 +702,4 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     terminalInlineImageSettingsRef,
     terminalWebLinksSettingsRef,
   ]);
-
-  React.useEffect(() => {
-    if (!isActive) {
-      return;
-    }
-
-    if (primarySocketRef.current) {
-      return;
-    }
-
-    if (!sshReconnectOnFocusRef.current) {
-      return;
-    }
-
-    resumeConnectRef.current?.();
-  }, [isActive, primarySocketRef, sshReconnectOnFocusRef]);
 };

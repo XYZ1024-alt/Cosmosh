@@ -80,6 +80,7 @@ export interface SettingsValues {
   terminalHardwareAccelerationEnabled: boolean;
   terminalInlineImagesEnabled: boolean;
   terminalInlineImageOptions: TerminalInlineImageOptions;
+  terminalCommandTimelineEnabled: boolean;
   terminalDrawBoldTextInBrightColors: boolean;
   terminalScrollSensitivity: string;
   terminalFastScrollSensitivity: string;
@@ -89,6 +90,7 @@ export interface SettingsValues {
   terminalSmoothScrollDuration: number;
   terminalTabStopWidth: number;
   remoteEnhancementsEnabled: boolean;
+  remoteEnhancementsDebugEnabled: boolean;
   devToolsEnabled: boolean;
   userMenuDebugEntryEnabled: boolean;
   autoSaveEnabled: boolean;
@@ -1015,6 +1017,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     ],
   },
   {
+    key: 'remoteEnhancementsDebugEnabled',
+    valueType: 'boolean',
+    defaultValue: false,
+    nameI18nKey: 'settings.items.remoteEnhancementsDebugEnabled.title',
+    descriptionI18nKey: 'settings.items.remoteEnhancementsDebugEnabled.description',
+    category: SETTINGS_CATEGORIES.advanced,
+    section: SETTINGS_CATEGORIES.advanced.sections.runtime,
+    control: 'switch',
+    path: 'advanced.runtime.remoteEnhancements.debugEnabled',
+    commandActionId: 'settings.advanced.runtime.remoteEnhancements.debugEnabled.toggle',
+    searchTerms: ['remote enhancements debug', 'helper events', 'bootstrap diagnostics', 'shell integration debug'],
+  },
+  {
     key: 'devToolsEnabled',
     valueType: 'boolean',
     defaultValue: false,
@@ -1226,6 +1241,19 @@ export const SETTINGS_REGISTRY: ReadonlyArray<SettingDefinition> = [
     path: 'terminal.runtime.characterWidthCompatibilityMode.enabled',
     commandActionId: 'settings.terminal.runtime.characterWidthCompatibilityMode.enabled.toggle',
     searchTerms: ['terminal', 'unicode 11', 'character width', 'width compatibility', 'alignment'],
+  },
+  {
+    key: 'terminalCommandTimelineEnabled',
+    valueType: 'boolean',
+    defaultValue: true,
+    nameI18nKey: 'settings.items.terminalCommandTimelineEnabled.title',
+    descriptionI18nKey: 'settings.items.terminalCommandTimelineEnabled.description',
+    category: SETTINGS_CATEGORIES.terminal,
+    section: SETTINGS_CATEGORIES.terminal.sections.runtime,
+    control: 'switch',
+    path: 'terminal.runtime.commandTimeline.enabled',
+    commandActionId: 'settings.terminal.runtime.commandTimeline.enabled.toggle',
+    searchTerms: ['terminal', 'command timeline', 'recent commands', 'command history', 'remote enhancements'],
   },
   {
     key: 'terminalWebLinksEnabled',

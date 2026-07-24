@@ -68,6 +68,7 @@ flowchart TB
 - **Role**: React UI layer.
 - **Key folders**:
   - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
+  - `src/pages/ssh`: SSH terminal controllers and pure runtime helpers. `use-ssh-core.ts` coordinates pane routing; primary/secondary hooks own independent session resources; `ssh-pane-state.ts` reduces all pane-scoped transport/helper messages; `ssh-command-markers.ts` owns pending/confirmed xterm marker lifecycles and pane-local command timeline models; `TerminalCommandTimeline.tsx` renders the trusted right-side command rail.
   - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, archive dialogs and archive-action polling, fixed-row virtualization helpers and tests, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing/cancellation, byte-progress presentation, and shared SFTP helpers.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/CloseWindowConfirmationDialog.tsx`: shared Renderer `Dialog` presentation for Main-owned active-session close decisions.
@@ -83,8 +84,8 @@ flowchart TB
 - **Key folders**:
   - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
-  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution) plus shared authenticated connection helpers for shell and non-shell transports. The helper creates fresh proxy sockets per transport and supports attempt-scoped compression and cancellation.
-  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It loads the deployment manifest, probes the remote platform through a temporary SSH transport isolated from the interactive client, validates the installed Go binary's runtime status, injects the download wrapper only for missing/stale installations, returns a trusted helper contract to `SshSessionService`, forwards `bootstrap-status` WS messages, and logs terminal bootstrap outcomes.
+  - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution), the streaming OSC 777 parser/trust gate, structured command lifecycle consumption, and shared authenticated connection helpers for shell and non-shell transports. The helper creates fresh proxy sockets per transport and supports attempt-scoped compression and cancellation.
+  - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It shares concurrent manifest fetches through a five-minute success-only cache, probes the remote platform through a temporary SSH transport isolated from the interactive client, validates installed status, conditionally injects the download wrapper, returns a trusted helper contract, forwards `bootstrap-status`, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
   - `src/sftp`: SFTP browser, download, file-operation, and remote-archive session logic. `session-service.ts` owns session authorization/lifecycle and ordinary `ssh2.sftp` operations; `archive-service.ts` owns fixed POSIX command construction, capability probing, async archive state, staging/commit, conflict merge, cancellation, audit, and cleanup. Single-file transfers retain their existing short-lived byte-progress records.
   - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
@@ -104,6 +105,7 @@ Shared protocol constants, request/response types, OpenAPI source, generated con
 - `src/settings-registry.ts`: **single source of truth** for all settings definitions — types, defaults, constraints, enum sets, UI control metadata, categories, and helper functions. Adding/removing a setting only requires editing this file.
 - `src/settings.ts`: generic, registry-driven validation and normalization helpers (`normalizeSettingsValuesStrict`, `normalizeSettingsValuesWithDefaults`) shared by backend and renderer.
 - `src/sftp.ts`: shared SFTP entry/name ordering helpers consumed by backend session listings and renderer browser/tree views.
+- `src/terminal-protocol.ts`: protocol-v2 terminal WebSocket unions, remote shell event/capability constants, and bootstrap/runtime status types shared by backend and renderer.
 
 ### `packages/i18n`
 
@@ -120,7 +122,7 @@ Go source for the user-scoped remote installer used by Remote Enhancements. This
 - `cmd/cosmosh-wrappergen`: generates shell-specific bootstrap wrappers for `bash`, `zsh`, `fish`, `ash`, and `sh`.
 - `cmd/cosmosh-bootstrap`: installs the downloaded bootstrap binary and Go-generated shell helper into user-scoped remote directories, or reports the validated installed runtime contract.
 - `internal/wrapper`: validates manifest-derived wrapper inputs and renders POSIX/fish shell source with shell-safe quoting.
-- `internal/install`: owns versioned helper generation, OSC protocol/capability declarations, exact helper/binary validation, idempotent user-level installation, profile-hook repair, installed status reporting, version marker writes, and line-delimited `bootstrap-status` output.
+- `internal/install`: owns versioned helper generation, shell-accurate OSC capability declarations, exact helper/binary validation, atomic user-level installation, Bash interactive/login profile coverage, mode/symlink-preserving profile repair, installed status reporting, version marker writes, and line-delimited `bootstrap-status` output.
 
 ## 3. Feature Placement Rules
 

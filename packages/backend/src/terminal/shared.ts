@@ -1,3 +1,4 @@
+import type { TerminalClientMessage } from '@cosmosh/api-contract';
 import type { RawData } from 'ws';
 
 /**
@@ -23,40 +24,7 @@ export const TERMINAL_HISTORY_MAX_ENTRIES = 200;
 /**
  * Browser-to-backend WebSocket contract for interactive terminal streams.
  */
-export type TerminalClientInboundMessage =
-  | {
-      type: 'input';
-      data: string;
-    }
-  | {
-      type: 'resize';
-      cols: number;
-      rows: number;
-    }
-  | {
-      type: 'close';
-    }
-  | {
-      type: 'ping';
-    }
-  | {
-      type: 'history-delete';
-      command: string;
-    }
-  | {
-      type: 'completion-request';
-      requestId: string;
-      linePrefix: string;
-      cursorIndex: number;
-      workingDirectoryHint?: string;
-      limit?: number;
-      fuzzyMatch?: boolean;
-      includeHistory?: boolean;
-      includeBuiltInCommands?: boolean;
-      includePathSuggestions?: boolean;
-      includePasswordSuggestions?: boolean;
-      trigger: 'typing' | 'manual';
-    };
+export type TerminalClientInboundMessage = TerminalClientMessage;
 
 /**
  * Parses a raw WebSocket payload into terminal client contract.

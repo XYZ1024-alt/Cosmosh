@@ -953,12 +953,12 @@ export interface components {
       username: string;
       keychainId: string;
       authType: components['schemas']['SshAuthType'];
-      strictHostKey?: boolean;
-      enableSshCompression?: boolean;
-      remoteEnhancementsEnabled?: boolean;
-      disableCharacterWidthCompatibilityMode?: boolean;
-      terminalClipboardAccess?: components['schemas']['TerminalClipboardAccess'];
-      proxyMode?: components['schemas']['SshServerProxyMode'];
+      strictHostKey: boolean;
+      enableSshCompression: boolean;
+      remoteEnhancementsEnabled: boolean;
+      disableCharacterWidthCompatibilityMode: boolean;
+      terminalClipboardAccess: components['schemas']['TerminalClipboardAccess'];
+      proxyMode: components['schemas']['SshServerProxyMode'];
       proxyUrl?: string;
       hasPassword: boolean;
       hasPrivateKey: boolean;

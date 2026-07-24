@@ -375,6 +375,83 @@ test('RemoteBootstrapService quotes adversarial manifest URLs in fish wrappers',
   assert.doesNotMatch(result.wrapper, /cosmosh-bootstrap-1\.2\.3/);
 });
 
+test('RemoteBootstrapService shares concurrent manifest loads and refreshes after TTL expiry', async () => {
+  let fetchCount = 0;
+  let nowMs = 10_000;
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+    manifestUrl: 'https://downloads.example.test/manifest.json',
+    manifestCacheTtlMs: 5_000,
+    now: () => nowMs,
+    fetchManifest: async () => {
+      fetchCount += 1;
+      await Promise.resolve();
+      return {
+        version: '1.2.3',
+        assets: [
+          {
+            os: 'linux',
+            arch: 'amd64',
+            url: 'https://downloads.example.test/cosmosh-bootstrap-linux-amd64',
+            sha256: TEST_SHA256,
+          },
+        ],
+      };
+    },
+  });
+  const runSession = async (sessionId: string): Promise<void> => {
+    const result = await service.runForSession({
+      serverId: 'server-1',
+      sessionId,
+      executeCommand: async (command) => {
+        if (command.includes('uname -s')) {
+          return '{"os":"linux","arch":"amd64","shell":"bash"}\n';
+        }
+        return installedStatus();
+      },
+      sendStatus: () => undefined,
+    });
+    assert.equal(result.state, 'ready');
+  };
+
+  await Promise.all([runSession('session-1'), runSession('session-2')]);
+  assert.equal(fetchCount, 1);
+
+  await runSession('session-3');
+  assert.equal(fetchCount, 1);
+
+  nowMs += 5_001;
+  await runSession('session-4');
+  assert.equal(fetchCount, 2);
+});
+
+test('RemoteBootstrapService does not cache failed manifest requests', async () => {
+  let fetchCount = 0;
+  const service = new RemoteBootstrapService({
+    auditEventService: createAuditService(),
+    manifestUrl: 'https://downloads.example.test/manifest.json',
+    fetchManifest: async () => {
+      fetchCount += 1;
+      throw new Error('temporary release service failure');
+    },
+  });
+  const runSession = async (sessionId: string): Promise<void> => {
+    const result = await service.runForSession({
+      serverId: 'server-1',
+      sessionId,
+      executeCommand: async () => {
+        throw new Error('remote probe must not run after manifest failure');
+      },
+      sendStatus: () => undefined,
+    });
+    assert.equal(result.state, 'disabled');
+  };
+
+  await runSession('session-1');
+  await runSession('session-2');
+  assert.equal(fetchCount, 2);
+});
+
 test('RemoteBootstrapService propagates a session budget abort without reporting a probe failure', async () => {
   const statuses: RemoteBootstrapStatus[] = [];
   const abortController = new AbortController();

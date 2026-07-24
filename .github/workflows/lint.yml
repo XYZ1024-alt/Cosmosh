@@ -30,3 +30,7 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Run lint
         run: pnpm -r lint
+      - name: Run renderer tests
+        run: pnpm --filter @cosmosh/renderer test:ssh
+      - name: Run backend tests
+        run: pnpm --filter @cosmosh/backend test:ssh-session

@@ -13,7 +13,7 @@ The module exists so Cosmosh can add remote-side capabilities without pushing pr
 - Emits line-delimited `bootstrap-status` JSON so the backend can forward progress over the SSH WebSocket.
 - Installs first-phase shell integration hooks that can emit runtime shell state over Cosmosh OSC 777 from the interactive PTY.
 - Reports installed version, binary SHA-256, protocol, capabilities, helper integrity, and profile-hook integrity through `status`.
-- Keeps installation idempotent by comparing the installed version, exact binary/helper contents, and shell hook before rewriting files.
+- Keeps installation idempotent by comparing the installed version, exact binary/helper contents, and every required shell hook before rewriting files.
 
 ## What This Module Does Not Do
 
@@ -56,7 +56,7 @@ sequenceDiagram
   SSH-->>UI: Forward bootstrap and runtime status over SSH WebSocket
 ```
 
-The interactive terminal transport is separate from the bootstrap side channel, not only its output stream. `SshSessionService` authenticates the primary client first, then lazily creates a temporary client only if `RemoteBootstrapService` requests a remote command. The temporary client reuses the same credential, host-key, compression, and proxy policy but receives its own proxy socket; all bounded `ssh2 exec` work stays on that client, and backend begins its teardown before the primary opens its first channel through `shell()`. Actual socket closure may complete asynchronously. This preserves OpenSSH/PAM login messages such as Debian MOTD while allowing a newly installed profile hook to load immediately. The complete optional pre-PTY ensure stays behind a shared 15-second budget; expiry stops waiting for proxy preparation, aborts active manifest/exec I/O, destroys the temporary client, and opens an ordinary PTY with Remote Enhancements disabled. Installer output is parsed as JSON lines and never enters the xterm stream.
+The interactive terminal transport is separate from the bootstrap side channel, not only its output stream. `SshSessionService` authenticates the primary client first, then lazily creates a temporary client only if `RemoteBootstrapService` requests a remote command. The temporary client reuses the same credential, host-key, compression, and proxy policy but receives its own proxy socket; all bounded `ssh2 exec` work stays on that client, and backend begins its teardown before the primary opens its first channel through `shell()`. Actual socket closure may complete asynchronously. This preserves OpenSSH/PAM login messages such as Debian MOTD while allowing a newly installed profile hook to load immediately. The complete optional pre-PTY ensure stays behind a shared 15-second budget; expiry stops waiting for proxy preparation, aborts active session work, destroys the temporary client, and opens an ordinary PTY with Remote Enhancements disabled. Validated manifests use a five-minute success-only cache and concurrent sessions share one in-flight request; cancelling one session does not cancel that shared request for other waiters. Installer output is parsed as JSON lines and never enters the xterm stream.
 
 ## Directory Layout
 
@@ -85,7 +85,7 @@ packages/remote-bootstrap/
 
 ## Supported Targets
 
-Remote Bootstrap v1 supports Linux hosts only:
+The current Remote Bootstrap target matrix supports Linux hosts only:
 
 | Dimension | Supported values |
 | --- | --- |
@@ -147,7 +147,7 @@ The installer writes only inside the remote user's home/XDG scope:
 | Version marker | `$XDG_DATA_HOME/cosmosh/bootstrap/bin/.version` or `~/.local/share/cosmosh/bootstrap/bin/.version` |
 | POSIX helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.sh` or `~/.config/cosmosh/bootstrap/helper.sh` |
 | Fish helper | `$XDG_CONFIG_HOME/cosmosh/bootstrap/helper.fish` or `~/.config/cosmosh/bootstrap/helper.fish` |
-| Bash profile hook | `~/.bashrc` |
+| Bash profile hooks | `~/.bashrc` plus the active login profile: `~/.bash_profile`, else `~/.bash_login`, else `~/.profile` |
 | Zsh profile hook | `~/.zshrc` |
 | Sh/Ash profile hook | `~/.profile` |
 | Fish profile hook | `$XDG_CONFIG_HOME/fish/conf.d/cosmosh.fish` or `~/.config/fish/conf.d/cosmosh.fish` |
@@ -156,10 +156,12 @@ POSIX shell hooks are kept inside a Cosmosh marker block:
 
 ```sh
 # >>> cosmosh bootstrap >>>
-export PATH="/home/user/.local/share/cosmosh/bootstrap/bin":$PATH
-. "/home/user/.config/cosmosh/bootstrap/helper.sh"
+case :$PATH: in *:"/home/user/.local/share/cosmosh/bootstrap/bin":*) ;; *) export PATH="/home/user/.local/share/cosmosh/bootstrap/bin":$PATH ;; esac
+if [ -n "${BASH_VERSION:-}" ] && [ -r "/home/user/.config/cosmosh/bootstrap/helper.sh" ]; then . "/home/user/.config/cosmosh/bootstrap/helper.sh"; fi
 # <<< cosmosh bootstrap <<<
 ```
+
+The `BASH_VERSION` guard is used in Bash profile blocks, including a shared `.profile`, so Dash/Sh readers do not source a Bash-specific helper. Zsh/Sh/Ash blocks use the corresponding shell helper without that Bash guard.
 
 Fish uses a dedicated `conf.d/cosmosh.fish` file:
 
@@ -176,16 +178,24 @@ The installed helper is the user-scoped runtime boundary for shell-state events.
 ESC ] 777 ; cosmosh ; <base64-json> BEL
 ```
 
-First-phase behavior:
+Current protocol v2 behavior:
 
-- Bash preserves any existing `PROMPT_COMMAND`, appends a Cosmosh prompt hook for `cwd`, `prompt-ready`, and previous-command `command-end` exit code, and uses a guarded `DEBUG` trap for one `command-start` and one `foreground-command` per submitted command line. Scalar prompt hooks execute behind a separate evaluation boundary, so trailing separators such as `history -a;` cannot create malformed outer syntax.
-- Zsh uses `precmd`, `preexec`, and `chpwd`, preferring `add-zsh-hook` when available so existing hook functions remain in the chain.
+| Shell | Advertised capabilities |
+| --- | --- |
+| Bash | `cwd`, `command-start`, `command-end`, `foreground-command`, `prompt-ready` |
+| Zsh | Bash capability set plus `line-state` |
+| Fish | `cwd`, `command-start`, `command-end`, `foreground-command`, `prompt-ready` |
+| Sh/Ash | `cwd`, `prompt-ready` |
+
+- Bash preserves existing `PROMPT_COMMAND`, emits prompt/cwd state, and uses a guarded `DEBUG` trap for one command start per submitted line. Command end carries the same `commandId`, exit code, and measured duration.
+- Zsh uses `precmd`, `preexec`, and `chpwd`, plus `line-pre-redraw` for numeric line-length/cursor calibration. All required hooks must register before the helper announces readiness.
 - Fish uses `fish_preexec`, `fish_prompt`, `fish_postexec`, and `PWD` variable events.
-- Sh/Ash only install prompt-based degraded hooks for `cwd`, `prompt-ready`, and `command-end`; they do not claim precise preexec behavior.
+- Sh/Ash use a prompt-capture fallback and intentionally do not claim command lifecycle events.
+- Every shell emits `integration-ready` only after its advertised hooks are installed, and non-interactive shells emit no OSC events.
 
-Every event includes `helperVersion`, integer `protocolVersion`, and the helper's bounded `capabilities` list. The backend accepts no helper event until an `integration-ready` event matches the exact contract returned by `cosmosh-bootstrap status` before the interactive shell was opened.
+Every event includes `helperVersion`, integer `protocolVersion`, and the helper's bounded `capabilities` list. The backend accepts no helper event until `integration-ready` matches the exact contract returned by `cosmosh-bootstrap status`. Event names must be advertised; command events require a bounded `commandId`, and `command-end` requires exit code and duration. Dynamic cwd and command strings are canonical Base64 fields inside the JSON envelope so valid tabs, newlines, quotes, and backslashes cannot corrupt JSON. Shared desktop types and protocol constants live in `packages/api-contract/src/terminal-protocol.ts`.
 
-The helper must not capture passwords, private keys, terminal line buffers, full screen output, or native shell completion lists. `command-start` and `foreground-command` are emitted for every submitted command that can be reduced to an executable name, and they carry only that sanitized executable name, not the full submitted command line or arguments.
+The helper must not capture passwords, private keys, terminal line-buffer contents, full screen output, or native shell completion lists. Command events carry only a sanitized executable name, never the submitted arguments. Zsh `line-state` carries only length, cursor index, and prompt generation.
 
 ## Idempotency and Repair Behavior
 
@@ -194,9 +204,9 @@ The helper must not capture passwords, private keys, terminal line buffers, full
 - `.version` matches the requested version.
 - The installed binary exactly matches the executing installer.
 - The shell helper exactly matches the Go-generated helper for that shell and version.
-- The expected shell profile hook exists.
+- Every expected shell profile hook exists. Bash requires both `.bashrc` and its selected login profile.
 
-If the version and files exist but the profile hook was removed or edited, the installer repairs the hook instead of skipping. The version marker is written only after files and profile updates succeed, which prevents a failed profile write from being mistaken for a complete install.
+If the version and files exist but a profile hook was removed or edited, the installer repairs it instead of skipping. Binary, helper, version, and profile writes use same-directory temporary files plus atomic rename. Existing profile permissions and symlink targets are preserved. The version marker is written only after all files and profile updates succeed, which prevents a partial install from being mistaken for complete.
 
 Before downloading an asset, backend invokes the installed binary's `status --shell <shell>` command. Download is skipped only when the reported version and binary SHA-256 match the selected manifest asset and the protocol, helper, and profile checks are current. Missing fields from an older binary are treated as incompatible and trigger reinstall. After install, backend reads `status` again before it allows the interactive shell to start.
 
@@ -216,7 +226,7 @@ Supported phases are `probe`, `manifest`, `download`, `install`, and `verify`. S
 `cosmosh-bootstrap status` emits one separate JSON object describing the installed runtime contract:
 
 ```json
-{"installed":true,"version":"1.2.3","protocolVersion":1,"capabilities":["cwd","command-start","command-end","foreground-command","prompt-ready"],"helperCurrent":true,"profileCurrent":true,"binarySha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","binaryPath":"/home/user/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap","helperPath":"/home/user/.config/cosmosh/bootstrap/helper.sh","profilePath":"/home/user/.bashrc"}
+{"installed":true,"version":"1.2.3","protocolVersion":2,"capabilities":["cwd","command-start","command-end","foreground-command","prompt-ready"],"helperCurrent":true,"profileCurrent":true,"binarySha256":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","binaryPath":"/home/user/.local/share/cosmosh/bootstrap/bin/cosmosh-bootstrap","helperPath":"/home/user/.config/cosmosh/bootstrap/helper.sh","profilePath":"/home/user/.bashrc","profilePaths":["/home/user/.bashrc","/home/user/.profile"]}
 ```
 
 Common failure codes include:
@@ -246,7 +256,7 @@ Common failure codes include:
 - Manifest fields are treated as quoted data, never shell source.
 - Wrapper tests include adversarial version and URL cases with line breaks, shell metacharacters, and command substitutions.
 - Temporary files are created under `${TMPDIR:-/tmp}` with `mktemp`.
-- `umask 077` and `0700`/`0600` file modes keep bootstrap files user-private.
+- `umask 077` and `0700`/`0600` default modes keep new bootstrap files user-private; atomic profile repair retains an existing profile's mode.
 - Temporary wrapper/download directories are cleaned up on exit, interrupt, and termination signals.
 - The installer does not require root and does not write outside the remote user's home/XDG paths.
 - Bootstrap exec channels are confined to a temporary SSH transport. Its decrypted completion secret is discarded, and success, failure, or timeout starts teardown before the primary client opens its interactive PTY; lifecycle guards remain attached until actual close.
@@ -302,7 +312,7 @@ Use this checklist when expanding the remote helper:
 
 1. Keep the remote behavior user-scoped and non-root.
 2. Add or update tests in `internal/install` or `internal/wrapper`.
-3. Increment `RemoteShellProtocolVersion` for incompatible event-shape changes and keep status/event capability declarations synchronized.
+3. Increment `RemoteShellProtocolVersion` for incompatible event-shape changes and keep Go declarations synchronized with `packages/api-contract/src/terminal-protocol.ts`.
 4. Preserve the `bootstrap-status` JSON-line contract.
 5. Keep manifest fields validated and shell-quoted before execution.
 6. Update `docs/developer/runtime/ssh-terminal.md` and the Chinese mirror under `docs/zh-CN/`.

@@ -9,6 +9,7 @@ import { type BackendHttpApp, getTranslator, registerI18nMiddleware } from './i1
 import type { BackendAppContext } from './types.js';
 
 const DEFAULT_RENDERER_DEV_PORT = 2767;
+const DEFAULT_RENDERER_DEV_HOST = '127.0.0.1';
 
 /**
  * Resolves renderer dev origin port used by local CORS policy.
@@ -44,7 +45,7 @@ const isValidInternalToken = (providedToken: string | undefined, expectedToken: 
  * Registers cross-cutting middleware: logging, CORS, and secure local auth guard.
  */
 export const registerCommonMiddleware = (app: BackendHttpApp, context: BackendAppContext): void => {
-  const rendererDevOrigin = `http://localhost:${resolveRendererDevPort()}`;
+  const rendererDevOrigin = `http://${DEFAULT_RENDERER_DEV_HOST}:${resolveRendererDevPort()}`;
 
   registerI18nMiddleware(app);
   app.use('*', logger());

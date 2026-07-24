@@ -96,6 +96,7 @@ const mainProcessMessages = createMessages({
   en: { main: mainEn },
   'zh-CN': { main: mainZhCN },
 });
+const DEFAULT_RENDERER_DEV_HOST = '127.0.0.1';
 const DEFAULT_RENDERER_DEV_PORT = 2767;
 const MACOS_CLI_COMMAND_NAME = 'cosmosh';
 const MACOS_CLI_PREFERRED_LINK_DIRS = ['/opt/homebrew/bin', '/usr/local/bin'] as const;
@@ -375,6 +376,13 @@ const resolveRendererDevPort = (): number => {
 
   return candidate;
 };
+
+/**
+ * Resolves the loopback URL shared by Electron and the renderer development server.
+ *
+ * @returns Renderer development URL with the configured port.
+ */
+const resolveRendererDevUrl = (): string => `http://${DEFAULT_RENDERER_DEV_HOST}:${resolveRendererDevPort()}`;
 
 /**
  * Creates the i18n instance used by main-process UI surfaces.
@@ -1395,7 +1403,7 @@ const confirmConnectionClose = async (): Promise<boolean> => {
 const resolveTrustedRendererWindowOpenTarget = (isDev: boolean): TrustedRendererWindowOpenTarget => {
   if (isDev) {
     return {
-      origin: new URL(`http://localhost:${resolveRendererDevPort()}`).origin,
+      origin: new URL(resolveRendererDevUrl()).origin,
     };
   }
 
@@ -1554,7 +1562,7 @@ const createWindow = async (): Promise<void> => {
 
   // Load renderer based on environment
   if (isDev) {
-    await mainWindow.loadURL(`http://localhost:${resolveRendererDevPort()}`);
+    await mainWindow.loadURL(resolveRendererDevUrl());
     mainWindow.webContents.openDevTools();
   } else {
     const rendererEntryPath = path.join(process.resourcesPath, 'renderer', 'index.html');

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
 
+import type { TerminalServerMessage } from '@cosmosh/api-contract';
 import { type IPty, spawn as spawnPty } from 'node-pty';
 import { type RawData } from 'ws';
 
@@ -85,48 +86,7 @@ type CreateLocalTerminalSessionResult =
       message: string;
     };
 
-type ServerOutboundMessage =
-  | {
-      type: 'ready';
-    }
-  | {
-      type: 'output';
-      data: string;
-    }
-  | {
-      type: 'error';
-      message: string;
-    }
-  | {
-      type: 'exit';
-      reason: string;
-    }
-  | {
-      type: 'pong';
-    }
-  | {
-      type: 'telemetry';
-      cpuUsagePercent: number | null;
-      memoryUsedBytes: number | null;
-      memoryTotalBytes: number | null;
-      networkRxBytesPerSec: number | null;
-      networkTxBytesPerSec: number | null;
-      recentCommands: string[];
-    }
-  | {
-      type: 'completion-response';
-      requestId: string;
-      replacePrefixLength: number;
-      items: Array<{
-        id: string;
-        label: string;
-        insertText: string;
-        detail: string | null;
-        source: 'history' | 'inshellisense' | 'runtime';
-        kind: 'command' | 'subcommand' | 'option' | 'history' | 'path' | 'secret';
-        score: number;
-      }>;
-    };
+type ServerOutboundMessage = TerminalServerMessage;
 
 type LocalLiveSession = TerminalManagedSessionBase & {
   profileId: string;

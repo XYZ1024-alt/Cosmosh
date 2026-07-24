@@ -1,6 +1,6 @@
 import type { ITerminalOptions, Terminal } from '@xterm/xterm';
 
-import type { ClientOutboundMessage, TerminalSelectionSettings } from './ssh-types';
+import type { ClientOutboundMessage, TerminalPaneRuntime, TerminalSelectionSettings } from './ssh-types';
 
 const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngine'], string>> = {
   google: 'https://www.google.com/search?q=',
@@ -11,6 +11,7 @@ const SEARCH_URL_BY_ENGINE: Partial<Record<TerminalSelectionSettings['searchEngi
 
 const PROMPT_TERMINATOR_CHARS = new Set<string>(['$', '#', '>', '%', '❯', '➜', 'λ']);
 const MAX_PROMPT_TOKENS_TO_SCAN = 12;
+const PROMPT_DECORATION_TOKEN_PATTERN = /^\([^()\s]{1,64}\)$/u;
 const SHELL_QUOTED_PATH_PATTERN = /^(['"])([\s\S]+)\1$/;
 const SHELL_FILE_URL_PATTERN = /^file:\/\/([^?#]*)/i;
 const REMOTE_DIRECTORY_PATH_PATTERN = /^(?:\/|~(?=\/|$)|\.{1,2}(?=\/|$)).*/;
@@ -41,6 +42,14 @@ export type TerminalPasteSafetySettings = {
   warnOnControlCharactersPaste: boolean;
 };
 
+export type TerminalPaneActivationReconnectInput = {
+  owner: 'primary' | 'secondary';
+  connectionState: 'connecting' | 'connected' | 'failed';
+  socketReadyState: number | null;
+  isFirstActivation: boolean;
+  reconnectOnFocus: boolean;
+};
+
 type PromptBoundaryToken = {
   value: string;
   start: number;
@@ -58,6 +67,61 @@ type AutocompleteCommandPrefixResolveOptions = {
  * Detects common password/passphrase prompt endings in terminal output.
  */
 export const SECRET_PROMPT_PATTERN = /(password(?: for [^:]+)?:|passphrase(?: for [^:]+)?:)\s*$/i;
+
+/**
+ * Determines whether a pane should open a new session when its tab becomes active.
+ *
+ * The first activation starts a deferred primary session independently of the reconnect
+ * preference. Later activations only recover failed panes when the preference allows it.
+ * Sockets that are already connecting or open always retain ownership of their attempt.
+ *
+ * @param input Pane ownership, transport state, and activation context.
+ * @returns `true` when the pane runtime should invoke its reconnect operation.
+ */
+export const shouldReconnectTerminalPaneOnActivation = (input: TerminalPaneActivationReconnectInput): boolean => {
+  if (input.socketReadyState === WebSocket.CONNECTING || input.socketReadyState === WebSocket.OPEN) {
+    return false;
+  }
+
+  if (input.isFirstActivation) {
+    return input.owner === 'primary';
+  }
+
+  return input.reconnectOnFocus && input.connectionState === 'failed';
+};
+
+/**
+ * Reconciles secondary pane runtimes only when the active layout has a stable target.
+ *
+ * A primary retry temporarily clears target readiness, so that transition must preserve
+ * sibling runtimes. Once readiness returns, only panes removed from the layout are disposed.
+ *
+ * @param runtimeMap Pane-indexed runtime resources shared by primary and secondary panes.
+ * @param input Current layout ids and lifecycle gates.
+ * @returns Nothing.
+ */
+export const reconcileSecondaryPaneRuntimes = <TRuntime extends Pick<TerminalPaneRuntime, 'owner' | 'dispose'>>(
+  runtimeMap: Map<string, TRuntime>,
+  input: {
+    desiredPaneIds: readonly string[];
+    isActive: boolean;
+    sessionTargetReady: boolean;
+  },
+): void => {
+  if (!input.isActive || !input.sessionTargetReady) {
+    return;
+  }
+
+  const desiredPaneIds = new Set(input.desiredPaneIds);
+  runtimeMap.forEach((runtime, paneId) => {
+    if (runtime.owner === 'primary' || desiredPaneIds.has(paneId)) {
+      return;
+    }
+
+    runtime.dispose();
+    runtimeMap.delete(paneId);
+  });
+};
 
 /**
  * Formats pasted text for a compact safety-dialog preview.
@@ -175,6 +239,34 @@ export const createTerminalPasteWarningRequest = (
     threshold,
     preview: formatTerminalPastePreview(text),
   };
+};
+
+/** Matches a rendered shell continuation prompt (`> `, zsh `pipe> `) at line start. */
+const COMMAND_CONTINUATION_PROMPT_PATTERN = /^[a-z]*> /;
+
+/**
+ * Flattens one retained command into a single-line terminal input payload.
+ *
+ * Timeline entries retain rendered continuation lines (heredocs, quoted
+ * strings), and a PTY treats every embedded newline as Enter, so writing the
+ * retained text verbatim would submit it immediately. Continuation-prompt
+ * decorations on follow-up lines are shell chrome rather than user input.
+ *
+ * @param command Retained command text possibly spanning terminal lines.
+ * @returns Single-line payload safe to insert without submitting.
+ */
+export const flattenCommandForTerminalInput = (command: string): string => {
+  const lines = command.split(TERMINAL_MULTILINE_PATTERN);
+  const flattened: string[] = [];
+  lines.forEach((line, lineIndex) => {
+    const withoutContinuationPrompt = lineIndex > 0 ? line.replace(COMMAND_CONTINUATION_PROMPT_PATTERN, '') : line;
+    const trimmed = withoutContinuationPrompt.trim();
+    if (trimmed.length > 0) {
+      flattened.push(trimmed);
+    }
+  });
+
+  return flattened.join(' ');
 };
 
 /**
@@ -311,6 +403,32 @@ const isSymbolicToken = (token: string): boolean => {
   return token.length > 0 && /^[^A-Za-z0-9_]+$/u.test(token);
 };
 
+/** Exact operator tokens that mark command text rather than prompt context. */
+const SHELL_OPERATOR_TOKEN_SET = new Set<string>(['&&', '||', '|', ';', ';;', '&', '>', '>>', '<', '<<']);
+
+/**
+ * Checks whether a token is a glyph-only prompt status suffix such as `✗`.
+ *
+ * Restricting the match to non-ASCII symbols keeps ASCII arguments like `--`
+ * or `*` from being mistaken for prompt decoration.
+ *
+ * @param token Candidate token inside the leading prompt run.
+ * @returns `true` when token reads as a prompt status glyph.
+ */
+const isPromptStatusSymbolToken = (token: string): boolean => {
+  if (token.length > 3 || !isSymbolicToken(token)) {
+    return false;
+  }
+
+  for (const character of token) {
+    if ((character.codePointAt(0) ?? 0) > 0x7f) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
 /**
  * Decides whether a token can be interpreted as prompt start context.
  *
@@ -336,6 +454,38 @@ const isLikelyPromptStartToken = (token: string): boolean => {
   }
 
   return isSymbolicToken(token);
+};
+
+/**
+ * Detects a standalone environment decoration that may precede shell identity.
+ *
+ * Conda and Python virtual environments commonly prepend tokens such as
+ * `(base)` or `(.venv)` before the user/host prompt. The decoration alone is
+ * insufficient evidence of a prompt and must be followed by prompt context.
+ *
+ * @param token Candidate leading token.
+ * @returns `true` when the token is a bounded parenthesized decoration.
+ */
+const isPromptDecorationToken = (token: string): boolean => PROMPT_DECORATION_TOKEN_PATTERN.test(token);
+
+/**
+ * Locates prompt identity after any leading environment decorations.
+ *
+ * @param tokens Whitespace-preserving tokens from one logical terminal line.
+ * @returns Prompt-context token index, or `-1` when the line looks like user input.
+ */
+const resolvePromptContextTokenIndex = (tokens: PromptBoundaryToken[]): number => {
+  const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+  let tokenIndex = 0;
+  while (tokenIndex < scanLimit && isPromptDecorationToken(tokens[tokenIndex]?.value ?? '')) {
+    tokenIndex += 1;
+  }
+
+  if (tokenIndex >= scanLimit) {
+    return -1;
+  }
+
+  return isLikelyPromptStartToken(tokens[tokenIndex]?.value ?? '') ? tokenIndex : -1;
 };
 
 /**
@@ -506,14 +656,14 @@ const resolveHeuristicPromptOffset = (linePrefix: string): number => {
     return 0;
   }
 
-  const firstToken = tokens[0]?.value ?? '';
-  if (!isLikelyPromptStartToken(firstToken)) {
+  const promptContextTokenIndex = resolvePromptContextTokenIndex(tokens);
+  if (promptContextTokenIndex < 0) {
     return 0;
   }
 
   let lastPromptTerminatorIndex = -1;
   const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
-  for (let tokenIndex = 0; tokenIndex < scanLimit; tokenIndex += 1) {
+  for (let tokenIndex = promptContextTokenIndex; tokenIndex < scanLimit; tokenIndex += 1) {
     const currentToken = tokens[tokenIndex]?.value ?? '';
     if (!isPromptTerminatorToken(currentToken)) {
       continue;
@@ -523,13 +673,16 @@ const resolveHeuristicPromptOffset = (linePrefix: string): number => {
   }
 
   const nextCommandToken =
-    lastPromptTerminatorIndex >= 0 ? (tokens[lastPromptTerminatorIndex + 1] ?? null) : (tokens[1] ?? null);
+    lastPromptTerminatorIndex >= 0
+      ? (tokens[lastPromptTerminatorIndex + 1] ?? null)
+      : (tokens[promptContextTokenIndex + 1] ?? null);
   if (lastPromptTerminatorIndex >= 0 && !nextCommandToken) {
     // Prompt-only frame (no echoed command text yet): anchor command start at prompt end.
     return Math.max(0, linePrefix.length);
   }
 
-  if (tokens.length === 1 && isPromptTerminatorToken(firstToken)) {
+  const promptContextToken = tokens[promptContextTokenIndex]?.value ?? '';
+  if (tokens.length === promptContextTokenIndex + 1 && isPromptTerminatorToken(promptContextToken)) {
     return Math.max(0, linePrefix.length);
   }
 
@@ -604,6 +757,76 @@ export const resolveAutocompleteCommandPrefix = (
 };
 
 /**
+ * Calibrates a reconstructed completion prefix with trusted shell cursor metadata.
+ *
+ * The helper never sends command text. Calibration is therefore applied only when
+ * renderer reconstruction has the exact helper-reported line length; otherwise the
+ * existing conservative prefix remains unchanged.
+ *
+ * @param commandPrefix Reconstructed command buffer candidate.
+ * @param lineState Optional helper-reported line length and cursor index.
+ * @returns Prefix ending at the trusted cursor when lengths agree.
+ */
+export const calibrateAutocompleteCommandPrefix = (
+  commandPrefix: string,
+  lineState: { lineLength: number; cursorIndex: number } | null,
+): string => {
+  if (!lineState || commandPrefix.length !== lineState.lineLength) {
+    return commandPrefix;
+  }
+
+  return commandPrefix.slice(0, lineState.cursorIndex);
+};
+
+/**
+ * Locates where user input starts without treating shell separators as a new
+ * autocomplete segment.
+ *
+ * Command timeline tooltips need the complete submitted line, while
+ * autocomplete intentionally narrows its context after separators such as
+ * `&&` or `|`. Keeping prompt stripping separate prevents timeline entries
+ * from losing the earlier portions of compound commands.
+ *
+ * @param line Visible logical terminal line containing prompt and user input.
+ * @param options Optional prompt parsing configuration.
+ * @returns Zero-based command start offset within the complete logical line.
+ */
+export const resolvePromptCommandStartOffset = (line: string, options?: CommandStartResolveOptions): number => {
+  const configuredOffset = resolveConfiguredPromptOffset(line, options?.promptPrefixRegex ?? null);
+  if (configuredOffset !== null) {
+    return Math.max(0, configuredOffset);
+  }
+
+  // Prompt parsing takes the last terminator inside the leading prompt run but
+  // hard-stops at shell operator tokens, so `&&` in a compound command never
+  // reads as prompt context while glyph-led prompts (`➜ repo git:(main) ✗`)
+  // still strip through their trailing status symbols.
+  const tokens = tokenizeWhitespace(line);
+  const promptContextTokenIndex = resolvePromptContextTokenIndex(tokens);
+  if (promptContextTokenIndex >= 0) {
+    const scanLimit = Math.min(tokens.length, MAX_PROMPT_TOKENS_TO_SCAN);
+    let lastPromptTerminatorTokenIndex = -1;
+    for (let tokenIndex = promptContextTokenIndex; tokenIndex < scanLimit; tokenIndex += 1) {
+      const token = tokens[tokenIndex]?.value ?? '';
+      if (SHELL_OPERATOR_TOKEN_SET.has(token)) {
+        break;
+      }
+
+      const lastChar = token[token.length - 1] ?? '';
+      if (isPromptTerminatorChar(lastChar) || isPromptStatusSymbolToken(token)) {
+        lastPromptTerminatorTokenIndex = tokenIndex;
+      }
+    }
+
+    if (lastPromptTerminatorTokenIndex >= 0) {
+      return tokens[lastPromptTerminatorTokenIndex + 1]?.start ?? line.length;
+    }
+  }
+
+  return Math.max(0, resolveHeuristicPromptOffset(line));
+};
+
+/**
  * Locates where user command starts in a shell prompt line.
  *
  * @param linePrefix Visible content before cursor on current line.
@@ -613,14 +836,7 @@ export const resolveAutocompleteCommandPrefix = (
 export const resolveCommandStartOffset = (linePrefix: string, options?: CommandStartResolveOptions): number => {
   const segmentStartOffset = resolveShellSegmentStartOffset(linePrefix);
   const segmentPrefix = linePrefix.slice(segmentStartOffset);
-
-  const configuredOffset = resolveConfiguredPromptOffset(segmentPrefix, options?.promptPrefixRegex ?? null);
-  if (configuredOffset !== null) {
-    return Math.max(0, segmentStartOffset + configuredOffset);
-  }
-
-  const heuristicOffset = resolveHeuristicPromptOffset(segmentPrefix);
-  return Math.max(0, segmentStartOffset + heuristicOffset);
+  return Math.max(0, segmentStartOffset + resolvePromptCommandStartOffset(segmentPrefix, options));
 };
 
 /**
@@ -835,12 +1051,14 @@ const safeDecodePathComponent = (value: string): string => {
  *
  * This parser intentionally accepts only explicit POSIX-like directory strings:
  * absolute paths, home-relative paths, and dot-relative paths. Bare relative
- * names are excluded because SSH terminal cwd is not shared with SFTP sessions.
+ * names are excluded. Dot-relative paths are resolved only when the source pane
+ * has reported a trusted absolute cwd through Remote Enhancements.
  *
  * @param text Raw terminal selection text.
+ * @param trustedCwd Optional helper-reported cwd for the source pane.
  * @returns Normalized path candidate or `null` when selection is not a safe directory path.
  */
-export const resolveSftpDirectoryPathFromSelection = (text: string): string | null => {
+export const resolveSftpDirectoryPathFromSelection = (text: string, trustedCwd?: string | null): string | null => {
   const firstLine = text
     .split(/\r?\n/u)
     .map((line) => line.trim())
@@ -859,7 +1077,64 @@ export const resolveSftpDirectoryPathFromSelection = (text: string): string | nu
     return null;
   }
 
+  if (
+    trustedCwd?.startsWith('/') &&
+    (withoutTrailingSlash === '.' ||
+      withoutTrailingSlash === '..' ||
+      withoutTrailingSlash.startsWith('./') ||
+      withoutTrailingSlash.startsWith('../'))
+  ) {
+    const segments = `${trustedCwd}/${withoutTrailingSlash}`.split('/');
+    const normalizedSegments: string[] = [];
+    segments.forEach((segment) => {
+      if (!segment || segment === '.') {
+        return;
+      }
+
+      if (segment === '..') {
+        normalizedSegments.pop();
+        return;
+      }
+
+      normalizedSegments.push(segment);
+    });
+
+    return `/${normalizedSegments.join('/')}`;
+  }
+
   return withoutTrailingSlash || null;
+};
+
+/**
+ * Resolves a deterministic pane collection and active pane after one close request.
+ *
+ * @param paneIds Ordered visible pane ids.
+ * @param activePaneId Currently active pane id.
+ * @param closingPaneId Pane requested for closure.
+ * @returns Next pane state, or `null` when closure is not allowed.
+ */
+export const resolveTerminalPaneCloseTransition = (
+  paneIds: readonly string[],
+  activePaneId: string,
+  closingPaneId: string,
+): { paneIds: string[]; activePaneId: string } | null => {
+  if (paneIds.length <= 1) {
+    return null;
+  }
+
+  const closingIndex = paneIds.indexOf(closingPaneId);
+  if (closingIndex < 0) {
+    return null;
+  }
+
+  const nextPaneIds = paneIds.filter((paneId) => paneId !== closingPaneId);
+  return {
+    paneIds: nextPaneIds,
+    activePaneId:
+      activePaneId === closingPaneId
+        ? (nextPaneIds[Math.max(0, closingIndex - 1)] ?? nextPaneIds[0] ?? activePaneId)
+        : activePaneId,
+  };
 };
 
 /**
@@ -960,6 +1235,7 @@ export const applyTerminalRuntimeOptions = (terminal: Terminal, options: ITermin
   terminal.options.macOptionClickForcesSelection = options.macOptionClickForcesSelection;
   terminal.options.macOptionIsMeta = options.macOptionIsMeta;
   terminal.options.minimumContrastRatio = options.minimumContrastRatio;
+  terminal.options.overviewRuler = options.overviewRuler;
   terminal.options.rightClickSelectsWord = options.rightClickSelectsWord;
   terminal.options.screenReaderMode = options.screenReaderMode;
   terminal.options.scrollback = options.scrollback;

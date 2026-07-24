@@ -1,17 +1,23 @@
 import type { TerminalRightClickAction } from '@cosmosh/api-contract';
 import classNames from 'classnames';
+import { RefreshCw } from 'lucide-react';
 import React from 'react';
 
 import { TerminalContextMenu } from '../../components/terminal/terminal-context-menu';
+import { Button } from '../../components/ui/button';
+import { Menubar } from '../../components/ui/menubar';
 import { t } from '../../lib/i18n';
+import type { SshPaneConnectionSnapshot, TerminalCommandTimelineModel } from './ssh-types';
+import { TerminalCommandTimeline } from './TerminalCommandTimeline';
 
 type PaneActionHandler = (paneId: string) => void;
+type PaneCommandActionHandler = (paneId: string, command: string) => void;
+type PaneCommandSelectionHandler = (paneId: string, commandId: string) => void;
 
 type SSHTerminalPaneLayoutProps = {
   terminalPaneIds: string[];
   activePaneId: string;
   hasSelection: boolean;
-  isConnected: boolean;
   canSplitTerminal: boolean;
   copyShortcutLabel: string;
   pasteShortcutLabel: string;
@@ -22,9 +28,12 @@ type SSHTerminalPaneLayoutProps = {
   rightClickAction: TerminalRightClickAction;
   remoteEnhancementsDebugLabel?: string;
   canOpenDirectoryInSftp: boolean;
+  commandTimelineModels: Record<string, TerminalCommandTimelineModel>;
+  paneConnectionStates: Record<string, SshPaneConnectionSnapshot>;
   setPaneContainerElement: (paneId: string, element: HTMLDivElement | null) => void;
   setPrimaryPaneContainer: (element: HTMLDivElement | null) => void;
   onPaneActivate: PaneActionHandler;
+  onRetryPane: PaneActionHandler;
   onCopy: PaneActionHandler;
   onCopyAsHtml: PaneActionHandler;
   onPaste: PaneActionHandler;
@@ -33,6 +42,10 @@ type SSHTerminalPaneLayoutProps = {
   onFind: PaneActionHandler;
   onSelectAll: PaneActionHandler;
   onClearTerminal: PaneActionHandler;
+  onCopyCommand: PaneCommandActionHandler;
+  onFocusPane: PaneActionHandler;
+  onInsertCommand: PaneCommandActionHandler;
+  onSelectCommand: PaneCommandSelectionHandler;
   onSplitPane: PaneActionHandler;
   onClosePane: PaneActionHandler;
   onToggleRemoteEnhancementsDebug?: PaneActionHandler;
@@ -48,7 +61,6 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.terminalPaneIds Ordered pane ids.
  * @param props.activePaneId Current active pane id.
  * @param props.hasSelection Whether active pane has selected text.
- * @param props.isConnected Whether terminal transport is connected.
  * @param props.canSplitTerminal Whether split action is currently allowed.
  * @param props.copyShortcutLabel Platform-resolved copy shortcut label.
  * @param props.pasteShortcutLabel Platform-resolved paste shortcut label.
@@ -59,9 +71,12 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.rightClickAction Configured action for terminal right-click gestures.
  * @param props.remoteEnhancementsDebugLabel Optional label for the Remote Enhancements debug panel action.
  * @param props.canOpenDirectoryInSftp Whether selected text can open an SFTP directory.
+ * @param props.commandTimelineModels Pane-indexed trusted command timeline models.
+ * @param props.paneConnectionStates Pane-indexed transport snapshots driving pane-scoped overlays.
  * @param props.setPaneContainerElement Ref callback for pane containers.
  * @param props.setPrimaryPaneContainer Ref callback for primary pane container.
  * @param props.onPaneActivate Callback that activates a pane.
+ * @param props.onRetryPane Callback that reconnects one failed pane.
  * @param props.onCopy Callback that copies selection from pane.
  * @param props.onCopyAsHtml Callback that copies selection HTML from pane.
  * @param props.onPaste Callback that pastes text into pane.
@@ -70,6 +85,10 @@ type SSHTerminalPaneLayoutProps = {
  * @param props.onFind Callback for find action.
  * @param props.onSelectAll Callback for select-all action.
  * @param props.onClearTerminal Callback for clear-screen action.
+ * @param props.onCopyCommand Callback for copying one retained command.
+ * @param props.onFocusPane Callback for restoring focus to one pane's xterm.
+ * @param props.onInsertCommand Callback for inserting one retained command without submitting it.
+ * @param props.onSelectCommand Callback for direct command-marker selection.
  * @param props.onSplitPane Callback for split action.
  * @param props.onClosePane Callback for close-pane action.
  * @param props.onToggleRemoteEnhancementsDebug Optional callback for the Remote Enhancements debug panel toggle.
@@ -79,7 +98,6 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   terminalPaneIds,
   activePaneId,
   hasSelection,
-  isConnected,
   canSplitTerminal,
   copyShortcutLabel,
   pasteShortcutLabel,
@@ -90,9 +108,12 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   rightClickAction,
   remoteEnhancementsDebugLabel,
   canOpenDirectoryInSftp,
+  commandTimelineModels,
+  paneConnectionStates,
   setPaneContainerElement,
   setPrimaryPaneContainer,
   onPaneActivate,
+  onRetryPane,
   onCopy,
   onCopyAsHtml,
   onPaste,
@@ -101,16 +122,26 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
   onFind,
   onSelectAll,
   onClearTerminal,
+  onCopyCommand,
+  onFocusPane,
+  onInsertCommand,
+  onSelectCommand,
   onSplitPane,
   onClosePane,
   onToggleRemoteEnhancementsDebug,
 }) => {
   const renderTerminalPane = (paneId: string, isPrimaryPane: boolean): React.ReactNode => {
+    const commandTimelineModel = commandTimelineModels[paneId];
+    const paneConnection: SshPaneConnectionSnapshot = paneConnectionStates[paneId] ?? {
+      connectionState: 'connecting',
+      connectionError: '',
+    };
+    const paneIsConnected = paneConnection.connectionState === 'connected';
     return (
-      <div className="h-full min-h-0 w-full min-w-0 overflow-hidden">
+      <div className="relative h-full min-h-0 w-full min-w-0 overflow-hidden">
         <TerminalContextMenu
           hasSelection={activePaneId === paneId && hasSelection}
-          isConnected={isConnected}
+          isConnected={paneIsConnected}
           copyLabel={t('ssh.contextMenuCopy')}
           copyShortcutLabel={copyShortcutLabel}
           copyAsHtmlLabel={t('ssh.contextMenuCopyAsHtml')}
@@ -144,63 +175,94 @@ export const SSHTerminalPaneLayout: React.FC<SSHTerminalPaneLayoutProps> = ({
             onToggleRemoteEnhancementsDebug ? () => onToggleRemoteEnhancementsDebug(paneId) : undefined
           }
         >
-          <div
-            ref={(element) => {
-              setPaneContainerElement(paneId, element);
-              if (isPrimaryPane) {
-                setPrimaryPaneContainer(element);
-              }
-            }}
-            className="h-full w-full p-2"
-            onMouseDown={() => onPaneActivate(paneId)}
-            onContextMenu={() => onPaneActivate(paneId)}
-          />
+          <TerminalCommandTimeline
+            model={commandTimelineModel}
+            isConnected={paneIsConnected}
+            onActivate={() => onPaneActivate(paneId)}
+            onCopyCommand={(command) => onCopyCommand(paneId, command)}
+            onFocusTerminal={() => onFocusPane(paneId)}
+            onInsertCommand={(command) => onInsertCommand(paneId, command)}
+            onSelectCommand={(commandId) => onSelectCommand(paneId, commandId)}
+          >
+            <div
+              ref={(element) => {
+                setPaneContainerElement(paneId, element);
+                if (isPrimaryPane) {
+                  setPrimaryPaneContainer(element);
+                }
+              }}
+              className="h-full min-w-0 flex-1 py-2 pl-2"
+            />
+          </TerminalCommandTimeline>
         </TerminalContextMenu>
+        {!paneIsConnected ? (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-4 bg-ssh-card-bg-terminal px-4">
+            <div className="text-center text-sm text-header-text">
+              {paneConnection.connectionState === 'connecting' ? t('ssh.connecting') : paneConnection.connectionError}
+            </div>
+            {paneConnection.connectionState === 'failed' ? (
+              <Menubar>
+                <Button onClick={() => onRetryPane(paneId)}>
+                  <RefreshCw size={16} />
+                  {t('ssh.retry')}
+                </Button>
+                {terminalPaneIds.length > 1 ? (
+                  <Button onClick={() => onClosePane(paneId)}>{t('ssh.contextMenuCloseTerminal')}</Button>
+                ) : null}
+              </Menubar>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     );
   };
 
   const paneCount = terminalPaneIds.length;
-  const pane1Id = terminalPaneIds[0] ?? 'pane-1';
-  const pane2Id = terminalPaneIds[1] ?? 'pane-2';
-  const pane3Id = terminalPaneIds[2] ?? 'pane-3';
-  const pane4Id = terminalPaneIds[3] ?? 'pane-4';
+  const gridClassName =
+    paneCount === 1
+      ? 'grid-cols-1'
+      : paneCount === 2
+        ? 'grid-cols-2'
+        : paneCount === 3
+          ? 'grid-cols-3'
+          : 'grid-cols-3 grid-rows-2';
 
-  if (paneCount <= 2) {
-    return (
-      <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-2">
-        <div className={classNames('min-h-0', paneCount === 1 ? 'col-span-2' : '')}>
-          {renderTerminalPane(pane1Id, true)}
-        </div>
-        <div
-          className={classNames('min-h-0 border-l border-ssh-terminal-split-divider', paneCount < 2 ? 'hidden' : '')}
-        >
-          {paneCount >= 2 ? renderTerminalPane(pane2Id, false) : null}
-        </div>
-      </div>
-    );
-  }
+  /**
+   * Resolves stable grid placement without changing pane DOM ancestry.
+   *
+   * @param index Pane index in the fixed split progression.
+   * @returns Tokenized divider and grid placement classes.
+   */
+  const resolvePaneClassName = (index: number): string => {
+    if (paneCount < 4) {
+      return classNames('min-h-0 min-w-0', index > 0 && 'border-l border-ssh-terminal-split-divider');
+    }
 
-  if (paneCount === 3) {
-    return (
-      <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-3">
-        <div className="min-h-0">{renderTerminalPane(pane1Id, true)}</div>
-        <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane2Id, false)}</div>
-        <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane3Id, false)}</div>
-      </div>
-    );
-  }
+    if (index === 0) {
+      return 'row-span-2 min-h-0 min-w-0';
+    }
+
+    if (index === 1) {
+      return 'row-span-2 min-h-0 min-w-0 border-l border-ssh-terminal-split-divider';
+    }
+
+    if (index === 2) {
+      return 'col-start-3 row-start-1 min-h-0 min-w-0 border-l border-ssh-terminal-split-divider';
+    }
+
+    return 'col-start-3 row-start-2 min-h-0 min-w-0 border-l border-t border-ssh-terminal-split-divider';
+  };
 
   return (
-    <div className="grid h-full min-h-0 w-full min-w-0 grid-cols-[1fr_1fr_1fr]">
-      <div className="min-h-0">{renderTerminalPane(pane1Id, true)}</div>
-      <div className="min-h-0 border-l border-ssh-terminal-split-divider">{renderTerminalPane(pane2Id, false)}</div>
-      <div className="flex h-full min-h-0 w-full min-w-0 flex-col border-l border-ssh-terminal-split-divider">
-        <div className="min-h-0 flex-1">{renderTerminalPane(pane3Id, false)}</div>
-        <div className="min-h-0 flex-1 border-t border-ssh-terminal-split-divider">
-          {renderTerminalPane(pane4Id, false)}
+    <div className={classNames('grid h-full min-h-0 w-full min-w-0', gridClassName)}>
+      {terminalPaneIds.map((paneId, index) => (
+        <div
+          key={paneId}
+          className={resolvePaneClassName(index)}
+        >
+          {renderTerminalPane(paneId, index === 0)}
         </div>
-      </div>
+      ))}
     </div>
   );
 };
