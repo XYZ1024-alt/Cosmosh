@@ -640,12 +640,10 @@ export const resolveMacOsOpenWithHelperInvocation = async (
       path.resolve(options.workingDirectoryPath, 'packages', 'main', 'resources', 'helpers'),
     ]),
   );
-  const binaryCandidates = developmentHelperDirectoryPaths.map(
-    (helperDirectoryPath): TrustedFileCandidate => ({
-      filePath: path.join(helperDirectoryPath, MACOS_SFTP_OPEN_WITH_HELPER_NAME),
-      rootPath: helperDirectoryPath,
-    }),
-  );
+  const binaryCandidates = developmentHelperDirectoryPaths.map((helperDirectoryPath): TrustedFileCandidate => ({
+    filePath: path.join(helperDirectoryPath, MACOS_SFTP_OPEN_WITH_HELPER_NAME),
+    rootPath: helperDirectoryPath,
+  }));
   const binaryPath = await resolveFirstTrustedRegularFilePath(binaryCandidates, true);
   if (binaryPath) {
     return {
@@ -655,12 +653,10 @@ export const resolveMacOsOpenWithHelperInvocation = async (
     };
   }
 
-  const sourceCandidates = developmentHelperDirectoryPaths.map(
-    (helperDirectoryPath): TrustedFileCandidate => ({
-      filePath: path.join(helperDirectoryPath, MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
-      rootPath: helperDirectoryPath,
-    }),
-  );
+  const sourceCandidates = developmentHelperDirectoryPaths.map((helperDirectoryPath): TrustedFileCandidate => ({
+    filePath: path.join(helperDirectoryPath, MACOS_SFTP_OPEN_WITH_HELPER_SOURCE_NAME),
+    rootPath: helperDirectoryPath,
+  }));
   const sourcePath = await resolveFirstTrustedRegularFilePath(sourceCandidates, false);
   return sourcePath
     ? {

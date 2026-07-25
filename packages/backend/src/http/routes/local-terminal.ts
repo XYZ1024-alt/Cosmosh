@@ -36,8 +36,7 @@ export const registerLocalTerminalRoutes = (app: BackendHttpApp, context: Backen
 
     // Parse loosely typed body first, then normalize/validate each field explicitly.
     const payload = (await c.req.json().catch(() => undefined)) as
-      | Partial<ApiLocalTerminalCreateSessionRequest>
-      | undefined;
+      Partial<ApiLocalTerminalCreateSessionRequest> | undefined;
     const profileId = typeof payload?.profileId === 'string' ? payload.profileId.trim() : '';
     const cols = typeof payload?.cols === 'number' ? payload.cols : Number(payload?.cols ?? 120);
     const rows = typeof payload?.rows === 'number' ? payload.rows : Number(payload?.rows ?? 32);

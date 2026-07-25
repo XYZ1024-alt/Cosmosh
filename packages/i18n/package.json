@@ -28,19 +28,19 @@
     "./locales/*": "./locales/*"
   },
   "dependencies": {
-    "intl-messageformat": "^11.1.2"
+    "intl-messageformat": "^11.2.12"
   },
   "devDependencies": {
-    "@eslint/js": "^9.39.4",
-    "eslint": "^9.39.4",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
     "eslint-plugin-import": "^2.32.0",
-    "eslint-plugin-prettier": "^5.5.5",
+    "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-simple-import-sort": "^12.1.1",
-    "globals": "^17.4.0",
-    "prettier": "^3.8.1",
+    "globals": "^17.7.0",
+    "prettier": "^3.9.6",
     "tsup": "^8.5.1",
     "typescript": "^5.9.3",
-    "typescript-eslint": "^8.57.0",
-    "vitest": "^4.1.0"
+    "typescript-eslint": "^8.65.0",
+    "vitest": "^4.1.10"
   }
 }

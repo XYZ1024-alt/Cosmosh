@@ -3,13 +3,7 @@ export type AuditEventOutcome = 'success' | 'failure';
 export type AuditEventSeverity = 'info' | 'warning' | 'critical';
 
 export type AuditEventCategory =
-  | 'ssh-session'
-  | 'ssh-server'
-  | 'ssh-keychain'
-  | 'settings'
-  | 'ssh-host-trust'
-  | 'system'
-  | (string & {});
+  'ssh-session' | 'ssh-server' | 'ssh-keychain' | 'settings' | 'ssh-host-trust' | 'system' | (string & {});
 
 export type AuditEventInput = {
   occurredAt?: Date;

@@ -297,10 +297,7 @@ type JsonSettingDefinition = SettingDefinitionBase & {
 };
 
 export type SettingDefinition =
-  | SelectSettingDefinition
-  | InputLikeSettingDefinition
-  | SwitchSettingDefinition
-  | JsonSettingDefinition;
+  SelectSettingDefinition | InputLikeSettingDefinition | SwitchSettingDefinition | JsonSettingDefinition;
 
 const createTerminalInlineImageOptionsSchemaProperties = (): Readonly<Record<string, SettingsJsonSchemaNode>> => ({
   enableSizeReports: {

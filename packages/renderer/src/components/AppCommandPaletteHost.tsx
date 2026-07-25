@@ -460,42 +460,40 @@ const createSshResourceCommandPaletteProvider = (): CommandPaletteProvider<AppCo
     const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
     const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.connectSsh', context.locale);
 
-    return context.resources.servers.map(
-      (server): CommandPaletteCommand => ({
-        kind: 'action',
-        id: server.id,
-        commandActionId: 'resources.ssh.connect',
-        title: formatServerCommandTitle(server, context.showFullServerAddress),
-        subtitle: actionLabel.primary,
-        icon: renderServerCommandIcon(server),
-        searchTerms: buildSearchTerms(
-          [
-            'ssh',
-            'connect ssh',
-            'resources.ssh.connect',
-            server.id,
-            server.name,
-            server.host,
-            String(server.port),
-            server.username,
-            server.note ?? '',
-            ...(server.tags ?? []).map((tag) => tag.name),
-          ],
-          scopeSearchTerms,
-          [actionLabel.english],
-        ),
-        run: () => {
-          context.addTab('ssh', {
-            title: server.name,
-            iconKey: 'ssh',
-            iconColorKey: server.colorKey,
-            state: {
-              sshConnectionIntent: createSshConnectionIntent(server.id),
-            },
-          });
-        },
-      }),
-    );
+    return context.resources.servers.map((server): CommandPaletteCommand => ({
+      kind: 'action',
+      id: server.id,
+      commandActionId: 'resources.ssh.connect',
+      title: formatServerCommandTitle(server, context.showFullServerAddress),
+      subtitle: actionLabel.primary,
+      icon: renderServerCommandIcon(server),
+      searchTerms: buildSearchTerms(
+        [
+          'ssh',
+          'connect ssh',
+          'resources.ssh.connect',
+          server.id,
+          server.name,
+          server.host,
+          String(server.port),
+          server.username,
+          server.note ?? '',
+          ...(server.tags ?? []).map((tag) => tag.name),
+        ],
+        scopeSearchTerms,
+        [actionLabel.english],
+      ),
+      run: () => {
+        context.addTab('ssh', {
+          title: server.name,
+          iconKey: 'ssh',
+          iconColorKey: server.colorKey,
+          state: {
+            sshConnectionIntent: createSshConnectionIntent(server.id),
+          },
+        });
+      },
+    }));
   });
 };
 
@@ -510,46 +508,44 @@ const createSftpResourceCommandPaletteProvider = (): CommandPaletteProvider<AppC
     const scopeSearchTerms = buildScopeSearchTerms(scopeLabel);
     const actionLabel = resolveBilingualCommandLabel('commandPalette.commands.resources.connectSftp', context.locale);
 
-    return context.resources.servers.map(
-      (server): CommandPaletteCommand => ({
-        kind: 'action',
-        id: server.id,
-        commandActionId: 'resources.sftp.connect',
-        title: formatServerCommandTitle(server, context.showFullServerAddress),
-        subtitle: actionLabel.primary,
-        icon: renderTabIconByKey('sftp', undefined, false),
-        searchTerms: buildSearchTerms(
-          [
-            'sftp',
-            'connect sftp',
-            'resources.sftp.connect',
-            server.id,
-            server.name,
-            server.host,
-            String(server.port),
-            server.username,
-            server.note ?? '',
-            ...(server.tags ?? []).map((tag) => tag.name),
-          ],
-          scopeSearchTerms,
-          [actionLabel.english],
-        ),
-        run: () => {
-          context.addTab('sftp', {
-            title: server.name,
-            iconKey: 'sftp',
-            iconColorKey: server.colorKey,
-            state: {
-              sftpConnectionIntent: {
-                serverId: server.id,
-                serverName: server.name,
-                createdAt: Date.now(),
-              },
+    return context.resources.servers.map((server): CommandPaletteCommand => ({
+      kind: 'action',
+      id: server.id,
+      commandActionId: 'resources.sftp.connect',
+      title: formatServerCommandTitle(server, context.showFullServerAddress),
+      subtitle: actionLabel.primary,
+      icon: renderTabIconByKey('sftp', undefined, false),
+      searchTerms: buildSearchTerms(
+        [
+          'sftp',
+          'connect sftp',
+          'resources.sftp.connect',
+          server.id,
+          server.name,
+          server.host,
+          String(server.port),
+          server.username,
+          server.note ?? '',
+          ...(server.tags ?? []).map((tag) => tag.name),
+        ],
+        scopeSearchTerms,
+        [actionLabel.english],
+      ),
+      run: () => {
+        context.addTab('sftp', {
+          title: server.name,
+          iconKey: 'sftp',
+          iconColorKey: server.colorKey,
+          state: {
+            sftpConnectionIntent: {
+              serverId: server.id,
+              serverName: server.name,
+              createdAt: Date.now(),
             },
-          });
-        },
-      }),
-    );
+          },
+        });
+      },
+    }));
   });
 };
 

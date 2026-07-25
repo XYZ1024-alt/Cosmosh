@@ -34,8 +34,7 @@ const REMOTE_SHELL_LINE_LENGTH_MAX = 1024 * 1024;
  * xterm geometry reflects every byte that preceded a lifecycle event.
  */
 export type RemoteShellEventStreamFrame =
-  | { type: 'output'; data: string }
-  | { type: 'event'; event: RemoteShellEventMessage };
+  { type: 'output'; data: string } | { type: 'event'; event: RemoteShellEventMessage };
 
 /** Parsed representation of one completed OSC sequence. */
 type ParsedOscSequence = {

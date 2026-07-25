@@ -74,10 +74,7 @@ export type SftpUploadLocalFile = {
  * Why a dropped local filesystem entry could not be staged for SFTP upload.
  */
 export type SftpUploadRejectedLocalEntryReason =
-  | 'directory-unsupported'
-  | 'not-file'
-  | 'path-unavailable'
-  | 'unreadable';
+  'directory-unsupported' | 'not-file' | 'path-unavailable' | 'unreadable';
 
 /**
  * One dropped local entry that main/preload declined before SFTP upload.

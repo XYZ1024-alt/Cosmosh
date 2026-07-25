@@ -30,16 +30,7 @@ import {
 } from '../validation-utils.js';
 
 type SshVisualColorKey =
-  | 'slate'
-  | 'blue'
-  | 'emerald'
-  | 'violet'
-  | 'amber'
-  | 'rose'
-  | 'cyan'
-  | 'indigo'
-  | 'teal'
-  | 'lime';
+  'slate' | 'blue' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan' | 'indigo' | 'teal' | 'lime';
 
 const SSH_VISUAL_COLOR_KEY_SET: ReadonlySet<SshVisualColorKey> = new Set([
   'slate',

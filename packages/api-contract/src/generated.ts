@@ -1339,8 +1339,7 @@ export interface components {
       destinationMode: components['schemas']['SftpArchiveDestinationMode'];
     };
     SftpArchiveOperationRequest:
-      | components['schemas']['SftpArchiveCompressRequest']
-      | components['schemas']['SftpArchiveExtractRequest'];
+      components['schemas']['SftpArchiveCompressRequest'] | components['schemas']['SftpArchiveExtractRequest'];
     SftpArchiveConflictResolutionRequest: {
       resolution: components['schemas']['SftpArchiveConflictResolution'];
     };

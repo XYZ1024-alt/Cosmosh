@@ -12,11 +12,7 @@ export type SftpDragDecisionAction = SettingsValues['sftpInternalDragDefaultActi
 export type SftpResolvedDragOperation = Exclude<SftpDragDecisionAction, 'ask'>;
 
 export type SftpDropTargetSurface =
-  | 'address-breadcrumb'
-  | 'address-menu'
-  | 'current-directory'
-  | 'directory-list'
-  | 'tree';
+  'address-breadcrumb' | 'address-menu' | 'current-directory' | 'directory-list' | 'tree';
 
 export type SftpDirectoryDropSource = 'external-files' | 'internal-entries';
 

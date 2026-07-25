@@ -97,10 +97,7 @@ type CreateSshSessionFailure = {
 };
 
 type CreateSshSessionResult =
-  | CreateSshSessionSuccess
-  | CreateSshSessionHostUntrusted
-  | { type: 'not-found' }
-  | CreateSshSessionFailure;
+  CreateSshSessionSuccess | CreateSshSessionHostUntrusted | { type: 'not-found' } | CreateSshSessionFailure;
 
 type TrustSshFingerprintInput = {
   requestId?: string;

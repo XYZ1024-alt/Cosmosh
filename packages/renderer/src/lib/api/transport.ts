@@ -310,8 +310,7 @@ const createElectronTransport = (): ApiTransport => {
     },
     getAuditEventById: async (eventId) => {
       return (await window.electron!.backendAuditGetEventById(eventId)) as
-        | ApiAuditEventDetailResponse
-        | ApiErrorResponse;
+        ApiAuditEventDetailResponse | ApiErrorResponse;
     },
     getSettings: async () => {
       return (await window.electron!.backendSettingsGet()) as ApiSettingsGetResponse | ApiErrorResponse;
@@ -327,13 +326,11 @@ const createElectronTransport = (): ApiTransport => {
     },
     updateSshServer: async (serverId, payload) => {
       return (await window.electron!.backendSshUpdateServer(serverId, payload)) as
-        | ApiSshUpdateServerResponse
-        | ApiErrorResponse;
+        ApiSshUpdateServerResponse | ApiErrorResponse;
     },
     getSshServerCredentials: async (serverId) => {
       return (await window.electron!.backendSshGetServerCredentials(serverId)) as
-        | ApiSshGetServerCredentialsResponse
-        | ApiErrorResponse;
+        ApiSshGetServerCredentialsResponse | ApiErrorResponse;
     },
     listSshFolders: async () => {
       return (await window.electron!.backendSshListFolders()) as ApiSshListFoldersResponse | ApiErrorResponse;
@@ -343,8 +340,7 @@ const createElectronTransport = (): ApiTransport => {
     },
     updateSshFolder: async (folderId, payload) => {
       return (await window.electron!.backendSshUpdateFolder(folderId, payload)) as
-        | ApiSshUpdateFolderResponse
-        | ApiErrorResponse;
+        ApiSshUpdateFolderResponse | ApiErrorResponse;
     },
     listSshTags: async () => {
       return (await window.electron!.backendSshListTags()) as ApiSshListTagsResponse | ApiErrorResponse;
@@ -357,163 +353,130 @@ const createElectronTransport = (): ApiTransport => {
     },
     createSshKeychain: async (payload) => {
       return (await window.electron!.backendSshCreateKeychain(payload)) as
-        | ApiSshCreateKeychainResponse
-        | ApiErrorResponse;
+        ApiSshCreateKeychainResponse | ApiErrorResponse;
     },
     updateSshKeychain: async (keychainId, payload) => {
       return (await window.electron!.backendSshUpdateKeychain(keychainId, payload)) as
-        | ApiSshUpdateKeychainResponse
-        | ApiErrorResponse;
+        ApiSshUpdateKeychainResponse | ApiErrorResponse;
     },
     getSshKeychainCredentials: async (keychainId) => {
       return (await window.electron!.backendSshGetKeychainCredentials(keychainId)) as
-        | ApiSshGetKeychainCredentialsResponse
-        | ApiErrorResponse;
+        ApiSshGetKeychainCredentialsResponse | ApiErrorResponse;
     },
     listPortForwardRules: async () => {
       return (await window.electron!.backendPortForwardListRules()) as
-        | ApiPortForwardListRulesResponse
-        | ApiErrorResponse;
+        ApiPortForwardListRulesResponse | ApiErrorResponse;
     },
     createPortForwardRule: async (payload) => {
       return (await window.electron!.backendPortForwardCreateRule(payload)) as
-        | ApiPortForwardCreateRuleResponse
-        | ApiErrorResponse;
+        ApiPortForwardCreateRuleResponse | ApiErrorResponse;
     },
     updatePortForwardRule: async (ruleId, payload) => {
       return (await window.electron!.backendPortForwardUpdateRule(ruleId, payload)) as
-        | ApiPortForwardUpdateRuleResponse
-        | ApiErrorResponse;
+        ApiPortForwardUpdateRuleResponse | ApiErrorResponse;
     },
     startPortForwardRule: async (ruleId, payload) => {
       return (await window.electron!.backendPortForwardStartRule(ruleId, payload)) as
-        | ApiPortForwardStartRuleResponse
-        | ApiErrorResponse;
+        ApiPortForwardStartRuleResponse | ApiErrorResponse;
     },
     stopPortForwardRule: async (ruleId) => {
       return (await window.electron!.backendPortForwardStopRule(ruleId)) as
-        | ApiPortForwardStopRuleResponse
-        | ApiErrorResponse;
+        ApiPortForwardStopRuleResponse | ApiErrorResponse;
     },
     deletePortForwardRule: async (ruleId) => {
       return await window.electron!.backendPortForwardDeleteRule(ruleId);
     },
     createSshSession: async (payload) => {
       return (await window.electron!.backendSshCreateSession(payload)) as
-        | ApiSshCreateSessionResponse
-        | ApiSshCreateSessionHostVerificationRequiredResponse
-        | ApiErrorResponse;
+        ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse;
     },
     trustSshFingerprint: async (payload) => {
       return (await window.electron!.backendSshTrustFingerprint(payload)) as
-        | ApiSshTrustFingerprintResponse
-        | ApiErrorResponse;
+        ApiSshTrustFingerprintResponse | ApiErrorResponse;
     },
     createSftpSession: async (payload) => {
       return (await window.electron!.backendSftpCreateSession(payload)) as
-        | ApiSftpCreateSessionResponse
-        | ApiSftpCreateSessionHostVerificationRequiredResponse
-        | ApiErrorResponse;
+        ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse;
     },
     listSftpDirectory: async (sessionId, query) => {
       return (await window.electron!.backendSftpListDirectory(sessionId, query)) as
-        | ApiSftpListDirectoryResponse
-        | ApiErrorResponse;
+        ApiSftpListDirectoryResponse | ApiErrorResponse;
     },
     getSftpEntryDetails: async (sessionId, payload) => {
       return (await window.electron!.backendSftpGetEntryDetails(sessionId, payload)) as
-        | ApiSftpEntryDetailsResponse
-        | ApiErrorResponse;
+        ApiSftpEntryDetailsResponse | ApiErrorResponse;
     },
     readSftpFile: async (sessionId, query) => {
       return (await window.electron!.backendSftpReadFile(sessionId, query)) as
-        | ApiSftpReadFileResponse
-        | ApiErrorResponse;
+        ApiSftpReadFileResponse | ApiErrorResponse;
     },
     writeSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpWriteFile(sessionId, payload)) as
-        | ApiSftpWriteFileResponse
-        | ApiErrorResponse;
+        ApiSftpWriteFileResponse | ApiErrorResponse;
     },
     downloadSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpDownloadFile(sessionId, payload)) as
-        | ApiSftpDownloadFileResponse
-        | ApiErrorResponse;
+        ApiSftpDownloadFileResponse | ApiErrorResponse;
     },
     uploadSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpUploadFile(sessionId, payload)) as
-        | ApiSftpUploadFileResponse
-        | ApiErrorResponse;
+        ApiSftpUploadFileResponse | ApiErrorResponse;
     },
     getSftpTransferProgress: async (transferId) => {
       return (await window.electron!.backendSftpGetTransferProgress(transferId)) as
-        | ApiSftpTransferProgressResponse
-        | ApiErrorResponse;
+        ApiSftpTransferProgressResponse | ApiErrorResponse;
     },
     createSftpDirectory: async (sessionId, payload) => {
       return (await window.electron!.backendSftpCreateDirectory(sessionId, payload)) as
-        | ApiSftpCreateDirectoryResponse
-        | ApiErrorResponse;
+        ApiSftpCreateDirectoryResponse | ApiErrorResponse;
     },
     createSftpFile: async (sessionId, payload) => {
       return (await window.electron!.backendSftpCreateFile(sessionId, payload)) as
-        | ApiSftpCreateFileResponse
-        | ApiErrorResponse;
+        ApiSftpCreateFileResponse | ApiErrorResponse;
     },
     renameSftpEntry: async (sessionId, payload) => {
       return (await window.electron!.backendSftpRenameEntry(sessionId, payload)) as
-        | ApiSftpRenameResponse
-        | ApiErrorResponse;
+        ApiSftpRenameResponse | ApiErrorResponse;
     },
     copySftpEntry: async (sessionId, payload) => {
       return (await window.electron!.backendSftpCopyEntry(sessionId, payload)) as
-        | ApiSftpCopyResponse
-        | ApiErrorResponse;
+        ApiSftpCopyResponse | ApiErrorResponse;
     },
     deleteSftpEntry: async (sessionId, payload) => {
       return (await window.electron!.backendSftpDeleteEntry(sessionId, payload)) as
-        | ApiSftpDeleteResponse
-        | ApiErrorResponse;
+        ApiSftpDeleteResponse | ApiErrorResponse;
     },
     runSftpBatchOperation: async (sessionId, payload) => {
       return (await window.electron!.backendSftpBatchOperation(sessionId, payload)) as
-        | ApiSftpBatchOperationResponse
-        | ApiErrorResponse;
+        ApiSftpBatchOperationResponse | ApiErrorResponse;
     },
     getSftpArchiveCapabilities: async (sessionId) => {
       return (await window.electron!.backendSftpGetArchiveCapabilities(sessionId)) as
-        | ApiSftpArchiveCapabilitiesResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse;
     },
     startSftpArchiveOperation: async (sessionId, payload) => {
       return (await window.electron!.backendSftpStartArchiveOperation(sessionId, payload)) as
-        | ApiSftpArchiveOperationAcceptedResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse;
     },
     getSftpArchiveOperation: async (sessionId, operationId) => {
       return (await window.electron!.backendSftpGetArchiveOperation(sessionId, operationId)) as
-        | ApiSftpArchiveOperationStatusResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveOperationStatusResponse | ApiErrorResponse;
     },
     resolveSftpArchiveConflict: async (sessionId, operationId, payload) => {
       return (await window.electron!.backendSftpResolveArchiveConflict(sessionId, operationId, payload)) as
-        | ApiSftpArchiveConflictResolutionResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse;
     },
     cancelSftpArchiveOperation: async (sessionId, operationId) => {
       return (await window.electron!.backendSftpCancelArchiveOperation(sessionId, operationId)) as
-        | ApiSftpArchiveCancelResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveCancelResponse | ApiErrorResponse;
     },
     listLocalTerminalProfiles: async () => {
       return (await window.electron!.backendLocalTerminalListProfiles()) as
-        | LocalTerminalListResponse
-        | ApiErrorResponse;
+        LocalTerminalListResponse | ApiErrorResponse;
     },
     createLocalTerminalSession: async (payload) => {
       return (await window.electron!.backendLocalTerminalCreateSession(payload)) as
-        | LocalTerminalCreateSessionResponse
-        | ApiErrorResponse;
+        LocalTerminalCreateSessionResponse | ApiErrorResponse;
     },
     closeLocalTerminalSession: async (sessionId) => {
       return await window.electron!.backendLocalTerminalCloseSession(sessionId);
@@ -584,16 +547,14 @@ const createBrowserTransport = (): ApiTransport => {
     },
     updateSettings: async (payload) => {
       return (await callBrowserApi(API_PATHS.settingsUpdate, 'PUT', payload)) as
-        | ApiSettingsUpdateResponse
-        | ApiErrorResponse;
+        ApiSettingsUpdateResponse | ApiErrorResponse;
     },
     listSshServers: async () => {
       return (await callBrowserApi(API_PATHS.sshListServers, 'GET')) as ApiSshListServersResponse | ApiErrorResponse;
     },
     createSshServer: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateServer, 'POST', payload)) as
-        | ApiSshCreateServerResponse
-        | ApiErrorResponse;
+        ApiSshCreateServerResponse | ApiErrorResponse;
     },
     updateSshServer: async (serverId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sshUpdateServer, 'serverId', serverId);
@@ -608,8 +569,7 @@ const createBrowserTransport = (): ApiTransport => {
     },
     createSshFolder: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateFolder, 'POST', payload)) as
-        | ApiSshCreateFolderResponse
-        | ApiErrorResponse;
+        ApiSshCreateFolderResponse | ApiErrorResponse;
     },
     updateSshFolder: async (folderId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sshUpdateFolder, 'folderId', folderId);
@@ -620,18 +580,15 @@ const createBrowserTransport = (): ApiTransport => {
     },
     createSshTag: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateTag, 'POST', payload)) as
-        | ApiSshCreateTagResponse
-        | ApiErrorResponse;
+        ApiSshCreateTagResponse | ApiErrorResponse;
     },
     listSshKeychains: async () => {
       return (await callBrowserApi(API_PATHS.sshListKeychains, 'GET')) as
-        | ApiSshListKeychainsResponse
-        | ApiErrorResponse;
+        ApiSshListKeychainsResponse | ApiErrorResponse;
     },
     createSshKeychain: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateKeychain, 'POST', payload)) as
-        | ApiSshCreateKeychainResponse
-        | ApiErrorResponse;
+        ApiSshCreateKeychainResponse | ApiErrorResponse;
     },
     updateSshKeychain: async (keychainId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sshUpdateKeychain, 'keychainId', keychainId);
@@ -643,13 +600,11 @@ const createBrowserTransport = (): ApiTransport => {
     },
     listPortForwardRules: async () => {
       return (await callBrowserApi(API_PATHS.portForwardListRules, 'GET')) as
-        | ApiPortForwardListRulesResponse
-        | ApiErrorResponse;
+        ApiPortForwardListRulesResponse | ApiErrorResponse;
     },
     createPortForwardRule: async (payload) => {
       return (await callBrowserApi(API_PATHS.portForwardCreateRule, 'POST', payload)) as
-        | ApiPortForwardCreateRuleResponse
-        | ApiErrorResponse;
+        ApiPortForwardCreateRuleResponse | ApiErrorResponse;
     },
     updatePortForwardRule: async (ruleId, payload) => {
       const path = replaceApiPathToken(API_PATHS.portForwardUpdateRule, 'ruleId', ruleId);
@@ -677,20 +632,15 @@ const createBrowserTransport = (): ApiTransport => {
     },
     createSshSession: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshCreateSession, 'POST', payload)) as
-        | ApiSshCreateSessionResponse
-        | ApiSshCreateSessionHostVerificationRequiredResponse
-        | ApiErrorResponse;
+        ApiSshCreateSessionResponse | ApiSshCreateSessionHostVerificationRequiredResponse | ApiErrorResponse;
     },
     trustSshFingerprint: async (payload) => {
       return (await callBrowserApi(API_PATHS.sshTrustFingerprint, 'POST', payload)) as
-        | ApiSshTrustFingerprintResponse
-        | ApiErrorResponse;
+        ApiSshTrustFingerprintResponse | ApiErrorResponse;
     },
     createSftpSession: async (payload) => {
       return (await callBrowserApi(API_PATHS.sftpCreateSession, 'POST', payload)) as
-        | ApiSftpCreateSessionResponse
-        | ApiSftpCreateSessionHostVerificationRequiredResponse
-        | ApiErrorResponse;
+        ApiSftpCreateSessionResponse | ApiSftpCreateSessionHostVerificationRequiredResponse | ApiErrorResponse;
     },
     listSftpDirectory: async (sessionId, query) => {
       const path = resolveApiPath(API_PATHS.sftpListDirectory, { sessionId }, query);
@@ -751,8 +701,7 @@ const createBrowserTransport = (): ApiTransport => {
     startSftpArchiveOperation: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpStartArchiveOperation, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as
-        | ApiSftpArchiveOperationAcceptedResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveOperationAcceptedResponse | ApiErrorResponse;
     },
     getSftpArchiveOperation: async (sessionId, operationId) => {
       const sessionPath = replaceApiPathToken(API_PATHS.sftpGetArchiveOperation, 'sessionId', sessionId);
@@ -763,8 +712,7 @@ const createBrowserTransport = (): ApiTransport => {
       const sessionPath = replaceApiPathToken(API_PATHS.sftpResolveArchiveConflict, 'sessionId', sessionId);
       const path = replaceApiPathToken(sessionPath, 'operationId', operationId);
       return (await callBrowserApi(path, 'POST', payload)) as
-        | ApiSftpArchiveConflictResolutionResponse
-        | ApiErrorResponse;
+        ApiSftpArchiveConflictResolutionResponse | ApiErrorResponse;
     },
     cancelSftpArchiveOperation: async (sessionId, operationId) => {
       const sessionPath = replaceApiPathToken(API_PATHS.sftpCancelArchiveOperation, 'sessionId', sessionId);

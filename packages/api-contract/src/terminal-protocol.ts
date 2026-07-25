@@ -156,7 +156,4 @@ export type TerminalServerMessage =
 
 /** Complete Backend-to-Renderer message contract for SSH terminal sessions. */
 export type SshTerminalServerMessage =
-  | TerminalServerMessage
-  | RemoteBootstrapStatus
-  | RemoteEnhancementRuntimeStatus
-  | RemoteShellEventMessage;
+  TerminalServerMessage | RemoteBootstrapStatus | RemoteEnhancementRuntimeStatus | RemoteShellEventMessage;

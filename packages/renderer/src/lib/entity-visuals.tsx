@@ -3,16 +3,7 @@ import { icons } from 'lucide-react';
 import React from 'react';
 
 export type EntityColorKey =
-  | 'slate'
-  | 'blue'
-  | 'emerald'
-  | 'violet'
-  | 'amber'
-  | 'rose'
-  | 'cyan'
-  | 'indigo'
-  | 'teal'
-  | 'lime';
+  'slate' | 'blue' | 'emerald' | 'violet' | 'amber' | 'rose' | 'cyan' | 'indigo' | 'teal' | 'lime';
 
 export type EntityVisual = {
   iconKey: string;
