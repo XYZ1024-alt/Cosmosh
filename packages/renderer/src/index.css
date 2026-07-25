@@ -433,6 +433,26 @@ body {
   -moz-user-select: none;
 }
 
+/* OOBE-only theme cross-fade: custom properties do not transition, so the
+   first-run root opts into discrete property transitions for the token
+   variables that the theme switch repaints. */
+.oobe-theme-transition,
+.oobe-theme-transition * {
+  transition:
+    background-color 500ms ease,
+    border-color 500ms ease,
+    color 500ms ease,
+    fill 500ms ease,
+    stroke 500ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oobe-theme-transition,
+  .oobe-theme-transition * {
+    transition: none;
+  }
+}
+
 .terminal-command-timeline .xterm-decoration-overview-ruler {
   display: none !important;
 }

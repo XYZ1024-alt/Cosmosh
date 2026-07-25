@@ -308,6 +308,64 @@
     "selectAll": "全选",
     "undo": "撤销"
   },
+  "oobe": {
+    "actions": {
+      "back": "返回",
+      "next": "下一步",
+      "start": "开始使用"
+    },
+    "dialogDescription": "在打开工作区前完成 Cosmosh 的必要偏好设置。",
+    "dialogTitle": "欢迎使用 Cosmosh",
+    "errors": {
+      "openResourceFailed": "无法打开所选资源。",
+      "persistCompletionFailed": "Cosmosh 无法记录设置完成状态。请检查应用存储权限后重试。",
+      "saveFailed": "Cosmosh 无法保存您的设置，请重试。"
+    },
+    "languageMenu": {
+      "label": "选择语言"
+    },
+    "personalize": {
+      "description": "选择适合您的终端工作区默认设置。所有选项之后都可以更改。",
+      "settingsHint": "您稍后可以在“设置”中更改这些选项。",
+      "title": "自定义您的 Cosmosh 体验"
+    },
+    "ready": {
+      "description": "您的工作区已准备就绪。以下资源可以帮助您继续探索。",
+      "resources": {
+        "guide": {
+          "description": "了解服务器、终端与文件管理的核心使用流程。",
+          "title": "使用教程"
+        },
+        "openSource": {
+          "description": "在 GitHub 查看源代码、报告问题并参与贡献。",
+          "title": "Cosmosh 是开源项目"
+        },
+        "website": {
+          "description": "访问 Cosmosh 官方网站，了解项目最新动态。",
+          "title": "官方网站"
+        }
+      },
+      "title": "设置完成"
+    },
+    "welcome": {
+      "features": {
+        "performance": {
+          "description": "面向日常远程工作的高性能、专业级 SSH 与终端客户端。",
+          "title": "快速且专注的终端体验"
+        },
+        "workflow": {
+          "description": "在 SSH 会话与集成的 SFTP 文件工作流之间自然切换。",
+          "title": "SSH 与 SFTP 协同工作"
+        },
+        "workspace": {
+          "description": "在精确统一的工作区中组织服务器、长时运行的标签页与效率工具。",
+          "title": "为专业用户打造的工作区"
+        }
+      },
+      "subtitle": "为专注远程工作打造的专业 SSH 与 SFTP 工作区。",
+      "title": "欢迎使用 Cosmosh"
+    }
+  },
   "searchReplace": {
     "close": "关闭",
     "currentMatch": "{current}/{total}",

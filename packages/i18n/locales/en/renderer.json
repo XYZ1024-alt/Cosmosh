@@ -308,6 +308,64 @@
     "selectAll": "Select All",
     "undo": "Undo"
   },
+  "oobe": {
+    "actions": {
+      "back": "Back",
+      "next": "Next",
+      "start": "Start Using Cosmosh"
+    },
+    "dialogDescription": "Set up the essential Cosmosh preferences before opening the workspace.",
+    "dialogTitle": "Welcome to Cosmosh",
+    "errors": {
+      "openResourceFailed": "The selected resource could not be opened.",
+      "persistCompletionFailed": "Cosmosh could not record that setup is complete. Check app storage access and try again.",
+      "saveFailed": "Cosmosh could not save your setup. Try again."
+    },
+    "languageMenu": {
+      "label": "Choose language"
+    },
+    "personalize": {
+      "description": "Choose the defaults that shape your terminal workspace. You can change every option later.",
+      "settingsHint": "You can change these options later in Settings.",
+      "title": "Customize Your Cosmosh Experience"
+    },
+    "ready": {
+      "description": "Your workspace is ready. These resources can help you take the next step.",
+      "resources": {
+        "guide": {
+          "description": "Learn the core server, terminal, and file workflows.",
+          "title": "User Guide"
+        },
+        "openSource": {
+          "description": "Explore the source, report issues, and contribute on GitHub.",
+          "title": "Cosmosh Is Open Source"
+        },
+        "website": {
+          "description": "Visit the official Cosmosh website for project updates.",
+          "title": "Official Website"
+        }
+      },
+      "title": "Setup Complete"
+    },
+    "welcome": {
+      "features": {
+        "performance": {
+          "description": "A high-performance, professional-grade SSH and terminal client built for daily work.",
+          "title": "Fast, Focused Terminal Work"
+        },
+        "workflow": {
+          "description": "Move naturally between SSH sessions and integrated SFTP file workflows.",
+          "title": "SSH and SFTP Together"
+        },
+        "workspace": {
+          "description": "Organize servers, long-running tabs, and power-user tools in one precise workspace.",
+          "title": "A Workspace for Power Users"
+        }
+      },
+      "subtitle": "A professional SSH and SFTP workspace built for focused remote work.",
+      "title": "Welcome to Cosmosh"
+    }
+  },
   "searchReplace": {
     "close": "Close",
     "currentMatch": "{current} of {total}",

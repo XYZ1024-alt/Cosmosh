@@ -42,6 +42,10 @@ module.exports = {
         'menu-content': '0 8px 30px var(--shadow-menu-content)',
         glow: '0 0 40px var(--color-accent-glow)',
       },
+      transitionTimingFunction: {
+        // iOS-style deceleration curve for full-screen slide transitions (OOBE step paging).
+        slide: 'cubic-bezier(0.32, 0.72, 0, 1)',
+      },
       spacing: {
         18: '4.5rem',
         22: '5.5rem',

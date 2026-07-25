@@ -186,6 +186,17 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Failed tasks keep the original operation label and file detail, add a localized backend reason in the semantic error color, and raise the shared error toast. Error text must wrap within the dense task surface without resizing the toolbar trigger.
 - Recent terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
 
+## 7.10 First-Run Experience
+
+- The first main-window render presents a non-dismissible OOBE dialog before the workbench mounts. Standalone renderer documents, including SFTP entry properties windows, bypass OOBE.
+- The dialog shell is capped at 800 × 800 px and keeps at least `calc(100% - 5rem)` of window-edge breathing room on every axis; OOBE must not force tighter edge margins.
+- The window margins around the OOBE dialog behave like the hidden title bar (drag to move, double-click to maximize/restore) through a dedicated full-screen drag layer; the dialog surface opts out with an explicit `no-drag` region because Chromium computes drag regions as union/subtraction rather than topmost hit-testing.
+- The welcome, personalization, and completion screens share one stable dialog shell. Only the content viewport slides horizontally (500 ms with the `ease-slide` timing-function token); footer hints and navigation actions remain fixed.
+- Personalization edits the existing Settings contract for language, theme, remote enhancements, terminal auto-complete, and Orbit Bar, reusing canonical Settings labels and descriptions. OOBE must merge those choices into the latest canonical settings snapshot instead of maintaining a second settings model. Theme choices preview immediately through the shared `applyThemeSetting` path, and only the OOBE root opts into the 500 ms color cross-fade (`.oobe-theme-transition`); the rest of the app shell must not inherit this transition.
+- Theme cards render fixed-color miniature skeleton previews (dark-dominant, light-dominant, and a clip-path diagonal half-dark/half-light split for system) that intentionally bypass theme tokens; the split must use clip-path, not gradients, to avoid anti-aliased seams along the diagonal. Cards stay compact, borderless, and background-free, and selection is expressed through an outline-like accent ring inside an accessible radio-group contract, with no check badges. Setting rows keep label-left/control-right geometry, connect labels to controls, and reuse the canonical Settings descriptions in helper tooltips only for non-obvious options; self-explanatory items such as theme and language render without helper tooltips.
+- The workbench must not render behind OOBE. Completion saves settings, persists the versioned renderer completion marker, plays the shared dialog exit animation, and only then reloads the WebView (with a timed fallback if the animation event never fires) so language/theme-sensitive surfaces initialize consistently without a background-content flash.
+- The final resource cards open only approved HTTPS destinations through the preload bridge. Opening or persistence failures remain visible in the fixed footer and must not silently dismiss OOBE.
+
 ## 8. Compliance Checklist
 
 Before merging UI changes:

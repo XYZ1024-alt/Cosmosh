@@ -4,10 +4,12 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import App from './App';
+import FirstRunExperience from './components/oobe/FirstRunExperience';
 import { InputContextMenuProvider } from './components/ui/input-context-menu';
 import { SelectionContextMenuProvider } from './components/ui/selection-context-menu';
 import { initializeBackendRequestTraceMirror } from './lib/backend-request-trace-mirror';
 import { initializeLocale } from './lib/i18n';
+import { isOobeCompleted } from './lib/oobe';
 import { initializeSettingsStore } from './lib/settings-store';
 import { isSftpEntryPropertiesWindow } from './pages/sftp/sftp-entry-properties-window';
 import SftpEntryPropertiesPage from './pages/sftp/SftpEntryPropertiesPage';
@@ -30,7 +32,13 @@ const bootstrap = async (): Promise<void> => {
     await initializeSettingsStore();
   }
 
-  const appNode = shouldRenderSftpPropertiesWindow ? <SftpEntryPropertiesPage /> : <App />;
+  const appNode = shouldRenderSftpPropertiesWindow ? (
+    <SftpEntryPropertiesPage />
+  ) : isOobeCompleted() ? (
+    <App />
+  ) : (
+    <FirstRunExperience />
+  );
   const rootNode = (
     <InputContextMenuProvider>
       <SelectionContextMenuProvider>{appNode}</SelectionContextMenuProvider>
