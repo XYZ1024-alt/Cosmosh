@@ -17,8 +17,8 @@ v1 已实现：
 - 左侧目录树展示当前目录的父级链路，并在用户浏览时缓存已加载的子目录；目录导航后，只有逻辑上的上级/当前/已展开下级目录上下文不在树视口内时，才会自动将当前目录行滚动到树视口上方约三分之一的位置；还提供目录作用域的右键操作：打开、在新标签页打开、刷新、粘贴、从 SFTP 剪贴板粘贴为链接、新建文件与新建文件夹。
 - 中间列表右键菜单与顶部操作栏提供打开、文件夹新标签打开、属性、在此处打开 SSH、复制地址、复制相对地址、保存普通文件到本地、支持平台上的打开方式、剪切、复制、粘贴、从 SFTP 剪贴板粘贴为链接、删除、新建文件、新建文件夹与行内重命名。符号链接行使用专门的文件/文件夹链接图标，并提供`打开文件所在的位置`，该动作会按需解析链接目标并跳转到目标所在目录。目录列表支持鼠标和键盘通过 `Ctrl`/`Cmd` 切换多选、`Ctrl`/`Cmd+A` 全选与 `Shift` 范围选择。
 - 同一 SFTP 标签页内的内部拖拽可从一个或多个目录列表条目开始，并且只接受明确的远程目录目标：左侧目录树行、中间列表目录行、面包屑目录段和地址栏目录下拉项。最终动作可为询问、移动、复制或创建链接，并为平台主修饰键提供单独设置（Windows/Linux 为 `Ctrl`，macOS 为 `Cmd`）。
-- 工具栏、目录空白区域菜单、树目录菜单与外部文件拖放可以将一个或多个本地普通文件上传到所选远程目录。Main 会把原生选择器选中的文件以及 preload 解析出的拖放文件暂存到受控 SFTP 临时根目录；上传通过标签页本地任务队列顺序执行，远程存在同名文件时必须显式确认覆盖。外部文件夹拖放会被拒绝并在 renderer 给出反馈，直到递归目录上传实现。
-- Renderer 管理的文件操作会按 SFTP 标签页进入本地队列，并在紧凑的工具栏任务菜单中展示排队、运行、成功与失败状态。Phase 2 仍以该标签页本地 FIFO 作为 renderer 的实际执行路径，迁移到 backend task API 留到 Phase 3。单文件上传和显式下载会额外展示字节进度、百分比与滚动传输速度；失败任务会同时保留文件名与 backend 错误原因，并显示本地化错误通知。
+- 工具栏、目录空白区域菜单、树目录菜单与外部文件拖放可以将一个或多个本地普通文件上传到所选远程目录。Main 会把原生选择器选中的文件以及 preload 解析出的拖放文件暂存到受控 SFTP 临时根目录；上传可并发提交，并由 backend path claim 决定实际顺序，远程存在同名文件时必须显式确认覆盖。外部文件夹拖放会被拒绝并在 renderer 给出反馈，直到递归目录上传实现。
+- Renderer 管理的文件操作会按 SFTP 标签页显示在紧凑的工具栏任务菜单中，包含排队、运行、成功与失败状态。受支持操作会立即进入 backend task API，并在 backend claim 允许时并发运行；预览写入和归档编排保留独立的 renderer 串行通道。单文件上传和显式下载会额外展示字节进度、百分比与滚动传输速度；失败任务会同时保留文件名与 backend 错误原因，并显示本地化错误通知。
 - SFTP 设置控制重连模式、删除确认的触发范围、内部拖拽默认动作与修饰键动作、文件列表列/排序视图状态、中间文件列表是否显示开头的 `..` 父目录行、地址栏是否始终以文本形式显示、辅助侧栏模式，以及文本/图片预览警告阈值。
 - Backend 写操作支持本地文件上传、空文件创建、目录创建、重命名/移动、递归复制、绝对符号链接创建与递归删除。
 
@@ -168,8 +168,8 @@ sequenceDiagram
 - 公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。通过 `POST /api/v1/sftp/sessions/{sessionId}/file` 执行的预览文本写入因内容内联而保留同步 HTTP 契约，但会作为不创建公共任务记录的隐藏 mutation 进入调度器。既有列表/读取/mutation route 也使用同一隐藏协调边界，因此无法绕过 task claim 或归档独占。
 - 每个任务声明规范化 POSIX path claim。相等路径以及祖先/后代路径会串行，互不相交的兄弟路径可以并发。较早排队任务会保留重叠 claim，不相关工作可以绕过它。归档能力探测会持有会话独占 claim，直到探测结束；归档启动会取得同一 claim，并持有到终态清理结束，因此普通任务不会与任一生命周期重叠。
 - 一个绝对 deadline 同时覆盖排队等待与 runner 执行。排队期间超时的任务直接失败且不会调用 runner。运行中任务在 deadline 到达时会立即发布带 `SFTP_TASK_DEADLINE_EXCEEDED` 的 `failed`，但容量 slot 与 path claim 会继续保留，直到其底层 runner 真正结束。超时 mutation 会包含 `outcomeUnknown: true`，因为远端副作用可能已经发生。
-- 公共任务快照仅存在于 backend 内存中，在近期会话关闭后仍可查询，并在 runner 释放后最多保留七天。每个会话最多保留 512 条记录；达到压力上限时会先淘汰最早已释放的终态快照，无法腾出空间时才拒绝更多任务，backend 停止时清除剩余记录。Phase 3 后，更长时间的已查看/前台聚焦注意状态由 renderer 持有。任务集合没有公共取消或续传 route，也没有持久化；归档专用取消继续使用独立的 archive API。
-- Phase 2 不会把 renderer 切换到这些端点。SFTP 工作台继续使用标签页本地 FIFO 与现有任务菜单行为；消费 backend task API 属于 Phase 3。
+- 公共任务快照仅存在于 backend 内存中，在近期会话关闭后仍可查询，并在 runner 释放后最多保留七天。每个会话最多保留 512 条记录；达到压力上限时会先淘汰最早已释放的终态快照，无法腾出空间时才拒绝更多任务，backend 停止时清除剩余记录。Renderer 任务状态独立负责更短的用户注意生命周期。任务集合没有公共取消或续传 route，也没有持久化；归档专用取消继续使用独立的 archive API。
+- SFTP 工作台会通过 Main/preload 提交`create-file`、`create-directory`、`rename`、`upload`、`download`与`batch`descriptor，然后始终使用任务接纳响应中的`sessionId`轮询，即使被动重连改变了标签页当前 session。无关任务会并发启动，实际执行顺序由 backend admission 与 path claim 决定。
 
 ## 5. 目录列表与文件操作
 
@@ -219,11 +219,11 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 - 删除使用 `lstat`，因此符号链接会作为链接本身删除，而不会跟随到目标。
 - Renderer 请求删除目录时使用递归删除。
 - 删除确认是 renderer 侧安全门，由 `sftpDeleteConfirmationMode` 控制：`always` 每次删除前确认，`batch` 仅在删除多个已选条目时确认，`shortcut` 仅在键盘快捷键触发删除时确认，`off` 直接调用 backend 删除流程。
-- Renderer 文件操作会先进入标签页本地 FIFO 任务队列，再调用 backend。队列运行期间仍可继续使用导航、选择、过滤与刷新；工具栏任务菜单会在任务完成后保留一小段可检查时间再移除。显式上传/下载任务会生成 UUID `transferId`，在最终请求等待期间每 500 ms 轮询一次 `GET /api/v1/sftp/transfers/{transferId}`，无需让文件内容经过 IPC 即可展示字节进度与速度。
-- Phase 2 有意让该 renderer FIFO 继续调用既有同步操作 route，但这些 route 现在会作为隐藏协调任务进入 backend 调度器。Phase 3 才会把受支持操作迁移到公共 backend task API；预览文本写入在迁移后仍保持同步。
+- Renderer 任务使用两个通道。公共 descriptor 会并发启动，并由 backend 容量/path claim 排序；预览文本写入和归档编排因为契约同步或持有独立状态，继续使用标签页本地串行通道。任务运行期间仍可继续使用导航、选择、过滤与刷新。
+- 显式上传/下载任务会生成 UUID `transferId`，在已接纳任务等待期间每 500 ms 轮询一次 `GET /api/v1/sftp/transfers/{transferId}`，无需让文件内容经过 IPC 即可展示字节进度与速度。Main 会在接纳下载任务前消费授权，并在任务列表/详情轮询观察到终态时释放授权。
 - `SftpSessionService` 会在内存中保存活动和终态进度记录。流数据块会立即更新已传输字节，并以不高于每 250 ms 一次的频率刷新平滑后的每秒字节数。完成与失败记录可继续查询 60 秒，不会持久化，并采用惰性清理。
 - 本地上传选择由 main 通过原生多文件对话框负责；外部文件拖放只在 preload 内解析为本地路径，再交给 main 暂存。每个选中或拖入的普通文件都会先复制到 Cosmosh SFTP 临时根目录下的隔离目录，再把描述信息交给 renderer；本机源路径不会暴露给 backend HTTP，也不会由 renderer 保留。拖入目录与非普通文件会作为 rejected entries 返回，v1 不会递归遍历。
-- 每个上传暂存文件会成为一个 FIFO 上传任务。远程目标不存在时使用独占写语义创建；既有普通文件目标会返回 `SFTP_UPLOAD_CONFLICT`，除非请求携带原始打开快照，或 renderer 在显式确认后使用 `overwrite: true` 重试。
+- 每个上传暂存文件会成为一个并发上传任务，并保留到 backend 任务到达终态。远程目标不存在时使用独占写语义创建；既有普通文件目标会返回 `SFTP_UPLOAD_CONFLICT`，除非请求携带原始打开快照，或 renderer 在显式确认后使用 `overwrite: true` 重试。并发产生的冲突提示按 FIFO 展示。
 - 上传任务结束后会删除对应暂存文件；连接重置与标签页卸载也会请求尽力清理尚未开始的排队暂存路径。
 - 被动重连会作为普通 `重连` 任务展示在同一个任务菜单中。多个 SFTP 操作遇到同一个过期会话时共享一个正在进行的 reconnect promise。只读操作会使用替代 session id 重放一次；mutation 保留原结果且不会重放。如果重放后的读取仍失败，renderer 会报告该失败，并且不会开启第二轮重连循环。
 - 重连创建替代会话时优先使用标签页当前路径（`currentPathRef.current`），失败时回退到原始连接意图路径；没有初始路径时回退到 `.`。
@@ -231,11 +231,11 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 - 本地保存仍是单条目动作，仅支持普通文件。`保存到“下载”` 会向 main 请求授权系统下载目录下的一个精确文件，`保存到...` 会请求 main 授权原生保存对话框选中的路径。两种能力都绑定 renderer 所有者且只能使用一次；backend 代理会先拒绝 renderer 任意指定的目标，再通过当前 SFTP 会话将远程文件流式写入本地临时文件，成功后替换最终目标。
 - 默认文件打开与打开方式也仍是普通文件的单条目动作。Renderer 会先向 main 请求 Main 拥有的每次运行 SFTP 临时根目录下绑定所有者且可复用的唯一路径，复用现有 SFTP 下载端点将文件落地，再要求 main 仅打开该已校验的临时路径。
 - 预览读取由 renderer 驱动，且仅支持单条目。文本/代码预览调用有上限的 UTF-8 文件读取端点；超过 `sftpTextPreviewWarningThresholdBytes` 的文件在读取前需要确认，读取大小仍受 backend 最大值限制。图片预览复用临时下载路径，但使用预览专属、经过 size/mtime 校验的缓存，并与 Open/Open With 临时文件分离；超过 `sftpImagePreviewWarningThresholdBytes` 的图片在下载前需要确认，但确认不会绕过下载前检查的图片预览硬大小上限。
-- CodeMirror 预览保存会在同一个标签页本地 FIFO 队列中加入`保存`任务。请求会携带 UTF-8 内容，以及已选文件打开时的 `size` 与 `modifiedAt` 快照到 `POST /api/v1/sftp/sessions/{sessionId}/file`。远程快照不匹配时返回 `SFTP_UPLOAD_CONFLICT`；renderer 会复用覆盖确认弹窗，并且只在用户显式确认后用 `overwrite: true` 重试。
+- CodeMirror 预览保存会在标签页本地串行通道中加入`保存`任务。请求会携带 UTF-8 内容，以及已选文件打开时的 `size` 与 `modifiedAt` 快照到 `POST /api/v1/sftp/sessions/{sessionId}/file`。远程快照不匹配时返回 `SFTP_UPLOAD_CONFLICT`；renderer 会复用覆盖确认弹窗，并且只在用户显式确认后用 `overwrite: true` 重试。
 - CodeMirror 预览内的键盘快捷键会保留在编辑器作用域内，包括 `Ctrl`/`Cmd+S` 保存与 `Ctrl`/`Cmd+F` 查找/替换。它的右键菜单使用共享的 Cosmosh 文本编辑菜单表面，提供撤销、重做、查找/替换、剪切、复制、粘贴和全选。查找/替换面板使用 renderer 可复用的 `SearchReplacePanel`；只读预览仍保留查找能力，并以只读状态呈现替换控制。SFTP 页面级文件列表快捷键和全局兜底右键菜单必须忽略来自编辑器、文本输入或 contenteditable 目标的事件。
 - 未保存的 CodeMirror 预览编辑会阻止那些会隐藏或替换当前预览的选择切换和工具栏侧栏模式切换。打开另一个 SFTP 连接等硬运行时重置仍会清除标签页内预览状态，因为原远程会话上下文已经不再有效。
 - 默认打开或打开方式动作成功后，main 会为该临时文件启动防抖监听，并且只向拥有该监听的 renderer webContents 推送变更事件。Renderer 对每个远程路径只保留一个待处理上传提示，因此编辑器连续保存事件会合并到一次提示，直到用户上传或忽略。
-- 用户接受上传提示后，会在同一个标签页本地 FIFO 任务队列中加入`上传`任务。上传请求携带打开远程文件时的 `size` 与 `modifiedAt`；backend 写入前会将这些值与当前远程 `stat` 比较。不一致时，backend 返回 `SFTP_UPLOAD_CONFLICT`，且这次请求不会覆盖远程文件。
+- 用户接受上传提示后，会加入一个并发`上传`任务。上传请求携带打开远程文件时的 `size` 与 `modifiedAt`；backend 写入前会将这些值与当前远程 `stat` 比较。不一致时，backend 返回 `SFTP_UPLOAD_CONFLICT`，且这次请求不会覆盖远程文件。
 - Renderer 收到 `SFTP_UPLOAD_CONFLICT` 后，会让同一个上传任务继续运行，并打开第二个确认弹窗询问是否覆盖远程更改。取消该弹窗会跳过上传；确认后会用 `overwrite: true` 重试同一次上传，显式绕过打开时快照检查，但仍要求远程目标是普通文件、本地路径来自已校验的 Cosmosh 临时文件。
 - 上传成功会先写入目标目录中的远程临时文件，再替换原文件。Backend 会优先使用 OpenSSH POSIX rename 扩展；服务器支持时回退到普通 SFTP rename；非覆盖上传只有在再次复检远程 `size`/`modifiedAt` 冲突守卫通过后，才使用 `unlink` + `rename` 兼容路径。显式覆盖上传会跳过该复检，因为用户已经确认冲突。随后 renderer 刷新可见目录，并用上传响应和刷新后的列表更新该监听文件的远程快照。忽略提示只会清除当前待处理变更，不会停止监听，因此后续本地保存仍可再次提示。
 - 在 Windows 上，`打开方式...` 是没有二级菜单的普通菜单项，会先通过隐藏 PowerShell 进程调用 shell `openas` verb。Main 将内核所有的 `\\?\GLOBALROOT\SystemRoot\System32` 命名空间解析为 canonical System32 目录，再分别确认 PowerShell 主路径与 rundll32/shell32 fallback 是该真实、非符号链接目录内的普通文件；继承的 `SystemRoot`、`WINDIR`、PATH 与 CWD 都不能选择这些命令。打开文件前，可信 PowerShell 会通过 `Environment.SpecialFolder` API 查询 Program Files、Common Files、ProgramData 与用户 profile 路径；main 校验有大小上限的输出，并据此补充已注册 Shell handler 所需的子进程环境。子进程使用 canonical System32 作为 CWD、设置 `shell: false`，并继续省略 PATH、PATHEXT、ComSpec 或 PowerShell module 查找变量。已校验的临时文件路径会通过子进程环境变量传入，以避开 PowerShell 参数解析边界问题。当 PowerShell 不可用、known-folder 查询失败或 PowerShell shell verb 被拒绝时，main 会调用独立校验的 rundll32/shell32 fallback；如果 known-folder 查询已经成功，fallback 会复用补充后的环境，否则只使用 canonical system-root 变量和已校验目标路径组成的最小环境。在 macOS 上，`打开方式...` 是由 `packages/main/resources/helpers` 中的 NSWorkspace helper 填充的二级菜单；`prebuild` 会在 macOS 上编译 helper 二进制。打包运行只接受 `process.resourcesPath/helpers` 内真实且可执行的 helper，缺失时会 fail closed；只有未打包开发态可以回退到仓库二进制或 Swift 源码。Linux 不渲染打开方式动作。
@@ -249,7 +249,7 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 
 运行规则：
 
-1. 归档能力探测会取得 backend 调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持续持有到终态清理结束。探测与启动只接受可立即取得的独占权；无法立即取得时返回 `SFTP_ARCHIVE_BUSY`，不会让 HTTP 请求留在队列中等待。Phase 2 的请求还会经过既有 renderer 标签页 FIFO，因此多归档按选择顺序解压。
+1. 归档能力探测会取得 backend 调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持续持有到终态清理结束。探测与启动只接受可立即取得的独占权；无法立即取得时返回 `SFTP_ARCHIVE_BUSY`，不会让 HTTP 请求留在队列中等待。归档请求还会经过 renderer 串行通道，因此多归档按选择顺序解压。
 2. 压缩只接受同一源目录中的非空结构化路径、basename 归档名、规范格式与 `store`/`fast`/`standard`/`maximum`。拒绝写入 `/` 或 `.`。Backend 先写入随机 `.cosmosh-*` 同级文件，复检目标不存在后再重命名为最终归档。
 3. 解压接受当前 SFTP 会话中的单个普通归档文件与远端绝对目标目录；缺失的目标路径层级会在逐级确认均为目录后创建，但仍拒绝远端根目录。任务创建的目录在提交前属于临时状态，失败或取消时只会在仍为空的情况下删除。归档和目标可以位于不同目录。Backend 结合复合扩展名、有限文件头与工具 list/test 命令校验。完整成员清单必须能容纳在校验输出上限内；一旦发生截断，会在解压前拒绝任务。绝对/穿越成员，以及暂存区内逃逸随机 `0700` 解压目录的符号链接，会在提交前被拒绝。
 4. 智能解压会把单个顶层项直接提交到当前目录；空归档或多个顶层项会重命名为归档同名目录，冲突时使用 `name (2)`、`name (3)`等。显式当前目录/归档同名目录模式遇到冲突时暂停。自定义目标会在所选远端目录内复用当前目录模式的提交和冲突语义，并在需要时创建该目录。

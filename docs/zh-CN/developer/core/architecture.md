@@ -316,7 +316,7 @@ sequenceDiagram
 
 - 文件字节继续沿既有 backend 流路径传输；HTTP 与 IPC 只传递有界进度元数据。
 - Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
-- Phase 2 的 renderer 进度观测仍属于既有标签页本地 FIFO 队列。Backend task scheduler 已作为独立 HTTP 能力存在，但 renderer 到该能力的迁移推迟到 Phase 3；两条路径都不提供通用取消、续传或持久化历史。
+- Renderer 传输进度附着在并发启动的 backend 任务上。任务始终使用接纳时捕获的 session id 轮询，字节进度仍以`transferId`为键；两条路径都不提供通用取消、续传或持久化历史。
 
 ### 6.4 SFTP Backend 任务调度数据流
 
@@ -346,13 +346,13 @@ sequenceDiagram
 - 支持的公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。预览 `write-file` 保留同步 HTTP 契约，但会作为隐藏任务进入调度器；所有既有 SFTP operation route 都使用同一 service 协调边界。
 - 绝对 deadline 包含排队等待。期限到达会立即发布 `failed`；运行中任务会继续持有容量与 claim，直到 runner 真正结束，超时 mutation 会发布 `outcomeUnknown: true`。
 - 任务记录仅存在于内存中，在近期会话关闭后仍可读取；每个会话最多保留 512 条，并在 runner 释放七天后过期。Backend 停止时会清理全部记录。Task API 只暴露启动、列表与详情：没有公共任务取消、续传或持久化契约。
-- Phase 2 的 renderer 操作继续经过标签页本地 FIFO；Phase 3 负责迁移到该 backend API。
+- Renderer 会把六种受支持 descriptor 全部通过 Main/preload 发送到该 API。无关任务并发启动；只有同步预览写入和持有独立状态的归档编排保留单独串行通道。
 
 ### 6.5 SFTP 远端归档数据流
 
 ```mermaid
 sequenceDiagram
-  participant UI as Renderer FIFO 任务
+  participant UI as Renderer 归档串行通道
   participant MP as Main/Preload 代理
   participant API as Backend 归档路由
   participant SCH as 会话任务调度器
@@ -378,7 +378,7 @@ sequenceDiagram
 ```
 
 - 远端命令、工具输出与随机暂存路径只存在于 backend。公共契约仅传递路径、格式、级别、目标模式、阶段、冲突摘要与稳定错误。
-- 归档能力探测会取得调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持有到终态清理结束。两者都只接受可立即取得的独占权，无法取得时返回 `SFTP_ARCHIVE_BUSY`，不会在没有可轮询标识的情况下等待。Phase 2 的 renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
+- 归档能力探测会取得调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持有到终态清理结束。两者都只接受可立即取得的独占权，无法取得时返回 `SFTP_ARCHIVE_BUSY`，不会在没有可轮询标识的情况下等待。Renderer 归档请求进入自身串行通道，因此多个归档操作保持选择顺序，而普通 backend 任务不会被全局串行化。
 - 关闭会话时先请求取消归档任务并进行有界清理，再断开 SSH。批量关闭会并行等待各会话，并保持既有活动连接计数契约。
 
 ### 6.6 失败边界模型

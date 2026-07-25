@@ -42,12 +42,16 @@ import type {
   ApiSftpDownloadFileResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -116,6 +120,9 @@ type ApiResponse =
   | ApiSftpCopyResponse
   | ApiSftpDeleteResponse
   | ApiSftpBatchOperationResponse
+  | ApiSftpStartTaskResponse
+  | ApiSftpListTasksResponse
+  | ApiSftpGetTaskResponse
   | ApiSftpArchiveCapabilitiesResponse
   | ApiSftpArchiveCancelResponse
   | ApiSftpArchiveConflictResolutionResponse
@@ -237,6 +244,12 @@ export type ApiTransport = {
     sessionId: string,
     payload: ApiSftpBatchOperationRequest,
   ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
+  startSftpTask: (
+    sessionId: string,
+    payload: ApiSftpStartTaskRequest,
+  ) => Promise<ApiSftpStartTaskResponse | ApiErrorResponse>;
+  listSftpTasks: (sessionId: string) => Promise<ApiSftpListTasksResponse | ApiErrorResponse>;
+  getSftpTask: (sessionId: string, taskId: string) => Promise<ApiSftpGetTaskResponse | ApiErrorResponse>;
   getSftpArchiveCapabilities: (sessionId: string) => Promise<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>;
   startSftpArchiveOperation: (
     sessionId: string,
@@ -449,6 +462,17 @@ const createElectronTransport = (): ApiTransport => {
     runSftpBatchOperation: async (sessionId, payload) => {
       return (await window.electron!.backendSftpBatchOperation(sessionId, payload)) as
         ApiSftpBatchOperationResponse | ApiErrorResponse;
+    },
+    startSftpTask: async (sessionId, payload) => {
+      return (await window.electron!.backendSftpStartTask(sessionId, payload)) as
+        ApiSftpStartTaskResponse | ApiErrorResponse;
+    },
+    listSftpTasks: async (sessionId) => {
+      return (await window.electron!.backendSftpListTasks(sessionId)) as ApiSftpListTasksResponse | ApiErrorResponse;
+    },
+    getSftpTask: async (sessionId, taskId) => {
+      return (await window.electron!.backendSftpGetTask(sessionId, taskId)) as
+        ApiSftpGetTaskResponse | ApiErrorResponse;
     },
     getSftpArchiveCapabilities: async (sessionId) => {
       return (await window.electron!.backendSftpGetArchiveCapabilities(sessionId)) as
@@ -693,6 +717,19 @@ const createBrowserTransport = (): ApiTransport => {
     runSftpBatchOperation: async (sessionId, payload) => {
       const path = replaceApiPathToken(API_PATHS.sftpBatchOperation, 'sessionId', sessionId);
       return (await callBrowserApi(path, 'POST', payload)) as ApiSftpBatchOperationResponse | ApiErrorResponse;
+    },
+    startSftpTask: async (sessionId, payload) => {
+      const path = replaceApiPathToken(API_PATHS.sftpStartTask, 'sessionId', sessionId);
+      return (await callBrowserApi(path, 'POST', payload)) as ApiSftpStartTaskResponse | ApiErrorResponse;
+    },
+    listSftpTasks: async (sessionId) => {
+      const path = replaceApiPathToken(API_PATHS.sftpListTasks, 'sessionId', sessionId);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpListTasksResponse | ApiErrorResponse;
+    },
+    getSftpTask: async (sessionId, taskId) => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpGetTask, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'taskId', taskId);
+      return (await callBrowserApi(path, 'GET')) as ApiSftpGetTaskResponse | ApiErrorResponse;
     },
     getSftpArchiveCapabilities: async (sessionId) => {
       const path = replaceApiPathToken(API_PATHS.sftpGetArchiveCapabilities, 'sessionId', sessionId);

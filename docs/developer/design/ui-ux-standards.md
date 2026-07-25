@@ -182,9 +182,11 @@ Terminal text selection interactions in SSH pages must follow these rules:
 ## 7.9 SFTP Transfer Task Feedback
 
 - Reuse the existing tab-local toolbar task menu for upload/download progress; do not introduce a floating transfer window, page banner, or modal for routine progress.
+- Supported backend tasks may run concurrently, but the compact menu keeps one stable creation-time identity per operation and sorts active states before recent terminal states. Preview writes and archive orchestration remain serialized without changing the visual surface.
 - Running byte transfers show a stable progress bar, percentage, transferred/total size, and current speed. Polling updates should be throttled so stream chunks do not directly drive React renders.
 - Failed tasks keep the original operation label and file detail, add a localized backend reason in the semantic error color, and raise the shared error toast. Error text must wrap within the dense task surface without resizing the toolbar trigger.
-- Recent terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
+- A failed task remains in renderer state while its attention is `unseen`. Opening the task menu marks visible failures `viewed`; a visible document whose window has focus marks them `focus-exposed`. Only then may the normal short inspection retention remove them.
+- Successful, cancelled, viewed, and focus-exposed terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
 
 ## 7.10 First-Run Experience
 

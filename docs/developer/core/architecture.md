@@ -316,7 +316,7 @@ sequenceDiagram
 
 - File bytes stay on the existing backend stream path; only bounded progress metadata crosses HTTP and IPC.
 - Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
-- Phase 2 renderer progress observation still belongs to the existing tab-local FIFO queue. A backend task scheduler now exists as a separate HTTP capability, but renderer migration to it is deferred to Phase 3; neither path provides generalized cancellation, resume, or persisted history.
+- Renderer transfer progress is attached to concurrently started backend tasks. The task is polled with the session id captured at acceptance, while byte progress remains keyed by `transferId`; neither path provides generalized cancellation, resume, or persisted history.
 
 ### 6.4 SFTP Backend Task Scheduling Data Flow
 
@@ -346,13 +346,13 @@ sequenceDiagram
 - Supported public task descriptors are `create-file`, `create-directory`, `rename`, `upload`, `download`, and `batch`. Preview `write-file` retains its synchronous HTTP contract but executes as hidden scheduler work; all legacy SFTP operation routes use that same coordinated service boundary.
 - The absolute deadline includes queue wait. Deadline expiry publishes `failed` immediately; a running task continues to own capacity and claims until its runner settles, and timed-out mutations publish `outcomeUnknown: true`.
 - Task records are memory-only, remain readable after a recent session close, and are bounded to 512 records per session with a seven-day post-release TTL. Backend stop clears all records. The task API exposes start, list, and detail only: there is no public task cancel, resume, or persistence contract.
-- Phase 2 renderer operations continue through the tab-local FIFO. Phase 3 owns migration to this backend API.
+- Renderer routes all six supported descriptors through Main/preload into this API. It starts unrelated tasks concurrently and retains a separate serial lane only for synchronous preview writes and stateful archive orchestration.
 
 ### 6.5 SFTP Remote Archive Data Flow
 
 ```mermaid
 sequenceDiagram
-  participant UI as Renderer FIFO Task
+  participant UI as Renderer Serial Archive Lane
   participant MP as Main/Preload Proxy
   participant API as Backend Archive Routes
   participant SCH as Session Task Scheduler
@@ -378,7 +378,7 @@ sequenceDiagram
 ```
 
 - The remote command, tool output, and random staging paths are backend-private. Public contracts carry paths, format, level, destination mode, phase, conflict summaries, and stable errors only.
-- Archive capability probing acquires the scheduler's exclusive session claim until the probe settles. Archive startup acquires the same claim and retains it through terminal cleanup. Both use immediate-only admission and report `SFTP_ARCHIVE_BUSY` instead of waiting without a pollable identifier. Renderer archive requests still enter the tab-local FIFO in Phase 2, so multi-archive extraction remains ordered with existing file operations.
+- Archive capability probing acquires the scheduler's exclusive session claim until the probe settles. Archive startup acquires the same claim and retains it through terminal cleanup. Both use immediate-only admission and report `SFTP_ARCHIVE_BUSY` instead of waiting without a pollable identifier. Renderer archive requests enter their serial lane, so multiple archive operations preserve selection order without globally serializing ordinary backend tasks.
 - Closing a session first requests archive cancellation and bounded cleanup, then disconnects SSH. Bulk session close waits for sessions in parallel and preserves the existing active-connection count contract.
 
 ### 6.6 Failure Boundary Model

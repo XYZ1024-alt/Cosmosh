@@ -2,7 +2,7 @@ import React from 'react';
 
 import { t } from '../../lib/i18n';
 import { SFTP_TASK_RETENTION_MS } from './sftp-constants';
-import type { SftpQueuedTask, SftpTaskContext, SftpTaskOptions, SftpTaskState } from './sftp-types';
+import type { SftpQueuedTask, SftpTaskAttention, SftpTaskContext, SftpTaskOptions, SftpTaskState } from './sftp-types';
 import { createSftpTaskId, formatSftpTaskToolbarLabel, SFTP_TASK_STATUS_ORDER } from './sftp-utils';
 
 /**
@@ -23,6 +23,7 @@ type UseSftpTaskQueueResult = {
   sortedSftpTasks: SftpTaskState[];
   sftpTasks: SftpTaskState[];
   taskToolbarLabel: string;
+  onTaskMenuOpenChange: (open: boolean) => void;
   resetTaskQueue: () => void;
   runSftpOperation: (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>) => void;
   runSftpReconnectTask: (operation: (context: SftpTaskContext) => Promise<string>) => Promise<string>;
@@ -40,7 +41,16 @@ export class SftpTaskCancelledError extends Error {
 }
 
 /**
- * Owns serialized renderer-side SFTP operations and transient toolbar task state.
+ * Returns whether the task failure is exposed by the active application window.
+ *
+ * @returns Whether the document is visible and its window currently has focus.
+ */
+const isTaskFailureFocusExposed = (): boolean => {
+  return document.visibilityState === 'visible' && document.hasFocus();
+};
+
+/**
+ * Owns concurrent backend work, a serialized legacy lane, and transient toolbar task state.
  *
  * @param params File-action readiness and error reporter.
  * @returns Queue state, derived toolbar values, and operation runners.
@@ -50,10 +60,16 @@ export const useSftpTaskQueue = ({
   notifyError,
 }: UseSftpTaskQueueParams): UseSftpTaskQueueResult => {
   const [sftpTasks, setSftpTasks] = React.useState<SftpTaskState[]>([]);
-  const taskQueueRef = React.useRef<SftpQueuedTask[]>([]);
-  const isTaskQueueRunningRef = React.useRef(false);
+  const sftpTasksRef = React.useRef<SftpTaskState[]>([]);
+  const serialTaskQueueRef = React.useRef<SftpQueuedTask[]>([]);
+  const isSerialTaskQueueRunningRef = React.useRef(false);
+  const isTaskMenuOpenRef = React.useRef(false);
   const taskQueueGenerationRef = React.useRef(0);
   const taskRetentionTimersRef = React.useRef<Record<string, number>>({});
+
+  React.useEffect(() => {
+    sftpTasksRef.current = sftpTasks;
+  }, [sftpTasks]);
 
   const clearTaskRetentionTimer = React.useCallback((taskId: string): void => {
     const timerId = taskRetentionTimersRef.current[taskId];
@@ -81,10 +97,59 @@ export const useSftpTaskQueue = ({
     [clearTaskRetentionTimer],
   );
 
+  const resolveFailureAttention = React.useCallback((): SftpTaskAttention => {
+    if (isTaskMenuOpenRef.current) {
+      return 'viewed';
+    }
+    return isTaskFailureFocusExposed() ? 'focus-exposed' : 'unseen';
+  }, []);
+
+  const exposeUnseenFailures = React.useCallback(
+    (attention: Exclude<SftpTaskAttention, 'unseen'>): void => {
+      const taskIds = sftpTasksRef.current
+        .filter((task) => task.status === 'failed' && task.attention === 'unseen')
+        .map((task) => task.id);
+      if (taskIds.length === 0) {
+        return;
+      }
+
+      const taskIdSet = new Set(taskIds);
+      setSftpTasks((previous) => previous.map((task) => (taskIdSet.has(task.id) ? { ...task, attention } : task)));
+      taskIds.forEach(scheduleTaskRetentionCleanup);
+    },
+    [scheduleTaskRetentionCleanup],
+  );
+
+  const onTaskMenuOpenChange = React.useCallback(
+    (open: boolean): void => {
+      isTaskMenuOpenRef.current = open;
+      if (open) {
+        exposeUnseenFailures('viewed');
+      }
+    },
+    [exposeUnseenFailures],
+  );
+
+  React.useEffect(() => {
+    const exposeFocusedFailures = (): void => {
+      if (isTaskFailureFocusExposed()) {
+        exposeUnseenFailures('focus-exposed');
+      }
+    };
+
+    window.addEventListener('focus', exposeFocusedFailures);
+    document.addEventListener('visibilitychange', exposeFocusedFailures);
+    return () => {
+      window.removeEventListener('focus', exposeFocusedFailures);
+      document.removeEventListener('visibilitychange', exposeFocusedFailures);
+    };
+  }, [exposeUnseenFailures]);
+
   const resetTaskQueue = React.useCallback((): void => {
     taskQueueGenerationRef.current += 1;
-    taskQueueRef.current = [];
-    isTaskQueueRunningRef.current = false;
+    serialTaskQueueRef.current = [];
+    isSerialTaskQueueRunningRef.current = false;
+    isTaskMenuOpenRef.current = false;
     clearAllTaskRetentionTimers();
     setSftpTasks([]);
   }, [clearAllTaskRetentionTimers]);
@@ -92,115 +157,127 @@ export const useSftpTaskQueue = ({
   React.useEffect(() => {
     return () => {
       taskQueueGenerationRef.current += 1;
-      taskQueueRef.current = [];
-      isTaskQueueRunningRef.current = false;
+      serialTaskQueueRef.current = [];
+      isSerialTaskQueueRunningRef.current = false;
       clearAllTaskRetentionTimers();
     };
   }, [clearAllTaskRetentionTimers]);
 
-  const flushSftpTaskQueue = React.useCallback((): void => {
-    if (isTaskQueueRunningRef.current || taskQueueRef.current.length === 0) {
+  const executeSftpTask = React.useCallback(
+    async (task: SftpQueuedTask, activeGeneration: number): Promise<void> => {
+      setSftpTasks((previous) =>
+        previous.map((currentTask) =>
+          currentTask.id === task.id
+            ? {
+                ...currentTask,
+                status: 'running',
+                startedAt: Date.now(),
+              }
+            : currentTask,
+        ),
+      );
+
+      try {
+        await task.run();
+        if (taskQueueGenerationRef.current !== activeGeneration) {
+          return;
+        }
+
+        setSftpTasks((previous) =>
+          previous.map((currentTask) =>
+            currentTask.id === task.id
+              ? {
+                  ...currentTask,
+                  status: 'success',
+                  finishedAt: Date.now(),
+                  cancel: undefined,
+                }
+              : currentTask,
+          ),
+        );
+        scheduleTaskRetentionCleanup(task.id);
+      } catch (error: unknown) {
+        if (taskQueueGenerationRef.current !== activeGeneration) {
+          return;
+        }
+
+        const isCancelled = error instanceof SftpTaskCancelledError;
+        const message = error instanceof Error ? error.message : t('sftp.operationFailed');
+        const attention = isCancelled ? undefined : resolveFailureAttention();
+        setSftpTasks((previous) =>
+          previous.map((currentTask) =>
+            currentTask.id === task.id
+              ? {
+                  ...currentTask,
+                  status: isCancelled ? 'cancelled' : 'failed',
+                  attention,
+                  errorMessage: isCancelled ? undefined : message,
+                  finishedAt: Date.now(),
+                  cancel: undefined,
+                }
+              : currentTask,
+          ),
+        );
+
+        if (isCancelled) {
+          scheduleTaskRetentionCleanup(task.id);
+          return;
+        }
+
+        notifyError(t('sftp.tasks.failureFeedback', { operation: task.label, reason: message }));
+        if (attention !== 'unseen') {
+          scheduleTaskRetentionCleanup(task.id);
+        }
+      }
+    },
+    [notifyError, resolveFailureAttention, scheduleTaskRetentionCleanup],
+  );
+
+  const flushSerialSftpTaskQueue = React.useCallback((): void => {
+    if (isSerialTaskQueueRunningRef.current || serialTaskQueueRef.current.length === 0) {
       return;
     }
 
-    isTaskQueueRunningRef.current = true;
+    isSerialTaskQueueRunningRef.current = true;
     const activeGeneration = taskQueueGenerationRef.current;
-
     const runQueue = async (): Promise<void> => {
       try {
         while (taskQueueGenerationRef.current === activeGeneration) {
-          const nextTask = taskQueueRef.current.shift();
+          const nextTask = serialTaskQueueRef.current.shift();
           if (!nextTask) {
             return;
           }
-
-          setSftpTasks((previous) =>
-            previous.map((task) =>
-              task.id === nextTask.id
-                ? {
-                    ...task,
-                    status: 'running',
-                    startedAt: Date.now(),
-                  }
-                : task,
-            ),
-          );
-
-          try {
-            await nextTask.run();
-            if (taskQueueGenerationRef.current !== activeGeneration) {
-              continue;
-            }
-
-            setSftpTasks((previous) =>
-              previous.map((task) =>
-                task.id === nextTask.id
-                  ? {
-                      ...task,
-                      status: 'success',
-                      finishedAt: Date.now(),
-                      cancel: undefined,
-                    }
-                  : task,
-              ),
-            );
-          } catch (error: unknown) {
-            if (taskQueueGenerationRef.current !== activeGeneration) {
-              continue;
-            }
-
-            const isCancelled = error instanceof SftpTaskCancelledError;
-            const message = error instanceof Error ? error.message : t('sftp.operationFailed');
-            setSftpTasks((previous) =>
-              previous.map((task) =>
-                task.id === nextTask.id
-                  ? {
-                      ...task,
-                      status: isCancelled ? 'cancelled' : 'failed',
-                      errorMessage: isCancelled ? undefined : message,
-                      finishedAt: Date.now(),
-                      cancel: undefined,
-                    }
-                  : task,
-              ),
-            );
-            if (!isCancelled) {
-              notifyError(t('sftp.tasks.failureFeedback', { operation: nextTask.label, reason: message }));
-            }
-          } finally {
-            if (taskQueueGenerationRef.current === activeGeneration) {
-              scheduleTaskRetentionCleanup(nextTask.id);
-            }
-          }
+          await executeSftpTask(nextTask, activeGeneration);
         }
       } finally {
         if (taskQueueGenerationRef.current === activeGeneration) {
-          isTaskQueueRunningRef.current = false;
+          isSerialTaskQueueRunningRef.current = false;
         }
       }
     };
 
     void runQueue();
-  }, [notifyError, scheduleTaskRetentionCleanup]);
+  }, [executeSftpTask]);
 
   const enqueueSftpTask = React.useCallback(
     (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>): string => {
       const taskId = createSftpTaskId();
+      const executionLane = options.executionLane ?? 'concurrent';
       const task: SftpTaskState = {
         id: taskId,
         label: options.label,
         detail: options.detail ?? t('sftp.tasks.pending'),
-        status: 'queued',
+        status: executionLane === 'serial' ? 'queued' : 'running',
         createdAt: Date.now(),
         progress: options.progress,
       };
 
       clearTaskRetentionTimer(taskId);
       const taskGeneration = taskQueueGenerationRef.current;
-      setSftpTasks((previous) => [...previous, task]);
-      taskQueueRef.current.push({
+      const queuedTask: SftpQueuedTask = {
         id: taskId,
         label: options.label,
+        executionLane,
         run: async () => {
           const isCurrent = (): boolean => taskQueueGenerationRef.current === taskGeneration;
           const update: SftpTaskContext['update'] = (patch): void => {
@@ -222,11 +299,18 @@ export const useSftpTaskQueue = ({
 
           await operation({ taskId, isCurrent, registerCancel, update });
         },
-      });
-      flushSftpTaskQueue();
+      };
+
+      setSftpTasks((previous) => [...previous, task]);
+      if (executionLane === 'serial') {
+        serialTaskQueueRef.current.push(queuedTask);
+        flushSerialSftpTaskQueue();
+      } else {
+        void executeSftpTask(queuedTask, taskGeneration);
+      }
       return taskId;
     },
-    [clearTaskRetentionTimer, flushSftpTaskQueue],
+    [clearTaskRetentionTimer, executeSftpTask, flushSerialSftpTaskQueue],
   );
 
   const runSftpOperation = React.useCallback(
@@ -292,25 +376,30 @@ export const useSftpTaskQueue = ({
         .catch((error: unknown) => {
           if (isCurrent()) {
             const message = error instanceof Error ? error.message : t('sftp.reconnectFailed');
+            const attention = resolveFailureAttention();
             setSftpTasks((previous) =>
               previous.map((currentTask) =>
                 currentTask.id === taskId
                   ? {
                       ...currentTask,
+                      attention,
                       detail: message,
+                      errorMessage: message,
                       status: 'failed',
                       finishedAt: Date.now(),
                     }
                   : currentTask,
               ),
             );
-            scheduleTaskRetentionCleanup(taskId);
+            if (attention !== 'unseen') {
+              scheduleTaskRetentionCleanup(taskId);
+            }
           }
 
           throw error;
         });
     },
-    [clearTaskRetentionTimer, scheduleTaskRetentionCleanup],
+    [clearTaskRetentionTimer, resolveFailureAttention, scheduleTaskRetentionCleanup],
   );
 
   const runningTaskCount = React.useMemo(
@@ -344,6 +433,7 @@ export const useSftpTaskQueue = ({
     sortedSftpTasks,
     sftpTasks,
     taskToolbarLabel,
+    onTaskMenuOpenChange,
     resetTaskQueue,
     runSftpOperation,
     runSftpReconnectTask,

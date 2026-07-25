@@ -190,6 +190,7 @@ export const useSftpArchiveActions = ({
         {
           label: t('sftp.tasks.compress'),
           detail: t('sftp.archive.stage.preparing'),
+          executionLane: 'serial',
         },
         async (context) => {
           const response = await startSftpArchiveOperation(sessionId, {
@@ -245,6 +246,7 @@ export const useSftpArchiveActions = ({
           {
             label: t('sftp.tasks.extract'),
             detail: t('sftp.archive.extractTaskDetail', { name: entry.name }),
+            executionLane: 'serial',
           },
           async (context) => {
             const response = await startSftpArchiveOperation(sessionId, {

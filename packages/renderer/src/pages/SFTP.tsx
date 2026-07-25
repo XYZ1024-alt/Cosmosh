@@ -21,6 +21,7 @@ import {
   getSftpEntryDetails,
   getSftpTransferProgress,
   isBackendApiError,
+  isBackendSftpTaskError,
   listSftpDirectory,
   renameSftpEntry,
   runSftpBatchOperation,
@@ -185,6 +186,9 @@ const SFTP: React.FC<SFTPProps> = ({
   const watchedOpenFilesRef = React.useRef<Record<string, SftpWatchedOpenFile>>({});
   const stagedUploadPathsRef = React.useRef<Set<string>>(new Set());
   const reconnectPromiseRef = React.useRef<Promise<string> | null>(null);
+  const directoryLoadGenerationRef = React.useRef(0);
+  const currentDirectoryRefreshPromiseRef = React.useRef<Promise<void> | null>(null);
+  const pendingDirectoryRefreshPathsRef = React.useRef<Set<string>>(new Set());
   const previewLoadGenerationRef = React.useRef(0);
   const previewEditorRef = React.useRef<SftpPreviewEditorHandle | null>(null);
   const previewStateRef = React.useRef<SftpPreviewState | null>(null);
@@ -239,6 +243,7 @@ const SFTP: React.FC<SFTPProps> = ({
     runningTaskCount,
     sortedSftpTasks,
     taskToolbarLabel,
+    onTaskMenuOpenChange,
     resetTaskQueue,
     runSftpOperation,
     runSftpReconnectTask,
@@ -579,7 +584,7 @@ const SFTP: React.FC<SFTPProps> = ({
    * @returns Whether this failure represents a remote file conflict.
    */
   const isSftpUploadConflictError = React.useCallback((error: unknown): boolean => {
-    return isBackendApiError(error) && error.code === 'SFTP_UPLOAD_CONFLICT';
+    return (isBackendApiError(error) || isBackendSftpTaskError(error)) && error.code === 'SFTP_UPLOAD_CONFLICT';
   }, []);
 
   /**
@@ -812,6 +817,7 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const loadDirectory = React.useCallback(
     async (directoryPath: string, options?: DirectoryLoadOptions): Promise<string | null> => {
+      const loadGeneration = ++directoryLoadGenerationRef.current;
       setAddressPath(directoryPath);
       const cachedDirectory = directoryCacheRef.current[directoryPath];
       if (cachedDirectory && !options?.forceRefresh) {
@@ -836,6 +842,9 @@ const SFTP: React.FC<SFTPProps> = ({
         );
         if (options?.isCancelled?.()) {
           setIsRefreshingDirectory(false);
+          return null;
+        }
+        if (loadGeneration !== directoryLoadGenerationRef.current) {
           return null;
         }
 
@@ -879,6 +888,9 @@ const SFTP: React.FC<SFTPProps> = ({
       } catch (error: unknown) {
         if (options?.isCancelled?.()) {
           setIsRefreshingDirectory(false);
+          return null;
+        }
+        if (loadGeneration !== directoryLoadGenerationRef.current) {
           return null;
         }
 
@@ -1290,25 +1302,46 @@ const SFTP: React.FC<SFTPProps> = ({
 
   const refreshCurrentDirectoryAfterOperation = React.useCallback(
     async (affectedDirectoryPaths: readonly string[] = []): Promise<void> => {
-      if (!sessionIdRef.current) {
+      affectedDirectoryPaths.forEach((directoryPath) => {
+        pendingDirectoryRefreshPathsRef.current.add(directoryPath);
+      });
+      const existingRefresh = currentDirectoryRefreshPromiseRef.current;
+      if (existingRefresh) {
+        await existingRefresh;
         return;
       }
 
-      const activePath = currentPathRef.current;
-      const pathsToInvalidate = Array.from(new Set([activePath, ...affectedDirectoryPaths]));
-      pathsToInvalidate.forEach((directoryPath) => {
-        invalidateDirectoryCache(directoryPath);
-      });
-      pathsToInvalidate
-        .filter((directoryPath) => directoryPath !== activePath)
-        .forEach((directoryPath) => {
-          void loadTreeDirectoryChildren(directoryPath);
-        });
+      const refreshPromise = (async (): Promise<void> => {
+        while (sessionIdRef.current) {
+          const activePath = currentPathRef.current;
+          const pathsToInvalidate = Array.from(new Set([activePath, ...pendingDirectoryRefreshPathsRef.current]));
+          pendingDirectoryRefreshPathsRef.current.clear();
+          pathsToInvalidate.forEach((directoryPath) => {
+            invalidateDirectoryCache(directoryPath);
+          });
+          pathsToInvalidate
+            .filter((directoryPath) => directoryPath !== activePath)
+            .forEach((directoryPath) => {
+              void loadTreeDirectoryChildren(directoryPath);
+            });
 
-      await loadDirectory(activePath, {
-        forceRefresh: true,
-        preserveCurrentView: true,
-      });
+          await loadDirectory(activePath, {
+            forceRefresh: true,
+            preserveCurrentView: true,
+          });
+          if (pendingDirectoryRefreshPathsRef.current.size === 0) {
+            return;
+          }
+        }
+      })();
+      currentDirectoryRefreshPromiseRef.current = refreshPromise;
+      try {
+        await refreshPromise;
+      } finally {
+        if (currentDirectoryRefreshPromiseRef.current === refreshPromise) {
+          currentDirectoryRefreshPromiseRef.current = null;
+        }
+      }
     },
     [invalidateDirectoryCache, loadDirectory, loadTreeDirectoryChildren],
   );
@@ -2334,10 +2367,10 @@ const SFTP: React.FC<SFTPProps> = ({
             return;
           }
 
+          const partialFailureMessage =
+            response.data.failedCount > 0 ? formatBatchPartialFailureFeedback(response.data) : null;
           if (operationMode === 'copy') {
-            if (response.data.failedCount > 0) {
-              notifyError(formatBatchPartialFailureFeedback(response.data));
-            } else {
+            if (!partialFailureMessage) {
               notifySuccess(
                 formatBatchFeedback(response.data.completedCount, 'sftp.feedback.copied', 'sftp.feedback.copiedMany'),
               );
@@ -2346,9 +2379,7 @@ const SFTP: React.FC<SFTPProps> = ({
             setClipboardState((previous) =>
               isSameClipboardSnapshot(previous, operationMode, entriesToPaste) ? null : previous,
             );
-            if (response.data.failedCount > 0) {
-              notifyError(formatBatchPartialFailureFeedback(response.data));
-            } else {
+            if (!partialFailureMessage) {
               notifySuccess(
                 formatBatchFeedback(response.data.completedCount, 'sftp.feedback.moved', 'sftp.feedback.movedMany'),
               );
@@ -2359,6 +2390,9 @@ const SFTP: React.FC<SFTPProps> = ({
             ...entriesToPaste.map((entry) => resolveEntryParentPath(entry.path)),
             targetDirectoryPath,
           ]);
+          if (partialFailureMessage) {
+            throw new Error(partialFailureMessage);
+          }
         },
       );
     },
@@ -2366,7 +2400,6 @@ const SFTP: React.FC<SFTPProps> = ({
       clipboardState,
       currentPath,
       hasSftpSession,
-      notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       runSftpOperation,
@@ -2413,9 +2446,9 @@ const SFTP: React.FC<SFTPProps> = ({
             response.data.results.filter((result) => result.status === 'success').map((result) => result.path),
           );
 
-          if (response.data.failedCount > 0) {
-            notifyError(formatBatchPartialFailureFeedback(response.data));
-          } else {
+          const partialFailureMessage =
+            response.data.failedCount > 0 ? formatBatchPartialFailureFeedback(response.data) : null;
+          if (!partialFailureMessage) {
             notifySuccess(
               formatBatchFeedback(response.data.completedCount, 'sftp.feedback.deleted', 'sftp.feedback.deletedMany'),
             );
@@ -2438,12 +2471,14 @@ const SFTP: React.FC<SFTPProps> = ({
           await refreshCurrentDirectoryAfterOperation(
             entriesToDelete.map((entry) => resolveEntryParentPath(entry.path)),
           );
+          if (partialFailureMessage) {
+            throw new Error(partialFailureMessage);
+          }
         },
       );
     },
     [
       hasSftpSession,
-      notifyError,
       notifySuccess,
       refreshCurrentDirectoryAfterOperation,
       requestDeleteConfirmation,
@@ -3004,6 +3039,7 @@ const SFTP: React.FC<SFTPProps> = ({
           onPreviewRedo={handlePreviewRedo}
           onPreviewSave={handlePreviewSave}
           onPreviewUndo={handlePreviewUndo}
+          onTaskMenuOpenChange={onTaskMenuOpenChange}
           onRefresh={handleRefresh}
           onRequestBreadcrumbDirectories={loadBreadcrumbMenuDirectories}
           onShowAddressAsText={handleShowAddressAsText}

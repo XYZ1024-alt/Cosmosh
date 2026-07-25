@@ -38,12 +38,18 @@ import type {
   ApiSftpDownloadFileResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
+  ApiSftpTaskErrorCode,
+  ApiSftpTaskResult,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -77,6 +83,7 @@ import type {
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
 
+import { waitForSftpTask } from './sftp-task-runtime';
 import {
   createApiTransport,
   LocalTerminalCreateSessionRequest,
@@ -144,6 +151,9 @@ export type BackendClient = {
     sessionId: string,
     payload: ApiSftpBatchOperationRequest,
   ) => Promise<ApiSftpBatchOperationResponse>;
+  startSftpTask: (sessionId: string, payload: ApiSftpStartTaskRequest) => Promise<ApiSftpStartTaskResponse>;
+  listSftpTasks: (sessionId: string) => Promise<ApiSftpListTasksResponse>;
+  getSftpTask: (sessionId: string, taskId: string) => Promise<ApiSftpGetTaskResponse>;
   getSftpArchiveCapabilities: (sessionId: string) => Promise<ApiSftpArchiveCapabilitiesResponse>;
   startSftpArchiveOperation: (
     sessionId: string,
@@ -204,6 +214,37 @@ export const isBackendApiError = (error: unknown): error is BackendApiError => {
 };
 
 /**
+ * Error reported by a terminal asynchronous SFTP task snapshot.
+ */
+export class BackendSftpTaskError extends Error {
+  public readonly code: ApiSftpTaskErrorCode;
+
+  public readonly outcomeUnknown: boolean;
+
+  /**
+   * Creates a task error without widening the HTTP API error-code contract.
+   *
+   * @param task Terminal failed task snapshot.
+   */
+  public constructor(task: { errorCode?: ApiSftpTaskErrorCode; errorMessage?: string; outcomeUnknown?: boolean }) {
+    super(task.errorMessage ?? 'SFTP task did not complete successfully.');
+    this.name = 'BackendSftpTaskError';
+    this.code = task.errorCode ?? 'SFTP_OPERATION_FAILED';
+    this.outcomeUnknown = task.outcomeUnknown === true;
+  }
+}
+
+/**
+ * Checks whether an unknown value is a terminal asynchronous SFTP task error.
+ *
+ * @param error Candidate task failure.
+ * @returns Whether the error preserves the backend task error code.
+ */
+export const isBackendSftpTaskError = (error: unknown): error is BackendSftpTaskError => {
+  return error instanceof BackendSftpTaskError;
+};
+
+/**
  * Throws a structured API error instead of losing the backend error code.
  *
  * @param payload Backend API error response.
@@ -229,6 +270,34 @@ const unwrapApiResponse = <TResponse extends { success: true }>(payload: TRespon
 
 export const createBackendClient = (): BackendClient => {
   const transport = createApiTransport();
+
+  /**
+   * Runs one public SFTP operation through the backend scheduler and waits for its retained result.
+   *
+   * @param sessionId Session that accepts the task.
+   * @param request Typed asynchronous task descriptor.
+   * @returns Completed task result and acceptance metadata.
+   */
+  const runScheduledSftpTask = async (
+    sessionId: string,
+    request: ApiSftpStartTaskRequest,
+  ): Promise<{ accepted: ApiSftpStartTaskResponse; result: ApiSftpTaskResult }> => {
+    const accepted = unwrapApiResponse(await transport.startSftpTask(sessionId, request));
+    const terminalTask = await waitForSftpTask({
+      acceptedTask: accepted.data,
+      getTask: async (acceptedSessionId, taskId) =>
+        unwrapApiResponse(await transport.getSftpTask(acceptedSessionId, taskId)),
+    });
+
+    if (terminalTask.state !== 'succeeded' || !terminalTask.result) {
+      throw new BackendSftpTaskError(terminalTask);
+    }
+
+    return {
+      accepted,
+      result: terminalTask.result,
+    };
+  };
 
   return {
     runtimeTarget: transport.target,
@@ -506,22 +575,83 @@ export const createBackendClient = (): BackendClient => {
       return unwrapApiResponse(await transport.writeSftpFile(sessionId, requestPayload));
     },
     downloadSftpFile: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.downloadSftpFile(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'download',
+        payload: {
+          ...requestPayload,
+          transferId: requestPayload.transferId ?? crypto.randomUUID(),
+        },
+      });
+      if (result.type !== 'download') {
+        throw new Error('SFTP download task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
     },
     uploadSftpFile: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.uploadSftpFile(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'upload',
+        payload: {
+          ...requestPayload,
+          transferId: requestPayload.transferId ?? crypto.randomUUID(),
+        },
+      });
+      if (result.type !== 'operation') {
+        throw new Error('SFTP upload task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
     },
     getSftpTransferProgress: async (transferId) => {
       return unwrapApiResponse(await transport.getSftpTransferProgress(transferId));
     },
     createSftpDirectory: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.createSftpDirectory(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'create-directory',
+        payload: requestPayload,
+      });
+      if (result.type !== 'operation') {
+        throw new Error('SFTP create-directory task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
     },
     createSftpFile: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.createSftpFile(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'create-file',
+        payload: requestPayload,
+      });
+      if (result.type !== 'operation') {
+        throw new Error('SFTP create-file task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
     },
     renameSftpEntry: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.renameSftpEntry(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'rename',
+        payload: requestPayload,
+      });
+      if (result.type !== 'operation') {
+        throw new Error('SFTP rename task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
     },
     copySftpEntry: async (sessionId, requestPayload) => {
       return unwrapApiResponse(await transport.copySftpEntry(sessionId, requestPayload));
@@ -530,7 +660,27 @@ export const createBackendClient = (): BackendClient => {
       return unwrapApiResponse(await transport.deleteSftpEntry(sessionId, requestPayload));
     },
     runSftpBatchOperation: async (sessionId, requestPayload) => {
-      return unwrapApiResponse(await transport.runSftpBatchOperation(sessionId, requestPayload));
+      const { accepted, result } = await runScheduledSftpTask(sessionId, {
+        operation: 'batch',
+        payload: requestPayload,
+      });
+      if (result.type !== 'batch') {
+        throw new Error('SFTP batch task returned an unexpected result.');
+      }
+      return {
+        ...accepted,
+        code: 'SFTP_OPERATION_OK',
+        data: result.data,
+      };
+    },
+    startSftpTask: async (sessionId, requestPayload) => {
+      return unwrapApiResponse(await transport.startSftpTask(sessionId, requestPayload));
+    },
+    listSftpTasks: async (sessionId) => {
+      return unwrapApiResponse(await transport.listSftpTasks(sessionId));
+    },
+    getSftpTask: async (sessionId, taskId) => {
+      return unwrapApiResponse(await transport.getSftpTask(sessionId, taskId));
     },
     getSftpArchiveCapabilities: async (sessionId) => {
       return unwrapApiResponse(await transport.getSftpArchiveCapabilities(sessionId));

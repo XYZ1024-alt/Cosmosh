@@ -49,6 +49,7 @@ flowchart TB
   - `src/ipc/register-debug-ipc.ts`：开发诊断 IPC，包括 backend 请求镜像的列表、清空与事件通道。
   - `src/ipc/backend-request-trace-store.ts`：仅开发态使用的 backend proxy 请求镜像脱敏 ring buffer。
   - `src/ipc/sftp-download-target-authorizations.ts`：面向 renderer 所有者的本地 SFTP 下载目标精确路径能力授权，并包含按 `transferId` 绑定所有者的一次重试租约。
+  - `src/ipc/sftp-task-download-authorizations.ts`：异步任务接纳与终态观察辅助逻辑，在 Main 任务 IPC 中保持精确 owner/path/`transferId`下载授权。
   - `src/preload.ts`：安全渲染层桥接。
   - `src/security/database-encryption.ts`：数据库路径/密钥处理辅助，包含开发身份数据库路径覆盖。
   - `src/dev/dev-profile.ts`：仅开发态使用的身份激活逻辑，在启动前将选中身份映射到 Electron `userData`、SQLite 与 backend secret 存储路径。
@@ -69,7 +70,7 @@ flowchart TB
 - **关键目录**：
   - `src/pages`：功能页面（`Home`、`SSH`、`SFTP`、`Settings`、`SettingsEditor`等）。Home 负责 SSH 服务器、钥匙链与端口转发管理界面。
   - `src/pages/ssh`：SSH 终端 controller 与纯运行时 helper。`use-ssh-core.ts` 编排 pane 路由；primary/secondary hook 分别持有独立 session 资源；`ssh-pane-state.ts` 归并全部 pane 级 transport/helper 消息；`ssh-command-markers.ts` 负责待确认/已确认 xterm marker 生命周期与 pane-local 命令时间线模型；`TerminalCommandTimeline.tsx` 渲染可信的右侧命令轨道。
-  - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、归档 Dialog 与归档任务轮询、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、任务排队/取消、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。Phase 2 的任务执行仍位于标签页本地 FIFO；消费 backend task API 留到 Phase 3。
+  - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、归档 Dialog 与归档任务轮询、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、renderer 并发/串行任务通道、失败注意状态、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。`src/lib/api/sftp-task-runtime.ts`负责 typed client wrapper 使用的固定接纳 session 任务轮询。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
   - `src/components/CloseWindowConfirmationDialog.tsx`：为 Main 持有的活动会话关闭决策提供共享 Renderer `Dialog` 界面。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。

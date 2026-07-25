@@ -301,6 +301,7 @@ export const useSftpPreviewActions = ({
         label: t('sftp.tasks.save'),
         detail: preview.entry.name,
         progress: { completed: 0, total: 1 },
+        executionLane: 'serial',
       },
       async ({ isCurrent, update }) => {
         try {

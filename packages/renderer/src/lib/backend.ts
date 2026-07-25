@@ -37,12 +37,16 @@ import type {
   ApiSftpDownloadFileResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -83,7 +87,7 @@ import type {
   LocalTerminalListResponse,
 } from './api/transport';
 
-export { isBackendApiError } from './api/client';
+export { BackendApiError, BackendSftpTaskError, isBackendApiError, isBackendSftpTaskError } from './api/client';
 
 export const testBackendPing = async (): Promise<ApiTestPingResponse> => {
   return backendClient.testPing();
@@ -309,6 +313,21 @@ export const runSftpBatchOperation = async (
   payload: ApiSftpBatchOperationRequest,
 ): Promise<ApiSftpBatchOperationResponse> => {
   return backendClient.runSftpBatchOperation(sessionId, payload);
+};
+
+export const startSftpTask = async (
+  sessionId: string,
+  payload: ApiSftpStartTaskRequest,
+): Promise<ApiSftpStartTaskResponse> => {
+  return backendClient.startSftpTask(sessionId, payload);
+};
+
+export const listSftpTasks = async (sessionId: string): Promise<ApiSftpListTasksResponse> => {
+  return backendClient.listSftpTasks(sessionId);
+};
+
+export const getSftpTask = async (sessionId: string, taskId: string): Promise<ApiSftpGetTaskResponse> => {
+  return backendClient.getSftpTask(sessionId, taskId);
 };
 
 export const getSftpArchiveCapabilities = async (sessionId: string): Promise<ApiSftpArchiveCapabilitiesResponse> => {

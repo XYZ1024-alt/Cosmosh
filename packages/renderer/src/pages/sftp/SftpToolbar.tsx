@@ -136,6 +136,7 @@ type SftpToolbarProps = {
   onPreviewRedo: () => void;
   onPreviewSave: () => Promise<void>;
   onPreviewUndo: () => void;
+  onTaskMenuOpenChange: (open: boolean) => void;
   onRefresh: () => void;
   onRequestBreadcrumbDirectories: (breadcrumbPath: string) => void;
   onShowAddressAsText: () => void;
@@ -211,6 +212,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
   onPreviewRedo,
   onPreviewSave,
   onPreviewUndo,
+  onTaskMenuOpenChange,
   onRefresh,
   onRequestBreadcrumbDirectories,
   onShowAddressAsText,
@@ -285,7 +287,7 @@ export const SftpToolbar: React.FC<SftpToolbarProps> = ({
     sortedSftpTasks.length > 0 ? (
       <>
         <MenubarSeparator vertical />
-        <DropdownMenu>
+        <DropdownMenu onOpenChange={onTaskMenuOpenChange}>
           <Tooltip>
             <TooltipTrigger asChild>
               <DropdownMenuTrigger asChild>

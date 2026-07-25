@@ -268,6 +268,16 @@ export type InlineEditMenuAction = () => void | Promise<void>;
 export type SftpTaskStatus = 'queued' | 'running' | 'waiting' | 'success' | 'failed' | 'cancelled';
 
 /**
+ * Renderer-owned acknowledgement state for a failed task.
+ */
+export type SftpTaskAttention = 'unseen' | 'viewed' | 'focus-exposed';
+
+/**
+ * Renderer execution lane used before or around backend scheduling.
+ */
+export type SftpTaskExecutionLane = 'concurrent' | 'serial';
+
+/**
  * Task progress shown in the SFTP toolbar task list.
  */
 export type SftpTaskProgress = {
@@ -290,6 +300,7 @@ export type SftpTaskState = {
   finishedAt?: number;
   progress?: SftpTaskProgress;
   errorMessage?: string;
+  attention?: SftpTaskAttention;
   cancel?: () => void;
   cancelRequested?: boolean;
 };
@@ -301,6 +312,7 @@ export type SftpTaskOptions = {
   label: string;
   detail?: string;
   progress?: SftpTaskProgress;
+  executionLane?: SftpTaskExecutionLane;
 };
 
 /**
@@ -316,11 +328,12 @@ export type SftpTaskContext = {
 };
 
 /**
- * Internal queue entry for serialized renderer SFTP operations.
+ * Internal renderer task entry used by concurrent and serialized execution lanes.
  */
 export type SftpQueuedTask = {
   id: string;
   label: string;
+  executionLane: SftpTaskExecutionLane;
   run: () => Promise<void>;
 };
 

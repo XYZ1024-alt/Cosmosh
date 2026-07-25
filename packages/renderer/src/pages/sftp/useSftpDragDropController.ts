@@ -250,9 +250,9 @@ export const useSftpDragDropController = ({
             return;
           }
 
-          if (response.data.failedCount > 0) {
-            notifyError(formatBatchPartialFailureFeedback(response.data));
-          } else {
+          const partialFailureMessage =
+            response.data.failedCount > 0 ? formatBatchPartialFailureFeedback(response.data) : null;
+          if (!partialFailureMessage) {
             const feedbackKeys =
               operation === 'copy'
                 ? (['sftp.feedback.copied', 'sftp.feedback.copiedMany'] as const)
@@ -286,6 +286,9 @@ export const useSftpDragDropController = ({
             ...draggedEntries.map((entry) => entry.parentPath ?? resolveEntryParentPath(entry.path)),
             targetDirectoryPath,
           ]);
+          if (partialFailureMessage) {
+            throw new Error(partialFailureMessage);
+          }
         },
       );
     },
