@@ -18,13 +18,13 @@ v1 已实现：
 - 中间列表右键菜单与顶部操作栏提供打开、文件夹新标签打开、属性、在此处打开 SSH、复制地址、复制相对地址、保存普通文件到本地、支持平台上的打开方式、剪切、复制、粘贴、从 SFTP 剪贴板粘贴为链接、删除、新建文件、新建文件夹与行内重命名。符号链接行使用专门的文件/文件夹链接图标，并提供`打开文件所在的位置`，该动作会按需解析链接目标并跳转到目标所在目录。目录列表支持鼠标和键盘通过 `Ctrl`/`Cmd` 切换多选、`Ctrl`/`Cmd+A` 全选与 `Shift` 范围选择。
 - 同一 SFTP 标签页内的内部拖拽可从一个或多个目录列表条目开始，并且只接受明确的远程目录目标：左侧目录树行、中间列表目录行、面包屑目录段和地址栏目录下拉项。最终动作可为询问、移动、复制或创建链接，并为平台主修饰键提供单独设置（Windows/Linux 为 `Ctrl`，macOS 为 `Cmd`）。
 - 工具栏、目录空白区域菜单、树目录菜单与外部文件拖放可以将一个或多个本地普通文件上传到所选远程目录。Main 会把原生选择器选中的文件以及 preload 解析出的拖放文件暂存到受控 SFTP 临时根目录；上传通过标签页本地任务队列顺序执行，远程存在同名文件时必须显式确认覆盖。外部文件夹拖放会被拒绝并在 renderer 给出反馈，直到递归目录上传实现。
-- Renderer 管理的文件操作会按 SFTP 标签页进入本地队列，并在紧凑的工具栏任务菜单中展示排队、运行、成功与失败状态。单文件上传和显式下载会额外展示字节进度、百分比与滚动传输速度；失败任务会同时保留文件名与 backend 错误原因，并显示本地化错误通知。
+- Renderer 管理的文件操作会按 SFTP 标签页进入本地队列，并在紧凑的工具栏任务菜单中展示排队、运行、成功与失败状态。Phase 2 仍以该标签页本地 FIFO 作为 renderer 的实际执行路径，迁移到 backend task API 留到 Phase 3。单文件上传和显式下载会额外展示字节进度、百分比与滚动传输速度；失败任务会同时保留文件名与 backend 错误原因，并显示本地化错误通知。
 - SFTP 设置控制重连模式、删除确认的触发范围、内部拖拽默认动作与修饰键动作、文件列表列/排序视图状态、中间文件列表是否显示开头的 `..` 父目录行、地址栏是否始终以文本形式显示、辅助侧栏模式，以及文本/图片预览警告阈值。
 - Backend 写操作支持本地文件上传、空文件创建、目录创建、重命名/移动、递归复制、绝对符号链接创建与递归删除。
 
 v1 明确不包含：
 
-- 目录上传/下载、chmod、跨标签页拖放目标、文件行/文本地址栏拖放目标、全局搜索，以及带取消、续传或持久化历史的 backend 传输调度。
+- 目录上传/下载、chmod、跨标签页拖放目标、文件行/文本地址栏拖放目标、全局搜索，以及通用任务取消、续传或持久化历史。
 - 复用当前 SSH terminal 会话。SFTP 标签页会建立独立的 SSH + SFTP 连接。
 - 持久化 SFTP history 或新增数据库表。
 
@@ -35,15 +35,19 @@ flowchart LR
   UI[SFTP Workbench Page] --> BRIDGE[window.electron bridge]
   BRIDGE --> MAIN[Main IPC proxy]
   MAIN --> ROUTE[Backend SFTP HTTP routes]
+  ROUTE --> SCHEDULER[会话任务调度器]
   ROUTE --> SERVICE[SftpSessionService]
+  SCHEDULER --> SERVICE
+  SCHEDULER --> ARCHIVE[SftpArchiveService]
   SERVICE --> SSH2[ssh2 Client + sftp subsystem]
+  ARCHIVE --> SSH2
   SSH2 --> REMOTE[Remote file system]
 ```
 
 ### 模块归属
 
 - **API contract**：`packages/api-contract/openapi/cosmosh.openapi.yaml` 定义 SFTP path、schema、成功码与错误码。
-- **Backend**：`packages/backend/src/http/routes/sftp.ts` 负责 HTTP 输入校验与 API envelope 映射。`packages/backend/src/sftp/session-service.ts` 负责 SSH/SFTP 连接、会话注册表、目录路径归一化、条目映射与资源释放。
+- **Backend**：`packages/backend/src/http/routes/sftp.ts` 负责 HTTP 输入校验与 API envelope 映射。`packages/backend/src/sftp/session-service.ts` 负责 SSH/SFTP 连接、会话注册表、目录路径归一化、条目映射与资源释放。`packages/backend/src/sftp/task-scheduler.ts` 负责每会话 admission 上限、path claim、任务绝对 deadline、取消信号与保留在内存中的任务快照。`packages/backend/src/sftp/archive-service.ts` 在调度器的会话独占 claim 下负责远端归档执行与清理。
 - **Main/preload**：`packages/main/src/ipc/register-backend-ipc.ts` 将 SFTP 请求代理到 backend route。`packages/main/src/ipc/register-app-utility-ipc.ts` 负责原生保存/打开辅助能力、校验 Cosmosh SFTP 临时路径，并启动平台级打开方式行为。`packages/main/src/preload.ts` 暴露最小 renderer bridge。
 - **Renderer**：`packages/renderer/src/pages/SFTP.tsx` 负责标签页作用域 UI 状态、文件操作、行内重命名/新建状态与预览状态。
 - **Settings registry**：`packages/api-contract/src/settings-registry.ts` 负责 renderer settings store 消费的 SFTP 重连、删除确认、内部拖拽动作、目录列表视图、父目录行、隐藏条目、地址显示、辅助侧栏与预览阈值偏好。
@@ -52,28 +56,31 @@ flowchart LR
 
 所有调用端必须使用 `@cosmosh/api-contract` 生成导出，尤其是 `API_PATHS` 与生成的请求/响应 payload 类型。
 
-| Method   | Path                                                                                     | Purpose                                                                               |
-| -------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `POST`   | `/api/v1/sftp/sessions`                                                                  | 为一个 SSH server 创建 SFTP 文件系统会话。                                            |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/entries?path=...`                                     | 为活动 SFTP 会话列出一个远程目录。                                                    |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/details`                                      | 获取已选远程条目的非递归元数据，包括 `lstat` 字段和符号链接目标元数据。               |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...`                           | 为一个远程文件读取有上限的 UTF-8 预览。                                               |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/file`                                                 | 经过 size/mtime 冲突检查后，将可编辑 UTF-8 预览内容保存回一个远程普通文件。           |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/download`                                             | 将一个远程普通文件流式保存到 main/preload 选定的本地目标。                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/upload`                                               | 将一个受控本地临时文件流式写入新的远程路径，或在快照/显式覆盖确认后替换既有普通文件。 |
-| `GET`    | `/api/v1/sftp/transfers/{transferId}`                                                    | 读取一个活动或近期完成的单文件传输的字节进度、滚动速度、状态与可选失败原因。          |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/files`                                                | 创建一个远程空文件。                                                                  |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/directories`                                          | 创建一个远程目录。                                                                    |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/rename`                                               | 重命名或移动一个远程条目。                                                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                                                 | 复制一个远程文件或目录树。                                                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`                                       | 删除一个远程文件、符号链接或目录树。                                                  |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                                                | 对多个远程条目执行一次有序批量复制、移动、创建链接或删除操作。                        |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`                                 | 探测并缓存当前会话的远端 POSIX 归档工具。                                             |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`                                   | 启动一个结构化异步压缩或解压任务。                                                    |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 轮询归档状态、阶段、冲突、结果或稳定错误。                                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution` | 对全部待处理冲突应用一次覆盖、保留两者或取消决定。                                    |
-| `DELETE` | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 请求有界取消与清理。                                                                  |
-| `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                                                      | 关闭 SFTP 会话并释放 SSH 连接。                                                       |
+| Method   | Path                                                                                     | Purpose                                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `POST`   | `/api/v1/sftp/sessions`                                                                  | 为一个 SSH server 创建 SFTP 文件系统会话。                                                                 |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/entries?path=...`                                     | 为活动 SFTP 会话列出一个远程目录。                                                                         |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/details`                                      | 获取已选远程条目的非递归元数据，包括 `lstat` 字段和符号链接目标元数据。                                    |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...`                           | 为一个远程文件读取有上限的 UTF-8 预览。                                                                    |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/file`                                                 | 经过 size/mtime 冲突检查后，将可编辑 UTF-8 预览内容保存回一个远程普通文件。                                |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/download`                                             | 将一个远程普通文件流式保存到 main/preload 选定的本地目标。                                                 |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/upload`                                               | 将一个受控本地临时文件流式写入新的远程路径，或在快照/显式覆盖确认后替换既有普通文件。                      |
+| `GET`    | `/api/v1/sftp/transfers/{transferId}`                                                    | 读取一个活动或近期完成的单文件传输的字节进度、滚动速度、状态与可选失败原因。                               |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/files`                                                | 创建一个远程空文件。                                                                                       |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/directories`                                          | 创建一个远程目录。                                                                                         |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/rename`                                               | 重命名或移动一个远程条目。                                                                                 |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                                                 | 复制一个远程文件或目录树。                                                                                 |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`                                       | 删除一个远程文件、符号链接或目录树。                                                                       |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                                                | 对多个远程条目执行一次有序批量复制、移动、创建链接或删除操作。                                             |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/tasks`                                                | 将一个有界异步 `create-file`、`create-directory`、`rename`、`upload`、`download` 或 `batch` 任务加入队列。 |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/tasks`                                                | 按创建顺序列出一个当前或近期已关闭 SFTP 会话保留在内存中的任务快照。                                       |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/tasks/{taskId}`                                       | 读取一个保留在内存中的任务快照，包括终态结果或稳定失败。                                                   |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`                                 | 探测并缓存当前会话的远端 POSIX 归档工具。                                                                  |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`                                   | 启动一个结构化异步压缩或解压任务。                                                                         |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 轮询归档状态、阶段、冲突、结果或稳定错误。                                                                 |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution` | 对全部待处理冲突应用一次覆盖、保留两者或取消决定。                                                         |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 请求有界取消与清理。                                                                                       |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                                                      | 关闭 SFTP 会话并释放 SSH 连接。                                                                            |
 
 成功码：
 
@@ -82,6 +89,9 @@ flowchart LR
 - `SFTP_ENTRY_DETAILS_OK`
 - `SFTP_FILE_READ_OK`
 - `SFTP_OPERATION_OK`
+- `SFTP_TASK_ACCEPTED`
+- `SFTP_TASK_STATUS_OK`
+- `SFTP_TASK_LIST_OK`
 - `SFTP_ARCHIVE_CAPABILITIES_OK`
 - `SFTP_ARCHIVE_OPERATION_ACCEPTED`
 - `SFTP_ARCHIVE_OPERATION_STATUS_OK`
@@ -91,6 +101,8 @@ SFTP 专属错误码：
 - `SFTP_SESSION_NOT_FOUND`
 - `SFTP_VALIDATION_FAILED`
 - `SFTP_OPERATION_FAILED`
+- `SFTP_TASK_NOT_FOUND`
+- `SFTP_TASK_DEADLINE_EXCEEDED`
 - `SFTP_UPLOAD_CONFLICT`
 - `SFTP_ARCHIVE_UNSUPPORTED`
 - `SFTP_ARCHIVE_BUSY`
@@ -150,6 +162,15 @@ sequenceDiagram
 - 用户确认后，或关闭询问被禁用时，`DELETE /api/v1/runtime/active-connections` 会在窗口销毁前关闭每个已注册 SFTP SSH client。macOS 关闭最后一个窗口不会退出应用或停止 Backend，因此该步骤是必要的。
 - 批量 SFTP 关闭会并行执行各会话清理；活动计数与关闭警告契约继续按会话计算，而不是按任务计算。
 
+### Backend 任务调度
+
+- 每个活动 SFTP 会话拥有独立的内存调度器。固定 admission 上限为 `total=3`、`heavy=2` 与 `mutation=1`；这些上限是安全边界，不是 renderer 偏好设置。
+- 公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。通过 `POST /api/v1/sftp/sessions/{sessionId}/file` 执行的预览文本写入因内容内联而保留同步 HTTP 契约，但会作为不创建公共任务记录的隐藏 mutation 进入调度器。既有列表/读取/mutation route 也使用同一隐藏协调边界，因此无法绕过 task claim 或归档独占。
+- 每个任务声明规范化 POSIX path claim。相等路径以及祖先/后代路径会串行，互不相交的兄弟路径可以并发。较早排队任务会保留重叠 claim，不相关工作可以绕过它。归档能力探测会持有会话独占 claim，直到探测结束；归档启动会取得同一 claim，并持有到终态清理结束，因此普通任务不会与任一生命周期重叠。
+- 一个绝对 deadline 同时覆盖排队等待与 runner 执行。排队期间超时的任务直接失败且不会调用 runner。运行中任务在 deadline 到达时会立即发布带 `SFTP_TASK_DEADLINE_EXCEEDED` 的 `failed`，但容量 slot 与 path claim 会继续保留，直到其底层 runner 真正结束。超时 mutation 会包含 `outcomeUnknown: true`，因为远端副作用可能已经发生。
+- 公共任务快照仅存在于 backend 内存中，在近期会话关闭后仍可查询，并在 runner 释放后最多保留七天。每个会话最多保留 512 条记录；达到压力上限时会先淘汰最早已释放的终态快照，无法腾出空间时才拒绝更多任务，backend 停止时清除剩余记录。Phase 3 后，更长时间的已查看/前台聚焦注意状态由 renderer 持有。任务集合没有公共取消或续传 route，也没有持久化；归档专用取消继续使用独立的 archive API。
+- Phase 2 不会把 renderer 切换到这些端点。SFTP 工作台继续使用标签页本地 FIFO 与现有任务菜单行为；消费 backend task API 属于 Phase 3。
+
 ## 5. 目录列表与文件操作
 
 Backend 始终将 SFTP 路径视为 POSIX 路径，不受运行 Cosmosh 的宿主 OS 影响。
@@ -199,6 +220,7 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 - Renderer 请求删除目录时使用递归删除。
 - 删除确认是 renderer 侧安全门，由 `sftpDeleteConfirmationMode` 控制：`always` 每次删除前确认，`batch` 仅在删除多个已选条目时确认，`shortcut` 仅在键盘快捷键触发删除时确认，`off` 直接调用 backend 删除流程。
 - Renderer 文件操作会先进入标签页本地 FIFO 任务队列，再调用 backend。队列运行期间仍可继续使用导航、选择、过滤与刷新；工具栏任务菜单会在任务完成后保留一小段可检查时间再移除。显式上传/下载任务会生成 UUID `transferId`，在最终请求等待期间每 500 ms 轮询一次 `GET /api/v1/sftp/transfers/{transferId}`，无需让文件内容经过 IPC 即可展示字节进度与速度。
+- Phase 2 有意让该 renderer FIFO 继续调用既有同步操作 route，但这些 route 现在会作为隐藏协调任务进入 backend 调度器。Phase 3 才会把受支持操作迁移到公共 backend task API；预览文本写入在迁移后仍保持同步。
 - `SftpSessionService` 会在内存中保存活动和终态进度记录。流数据块会立即更新已传输字节，并以不高于每 250 ms 一次的频率刷新平滑后的每秒字节数。完成与失败记录可继续查询 60 秒，不会持久化，并采用惰性清理。
 - 本地上传选择由 main 通过原生多文件对话框负责；外部文件拖放只在 preload 内解析为本地路径，再交给 main 暂存。每个选中或拖入的普通文件都会先复制到 Cosmosh SFTP 临时根目录下的隔离目录，再把描述信息交给 renderer；本机源路径不会暴露给 backend HTTP，也不会由 renderer 保留。拖入目录与非普通文件会作为 rejected entries 返回，v1 不会递归遍历。
 - 每个上传暂存文件会成为一个 FIFO 上传任务。远程目标不存在时使用独占写语义创建；既有普通文件目标会返回 `SFTP_UPLOAD_CONFLICT`，除非请求携带原始打开快照，或 renderer 在显式确认后使用 `overwrite: true` 重试。
@@ -227,13 +249,13 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 
 运行规则：
 
-1. 每个 SFTP 会话最多有一个活动归档任务。请求还会经过既有 renderer 标签页 FIFO；多归档按选择顺序解压。
+1. 归档能力探测会取得 backend 调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持续持有到终态清理结束。探测与启动只接受可立即取得的独占权；无法立即取得时返回 `SFTP_ARCHIVE_BUSY`，不会让 HTTP 请求留在队列中等待。Phase 2 的请求还会经过既有 renderer 标签页 FIFO，因此多归档按选择顺序解压。
 2. 压缩只接受同一源目录中的非空结构化路径、basename 归档名、规范格式与 `store`/`fast`/`standard`/`maximum`。拒绝写入 `/` 或 `.`。Backend 先写入随机 `.cosmosh-*` 同级文件，复检目标不存在后再重命名为最终归档。
 3. 解压接受当前 SFTP 会话中的单个普通归档文件与远端绝对目标目录；缺失的目标路径层级会在逐级确认均为目录后创建，但仍拒绝远端根目录。任务创建的目录在提交前属于临时状态，失败或取消时只会在仍为空的情况下删除。归档和目标可以位于不同目录。Backend 结合复合扩展名、有限文件头与工具 list/test 命令校验。完整成员清单必须能容纳在校验输出上限内；一旦发生截断，会在解压前拒绝任务。绝对/穿越成员，以及暂存区内逃逸随机 `0700` 解压目录的符号链接，会在提交前被拒绝。
 4. 智能解压会把单个顶层项直接提交到当前目录；空归档或多个顶层项会重命名为归档同名目录，冲突时使用 `name (2)`、`name (3)`等。显式当前目录/归档同名目录模式遇到冲突时暂停。自定义目标会在所选远端目录内复用当前目录模式的提交和冲突语义，并在需要时创建该目录。
 5. `overwrite` 会递归合并目录、替换冲突项并保留目标中不相关的内容；`keep-both` 选择编号同级项。一次决定应用于该任务。等待冲突最多保留 10 分钟。
 6. 公共阶段为 `preparing`、`compressing`、`extracting`、`verifying`、`awaiting-conflict`、`committing`、`cleaning`与`completed`，不伪造百分比。解压后校验复用 `readdir` 返回的 mode，不再为每个普通文件额外执行一次 `lstat`。Renderer 每 750 ms 轮询，终态保留 60 秒。
-7. 每个任务都有一个绝对的 24 小时截止时间，由远端 exec、SFTP 校验与提交请求、冲突等待和清理共同使用。截止时间到达后任务以 `SFTP_ARCHIVE_TIMEOUT` 失败，并且即使远端回调始终未返回，也会释放该会话的归档任务槽。即使 exec 回调晚于取消请求到达，取消仍会请求发送 `TERM`；远端拒绝该信号时仍会保留三秒后的 channel 关闭兜底。固定解压命令会用归档工具替换远端 shell 进程，使信号直接到达活动工具；校验与提交循环（包括递归覆盖合并）会在 SFTP 请求之间检查取消。所有请求的输出一旦完成提交，迟到的取消不会再把已完成结果标记为已取消；其他情况下，只有命令结束且清理完成后才进入 `cancelled`。Renderer 在轮询期间保持“正在取消”文案；如果取消 HTTP 请求本身失败，则重新启用任务动作以允许重试。正常失败、取消、冲突取消与会话关闭只会在截止时间剩余范围内清理本任务登记的路径。会话关闭会复用任务正在进行的清理，并在关闭截止时间到达后停止等待，使远端 SFTP 请求卡住时 SSH 传输仍可继续关闭。
+7. 每个任务都有一个绝对的 24 小时截止时间，由即时调度 admission、远端 exec、SFTP 校验与提交请求、冲突等待和清理共同使用。截止时间到达后会立即选定 `SFTP_ARCHIVE_TIMEOUT`，但归档状态需要等 runner 完成有界清理后才进入终态 `failed`；调度器会持续保留会话独占 claim，直到该结算完成。即使 exec 回调晚于取消请求到达，取消仍会请求发送 `TERM`；远端拒绝该信号时仍会保留三秒后的 channel 关闭兜底。固定解压命令会用归档工具替换远端 shell 进程，使信号直接到达活动工具；校验与提交循环（包括递归覆盖合并）会在 SFTP 请求之间检查取消。所有请求的输出一旦完成提交，迟到的取消不会再把已完成结果标记为已取消；其他情况下，只有命令结束且清理完成后才进入 `cancelled`。Renderer 在轮询期间保持“正在取消”文案；如果取消 HTTP 请求本身失败，则重新启用任务动作以允许重试。正常失败、取消、冲突取消与会话关闭只会在截止时间剩余范围内清理本任务登记的路径。会话关闭会复用任务正在进行的清理，并在关闭截止时间到达后停止等待，使远端 SFTP 请求卡住时 SSH 传输仍可继续关闭。
 
 命令全部来自 backend 固定模板。每个路径 token 使用 POSIX 单引号转义、`--`与`./basename`；契约不允许 renderer flags 或任意命令。远端命令输出有大小上限；归档成员清单截断属于硬校验失败，诊断输出则只保留清洗后的摘要。状态响应永远不包含命令、完整输出、凭据或暂存路径。审计只记录操作类型、格式、源数量、目标、结果与稳定错误码。
 

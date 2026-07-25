@@ -541,6 +541,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  '/api/v1/sftp/sessions/{sessionId}/tasks': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List retained asynchronous tasks for one SFTP session. */
+    get: operations['sftpListTasks'];
+    put?: never;
+    /** Submit one asynchronous SFTP file-system task. */
+    post: operations['sftpStartTask'];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  '/api/v1/sftp/sessions/{sessionId}/tasks/{taskId}': {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read one retained asynchronous SFTP task. */
+    get: operations['sftpGetTask'];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   '/api/v1/sftp/sessions/{sessionId}/archive-capabilities': {
     parameters: {
       query?: never;
@@ -782,6 +817,7 @@ export interface components {
         | 'SSH_KEYCHAIN_IN_USE'
         | 'SFTP_SESSION_NOT_FOUND'
         | 'SFTP_TRANSFER_NOT_FOUND'
+        | 'SFTP_TASK_NOT_FOUND'
         | 'SFTP_VALIDATION_FAILED'
         | 'SFTP_OPERATION_FAILED'
         | 'SFTP_UPLOAD_CONFLICT'
@@ -1273,6 +1309,79 @@ export interface components {
       targetDirectoryPath?: string;
     };
     /** @enum {string} */
+    SftpTaskOperationType: 'create-file' | 'create-directory' | 'rename' | 'upload' | 'download' | 'batch';
+    /** @enum {string} */
+    SftpTaskState: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled';
+    /** @enum {string} */
+    SftpTaskErrorCode:
+      | 'SFTP_TASK_DEADLINE_EXCEEDED'
+      | 'SFTP_OPERATION_TIMEOUT'
+      | 'SFTP_TRANSPORT_CLOSED'
+      | 'SFTP_SESSION_NOT_FOUND'
+      | 'SFTP_OPERATION_FAILED'
+      | 'SFTP_UPLOAD_CONFLICT'
+      | 'SFTP_VALIDATION_FAILED';
+    SftpTaskTransferReference: {
+      /** Format: uuid */
+      transferId: string;
+    };
+    SftpTaskCreateFileDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'create-file';
+      payload: components['schemas']['SftpCreateFileRequest'];
+    };
+    SftpTaskCreateDirectoryDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'create-directory';
+      payload: components['schemas']['SftpCreateDirectoryRequest'];
+    };
+    SftpTaskRenameDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'rename';
+      payload: components['schemas']['SftpRenameRequest'];
+    };
+    SftpTaskUploadDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'upload';
+      payload: components['schemas']['SftpUploadFileRequest'] & components['schemas']['SftpTaskTransferReference'];
+    };
+    SftpTaskDownloadDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'download';
+      payload: components['schemas']['SftpDownloadFileRequest'] & components['schemas']['SftpTaskTransferReference'];
+    };
+    SftpTaskBatchDescriptor: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      operation: 'batch';
+      payload: components['schemas']['SftpBatchOperationRequest'];
+    };
+    /** @description Write-file is intentionally excluded because asynchronous task records accept references and paths, not inline file content. */
+    SftpTaskStartRequest:
+      | components['schemas']['SftpTaskCreateFileDescriptor']
+      | components['schemas']['SftpTaskCreateDirectoryDescriptor']
+      | components['schemas']['SftpTaskRenameDescriptor']
+      | components['schemas']['SftpTaskUploadDescriptor']
+      | components['schemas']['SftpTaskDownloadDescriptor']
+      | components['schemas']['SftpTaskBatchDescriptor'];
+    /** @enum {string} */
     SftpBatchOperationItemStatus: 'success' | 'failed' | 'skipped';
     SftpBatchOperationItemResult: {
       path: string;
@@ -1476,6 +1585,60 @@ export interface components {
       localPath: string;
       /** Format: int64 */
       size: number;
+    };
+    SftpTaskOperationResult: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'operation';
+      data: components['schemas']['SftpOperationData'];
+    };
+    SftpTaskDownloadResult: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'download';
+      data: components['schemas']['SftpDownloadFileData'];
+    };
+    SftpTaskBatchResult: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      type: 'batch';
+      data: components['schemas']['SftpBatchOperationData'];
+    };
+    SftpTaskResult:
+      | components['schemas']['SftpTaskOperationResult']
+      | components['schemas']['SftpTaskDownloadResult']
+      | components['schemas']['SftpTaskBatchResult'];
+    SftpTaskData: {
+      sessionId: string;
+      /** Format: uuid */
+      taskId: string;
+      operation: components['schemas']['SftpTaskOperationType'];
+      state: components['schemas']['SftpTaskState'];
+      remotePaths: string[];
+      /** Format: uuid */
+      transferId?: string;
+      /** Format: date-time */
+      createdAt: string;
+      /** Format: date-time */
+      deadlineAt: string;
+      /** Format: date-time */
+      startedAt?: string;
+      /** Format: date-time */
+      finishedAt?: string;
+      result?: components['schemas']['SftpTaskResult'];
+      errorCode?: components['schemas']['SftpTaskErrorCode'];
+      errorMessage?: string;
+      outcomeUnknown?: boolean;
+    };
+    SftpTaskListData: {
+      sessionId: string;
+      items: components['schemas']['SftpTaskData'][];
     };
     SftpTransferProgressData: {
       /** Format: uuid */
@@ -1740,6 +1903,27 @@ export interface components {
       /** @enum {boolean} */
       success: true;
       data: components['schemas']['SftpBatchOperationData'];
+    };
+    SftpTaskAcceptedSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_TASK_ACCEPTED';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpTaskData'];
+    };
+    SftpTaskStatusSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_TASK_STATUS_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpTaskData'];
+    };
+    SftpTaskListSuccess: components['schemas']['ApiMeta'] & {
+      /** @enum {string} */
+      code: 'SFTP_TASK_LIST_OK';
+      /** @enum {boolean} */
+      success: true;
+      data: components['schemas']['SftpTaskListData'];
     };
     SftpArchiveCapabilitiesSuccess: components['schemas']['ApiMeta'] & {
       /** @enum {string} */
@@ -3749,6 +3933,155 @@ export interface operations {
       };
     };
   };
+  sftpListTasks: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Retained tasks returned in creation order. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpTaskListSuccess'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpStartTask: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        'application/json': components['schemas']['SftpTaskStartRequest'];
+      };
+    };
+    responses: {
+      /** @description Task accepted for bounded asynchronous execution. */
+      202: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpTaskAcceptedSuccess'];
+        };
+      };
+      /** @description Validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
+  sftpGetTask: {
+    parameters: {
+      query?: never;
+      header?: {
+        'x-cosmosh-locale'?: components['parameters']['LocaleHeader'];
+      };
+      path: {
+        sessionId: string;
+        taskId: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Task status returned. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['SftpTaskStatusSuccess'];
+        };
+      };
+      /** @description Task identifier validation failed. */
+      400: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Authentication failed. */
+      401: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description Session or task not found. */
+      404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+    };
+  };
   sftpGetArchiveCapabilities: {
     parameters: {
       query?: never;
@@ -3782,6 +4115,15 @@ export interface operations {
       };
       /** @description Session not found. */
       404: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          'application/json': components['schemas']['ApiError'];
+        };
+      };
+      /** @description The session scheduler cannot grant immediate exclusive probe ownership. */
+      409: {
         headers: {
           [name: string]: unknown;
         };

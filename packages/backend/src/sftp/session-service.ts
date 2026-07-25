@@ -6,10 +6,16 @@ import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
 import {
+  API_CODES,
   type ApiSftpArchiveCapabilitiesData,
   type ApiSftpArchiveConflictResolution,
   type ApiSftpArchiveOperationData,
   type ApiSftpArchiveOperationRequest,
+  type ApiSftpStartTaskRequest,
+  type ApiSftpTaskData,
+  type ApiSftpTaskErrorCode,
+  type ApiSftpTaskOperationType,
+  type ApiSftpTaskResult,
   sortSftpEntriesByBrowserOrder,
 } from '@cosmosh/api-contract';
 import type { Prisma, PrismaClient } from '@prisma/client';
@@ -21,7 +27,7 @@ import { createI18n, type I18nInstance, type Locale } from '../i18n-bridge.js';
 import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
 import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from '../ssh/proxy.js';
-import { quotePosixShellToken, SftpArchiveService } from './archive-service.js';
+import { quotePosixShellToken, SftpArchiveError, SftpArchiveService } from './archive-service.js';
 import {
   isSftpOperationFailure,
   runGuardedSftpOperation,
@@ -32,14 +38,34 @@ import {
   type SftpOperationGuardContext,
   type SftpOperationImpact,
 } from './operation-guard.js';
+import {
+  type SftpScheduledTask,
+  type SftpTaskFailure,
+  type SftpTaskResources,
+  type SftpTaskRunOutcome,
+  SftpTaskScheduler,
+  type SftpTaskSnapshot,
+} from './task-scheduler.js';
 
 type GetDbClient = () => PrismaClient;
 
 const SFTP_TEMP_ROOT_ENV_NAME = 'COSMOSH_SFTP_TEMP_ROOT';
 const DEFAULT_SFTP_OPERATION_IDLE_TIMEOUT_MS = 60_000;
 const DEFAULT_SFTP_OPERATION_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
+const SFTP_TASK_CLOSE_DRAIN_TIMEOUT_MS = 5_000;
+const SFTP_TASK_TERMINAL_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const SFTP_TASK_RECORD_LIMIT_PER_SESSION = 512;
 const SFTP_TRANSFER_RETENTION_MS = 60_000;
 const SFTP_TRANSFER_SPEED_SAMPLE_INTERVAL_MS = 250;
+const SFTP_TASK_ERROR_CODES = new Set<ApiSftpTaskErrorCode>([
+  API_CODES.sftpTaskDeadlineExceeded,
+  API_CODES.sftpOperationTimeout,
+  API_CODES.sftpTransportClosed,
+  API_CODES.sftpSessionNotFound,
+  API_CODES.sftpOperationFailed,
+  API_CODES.sftpUploadConflict,
+  API_CODES.sftpValidationFailed,
+]);
 const SFTP_TRANSPORT_ERROR_CODES = new Set([
   'ECONNRESET',
   'EPIPE',
@@ -266,6 +292,22 @@ export type SftpBatchOperationResult =
       message: string;
     } & SftpOperationFailureMetadata);
 
+/**
+ * Submission result returned by the asynchronous SFTP task boundary.
+ */
+export type StartSftpTaskResult =
+  | {
+      type: 'success';
+      task: ApiSftpTaskData;
+    }
+  | {
+      type: 'not-found';
+    }
+  | {
+      type: 'failed';
+      message: string;
+    };
+
 export type ReadSftpFileResult =
   | {
       type: 'success';
@@ -393,6 +435,58 @@ type SftpLiveSession = {
   sftp: SFTPWrapper;
   isClosed: boolean;
   t: I18nInstance['t'];
+};
+
+type SftpPublicTaskRecord = {
+  operation: ApiSftpTaskOperationType;
+  remotePaths: readonly string[];
+  transferId?: string;
+  handle: SftpScheduledTask<ApiSftpTaskResult, ApiSftpTaskResult>;
+  released: boolean;
+  retentionTimer?: NodeJS.Timeout;
+};
+
+type CoordinatedSftpOperationResult =
+  | {
+      type: 'success';
+    }
+  | {
+      type: 'not-found';
+    }
+  | ({
+      type: 'failed';
+      message: string;
+      reason?: 'remote-conflict';
+    } & SftpOperationFailureMetadata);
+
+const SFTP_READ_LIGHT_RESOURCES: SftpTaskResources = {
+  impact: 'read',
+  workload: 'light',
+  exclusive: false,
+};
+
+const SFTP_READ_HEAVY_RESOURCES: SftpTaskResources = {
+  impact: 'read',
+  workload: 'heavy',
+  exclusive: false,
+};
+
+const SFTP_MUTATION_LIGHT_RESOURCES: SftpTaskResources = {
+  impact: 'mutation',
+  workload: 'light',
+  exclusive: false,
+};
+
+const SFTP_MUTATION_HEAVY_RESOURCES: SftpTaskResources = {
+  impact: 'mutation',
+  workload: 'heavy',
+  exclusive: false,
+};
+
+const SFTP_ARCHIVE_EXCLUSIVE_RESOURCES: SftpTaskResources = {
+  impact: 'lifecycle',
+  workload: 'heavy',
+  exclusive: true,
 };
 
 type SftpDirectoryEntry = {
@@ -755,6 +849,10 @@ export class SftpSessionService {
 
   private readonly sessions = new Map<string, SftpLiveSession>();
 
+  private readonly taskSchedulers = new Map<string, SftpTaskScheduler>();
+
+  private readonly publicTaskRecords = new Map<string, Map<string, SftpPublicTaskRecord>>();
+
   private readonly transfers = new Map<string, SftpTransferRecord>();
 
   private readonly sessionOperationControllers = new WeakMap<SftpLiveSession, AbortController>();
@@ -785,7 +883,10 @@ export class SftpSessionService {
 
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
-    this.archiveService = new SftpArchiveService({ auditEventService: options.auditEventService });
+    this.archiveService = new SftpArchiveService({
+      auditEventService: options.auditEventService,
+      operationTimeoutMs: configuredOperationAbsoluteTimeoutMs,
+    });
     this.credentialEncryptionKey = options.credentialEncryptionKey;
     this.sftpOperationIdleTimeoutMs = configuredOperationIdleTimeoutMs;
     this.sftpOperationAbsoluteTimeoutMs = configuredOperationAbsoluteTimeoutMs;
@@ -972,6 +1073,31 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'list-directory',
+      SFTP_READ_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.listDirectoryPrimitive(sessionId, requestedPath),
+    );
+  }
+
+  /**
+   * Lists one directory without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote directory path.
+   * @returns Directory list result.
+   */
+  private async listDirectoryPrimitive(
+    sessionId: string,
+    requestedPath: string | undefined,
+  ): Promise<ListSftpDirectoryResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const normalizedPath = normalizeSftpPathInput(requestedPath);
     try {
       const resolvedPath = await this.resolveRealPath(session, normalizedPath);
@@ -1031,6 +1157,31 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'get-entry-details',
+      SFTP_READ_LIGHT_RESOURCES,
+      requestedPaths.length > 0 ? requestedPaths.map(normalizeSftpPathInput) : ['/'],
+      async () => await this.getEntryDetailsPrimitive(sessionId, requestedPaths),
+    );
+  }
+
+  /**
+   * Reads selected entry metadata without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPaths Remote entry paths.
+   * @returns Per-path metadata result.
+   */
+  private async getEntryDetailsPrimitive(
+    sessionId: string,
+    requestedPaths: string[],
+  ): Promise<GetSftpEntryDetailsResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const entries: SftpEntryDetailsItem[] = [];
     for (const requestedPath of requestedPaths) {
       const normalizedPath = normalizeSftpPathInput(requestedPath);
@@ -1063,6 +1214,33 @@ export class SftpSessionService {
    * @returns File preview result.
    */
   public async readFilePreview(
+    sessionId: string,
+    requestedPath: string | undefined,
+    requestedMaxBytes?: number,
+  ): Promise<ReadSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'read-file',
+      SFTP_READ_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.readFilePreviewPrimitive(sessionId, requestedPath, requestedMaxBytes),
+    );
+  }
+
+  /**
+   * Reads one preview without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param requestedMaxBytes Maximum preview bytes.
+   * @returns File preview result.
+   */
+  private async readFilePreviewPrimitive(
     sessionId: string,
     requestedPath: string | undefined,
     requestedMaxBytes?: number,
@@ -1131,6 +1309,37 @@ export class SftpSessionService {
    * @returns Write result with updated remote metadata.
    */
   public async writeTextFile(
+    sessionId: string,
+    requestedPath: string | undefined,
+    content: string,
+    expectedRemoteSnapshot: UploadSftpFileConflictSnapshot,
+    options: UploadSftpFileOptions = {},
+  ): Promise<WriteSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'write-file',
+      SFTP_MUTATION_HEAVY_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.writeTextFilePrimitive(sessionId, requestedPath, content, expectedRemoteSnapshot, options),
+    );
+  }
+
+  /**
+   * Writes preview content without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param content UTF-8 file content.
+   * @param expectedRemoteSnapshot Previously observed remote metadata.
+   * @param options Conflict override options.
+   * @returns Write result.
+   */
+  private async writeTextFilePrimitive(
     sessionId: string,
     requestedPath: string | undefined,
     content: string,
@@ -1228,6 +1437,35 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'download',
+      SFTP_READ_HEAVY_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.downloadFilePrimitive(sessionId, requestedPath, localPath, transferId),
+    );
+  }
+
+  /**
+   * Downloads one file without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param localPath Authorized local destination.
+   * @param transferId Optional transfer progress id.
+   * @returns Download result.
+   */
+  private async downloadFilePrimitive(
+    sessionId: string,
+    requestedPath: string | undefined,
+    localPath: string | undefined,
+    transferId?: string,
+  ): Promise<DownloadSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const normalizedPath = normalizeSftpPathInput(requestedPath);
     if (!isMutableSftpEntryPath(normalizedPath)) {
       return {
@@ -1292,6 +1530,37 @@ export class SftpSessionService {
    * @returns Upload result.
    */
   public async uploadFile(
+    sessionId: string,
+    requestedPath: string | undefined,
+    localPath: string | undefined,
+    expectedRemoteSnapshot?: UploadSftpFileConflictSnapshot,
+    options: UploadSftpFileOptions = {},
+  ): Promise<UploadSftpFileResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'upload',
+      SFTP_MUTATION_HEAVY_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.uploadFilePrimitive(sessionId, requestedPath, localPath, expectedRemoteSnapshot, options),
+    );
+  }
+
+  /**
+   * Uploads one file without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @param localPath Authorized local source.
+   * @param expectedRemoteSnapshot Optional previously observed remote metadata.
+   * @param options Conflict and transfer options.
+   * @returns Upload result.
+   */
+  private async uploadFilePrimitive(
     sessionId: string,
     requestedPath: string | undefined,
     localPath: string | undefined,
@@ -1487,6 +1756,31 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'create-file',
+      SFTP_MUTATION_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.createFilePrimitive(sessionId, requestedPath),
+    );
+  }
+
+  /**
+   * Creates one file without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote file path.
+   * @returns File creation result.
+   */
+  private async createFilePrimitive(
+    sessionId: string,
+    requestedPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const normalizedPath = normalizeSftpPathInput(requestedPath);
     if (!isMutableSftpEntryPath(normalizedPath)) {
       return {
@@ -1519,6 +1813,31 @@ export class SftpSessionService {
    * @returns Directory creation result.
    */
   public async createDirectory(sessionId: string, requestedPath: string | undefined): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'create-directory',
+      SFTP_MUTATION_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.createDirectoryPrimitive(sessionId, requestedPath),
+    );
+  }
+
+  /**
+   * Creates one directory without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote directory path.
+   * @returns Directory creation result.
+   */
+  private async createDirectoryPrimitive(
+    sessionId: string,
+    requestedPath: string | undefined,
+  ): Promise<SftpOperationResult> {
     const session = this.getOpenSession(sessionId);
     if (!session) {
       return { type: 'not-found' };
@@ -1557,6 +1876,33 @@ export class SftpSessionService {
    * @returns Rename result.
    */
   public async renameEntry(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'rename',
+      SFTP_MUTATION_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedSourcePath), normalizeSftpPathInput(requestedTargetPath)],
+      async () => await this.renameEntryPrimitive(sessionId, requestedSourcePath, requestedTargetPath),
+    );
+  }
+
+  /**
+   * Renames one entry without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Existing remote path.
+   * @param requestedTargetPath Desired remote path.
+   * @returns Rename result.
+   */
+  private async renameEntryPrimitive(
     sessionId: string,
     requestedSourcePath: string | undefined,
     requestedTargetPath: string | undefined,
@@ -1628,6 +1974,34 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    const normalizedTargetPath = normalizeSftpPathInput(requestedTargetPath);
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'copy',
+      SFTP_MUTATION_HEAVY_RESOURCES,
+      [normalizeSftpPathInput(requestedSourcePath), POSIX_PATH.dirname(normalizedTargetPath)],
+      async () => await this.copyEntryPrimitive(sessionId, requestedSourcePath, requestedTargetPath),
+    );
+  }
+
+  /**
+   * Copies one entry without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedSourcePath Existing remote path.
+   * @param requestedTargetPath Desired remote path.
+   * @returns Copy result.
+   */
+  private async copyEntryPrimitive(
+    sessionId: string,
+    requestedSourcePath: string | undefined,
+    requestedTargetPath: string | undefined,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const sourcePath = normalizeSftpPathInput(requestedSourcePath);
     const targetPath = normalizeSftpPathInput(requestedTargetPath);
     if (!isMutableSftpEntryPath(sourcePath) || !isMutableSftpEntryPath(targetPath)) {
@@ -1672,7 +2046,7 @@ export class SftpSessionService {
    * @param requestedTargetPath Desired link path.
    * @returns Link result.
    */
-  public async linkEntry(
+  private async linkEntryPrimitive(
     sessionId: string,
     requestedSourcePath: string | undefined,
     requestedTargetPath: string | undefined,
@@ -1732,6 +2106,33 @@ export class SftpSessionService {
       return { type: 'not-found' };
     }
 
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'delete',
+      recursive ? SFTP_MUTATION_HEAVY_RESOURCES : SFTP_MUTATION_LIGHT_RESOURCES,
+      [normalizeSftpPathInput(requestedPath)],
+      async () => await this.deleteEntryPrimitive(sessionId, requestedPath, recursive),
+    );
+  }
+
+  /**
+   * Deletes one entry without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param requestedPath Remote entry path.
+   * @param recursive Whether directory descendants should be removed.
+   * @returns Delete result.
+   */
+  private async deleteEntryPrimitive(
+    sessionId: string,
+    requestedPath: string | undefined,
+    recursive: boolean,
+  ): Promise<SftpOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
     const normalizedPath = normalizeSftpPathInput(requestedPath);
     if (!isMutableSftpEntryPath(normalizedPath)) {
       return {
@@ -1768,6 +2169,34 @@ export class SftpSessionService {
    * @returns Batch execution summary with per-entry status.
    */
   public async runBatchOperation(
+    sessionId: string,
+    input: RunSftpBatchOperationInput,
+  ): Promise<SftpBatchOperationResult> {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    return await this.runCoordinatedSftpOperation(
+      session,
+      'batch',
+      SFTP_MUTATION_HEAVY_RESOURCES,
+      [
+        ...input.entries.map((entry) => normalizeSftpPathInput(entry.path)),
+        ...(input.targetDirectoryPath ? [normalizeSftpPathInput(input.targetDirectoryPath)] : []),
+      ],
+      async () => await this.runBatchOperationPrimitive(sessionId, input),
+    );
+  }
+
+  /**
+   * Runs one batch without acquiring another scheduler slot.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param input Normalized ordered batch request.
+   * @returns Batch execution summary.
+   */
+  private async runBatchOperationPrimitive(
     sessionId: string,
     input: RunSftpBatchOperationInput,
   ): Promise<SftpBatchOperationResult> {
@@ -1874,6 +2303,109 @@ export class SftpSessionService {
   }
 
   /**
+   * Accepts one bounded asynchronous task for the requested live SFTP session.
+   *
+   * Existing operation methods remain the unscheduled execution primitives so a batch task never
+   * waits on a nested mutation slot that it already owns.
+   *
+   * @param sessionId Live SFTP session id.
+   * @param request Validated task descriptor.
+   * @returns Accepted task snapshot, missing-session result, or validation failure.
+   */
+  public startTask(sessionId: string, request: ApiSftpStartTaskRequest): StartSftpTaskResult {
+    const session = this.getOpenSession(sessionId);
+    if (!session) {
+      return { type: 'not-found' };
+    }
+
+    const records = this.getOrCreatePublicTaskRecords(sessionId);
+    if (!this.makeRoomForPublicTask(sessionId, records)) {
+      return {
+        type: 'failed',
+        message: session.t('errors.sftp.taskQueueFull', {
+          limit: SFTP_TASK_RECORD_LIMIT_PER_SESSION,
+        }),
+      };
+    }
+
+    const scheduler = this.getOrCreateTaskScheduler(sessionId);
+    const resources = this.resolveTaskResources(request);
+    const remotePaths = this.resolveTaskRemotePaths(request);
+    const transferId =
+      request.operation === 'upload' || request.operation === 'download' ? request.payload.transferId : undefined;
+
+    try {
+      const handle = scheduler.schedule<ApiSftpTaskResult, ApiSftpTaskResult>({
+        operation: request.operation,
+        resources,
+        claims: remotePaths,
+        absoluteTimeoutMs: this.sftpOperationAbsoluteTimeoutMs,
+        run: async () => await this.executeTaskRequest(sessionId, request, session.t),
+        mapFailure: (error) => ({
+          code: API_CODES.sftpOperationFailed,
+          message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+          ...(resources.impact === 'mutation' ? { outcomeUnknown: true } : {}),
+        }),
+        onAbort: (reason) => {
+          if (reason === 'deadline') {
+            this.poisonUnusableSession(session);
+          } else {
+            this.markSessionUnavailable(session);
+          }
+        },
+      });
+      const record: SftpPublicTaskRecord = {
+        operation: request.operation,
+        remotePaths: [...handle.getSnapshot().claims],
+        handle,
+        released: false,
+        ...(transferId ? { transferId } : {}),
+      };
+      records.set(handle.taskId, record);
+      void handle.released.then(() => {
+        record.released = true;
+        this.armPublicTaskRetention(sessionId, handle.taskId, record);
+      });
+      return {
+        type: 'success',
+        task: this.toApiTaskData(record, handle.getSnapshot()),
+      };
+    } catch (error: unknown) {
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+      };
+    }
+  }
+
+  /**
+   * Lists public asynchronous tasks retained for one current or recently closed session.
+   *
+   * @param sessionId Owning SFTP session id.
+   * @returns Tasks in creation order, or null when the session has never existed in this runtime.
+   */
+  public listTasks(sessionId: string): ApiSftpTaskData[] | null {
+    const records = this.publicTaskRecords.get(sessionId);
+    if (!records) {
+      return this.getOpenSession(sessionId) ? [] : null;
+    }
+
+    return [...records.values()].map((record) => this.toApiTaskData(record, record.handle.getSnapshot()));
+  }
+
+  /**
+   * Reads one retained public asynchronous task without requiring a live transport.
+   *
+   * @param sessionId Owning SFTP session id.
+   * @param taskId Retained task id.
+   * @returns Latest task snapshot or null when the task is unknown.
+   */
+  public getTask(sessionId: string, taskId: string): ApiSftpTaskData | null {
+    const record = this.publicTaskRecords.get(sessionId)?.get(taskId);
+    return record ? this.toApiTaskData(record, record.handle.getSnapshot()) : null;
+  }
+
+  /**
    * Returns remote archive capabilities for one active SFTP session.
    *
    * @param sessionId Live SFTP session id.
@@ -1881,7 +2413,48 @@ export class SftpSessionService {
    */
   public async getArchiveCapabilities(sessionId: string): Promise<ApiSftpArchiveCapabilitiesData | null> {
     const session = this.getOpenSession(sessionId);
-    return session ? this.archiveService.getCapabilities(session) : null;
+    if (!session) {
+      return null;
+    }
+
+    const scheduler = this.getOrCreateTaskScheduler(sessionId);
+    const admissionController = new AbortController();
+    const scheduled = scheduler.schedule<ApiSftpArchiveCapabilitiesData>({
+      operation: 'archive-capabilities',
+      resources: SFTP_ARCHIVE_EXCLUSIVE_RESOURCES,
+      claims: ['/'],
+      absoluteTimeoutMs: this.sftpOperationAbsoluteTimeoutMs,
+      cancellationSignal: admissionController.signal,
+      run: async () => ({
+        state: 'succeeded',
+        result: await this.archiveService.getCapabilities(session),
+      }),
+      mapFailure: (error) => ({
+        code: API_CODES.sftpArchiveOperationFailed,
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.archiveOperationFailed')),
+      }),
+      onAbort: (reason) => {
+        if (reason === 'deadline') {
+          this.poisonUnusableSession(session);
+        }
+      },
+    });
+    void scheduled.released.then(() => {
+      scheduler.forgetTask(scheduled.taskId);
+    });
+    if (scheduled.getSnapshot().state === 'queued') {
+      admissionController.abort();
+      throw new SftpArchiveError(API_CODES.sftpArchiveBusy, 'Another SFTP operation is active for this session.');
+    }
+
+    const snapshot = await scheduled.completion;
+    if (snapshot.state === 'succeeded' && snapshot.result) {
+      return snapshot.result;
+    }
+    throw new SftpArchiveError(
+      API_CODES.sftpArchiveOperationFailed,
+      snapshot.failure?.message ?? session.t('errors.sftp.archiveOperationFailed'),
+    );
   }
 
   /**
@@ -1896,7 +2469,113 @@ export class SftpSessionService {
     request: ApiSftpArchiveOperationRequest,
   ): Promise<ApiSftpArchiveOperationData | null> {
     const session = this.getOpenSession(sessionId);
-    return session ? this.archiveService.startOperation(session, request) : null;
+    if (!session) {
+      return null;
+    }
+
+    const scheduler = this.getOrCreateTaskScheduler(sessionId);
+    const admissionController = new AbortController();
+    let operationId: string | undefined;
+    let acceptedSettled = false;
+    let resolveAccepted: (operation: ApiSftpArchiveOperationData) => void = () => undefined;
+    let rejectAccepted: (error: unknown) => void = () => undefined;
+    const accepted = new Promise<ApiSftpArchiveOperationData>((resolve, reject) => {
+      resolveAccepted = resolve;
+      rejectAccepted = reject;
+    });
+    const settleAccepted = (operation: ApiSftpArchiveOperationData): void => {
+      if (acceptedSettled) {
+        return;
+      }
+      acceptedSettled = true;
+      resolveAccepted(operation);
+    };
+    const settleRejected = (error: unknown): void => {
+      if (acceptedSettled) {
+        return;
+      }
+      acceptedSettled = true;
+      rejectAccepted(error);
+    };
+
+    const scheduled = scheduler.schedule<ApiSftpArchiveOperationData>({
+      operation: 'archive',
+      resources: SFTP_ARCHIVE_EXCLUSIVE_RESOURCES,
+      claims: ['/'],
+      absoluteTimeoutMs: this.sftpOperationAbsoluteTimeoutMs,
+      cancellationSignal: admissionController.signal,
+      run: async (context) => {
+        try {
+          const operation = await this.archiveService.startOperation(session, request, context.deadlineAt);
+          operationId = operation.operationId;
+          settleAccepted(operation);
+          const terminal = await this.archiveService.waitForOperation(sessionId, operation.operationId);
+          if (terminal.state === 'succeeded') {
+            return {
+              state: 'succeeded',
+              result: terminal,
+            };
+          }
+          if (terminal.state === 'cancelled') {
+            return {
+              state: 'cancelled',
+              result: terminal,
+            };
+          }
+          return {
+            state: 'failed',
+            result: terminal,
+            failure: {
+              code: terminal.errorCode ?? API_CODES.sftpArchiveOperationFailed,
+              message: terminal.errorMessage ?? session.t('errors.sftp.archiveOperationFailed'),
+            },
+          };
+        } catch (error: unknown) {
+          settleRejected(error);
+          throw error;
+        }
+      },
+      mapFailure: (error) => ({
+        code: error instanceof SftpArchiveError ? error.code : API_CODES.sftpArchiveOperationFailed,
+        message: this.resolveErrorMessage(error, session.t('errors.sftp.archiveOperationFailed')),
+      }),
+      onAbort: (reason) => {
+        if (operationId) {
+          try {
+            if (reason === 'deadline') {
+              this.archiveService.timeoutOperation(sessionId, operationId);
+            } else {
+              this.archiveService.cancelOperation(sessionId, operationId);
+            }
+          } catch (error: unknown) {
+            console.warn('[sftp:archive] Failed to stop a scheduler-owned archive operation.', error);
+          }
+        }
+        if (reason === 'deadline') {
+          this.poisonUnusableSession(session);
+        }
+      },
+    });
+    void scheduled.released.then(() => {
+      scheduler.forgetTask(scheduled.taskId);
+    });
+    if (scheduled.getSnapshot().state === 'queued') {
+      admissionController.abort();
+      throw new SftpArchiveError(API_CODES.sftpArchiveBusy, 'Another SFTP operation is active for this session.');
+    }
+    void scheduled.completion.then((snapshot) => {
+      if (acceptedSettled) {
+        return;
+      }
+      const timedOut = snapshot.failure?.code === API_CODES.sftpTaskDeadlineExceeded;
+      settleRejected(
+        new SftpArchiveError(
+          timedOut ? API_CODES.sftpArchiveTimeout : API_CODES.sftpArchiveOperationFailed,
+          snapshot.failure?.message ?? session.t('errors.sftp.archiveOperationFailed'),
+        ),
+      );
+    });
+    return await accepted;
   }
 
   /**
@@ -1907,7 +2586,7 @@ export class SftpSessionService {
    * @returns Public archive operation state, or null when the session is unavailable.
    */
   public getArchiveOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData | null {
-    return this.getOpenSession(sessionId) ? this.archiveService.getOperation(sessionId, operationId) : null;
+    return this.archiveService.getOperation(sessionId, operationId);
   }
 
   /**
@@ -1923,9 +2602,7 @@ export class SftpSessionService {
     operationId: string,
     resolution: ApiSftpArchiveConflictResolution,
   ): ApiSftpArchiveOperationData | null {
-    return this.getOpenSession(sessionId)
-      ? this.archiveService.resolveConflict(sessionId, operationId, resolution)
-      : null;
+    return this.archiveService.resolveConflict(sessionId, operationId, resolution);
   }
 
   /**
@@ -1936,7 +2613,556 @@ export class SftpSessionService {
    * @returns Updated operation state, or null when the session is unavailable.
    */
   public cancelArchiveOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData | null {
-    return this.getOpenSession(sessionId) ? this.archiveService.cancelOperation(sessionId, operationId) : null;
+    return this.archiveService.cancelOperation(sessionId, operationId);
+  }
+
+  /**
+   * Returns or creates the scheduler that owns one session's complete task history.
+   *
+   * @param sessionId Owning SFTP session id.
+   * @returns Session-scoped scheduler.
+   */
+  private getOrCreateTaskScheduler(sessionId: string): SftpTaskScheduler {
+    const existing = this.taskSchedulers.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+
+    const scheduler = new SftpTaskScheduler({ sessionId });
+    this.taskSchedulers.set(sessionId, scheduler);
+    return scheduler;
+  }
+
+  /**
+   * Runs one legacy request through the same scheduler used by asynchronous tasks.
+   *
+   * The runner returns the existing result union as data so validation and remote failures retain
+   * their established HTTP behavior. Scheduler-owned deadline and close cancellation failures are
+   * translated back into the operation metadata introduced by the guarded SFTP boundary.
+   *
+   * @template TResult Existing operation result union.
+   * @param session Open session captured before admission.
+   * @param operation Stable diagnostic operation name.
+   * @param resources Capacity and mutation profile.
+   * @param claims Remote paths reserved for the complete operation.
+   * @param run Unscheduled operation primitive.
+   * @returns Existing operation result after scheduler admission and execution.
+   */
+  private async runCoordinatedSftpOperation<TResult extends CoordinatedSftpOperationResult>(
+    session: SftpLiveSession,
+    operation: string,
+    resources: SftpTaskResources,
+    claims: readonly string[],
+    run: () => Promise<TResult>,
+  ): Promise<TResult> {
+    const scheduler = this.getOrCreateTaskScheduler(session.sessionId);
+    const handle = scheduler.schedule<TResult>({
+      operation: `legacy-${operation}`,
+      resources,
+      claims,
+      absoluteTimeoutMs: this.sftpOperationAbsoluteTimeoutMs,
+      run: async () => ({
+        state: 'succeeded',
+        result: await run(),
+      }),
+      mapFailure: (error) => {
+        if (isSftpOperationFailure(error)) {
+          return {
+            code: error.code,
+            message: error.message,
+            ...(error.outcomeUnknown ? { outcomeUnknown: true } : {}),
+          };
+        }
+
+        return {
+          code: API_CODES.sftpOperationFailed,
+          message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+          ...(resources.impact === 'mutation' ? { outcomeUnknown: true } : {}),
+        };
+      },
+      onAbort: (reason) => {
+        if (reason === 'deadline') {
+          this.poisonUnusableSession(session);
+        } else {
+          this.markSessionUnavailable(session);
+        }
+      },
+    });
+    const snapshot = await handle.completion;
+    void handle.released.then(() => {
+      scheduler.forgetTask(handle.taskId);
+    });
+
+    if (snapshot.state === 'succeeded' && snapshot.result !== undefined) {
+      return snapshot.result;
+    }
+
+    const operationErrorCode: SftpOperationFailureCode | undefined =
+      snapshot.failure?.code === API_CODES.sftpTaskDeadlineExceeded ||
+      snapshot.failure?.code === SFTP_OPERATION_TIMEOUT_CODE
+        ? SFTP_OPERATION_TIMEOUT_CODE
+        : snapshot.state === 'cancelled' || snapshot.failure?.code === SFTP_TRANSPORT_CLOSED_CODE
+          ? SFTP_TRANSPORT_CLOSED_CODE
+          : undefined;
+    const outcomeUnknown =
+      resources.impact === 'mutation' &&
+      snapshot.startedAt !== undefined &&
+      (snapshot.state === 'cancelled' || snapshot.failure?.outcomeUnknown === true);
+
+    return {
+      type: 'failed',
+      message: snapshot.failure?.message ?? session.t('errors.sftp.operationFailedNoReason'),
+      ...(operationErrorCode ? { operationErrorCode } : {}),
+      ...(outcomeUnknown ? { outcomeUnknown: true } : {}),
+    } as TResult;
+  }
+
+  /**
+   * Prunes the oldest released terminal snapshots before accepting another public task.
+   *
+   * The renderer owns longer-lived viewed/focus attention in Phase 3. This backend bound prevents
+   * an abandoned client from retaining request results without limit.
+   *
+   * @param sessionId Owning session id.
+   * @param records Current public task records.
+   * @returns Whether one more task can be retained.
+   */
+  private makeRoomForPublicTask(sessionId: string, records: Map<string, SftpPublicTaskRecord>): boolean {
+    if (records.size < SFTP_TASK_RECORD_LIMIT_PER_SESSION) {
+      return true;
+    }
+
+    for (const [taskId, record] of records) {
+      if (!record.released) {
+        continue;
+      }
+      const state = record.handle.getSnapshot().state;
+      if (state !== 'succeeded' && state !== 'cancelled') {
+        continue;
+      }
+      this.removePublicTaskRecord(sessionId, taskId, record);
+      if (records.size < SFTP_TASK_RECORD_LIMIT_PER_SESSION) {
+        return true;
+      }
+    }
+
+    for (const [taskId, record] of records) {
+      if (!record.released) {
+        continue;
+      }
+      this.removePublicTaskRecord(sessionId, taskId, record);
+      if (records.size < SFTP_TASK_RECORD_LIMIT_PER_SESSION) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Arms bounded terminal retention after the runner has released capacity and path claims.
+   *
+   * @param sessionId Owning session id.
+   * @param taskId Retained task id.
+   * @param record Retained task record.
+   * @returns void.
+   */
+  private armPublicTaskRetention(sessionId: string, taskId: string, record: SftpPublicTaskRecord): void {
+    if (record.retentionTimer) {
+      return;
+    }
+
+    record.retentionTimer = setTimeout(() => {
+      this.removePublicTaskRecord(sessionId, taskId, record);
+    }, SFTP_TASK_TERMINAL_RETENTION_MS);
+    record.retentionTimer.unref();
+  }
+
+  /**
+   * Removes one matching terminal record and its scheduler history.
+   *
+   * @param sessionId Owning session id.
+   * @param taskId Retained task id.
+   * @param record Expected record identity.
+   * @returns void.
+   */
+  private removePublicTaskRecord(sessionId: string, taskId: string, record: SftpPublicTaskRecord): void {
+    const records = this.publicTaskRecords.get(sessionId);
+    if (records?.get(taskId) !== record) {
+      return;
+    }
+
+    if (record.retentionTimer) {
+      clearTimeout(record.retentionTimer);
+      record.retentionTimer = undefined;
+    }
+    records.delete(taskId);
+    this.taskSchedulers.get(sessionId)?.forgetTask(taskId);
+    if (records.size === 0 && !this.getOpenSession(sessionId)) {
+      this.publicTaskRecords.delete(sessionId);
+    }
+  }
+
+  /**
+   * Returns or creates the ordered public task record map for one session.
+   *
+   * @param sessionId Owning SFTP session id.
+   * @returns Mutable insertion-ordered task record map.
+   */
+  private getOrCreatePublicTaskRecords(sessionId: string): Map<string, SftpPublicTaskRecord> {
+    const existing = this.publicTaskRecords.get(sessionId);
+    if (existing) {
+      return existing;
+    }
+
+    const records = new Map<string, SftpPublicTaskRecord>();
+    this.publicTaskRecords.set(sessionId, records);
+    return records;
+  }
+
+  /**
+   * Maps one public task descriptor to scheduler capacity and mutation semantics.
+   *
+   * @param request Validated task descriptor.
+   * @returns Scheduler resource profile.
+   */
+  private resolveTaskResources(request: ApiSftpStartTaskRequest): SftpTaskResources {
+    if (request.operation === 'download') {
+      return {
+        impact: 'read',
+        workload: 'heavy',
+        exclusive: false,
+      };
+    }
+    if (request.operation === 'upload' || request.operation === 'batch') {
+      return {
+        impact: 'mutation',
+        workload: 'heavy',
+        exclusive: false,
+      };
+    }
+    return {
+      impact: 'mutation',
+      workload: 'light',
+      exclusive: false,
+    };
+  }
+
+  /**
+   * Extracts the remote paths that must remain reserved for one task.
+   *
+   * The scheduler canonicalizes relative paths to the remote root so ambiguous aliases serialize
+   * conservatively without issuing uncoordinated realpath requests before admission.
+   *
+   * @param request Validated task descriptor.
+   * @returns Remote path claims.
+   */
+  private resolveTaskRemotePaths(request: ApiSftpStartTaskRequest): string[] {
+    switch (request.operation) {
+      case 'create-file':
+      case 'create-directory':
+      case 'upload':
+      case 'download':
+        return [request.payload.path];
+      case 'rename':
+        return [request.payload.sourcePath, request.payload.targetPath];
+      case 'batch':
+        return [
+          ...request.payload.entries.map((entry) => entry.path),
+          ...(request.payload.targetDirectoryPath ? [request.payload.targetDirectoryPath] : []),
+        ];
+    }
+  }
+
+  /**
+   * Executes one admitted task through the existing unscheduled operation primitives.
+   *
+   * @param sessionId Owning live SFTP session id.
+   * @param request Validated task descriptor.
+   * @param t Session-local translator retained for terminal failures after transport loss.
+   * @returns Explicit scheduler outcome with a contract-shaped result.
+   */
+  private async executeTaskRequest(
+    sessionId: string,
+    request: ApiSftpStartTaskRequest,
+    t: I18nInstance['t'],
+  ): Promise<SftpTaskRunOutcome<ApiSftpTaskResult>> {
+    switch (request.operation) {
+      case 'create-file':
+        return this.toTaskOperationOutcome(await this.createFilePrimitive(sessionId, request.payload.path), t);
+      case 'create-directory':
+        return this.toTaskOperationOutcome(await this.createDirectoryPrimitive(sessionId, request.payload.path), t);
+      case 'rename':
+        return this.toTaskOperationOutcome(
+          await this.renameEntryPrimitive(sessionId, request.payload.sourcePath, request.payload.targetPath),
+          t,
+        );
+      case 'upload': {
+        const expectedRemoteSnapshot =
+          request.payload.expectedSize !== undefined && request.payload.expectedModifiedAt
+            ? {
+                size: request.payload.expectedSize,
+                modifiedAt: request.payload.expectedModifiedAt,
+              }
+            : undefined;
+        return this.toTaskOperationOutcome(
+          await this.uploadFilePrimitive(
+            sessionId,
+            request.payload.path,
+            request.payload.localPath,
+            expectedRemoteSnapshot,
+            {
+              overwrite: request.payload.overwrite,
+              transferId: request.payload.transferId,
+            },
+          ),
+          t,
+        );
+      }
+      case 'download':
+        return this.toTaskDownloadOutcome(
+          await this.downloadFilePrimitive(
+            sessionId,
+            request.payload.path,
+            request.payload.localPath,
+            request.payload.transferId,
+          ),
+          t,
+        );
+      case 'batch':
+        return this.toTaskBatchOutcome(await this.runBatchOperationPrimitive(sessionId, request.payload), t);
+    }
+  }
+
+  /**
+   * Converts a regular operation result into one retained task outcome.
+   *
+   * @param result Existing operation result.
+   * @param t Session-local translator.
+   * @returns Contract-shaped task outcome.
+   */
+  private toTaskOperationOutcome(
+    result: SftpOperationResult,
+    t: I18nInstance['t'],
+  ): SftpTaskRunOutcome<ApiSftpTaskResult> {
+    if (result.type === 'not-found') {
+      return this.buildMissingSessionTaskOutcome(t);
+    }
+    if (result.type === 'failed') {
+      return {
+        state: 'failed',
+        failure: this.resolveTaskFailure(result),
+      };
+    }
+
+    return {
+      state: 'succeeded',
+      result: {
+        type: 'operation',
+        data: {
+          sessionId: result.sessionId,
+          path: result.path,
+          ...(result.targetPath ? { targetPath: result.targetPath } : {}),
+          ...(result.size !== undefined ? { size: result.size } : {}),
+          ...(result.modifiedAt ? { modifiedAt: result.modifiedAt } : {}),
+        },
+      },
+    };
+  }
+
+  /**
+   * Converts a download result into one retained task outcome.
+   *
+   * @param result Existing download result.
+   * @param t Session-local translator.
+   * @returns Contract-shaped task outcome.
+   */
+  private toTaskDownloadOutcome(
+    result: DownloadSftpFileResult,
+    t: I18nInstance['t'],
+  ): SftpTaskRunOutcome<ApiSftpTaskResult> {
+    if (result.type === 'not-found') {
+      return this.buildMissingSessionTaskOutcome(t);
+    }
+    if (result.type === 'failed') {
+      return {
+        state: 'failed',
+        failure: this.resolveTaskFailure(result),
+      };
+    }
+
+    return {
+      state: 'succeeded',
+      result: {
+        type: 'download',
+        data: {
+          sessionId: result.sessionId,
+          path: result.path,
+          localPath: result.localPath,
+          size: result.size,
+        },
+      },
+    };
+  }
+
+  /**
+   * Converts a batch result into a task outcome while retaining partial entry results.
+   *
+   * @param result Existing batch result.
+   * @param t Session-local translator.
+   * @returns Contract-shaped task outcome.
+   */
+  private toTaskBatchOutcome(
+    result: SftpBatchOperationResult,
+    t: I18nInstance['t'],
+  ): SftpTaskRunOutcome<ApiSftpTaskResult> {
+    if (result.type === 'not-found') {
+      return this.buildMissingSessionTaskOutcome(t);
+    }
+    if (result.type === 'failed') {
+      return {
+        state: 'failed',
+        failure: this.resolveTaskFailure(result),
+      };
+    }
+
+    const taskResult: ApiSftpTaskResult = {
+      type: 'batch',
+      data: {
+        sessionId: result.sessionId,
+        operation: result.operation,
+        totalCount: result.totalCount,
+        completedCount: result.completedCount,
+        failedCount: result.failedCount,
+        skippedCount: result.skippedCount,
+        stoppedOnFailure: result.stoppedOnFailure,
+        results: result.results,
+      },
+    };
+    if (result.failedCount === 0) {
+      return {
+        state: 'succeeded',
+        result: taskResult,
+      };
+    }
+
+    const failedItem = result.results.find((item) => item.status === 'failed');
+    return {
+      state: 'failed',
+      result: taskResult,
+      failure: {
+        code: failedItem?.operationErrorCode ?? API_CODES.sftpOperationFailed,
+        message: failedItem?.message ?? t('errors.sftp.operationFailedNoReason'),
+        ...(failedItem?.outcomeUnknown ? { outcomeUnknown: true } : {}),
+      },
+    };
+  }
+
+  /**
+   * Builds the stable failure used when a queued task loses its owning session before execution.
+   *
+   * @param t Session-local translator.
+   * @returns Failed task outcome.
+   */
+  private buildMissingSessionTaskOutcome(t: I18nInstance['t']): SftpTaskRunOutcome<ApiSftpTaskResult> {
+    return {
+      state: 'failed',
+      failure: {
+        code: API_CODES.sftpSessionNotFound,
+        message: t('errors.sftp.sessionNotFound'),
+      },
+    };
+  }
+
+  /**
+   * Maps existing operation failure metadata into the public task error model.
+   *
+   * @param result Existing failed operation result.
+   * @returns Stable task failure.
+   */
+  private resolveTaskFailure(
+    result: {
+      message: string;
+      reason?: 'remote-conflict';
+    } & SftpOperationFailureMetadata,
+  ): SftpTaskFailure {
+    return {
+      code:
+        result.reason === 'remote-conflict'
+          ? API_CODES.sftpUploadConflict
+          : (result.operationErrorCode ?? API_CODES.sftpOperationFailed),
+      message: result.message,
+      ...(result.outcomeUnknown ? { outcomeUnknown: true } : {}),
+    };
+  }
+
+  /**
+   * Converts a scheduler snapshot into the stable OpenAPI task representation.
+   *
+   * @param record Public task metadata not owned by the generic scheduler.
+   * @param snapshot Latest scheduler snapshot.
+   * @returns API task data.
+   */
+  private toApiTaskData(
+    record: SftpPublicTaskRecord,
+    snapshot: SftpTaskSnapshot<ApiSftpTaskResult, ApiSftpTaskResult>,
+  ): ApiSftpTaskData {
+    const retainedResult = snapshot.result ?? snapshot.partialResult;
+    const errorCode = snapshot.failure ? this.normalizeTaskErrorCode(snapshot.failure.code) : undefined;
+    return {
+      sessionId: snapshot.sessionId,
+      taskId: snapshot.taskId,
+      operation: record.operation,
+      state: snapshot.state,
+      remotePaths: [...record.remotePaths],
+      ...(record.transferId ? { transferId: record.transferId } : {}),
+      createdAt: new Date(snapshot.createdAt).toISOString(),
+      deadlineAt: new Date(snapshot.deadlineAt).toISOString(),
+      ...(snapshot.startedAt !== undefined ? { startedAt: new Date(snapshot.startedAt).toISOString() } : {}),
+      ...(snapshot.finishedAt !== undefined ? { finishedAt: new Date(snapshot.finishedAt).toISOString() } : {}),
+      ...(retainedResult ? { result: retainedResult } : {}),
+      ...(errorCode ? { errorCode } : {}),
+      ...(snapshot.failure?.message ? { errorMessage: snapshot.failure.message } : {}),
+      ...(snapshot.failure?.outcomeUnknown ? { outcomeUnknown: true } : {}),
+    };
+  }
+
+  /**
+   * Restricts generic scheduler error strings to the OpenAPI task error vocabulary.
+   *
+   * @param code Scheduler failure code.
+   * @returns Public task error code.
+   */
+  private normalizeTaskErrorCode(code: string): ApiSftpTaskErrorCode {
+    return SFTP_TASK_ERROR_CODES.has(code as ApiSftpTaskErrorCode)
+      ? (code as ApiSftpTaskErrorCode)
+      : API_CODES.sftpOperationFailed;
+  }
+
+  /**
+   * Waits briefly for cancelled task runners to release their remote ownership.
+   *
+   * The session transport is still closed after the bound so an unexpected runner bug cannot
+   * reintroduce an indefinitely stuck close operation.
+   *
+   * @param scheduler Closing session's scheduler.
+   * @returns void.
+   */
+  private async waitForTaskSchedulerDrain(scheduler: SftpTaskScheduler): Promise<void> {
+    let timeout: NodeJS.Timeout | undefined;
+    const drained = await Promise.race([
+      scheduler.waitForIdle().then(() => true),
+      new Promise<boolean>((resolve) => {
+        timeout = setTimeout(() => resolve(false), SFTP_TASK_CLOSE_DRAIN_TIMEOUT_MS);
+        timeout.unref();
+      }),
+    ]);
+    if (timeout) {
+      clearTimeout(timeout);
+    }
+    if (!drained) {
+      console.warn('[sftp] Session close stopped waiting for cancelled task runners.');
+    }
   }
 
   /**
@@ -1951,7 +3177,12 @@ export class SftpSessionService {
       return false;
     }
 
+    const scheduler = this.taskSchedulers.get(sessionId);
+    scheduler?.cancelAll();
     this.markSessionUnavailable(session);
+    if (scheduler) {
+      await this.waitForTaskSchedulerDrain(scheduler);
+    }
     await this.archiveService.closeSession(sessionId);
     try {
       session.client.end();
@@ -1989,6 +3220,15 @@ export class SftpSessionService {
   public async stop(): Promise<void> {
     await this.closeAllSessions();
     this.transfers.clear();
+    for (const records of this.publicTaskRecords.values()) {
+      for (const record of records.values()) {
+        if (record.retentionTimer) {
+          clearTimeout(record.retentionTimer);
+        }
+      }
+    }
+    this.taskSchedulers.clear();
+    this.publicTaskRecords.clear();
   }
 
   /**
@@ -2805,19 +4045,19 @@ export class SftpSessionService {
     targetDirectoryPath: string | undefined,
   ): Promise<SftpOperationResult> {
     if (operation === 'delete') {
-      return await this.deleteEntry(sessionId, entry.path, entry.type === 'directory');
+      return await this.deleteEntryPrimitive(sessionId, entry.path, entry.type === 'directory');
     }
 
     const targetPath = joinSftpPath(targetDirectoryPath ?? '.', POSIX_PATH.basename(entry.path));
     if (operation === 'copy') {
-      return await this.copyEntry(sessionId, entry.path, targetPath);
+      return await this.copyEntryPrimitive(sessionId, entry.path, targetPath);
     }
 
     if (operation === 'link') {
-      return await this.linkEntry(sessionId, entry.path, targetPath);
+      return await this.linkEntryPrimitive(sessionId, entry.path, targetPath);
     }
 
-    return await this.renameEntry(sessionId, entry.path, targetPath);
+    return await this.renameEntryPrimitive(sessionId, entry.path, targetPath);
   }
 
   private async copyFile(

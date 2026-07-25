@@ -401,10 +401,10 @@ test('SftpArchiveService disables archive capabilities when remote exec is rejec
     createFormats: [],
     extractFormats: [],
   });
-  await assert.rejects(
-    service.startOperation(session, TAR_REQUEST),
-    (error: unknown) => error instanceof SftpArchiveError && error.code === 'SFTP_ARCHIVE_UNSUPPORTED',
-  );
+  const operation = await service.startOperation(session, TAR_REQUEST);
+  const completed = await service.waitForOperation(session.sessionId, operation.operationId);
+  assert.equal(completed.state, 'failed');
+  assert.equal(completed.errorCode, 'SFTP_ARCHIVE_UNSUPPORTED');
 });
 
 test('quotePosixShellToken protects hostile remote basenames', () => {
@@ -449,6 +449,26 @@ test('SftpArchiveService reserves the session mutex while capabilities are probi
   const operation = await firstStart;
   service.cancelOperation(session.sessionId, operation.operationId);
   await waitForOperationState(service, operation, 'cancelled');
+});
+
+test('SftpArchiveService returns an operation id before a held capability probe settles', async () => {
+  const { host, service, session } = createArchiveTestContext();
+  host.addFile('/srv/input.txt', 'input');
+  host.holdProbe = true;
+
+  const start = service.startOperation(session, TAR_REQUEST);
+  const operation = await Promise.race([start, Promise.resolve(null)]);
+
+  assert.ok(operation);
+  assert.equal(operation.sessionId, session.sessionId);
+  assert.equal(operation.state, 'running');
+  assert.equal(operation.stage, 'preparing');
+  assert.ok(host.heldProbeChannel);
+
+  host.releaseProbe();
+  const completed = await service.waitForOperation(session.sessionId, operation.operationId);
+  assert.equal(completed.state, 'succeeded');
+  assert.deepEqual(completed.resultPaths, ['/srv/output.tar']);
 });
 
 test('SftpArchiveService rejects compression levels that do not match the format', async () => {
@@ -562,6 +582,28 @@ test('SftpArchiveService keeps cancellation available when TERM is rejected', as
   assert.equal(completed.stage, 'completed');
 });
 
+test('SftpArchiveService retains a forced timeout after later cancellation and transport failure', async () => {
+  const { host, service, session } = createArchiveTestContext();
+  host.addFile('/srv/input.txt', 'input');
+  await service.getCapabilities(session);
+  host.holdArchiveCommands = true;
+  const operation = await service.startOperation(session, TAR_REQUEST);
+  for (let attempt = 0; attempt < 100 && !host.heldArchiveChannel; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  const channel = host.heldArchiveChannel;
+  assert.ok(channel);
+
+  service.timeoutOperation(session.sessionId, operation.operationId);
+  service.cancelOperation(session.sessionId, operation.operationId);
+  channel.emit('error', new Error('transport closed after timeout'));
+
+  const completed = await service.waitForOperation(session.sessionId, operation.operationId);
+  assert.equal(completed.state, 'failed');
+  assert.equal(completed.errorCode, 'SFTP_ARCHIVE_TIMEOUT');
+  assert.equal(completed.stage, 'completed');
+});
+
 test('SftpArchiveService closeSession waits for active command cancellation and cleanup', async () => {
   const { host, service, session } = createArchiveTestContext();
   host.addFile('/srv/input.txt', 'input');
@@ -624,6 +666,52 @@ test('SftpArchiveService closeSession stops waiting when remote cleanup stalls',
   host.holdStagingReaddir = false;
   host.releaseStagingReaddir();
   const completed = await waitForOperationState(service, operation, 'cancelled');
+  assert.equal(completed.stage, 'completed');
+});
+
+test('SftpArchiveService waitForOperation resolves only after terminal cleanup completes', async () => {
+  const { host, service, session } = createArchiveTestContext();
+  host.addFile('/srv/archive.zip', Buffer.from([0x50, 0x4b, 0x03, 0x04]));
+  host.extractMembers = ['nested/payload.txt'];
+  host.holdStagingReaddir = true;
+  const operation = await service.startOperation(session, {
+    type: 'extract',
+    archivePath: '/srv/archive.zip',
+    targetDirectoryPath: '/srv',
+    destinationMode: 'current-directory',
+  });
+  for (let attempt = 0; attempt < 100 && !host.pendingStagingReaddir; attempt += 1) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  assert.ok(host.pendingStagingReaddir);
+
+  service.cancelOperation(session.sessionId, operation.operationId);
+  host.holdStagingReaddir = true;
+  host.releaseStagingReaddir();
+  for (
+    let attempt = 0;
+    attempt < 100 &&
+    (service.getOperation(session.sessionId, operation.operationId).stage !== 'cleaning' ||
+      !host.pendingStagingReaddir);
+    attempt += 1
+  ) {
+    await new Promise<void>((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(service.getOperation(session.sessionId, operation.operationId).stage, 'cleaning');
+  assert.ok(host.pendingStagingReaddir);
+
+  let completionResolved = false;
+  const completion = service.waitForOperation(session.sessionId, operation.operationId).then((completed) => {
+    completionResolved = true;
+    return completed;
+  });
+  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  assert.equal(completionResolved, false);
+
+  host.holdStagingReaddir = false;
+  host.releaseStagingReaddir();
+  const completed = await completion;
+  assert.equal(completed.state, 'cancelled');
   assert.equal(completed.stage, 'completed');
 });
 

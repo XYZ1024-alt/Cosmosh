@@ -24,9 +24,13 @@ import {
   type ApiSftpDeleteResponse,
   type ApiSftpDownloadFileResponse,
   type ApiSftpEntryDetailsResponse,
+  type ApiSftpGetTaskResponse,
   type ApiSftpListDirectoryResponse,
+  type ApiSftpListTasksResponse,
   type ApiSftpReadFileResponse,
   type ApiSftpRenameResponse,
+  type ApiSftpStartTaskRequest,
+  type ApiSftpStartTaskResponse,
   type ApiSftpTransferProgressResponse,
   type ApiSftpUploadFileResponse,
   type ApiSftpWriteFileResponse,
@@ -592,6 +596,113 @@ const parseSftpBatchOperationRequest = (payload: unknown): ValidationResult<Norm
   return {
     value,
   };
+};
+
+/**
+ * Parses one asynchronous SFTP task descriptor through the existing operation validators.
+ *
+ * Transfer tasks require a caller-generated transfer id so progress and terminal state share one
+ * correlation key. Main remains responsible for authorizing exact local download paths.
+ *
+ * @param payload Raw HTTP JSON payload.
+ * @returns Normalized task descriptor or validation error.
+ */
+const parseSftpTaskStartRequest = (payload: unknown): ValidationResult<ApiSftpStartTaskRequest> => {
+  if (!isRecord(payload) || !isRecord(payload.payload)) {
+    return {
+      error: buildValidationError('errors.validation.requestBodyMustBeObject', 'Task payload must be a JSON object.'),
+    };
+  }
+
+  switch (payload.operation) {
+    case 'create-file':
+    case 'create-directory': {
+      const parsed = parseSftpPathRequest(payload.payload);
+      return parsed.value
+        ? {
+            value: {
+              operation: payload.operation,
+              payload: parsed.value,
+            },
+          }
+        : { error: parsed.error };
+    }
+    case 'rename': {
+      const parsed = parseSftpSourceTargetRequest(payload.payload);
+      return parsed.value
+        ? {
+            value: {
+              operation: 'rename',
+              payload: parsed.value,
+            },
+          }
+        : { error: parsed.error };
+    }
+    case 'upload': {
+      const parsed = parseSftpUploadFileRequest(payload.payload);
+      if (!parsed.value) {
+        return { error: parsed.error };
+      }
+      if (!parsed.value.transferId) {
+        return {
+          error: buildValidationError(
+            'errors.validation.invalidPayload',
+            'transferId is required for asynchronous uploads.',
+          ),
+        };
+      }
+      return {
+        value: {
+          operation: 'upload',
+          payload: {
+            ...parsed.value,
+            transferId: parsed.value.transferId,
+          },
+        },
+      };
+    }
+    case 'download': {
+      const parsed = parseSftpDownloadFileRequest(payload.payload);
+      if (!parsed.value) {
+        return { error: parsed.error };
+      }
+      if (!parsed.value.transferId) {
+        return {
+          error: buildValidationError(
+            'errors.validation.invalidPayload',
+            'transferId is required for asynchronous downloads.',
+          ),
+        };
+      }
+      return {
+        value: {
+          operation: 'download',
+          payload: {
+            ...parsed.value,
+            transferId: parsed.value.transferId,
+          },
+        },
+      };
+    }
+    case 'batch': {
+      const parsed = parseSftpBatchOperationRequest(payload.payload);
+      return parsed.value
+        ? {
+            value: {
+              operation: 'batch',
+              payload: parsed.value,
+            },
+          }
+        : { error: parsed.error };
+    }
+    default:
+      return {
+        error: buildValidationError(
+          'errors.validation.invalidPayload',
+          'operation must be create-file, create-directory, rename, upload, download, or batch.',
+        ),
+      };
+  }
 };
 
 /**
@@ -1303,22 +1414,99 @@ export const registerSftpRoutes = (app: BackendHttpApp, context: BackendAppConte
     return c.json(buildSftpBatchOperationSuccess(t, result));
   });
 
+  app.post(API_PATHS.sftpStartTask.replace('{sessionId}', ':sessionId'), async (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const parsed = parseSftpTaskStartRequest(await c.req.json().catch(() => undefined));
+    if (!parsed.value) {
+      return c.json(buildValidationFailureResponse(t, parsed.error), 400);
+    }
+
+    const result = context.sftpSessionService.startTask(sessionId, parsed.value);
+    if (result.type === 'not-found') {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+    if (result.type === 'failed') {
+      return c.json(buildOperationFailureResponse(t, result.message), 400);
+    }
+
+    const payload: ApiSftpStartTaskResponse = createApiSuccess({
+      code: API_CODES.sftpTaskAccepted,
+      message: t('success.sftp.taskAccepted'),
+      data: result.task,
+    });
+    return c.json(payload, 202);
+  });
+
+  app.get(API_PATHS.sftpListTasks.replace('{sessionId}', ':sessionId'), (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    if (!sessionId) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
+    }
+
+    const tasks = context.sftpSessionService.listTasks(sessionId);
+    if (!tasks) {
+      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    }
+
+    const payload: ApiSftpListTasksResponse = createApiSuccess({
+      code: API_CODES.sftpTaskListOk,
+      message: t('success.sftp.taskListLoaded'),
+      data: {
+        sessionId,
+        items: tasks,
+      },
+    });
+    return c.json(payload);
+  });
+
+  app.get(API_PATHS.sftpGetTask.replace('{sessionId}', ':sessionId').replace('{taskId}', ':taskId'), (c) => {
+    const t = getTranslator(c);
+    const sessionId = c.req.param('sessionId');
+    const taskId = c.req.param('taskId');
+    if (!sessionId || !taskId || !UUID_PATTERN.test(taskId)) {
+      return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.validation.invalidPayload')), 400);
+    }
+
+    const task = context.sftpSessionService.getTask(sessionId, taskId);
+    if (!task) {
+      return c.json(buildErrorPayload(API_CODES.sftpTaskNotFound, t('errors.sftp.taskNotFound')), 404);
+    }
+
+    const payload: ApiSftpGetTaskResponse = createApiSuccess({
+      code: API_CODES.sftpTaskStatusOk,
+      message: t('success.sftp.taskStatusLoaded'),
+      data: task,
+    });
+    return c.json(payload);
+  });
+
   app.get(API_PATHS.sftpGetArchiveCapabilities.replace('{sessionId}', ':sessionId'), async (c) => {
     const t = getTranslator(c);
     const sessionId = c.req.param('sessionId');
     if (!sessionId) {
       return c.json(buildErrorPayload(API_CODES.sftpValidationFailed, t('errors.sftp.sessionIdRequired')), 400);
     }
-    const capabilities = await context.sftpSessionService.getArchiveCapabilities(sessionId);
-    if (!capabilities) {
-      return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+    try {
+      const capabilities = await context.sftpSessionService.getArchiveCapabilities(sessionId);
+      if (!capabilities) {
+        return c.json(buildErrorPayload(API_CODES.sftpSessionNotFound, t('errors.sftp.sessionNotFound')), 404);
+      }
+      const payload: ApiSftpArchiveCapabilitiesResponse = createApiSuccess({
+        code: API_CODES.sftpArchiveCapabilitiesOk,
+        message: t('success.sftp.archiveCapabilitiesLoaded'),
+        data: capabilities,
+      });
+      return c.json(payload);
+    } catch (error: unknown) {
+      const failure = buildArchiveErrorResponse(t, error);
+      return c.json(failure.payload, failure.status);
     }
-    const payload: ApiSftpArchiveCapabilitiesResponse = createApiSuccess({
-      code: API_CODES.sftpArchiveCapabilitiesOk,
-      message: t('success.sftp.archiveCapabilitiesLoaded'),
-      data: capabilities,
-    });
-    return c.json(payload);
   });
 
   app.post(API_PATHS.sftpStartArchiveOperation.replace('{sessionId}', ':sessionId'), async (c) => {

@@ -18,13 +18,13 @@ Implemented in v1:
 - Center-list context menus and the top action bar expose open, open folder in a new tab, properties, open SSH here, copy path, copy relative path, save regular files locally, Open With where supported, cut, copy, paste, Paste as Link from the SFTP clipboard, delete, new file, new folder, and inline rename. Symlink rows render with dedicated file/folder symlink icons and expose `Open File Location`, which resolves the link target on demand and navigates to the target's containing directory. The directory list supports mouse and keyboard multi-selection with `Ctrl`/`Cmd` toggle, `Ctrl`/`Cmd+A` select-all, and `Shift` range selection.
 - Internal same-tab dragging starts from one or more directory-list entries and drops only on explicit remote directory targets: left tree rows, center-list directory rows, breadcrumb directory segments, and address-bar directory dropdown entries. The resolved action is ask, move, copy, or create-link, with a separate platform-primary-modifier setting (`Ctrl` on Windows/Linux, `Cmd` on macOS).
 - The toolbar, directory blank-area menu, tree-directory menu, and external file drops can upload one or more local regular files into the selected remote directory. Main stages native-picker selections and preload-resolved dropped files under the controlled SFTP temp root; uploads run sequentially through the tab-local task queue, and existing remote names require explicit overwrite confirmation. External folder drops are rejected with renderer feedback until recursive directory upload is implemented.
-- Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, and failed states. Single-file uploads and explicit downloads add byte progress, percentage, and rolling transfer speed; failed tasks retain both the file name and backend error reason and also raise a localized error notification.
+- Renderer-managed file operations are queued per SFTP tab and surfaced in a compact toolbar task menu with queued, running, success, and failed states. Phase 2 keeps this tab-local FIFO as the active renderer execution path; migration to the backend task API is reserved for Phase 3. Single-file uploads and explicit downloads add byte progress, percentage, and rolling transfer speed; failed tasks retain both the file name and backend error reason and also raise a localized error notification.
 - SFTP settings control reconnect mode, delete-confirmation scope, internal-drag default and modifier actions, file-list column/sort view state, whether the center file list shows a leading `..` parent-directory row, whether the address bar always renders as text, the auxiliary sidebar mode, and the text/image preview warning thresholds.
 - Backend write operations support local-file upload, empty-file creation, directory creation, rename/move, recursive copy, absolute symlink creation, and recursive delete.
 
 Intentionally not included in v1:
 
-- directory upload/download, chmod, cross-tab drag/drop targets, file-row/text-address drop targets, global search, and backend-owned transfer scheduling with cancellation, resume, or persisted history.
+- directory upload/download, chmod, cross-tab drag/drop targets, file-row/text-address drop targets, global search, and generalized task cancellation, resume, or persisted history.
 - reuse of an active SSH terminal session. SFTP tabs establish their own SSH + SFTP connection.
 - persisted SFTP history or additional database tables.
 
@@ -35,15 +35,19 @@ flowchart LR
   UI[SFTP Workbench Page] --> BRIDGE[window.electron bridge]
   BRIDGE --> MAIN[Main IPC proxy]
   MAIN --> ROUTE[Backend SFTP HTTP routes]
+  ROUTE --> SCHEDULER[Session task scheduler]
   ROUTE --> SERVICE[SftpSessionService]
+  SCHEDULER --> SERVICE
+  SCHEDULER --> ARCHIVE[SftpArchiveService]
   SERVICE --> SSH2[ssh2 Client + sftp subsystem]
+  ARCHIVE --> SSH2
   SSH2 --> REMOTE[Remote file system]
 ```
 
 ### Ownership
 
 - **API contract**: `packages/api-contract/openapi/cosmosh.openapi.yaml` defines SFTP paths, schemas, success codes, and error codes.
-- **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup.
+- **Backend**: `packages/backend/src/http/routes/sftp.ts` validates HTTP input and maps service results to API envelopes. `packages/backend/src/sftp/session-service.ts` owns SSH/SFTP connection setup, session registry, directory normalization, entry mapping, and cleanup. `packages/backend/src/sftp/task-scheduler.ts` owns per-session admission limits, path claims, absolute task deadlines, cancellation signals, and retained in-memory task snapshots. `packages/backend/src/sftp/archive-service.ts` owns remote archive execution and cleanup under the scheduler's exclusive session claim.
 - **Main/preload**: `packages/main/src/ipc/register-backend-ipc.ts` proxies SFTP requests to backend routes. `packages/main/src/ipc/register-app-utility-ipc.ts` owns native save/open helpers, validates Cosmosh SFTP temp paths, and launches platform Open With behavior. `packages/main/src/preload.ts` exposes the minimal renderer bridge.
 - **Renderer**: `packages/renderer/src/pages/SFTP.tsx` owns tab-scoped UI state, file actions, inline rename/create state, and preview state.
 - **Settings registry**: `packages/api-contract/src/settings-registry.ts` owns the SFTP reconnect, delete-confirmation, internal-drag action, directory-list view, parent-directory-row, hidden-entry, address-display, auxiliary-sidebar, and preview-threshold preferences consumed by the renderer settings store.
@@ -68,6 +72,9 @@ All callers must use generated exports from `@cosmosh/api-contract`, especially 
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                                                 | Copy one remote file or directory tree.                                                                                                         |
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`                                       | Delete one remote file, symlink, or directory tree.                                                                                             |
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                                                | Run one ordered batch copy, move, link, or delete operation across multiple remote entries.                                                     |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/tasks`                                                | Enqueue one bounded asynchronous `create-file`, `create-directory`, `rename`, `upload`, `download`, or `batch` task.                            |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/tasks`                                                | List retained in-memory task snapshots for one current or recently closed SFTP session in creation order.                                       |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/tasks/{taskId}`                                       | Read one retained in-memory task snapshot, including its terminal result or stable failure.                                                     |
 | `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`                                 | Probe and cache remote POSIX archive tools for the active session.                                                                              |
 | `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`                                   | Start one structured asynchronous compress or extract operation.                                                                                |
 | `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | Poll archive state, stage, conflicts, results, or a stable error.                                                                               |
@@ -82,6 +89,9 @@ Success codes:
 - `SFTP_ENTRY_DETAILS_OK`
 - `SFTP_FILE_READ_OK`
 - `SFTP_OPERATION_OK`
+- `SFTP_TASK_ACCEPTED`
+- `SFTP_TASK_STATUS_OK`
+- `SFTP_TASK_LIST_OK`
 - `SFTP_ARCHIVE_CAPABILITIES_OK`
 - `SFTP_ARCHIVE_OPERATION_ACCEPTED`
 - `SFTP_ARCHIVE_OPERATION_STATUS_OK`
@@ -91,6 +101,8 @@ SFTP-specific error codes:
 - `SFTP_SESSION_NOT_FOUND`
 - `SFTP_VALIDATION_FAILED`
 - `SFTP_OPERATION_FAILED`
+- `SFTP_TASK_NOT_FOUND`
+- `SFTP_TASK_DEADLINE_EXCEEDED`
 - `SFTP_UPLOAD_CONFLICT`
 - `SFTP_ARCHIVE_UNSUPPORTED`
 - `SFTP_ARCHIVE_BUSY`
@@ -150,6 +162,15 @@ Lifecycle rules:
 - After confirmation, or immediately when confirmation is disabled, `DELETE /api/v1/runtime/active-connections` closes each registered SFTP SSH client before window destruction. This is required on macOS, where closing the last window does not quit the application or stop Backend.
 - Bulk SFTP close runs session cleanup in parallel; activity counts and the close-warning contract remain session-based rather than task-based.
 
+### Backend Task Scheduling
+
+- Each active SFTP session owns an independent in-memory scheduler. Its fixed admission limits are `total=3`, `heavy=2`, and `mutation=1`. The limits are safety boundaries, not renderer preferences.
+- The public task descriptors are `create-file`, `create-directory`, `rename`, `upload`, `download`, and `batch`. Preview text writes through `POST /api/v1/sftp/sessions/{sessionId}/file` keep their synchronous HTTP contract because content is inline, but execute as hidden scheduler mutations without creating public task records. Legacy list/read/mutation routes use the same hidden coordinated boundary, so they cannot bypass task claims or archive exclusivity.
+- Every task declares normalized POSIX path claims. Equal paths and ancestor/descendant paths serialize; disjoint sibling paths may run concurrently. An older queued task reserves overlapping claims while unrelated work may bypass it. An archive capability probe holds an exclusive session claim until the probe settles; archive startup acquires the same claim and retains it through terminal cleanup, so no ordinary task overlaps either lifecycle.
+- One absolute deadline covers queue wait and runner execution. A task that expires while queued fails without invoking its runner. A running task publishes `failed` with `SFTP_TASK_DEADLINE_EXCEEDED` immediately at the deadline, but its capacity slots and path claims remain owned until the underlying runner actually settles. Timed-out mutations include `outcomeUnknown: true` because a remote side effect may already have occurred.
+- Public task snapshots exist only in backend memory, remain queryable after a recent session close, and are retained for up to seven days after runner release. Each session retains at most 512 records; pressure evicts the oldest released terminal snapshots before rejecting more work, and backend shutdown clears all remaining records. The renderer owns the longer-lived viewed/focus attention state after Phase 3. The task collection has no public cancel or resume route and no persistence; archive-specific cancellation remains a separate archive API.
+- Phase 2 does not switch the renderer to these endpoints. The SFTP workbench continues to execute its tab-local FIFO and task menu behavior; consuming the backend task API is Phase 3 work.
+
 ## 5. Directory Listing And File Operations
 
 The backend treats SFTP paths as POSIX paths regardless of the host OS running Cosmosh.
@@ -199,6 +220,7 @@ Mutation rules:
 - Directory delete is recursive when requested by the renderer.
 - Delete confirmation is a renderer-side safety gate controlled by `sftpDeleteConfirmationMode`: `always` asks before every delete, `batch` asks only when deleting more than one selected entry, `shortcut` asks only for keyboard-triggered deletes, and `off` calls the backend delete flow immediately.
 - Renderer file operations enter a tab-local FIFO task queue before calling the backend. The queue keeps navigation, selection, filtering, and refresh usable while work is pending, and the toolbar task menu remains visible until completed tasks expire after a short inspection window. Explicit upload/download tasks generate a UUID `transferId`, poll `GET /api/v1/sftp/transfers/{transferId}` every 500 ms while the final request is pending, and render byte progress plus speed without moving file contents through IPC.
+- Phase 2 intentionally leaves that renderer FIFO on the existing synchronous operation routes, while those routes now enter the backend scheduler as hidden coordinated work. Phase 3 will migrate supported operations to the public backend task API; preview text writes remain synchronous after that migration.
 - `SftpSessionService` stores active and terminal progress records in memory. Stream chunks update transferred bytes immediately and refresh a smoothed bytes-per-second sample no more than every 250 ms. Completed and failed records remain queryable for 60 seconds, are never persisted, and are pruned lazily.
 - Local upload selection is owned by main through a native multi-file dialog, while external file drops are resolved to local paths only inside preload before main staging. Each selected or dropped regular file is copied into an isolated directory under the Cosmosh SFTP temp root before its descriptor reaches renderer; the source workstation path is never exposed to backend HTTP or retained by renderer. Dropped directories and non-regular entries are reported back as rejected entries and are not recursively traversed in v1.
 - Each staged local file becomes one FIFO upload task. A missing remote target is created with exclusive-write semantics; an existing regular-file target returns `SFTP_UPLOAD_CONFLICT` unless the request carries the original opened-file snapshot or renderer retries with `overwrite: true` after explicit confirmation.
@@ -227,13 +249,13 @@ Supported canonical formats are `tar`, `tar-gzip` (`.tar.gz`/`.tgz`), `zip`, `ta
 
 Runtime rules:
 
-1. Only one archive operation may be active per SFTP session. Requests are also serialized by the existing renderer tab FIFO; multiple archives extract in selection order.
+1. Archive capability probing acquires the backend scheduler's exclusive session claim until the probe settles. Archive startup acquires the same claim and retains it through terminal cleanup. Probes and starts use immediate-only exclusive admission and return `SFTP_ARCHIVE_BUSY` instead of holding an HTTP request in the queue. Requests also pass through the existing renderer tab FIFO in Phase 2, so multiple archives extract in selection order.
 2. Compression accepts only non-empty structured paths from one source directory, a basename archive name, a canonical format, and `store`/`fast`/`standard`/`maximum`. Output at `/` or `.` is rejected. The backend writes a random `.cosmosh-*` sibling file, rechecks non-existence, then renames it to the final archive.
 3. Extraction accepts one regular archive file plus an absolute destination directory in the active SFTP session; missing destination segments are created with directory-only validation, while the remote root is rejected. Directories created by an operation remain provisional until commit and are removed on failure/cancellation only while still empty. The archive and destination may be in different directories. The backend combines compound extension detection, a bounded header check, and a tool list/test command. The complete member list must fit the validation output bound; truncation fails closed before extraction. Absolute/traversal members and staged symbolic links that escape the random `0700` extraction directory are rejected before commit.
 4. Smart extraction commits one top-level entry directly to the current directory. Empty or multi-top-level output is renamed to an archive-named directory, using `name (2)`, `name (3)`, and so on when necessary. Explicit current/archive-name modes suspend on conflicts. Custom destinations use current-directory commit and conflict semantics inside the selected remote directory, creating that directory when necessary.
 5. `overwrite` recursively merges directories, replaces colliding entries, and preserves unrelated destination content. `keep-both` chooses numbered siblings. One decision applies to the task. Waiting conflicts expire after 10 minutes.
 6. Public phases are `preparing`, `compressing`, `extracting`, `verifying`, `awaiting-conflict`, `committing`, `cleaning`, and `completed`; no percentage is invented. Post-extraction verification reuses `readdir` mode data instead of issuing one `lstat` per ordinary file. Renderer polls every 750 ms. Terminal state is retained for 60 seconds.
-7. Each operation receives one absolute 24-hour deadline shared by remote exec, SFTP validation and commit requests, conflict waiting, and cleanup. Deadline expiry fails with `SFTP_ARCHIVE_TIMEOUT` and releases the session archive slot even when a remote callback never arrives. Cancellation requests `TERM` even when the exec callback arrives after the request, and always retains the three-second channel-close fallback when the remote server rejects that signal. Fixed extraction commands replace the remote shell process with the archive executable so signals reach the active tool. Verification and commit loops, including recursive overwrite merges, check cancellation between SFTP requests. Once all requested output has been committed, a late cancellation does not relabel the completed result as cancelled. The operation otherwise reaches `cancelled` only after command termination and cleanup. Renderer keeps the cancelling label while polling; if the cancellation HTTP request itself fails, it re-enables the task action so the user can retry. Normal failure, cancellation, conflict cancellation, and session close clean only paths registered by the operation while deadline time remains. Session close shares the operation's active cleanup attempt and stops waiting at its bounded close deadline so SSH transport shutdown can continue when a remote SFTP request stalls.
+7. Each operation receives one absolute 24-hour deadline shared by immediate scheduler admission, remote exec, SFTP validation and commit requests, conflict waiting, and cleanup. Deadline expiry selects `SFTP_ARCHIVE_TIMEOUT` immediately, while the archive status reaches terminal `failed` only after the runner completes its bounded cleanup. The scheduler keeps the exclusive session claim through that settlement. Cancellation requests `TERM` even when the exec callback arrives after the request, and always retains the three-second channel-close fallback when the remote server rejects that signal. Fixed extraction commands replace the remote shell process with the archive executable so signals reach the active tool. Verification and commit loops, including recursive overwrite merges, check cancellation between SFTP requests. Once all requested output has been committed, a late cancellation does not relabel the completed result as cancelled. The operation otherwise reaches `cancelled` only after command termination and cleanup. Renderer keeps the cancelling label while polling; if the cancellation HTTP request itself fails, it re-enables the task action so the user can retry. Normal failure, cancellation, conflict cancellation, and session close clean only paths registered by the operation while deadline time remains. Session close shares the operation's active cleanup attempt and stops waiting at its bounded close deadline so SSH transport shutdown can continue when a remote SFTP request stalls.
 
 Commands come from fixed backend templates. Every path token uses POSIX single-quote escaping, `--`, and `./basename`; renderer flags and arbitrary commands are impossible by contract. Remote command output is bounded; archive-member list truncation is a hard validation failure, while diagnostic output is reduced to a sanitized summary. Status responses never include commands, full output, credentials, or staging paths. Audit events record operation type, format, source count, target, result, and stable error code only.
 

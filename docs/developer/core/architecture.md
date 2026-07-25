@@ -316,21 +316,53 @@ sequenceDiagram
 
 - File bytes stay on the existing backend stream path; only bounded progress metadata crosses HTTP and IPC.
 - Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
-- This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
+- Phase 2 renderer progress observation still belongs to the existing tab-local FIFO queue. A backend task scheduler now exists as a separate HTTP capability, but renderer migration to it is deferred to Phase 3; neither path provides generalized cancellation, resume, or persisted history.
 
-### 6.4 SFTP Remote Archive Data Flow
+### 6.4 SFTP Backend Task Scheduling Data Flow
+
+```mermaid
+sequenceDiagram
+  participant C as Task API Consumer
+  participant API as Backend SFTP Routes
+  participant SCH as Session Task Scheduler
+  participant SVC as SFTP/Archive Runner
+  participant RH as Remote Host
+
+  C->>API: POST /sessions/{sessionId}/tasks(descriptor)
+  API->>SCH: enqueue with resources, claims, and absolute deadline
+  SCH-->>C: 202 accepted task snapshot
+  SCH->>SCH: admit by total/heavy/mutation limits and path claims
+  SCH->>SVC: run with AbortSignal and remaining deadline
+  SVC->>RH: bounded remote operation
+  loop list or detail polling
+    C->>API: GET task list/detail
+    API-->>C: retained in-memory snapshot
+  end
+  SVC-->>SCH: result or terminal cleanup settlement
+  SCH->>SCH: release capacity and claims
+```
+
+- Each SFTP session has independent fixed limits: `total=3`, `heavy=2`, and `mutation=1`. Equal and ancestor/descendant POSIX path claims serialize, while disjoint sibling claims may run concurrently.
+- Supported public task descriptors are `create-file`, `create-directory`, `rename`, `upload`, `download`, and `batch`. Preview `write-file` retains its synchronous HTTP contract but executes as hidden scheduler work; all legacy SFTP operation routes use that same coordinated service boundary.
+- The absolute deadline includes queue wait. Deadline expiry publishes `failed` immediately; a running task continues to own capacity and claims until its runner settles, and timed-out mutations publish `outcomeUnknown: true`.
+- Task records are memory-only, remain readable after a recent session close, and are bounded to 512 records per session with a seven-day post-release TTL. Backend stop clears all records. The task API exposes start, list, and detail only: there is no public task cancel, resume, or persistence contract.
+- Phase 2 renderer operations continue through the tab-local FIFO. Phase 3 owns migration to this backend API.
+
+### 6.5 SFTP Remote Archive Data Flow
 
 ```mermaid
 sequenceDiagram
   participant UI as Renderer FIFO Task
   participant MP as Main/Preload Proxy
   participant API as Backend Archive Routes
+  participant SCH as Session Task Scheduler
   participant AS as SftpArchiveService
   participant RH as Remote POSIX Host
 
   UI->>MP: structured compress/extract request
   MP->>API: POST archive-operations
-  API->>AS: start one session-scoped job
+  API->>SCH: acquire exclusive session claim
+  SCH->>AS: start one session-scoped job
   AS->>RH: fixed exec template on the SFTP tab SSH client
   loop every 750 ms
     UI->>API: GET operation status
@@ -341,13 +373,15 @@ sequenceDiagram
     API->>AS: resume staged commit
   end
   AS->>RH: commit and clean known temporary paths
+  AS-->>SCH: terminal cleanup settled
+  SCH->>SCH: release exclusive claim
 ```
 
 - The remote command, tool output, and random staging paths are backend-private. Public contracts carry paths, format, level, destination mode, phase, conflict summaries, and stable errors only.
-- One archive job may run per SFTP session. Renderer archive requests still enter the tab-local FIFO so multi-archive extraction remains ordered with existing file operations.
+- Archive capability probing acquires the scheduler's exclusive session claim until the probe settles. Archive startup acquires the same claim and retains it through terminal cleanup. Both use immediate-only admission and report `SFTP_ARCHIVE_BUSY` instead of waiting without a pollable identifier. Renderer archive requests still enter the tab-local FIFO in Phase 2, so multi-archive extraction remains ordered with existing file operations.
 - Closing a session first requests archive cancellation and bounded cleanup, then disconnects SSH. Bulk session close waits for sessions in parallel and preserves the existing active-connection count contract.
 
-### 6.5 Failure Boundary Model
+### 6.6 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.

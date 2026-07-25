@@ -69,7 +69,7 @@ flowchart TB
 - **Key folders**:
   - `src/pages`: feature pages (`Home`, `SSH`, `SFTP`, `Settings`, `SettingsEditor`, etc.). Home owns the SSH server, keychain, and port-forwarding management surfaces.
   - `src/pages/ssh`: SSH terminal controllers and pure runtime helpers. `use-ssh-core.ts` coordinates pane routing; primary/secondary hooks own independent session resources; `ssh-pane-state.ts` reduces all pane-scoped transport/helper messages; `ssh-command-markers.ts` owns pending/confirmed xterm marker lifecycles and pane-local command timeline models; `TerminalCommandTimeline.tsx` renders the trusted right-side command rail.
-  - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, archive dialogs and archive-action polling, fixed-row virtualization helpers and tests, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing/cancellation, byte-progress presentation, and shared SFTP helpers.
+  - `src/pages/sftp`: SFTP page submodules. `SFTP.tsx` stays the tab-level orchestration entrypoint, while this folder owns browser UI composition, action/drop menus, directory/tree/detail panels, archive dialogs and archive-action polling, fixed-row virtualization helpers and tests, controller hooks for prompts, preferences, selection, keyboard shortcuts, drag/drop, preview actions, task queueing/cancellation, byte-progress presentation, and shared SFTP helpers. Phase 2 task execution remains in the tab-local FIFO; backend task API consumption is reserved for Phase 3.
   - `src/pages/settings-editor`: CodeMirror-backed settings JSON editor modules, including schema diagnostics, completion, hover details, and editor lifecycle wrappers.
   - `src/components/CloseWindowConfirmationDialog.tsx`: shared Renderer `Dialog` presentation for Main-owned active-session close decisions.
   - `src/components/ui`: Radix-based primitive wrappers, reusable search/replace panel, CodeMirror text context menu, and styling contracts.
@@ -82,12 +82,12 @@ flowchart TB
 
 - **Role**: Internal API + session orchestration runtime.
 - **Key folders**:
-  - `src/http/routes`: REST endpoints for settings, SSH entities, port-forwarding rules, and local terminal actions.
+  - `src/http/routes`: REST endpoints for settings, SSH entities, SFTP session/task operations, port-forwarding rules, and local terminal actions.
   - `src/audit`: local-first audit domain (sanitization, retention policy, query model, write service).
   - `src/ssh`: SSH auth/session logic (`ssh2`, known-host trust, telemetry, keychain-backed credential resolution), the streaming OSC 777 parser/trust gate, structured command lifecycle consumption, and shared authenticated connection helpers for shell and non-shell transports. The helper creates fresh proxy sockets per transport and supports attempt-scoped compression and cancellation.
   - `src/remote-bootstrap`: pre-shell Remote Enhancements orchestration. It shares concurrent manifest fetches through a five-minute success-only cache, probes the remote platform through a temporary SSH transport isolated from the interactive client, validates installed status, conditionally injects the download wrapper, returns a trusted helper contract, forwards `bootstrap-status`, and logs terminal bootstrap outcomes.
   - `src/port-forward`: SSH port-forwarding rule validation, SOCKS5 parsing, and active runtime session service.
-  - `src/sftp`: SFTP browser, download, file-operation, and remote-archive session logic. `session-service.ts` owns session authorization/lifecycle and ordinary `ssh2.sftp` operations; `archive-service.ts` owns fixed POSIX command construction, capability probing, async archive state, staging/commit, conflict merge, cancellation, audit, and cleanup. Single-file transfers retain their existing short-lived byte-progress records.
+  - `src/sftp`: SFTP browser, download, file-operation, task-scheduling, and remote-archive session logic. `session-service.ts` owns session authorization/lifecycle and ordinary `ssh2.sftp` operations; `task-scheduler.ts` owns per-session total/heavy/mutation admission, POSIX path claims, absolute deadlines, cancellation signals, and memory-only task snapshots; `archive-service.ts` owns fixed POSIX command construction, capability probing, async archive state, staging/commit, conflict merge, cancellation, audit, and cleanup under an exclusive scheduler claim. Single-file transfers retain their existing short-lived byte-progress records.
   - `src/settings`: settings payload defaults, validation parsers, and shared AppSettings readers used by HTTP routes and runtime services.
   - `src/validation-utils.ts`: shared backend HTTP-boundary validation primitives used by route and domain payload parsers.
   - `src/local-terminal`: local PTY session logic (`node-pty`).
@@ -151,7 +151,7 @@ flowchart TD
 
 ## 5. Not Implemented Yet (Planned)
 
-- Full backend-owned SFTP transfer queue module (directory upload/download, generalized cancellation/resume, retry policies, and persisted transfer history). Single-file upload/download progress and remote archive jobs are implemented as separate bounded in-memory flows without persisted scheduling.
+- Directory upload/download, generalized public task cancellation/resume, scheduler retry policies, and persisted task history remain planned. The core backend scheduler, task start/list/detail API, single-file progress records, and exclusive archive coordination are implemented as bounded in-memory flows.
 - Dedicated shared `common` package is not present yet; current sharing is done through `api-contract` + `i18n`.
 
 ## 6. Common Change Scenarios

@@ -68,6 +68,9 @@ type ArchiveOperationRecord = {
   session: SftpArchiveSession;
   request: ApiSftpArchiveOperationRequest;
   deadlineAt: number;
+  completion: Promise<ApiSftpArchiveOperationData>;
+  resolveCompletion: (operation: ApiSftpArchiveOperationData) => void;
+  forcedFailure?: SftpArchiveError;
   channel?: ClientChannel;
   cancelSignalledChannel?: ClientChannel;
   cancelFallbackTimer?: NodeJS.Timeout;
@@ -277,11 +280,13 @@ export class SftpArchiveService {
    *
    * @param session Live SFTP session.
    * @param request Structured archive request.
+   * @param deadlineAt Absolute scheduler deadline shared by preparation, execution, and cleanup.
    * @returns Initial asynchronous operation state.
    */
   public async startOperation(
     session: SftpArchiveSession,
     request: ApiSftpArchiveOperationRequest,
+    deadlineAt = Date.now() + this.operationTimeoutMs,
   ): Promise<ApiSftpArchiveOperationData> {
     if (this.activeOperationBySession.has(session.sessionId) || this.startingSessions.has(session.sessionId)) {
       throw new SftpArchiveError(API_CODES.sftpArchiveBusy, 'Another archive operation is active for this session.');
@@ -289,19 +294,11 @@ export class SftpArchiveService {
     this.startingSessions.add(session.sessionId);
     try {
       validateArchiveRequest(request);
-      const capabilities = await this.getCapabilities(session);
-      if (session.isClosed) {
-        throw new SftpArchiveError(
-          API_CODES.sftpArchiveUnsupported,
-          'The SFTP session closed before the task started.',
-        );
-      }
       const requestedFormat =
         request.type === 'compress'
           ? request.format
           : detectArchiveFormatFromName(POSIX_PATH.basename(request.archivePath));
-      const supportedFormats = request.type === 'compress' ? capabilities.createFormats : capabilities.extractFormats;
-      if (!capabilities.canExec || !requestedFormat || !supportedFormats.includes(requestedFormat)) {
+      if (!requestedFormat) {
         throw new SftpArchiveError(
           API_CODES.sftpArchiveUnsupported,
           'The remote host does not support this archive operation.',
@@ -309,6 +306,10 @@ export class SftpArchiveService {
       }
 
       const operationId = randomUUID();
+      let resolveCompletion: (operation: ApiSftpArchiveOperationData) => void = () => undefined;
+      const completion = new Promise<ApiSftpArchiveOperationData>((resolve) => {
+        resolveCompletion = resolve;
+      });
       const record: ArchiveOperationRecord = {
         publicData: {
           sessionId: session.sessionId,
@@ -320,7 +321,9 @@ export class SftpArchiveService {
         },
         session,
         request,
-        deadlineAt: Date.now() + this.operationTimeoutMs,
+        deadlineAt: Math.min(deadlineAt, Date.now() + this.operationTimeoutMs),
+        completion,
+        resolveCompletion,
         temporaryPaths: new Set<string>(),
         provisionalDirectories: new Set<string>(),
       };
@@ -343,6 +346,18 @@ export class SftpArchiveService {
   public getOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData {
     const record = this.requireOperation(sessionId, operationId);
     return copyOperationData(record.publicData);
+  }
+
+  /**
+   * Waits for one retained archive operation to reach its final cleanup-complete state.
+   *
+   * @param sessionId Owning session id.
+   * @param operationId Archive operation id.
+   * @returns Terminal public operation snapshot.
+   */
+  public async waitForOperation(sessionId: string, operationId: string): Promise<ApiSftpArchiveOperationData> {
+    const record = this.requireOperation(sessionId, operationId);
+    return await record.completion;
   }
 
   /**
@@ -380,6 +395,22 @@ export class SftpArchiveService {
     const record = this.requireOperation(sessionId, operationId);
     if (isTerminalState(record.publicData.state)) return copyOperationData(record.publicData);
     record.publicData.cancelRequested = true;
+    record.conflictWaiter?.resolve('cancel');
+    if (record.channel) requestRemoteCommandCancellation(record, record.channel);
+    return copyOperationData(record.publicData);
+  }
+
+  /**
+   * Forces one scheduler-owned operation to retain timeout semantics while transport teardown runs.
+   *
+   * @param sessionId Owning session id.
+   * @param operationId Operation id.
+   * @returns State after the timeout request was registered.
+   */
+  public timeoutOperation(sessionId: string, operationId: string): ApiSftpArchiveOperationData {
+    const record = this.requireOperation(sessionId, operationId);
+    if (isTerminalState(record.publicData.state)) return copyOperationData(record.publicData);
+    record.forcedFailure = createArchiveTimeoutError();
     record.conflictWaiter?.resolve('cancel');
     if (record.channel) requestRemoteCommandCancellation(record, record.channel);
     return copyOperationData(record.publicData);
@@ -434,6 +465,21 @@ export class SftpArchiveService {
   private async runOperation(record: ArchiveOperationRecord, format: ApiSftpArchiveFormat): Promise<void> {
     let terminalState: Extract<ApiSftpArchiveOperationData['state'], 'succeeded' | 'failed' | 'cancelled'> = 'failed';
     try {
+      const capabilities = await this.getCapabilities(record.session);
+      if (record.session.isClosed) {
+        throw new SftpArchiveError(
+          API_CODES.sftpArchiveUnsupported,
+          'The SFTP session closed before the task started.',
+        );
+      }
+      const supportedFormats =
+        record.request.type === 'compress' ? capabilities.createFormats : capabilities.extractFormats;
+      if (!capabilities.canExec || !supportedFormats.includes(format)) {
+        throw new SftpArchiveError(
+          API_CODES.sftpArchiveUnsupported,
+          'The remote host does not support this archive operation.',
+        );
+      }
       const resultPaths =
         record.request.type === 'compress'
           ? await this.runCompression(record, record.request, format)
@@ -441,7 +487,11 @@ export class SftpArchiveService {
       record.publicData.resultPaths = resultPaths;
       terminalState = 'succeeded';
     } catch (error: unknown) {
-      if (error instanceof SftpArchiveCancelledError || record.publicData.cancelRequested) {
+      if (record.forcedFailure) {
+        terminalState = 'failed';
+        record.publicData.errorCode = record.forcedFailure.code;
+        record.publicData.errorMessage = record.forcedFailure.message;
+      } else if (error instanceof SftpArchiveCancelledError || record.publicData.cancelRequested) {
         terminalState = 'cancelled';
       } else {
         const archiveError = normalizeArchiveError(error);
@@ -465,6 +515,7 @@ export class SftpArchiveService {
       }
       record.publicData.state = terminalState;
       record.publicData.stage = 'completed';
+      record.resolveCompletion(copyOperationData(record.publicData));
       this.logOperation(record, terminalState === 'succeeded' ? 'success' : 'failure', format);
       this.activeOperationBySession.delete(record.session.sessionId);
       record.retentionTimer = setTimeout(

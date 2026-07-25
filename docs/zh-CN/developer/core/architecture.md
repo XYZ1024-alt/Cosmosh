@@ -316,21 +316,53 @@ sequenceDiagram
 
 - 文件字节继续沿既有 backend 流路径传输；HTTP 与 IPC 只传递有界进度元数据。
 - Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
-- 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
+- Phase 2 的 renderer 进度观测仍属于既有标签页本地 FIFO 队列。Backend task scheduler 已作为独立 HTTP 能力存在，但 renderer 到该能力的迁移推迟到 Phase 3；两条路径都不提供通用取消、续传或持久化历史。
 
-### 6.4 SFTP 远端归档数据流
+### 6.4 SFTP Backend 任务调度数据流
+
+```mermaid
+sequenceDiagram
+  participant C as Task API Consumer
+  participant API as Backend SFTP Routes
+  participant SCH as 会话任务调度器
+  participant SVC as SFTP/Archive Runner
+  participant RH as 远端主机
+
+  C->>API: POST /sessions/{sessionId}/tasks(descriptor)
+  API->>SCH: 携带资源、claim 与绝对 deadline 入队
+  SCH-->>C: 202 accepted 任务快照
+  SCH->>SCH: 按 total/heavy/mutation 上限与 path claim admission
+  SCH->>SVC: 携带 AbortSignal 与剩余 deadline 运行
+  SVC->>RH: 执行有界远端操作
+  loop 轮询列表或详情
+    C->>API: GET 任务列表/详情
+    API-->>C: 保留在内存中的快照
+  end
+  SVC-->>SCH: 结果或终态清理结束
+  SCH->>SCH: 释放容量与 claim
+```
+
+- 每个 SFTP 会话拥有独立固定上限：`total=3`、`heavy=2` 与 `mutation=1`。相等以及祖先/后代 POSIX path claim 会串行，互不相交的兄弟 claim 可以并发。
+- 支持的公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。预览 `write-file` 保留同步 HTTP 契约，但会作为隐藏任务进入调度器；所有既有 SFTP operation route 都使用同一 service 协调边界。
+- 绝对 deadline 包含排队等待。期限到达会立即发布 `failed`；运行中任务会继续持有容量与 claim，直到 runner 真正结束，超时 mutation 会发布 `outcomeUnknown: true`。
+- 任务记录仅存在于内存中，在近期会话关闭后仍可读取；每个会话最多保留 512 条，并在 runner 释放七天后过期。Backend 停止时会清理全部记录。Task API 只暴露启动、列表与详情：没有公共任务取消、续传或持久化契约。
+- Phase 2 的 renderer 操作继续经过标签页本地 FIFO；Phase 3 负责迁移到该 backend API。
+
+### 6.5 SFTP 远端归档数据流
 
 ```mermaid
 sequenceDiagram
   participant UI as Renderer FIFO 任务
   participant MP as Main/Preload 代理
   participant API as Backend 归档路由
+  participant SCH as 会话任务调度器
   participant AS as SftpArchiveService
   participant RH as 远端 POSIX 主机
 
   UI->>MP: 结构化压缩/解压请求
   MP->>API: POST archive-operations
-  API->>AS: 启动会话级单任务
+  API->>SCH: 获取会话独占 claim
+  SCH->>AS: 启动会话级单任务
   AS->>RH: 在 SFTP 标签页 SSH client 上执行固定模板
   loop 每 750 ms
     UI->>API: GET 任务状态
@@ -341,13 +373,15 @@ sequenceDiagram
     API->>AS: 恢复暂存提交
   end
   AS->>RH: 提交并清理已知临时路径
+  AS-->>SCH: 终态清理结束
+  SCH->>SCH: 释放独占 claim
 ```
 
 - 远端命令、工具输出与随机暂存路径只存在于 backend。公共契约仅传递路径、格式、级别、目标模式、阶段、冲突摘要与稳定错误。
-- 每个 SFTP 会话最多运行一个归档任务。Renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
+- 归档能力探测会取得调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持有到终态清理结束。两者都只接受可立即取得的独占权，无法取得时返回 `SFTP_ARCHIVE_BUSY`，不会在没有可轮询标识的情况下等待。Phase 2 的 renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
 - 关闭会话时先请求取消归档任务并进行有界清理，再断开 SSH。批量关闭会并行等待各会话，并保持既有活动连接计数契约。
 
-### 6.5 失败边界模型
+### 6.6 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。
