@@ -173,6 +173,12 @@ jobs:
           corepack enable
           corepack prepare pnpm@10.32.0 --activate
           pnpm --version
+      - name: Select Linux compiler
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          echo "CC=clang-15" >> "$GITHUB_ENV"
+          echo "CXX=clang++-15" >> "$GITHUB_ENV"
       - name: Resolve pnpm store path
         id: pnpm-store
         shell: bash
