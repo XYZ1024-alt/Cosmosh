@@ -22,10 +22,22 @@ import { buildSshCompressionAlgorithms } from '../ssh/compression.js';
 import { decryptSensitiveValue } from '../ssh/crypto.js';
 import { prepareSshProxyTransport, SshProxyConnectionError, type SshProxyMetadata } from '../ssh/proxy.js';
 import { quotePosixShellToken, SftpArchiveService } from './archive-service.js';
+import {
+  isSftpOperationFailure,
+  runGuardedSftpOperation,
+  SFTP_OPERATION_TIMEOUT_CODE,
+  SFTP_TRANSPORT_CLOSED_CODE,
+  SftpOperationFailure,
+  type SftpOperationFailureCode,
+  type SftpOperationGuardContext,
+  type SftpOperationImpact,
+} from './operation-guard.js';
 
 type GetDbClient = () => PrismaClient;
 
 const SFTP_TEMP_ROOT_ENV_NAME = 'COSMOSH_SFTP_TEMP_ROOT';
+const DEFAULT_SFTP_OPERATION_IDLE_TIMEOUT_MS = 60_000;
+const DEFAULT_SFTP_OPERATION_ABSOLUTE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 const SFTP_TRANSFER_RETENTION_MS = 60_000;
 const SFTP_TRANSFER_SPEED_SAMPLE_INTERVAL_MS = 250;
 const SFTP_TRANSPORT_ERROR_CODES = new Set([
@@ -54,6 +66,14 @@ export type CreateSftpSessionInput = {
 };
 
 export type SftpEntryType = 'directory' | 'file' | 'symlink' | 'other';
+
+/**
+ * Internal lifecycle metadata retained until the HTTP contract can expose stable task failures.
+ */
+export type SftpOperationFailureMetadata = {
+  operationErrorCode?: SftpOperationFailureCode;
+  outcomeUnknown?: boolean;
+};
 
 /**
  * Non-recursive metadata shared by SFTP directory lists and detail views.
@@ -114,7 +134,7 @@ export type SftpEntryDetailsItem = {
   status: SftpEntryDetailsItemStatus;
   entry?: SftpEntry;
   message?: string;
-};
+} & SftpOperationFailureMetadata;
 
 /**
  * Batch operation modes supported by one SFTP API request.
@@ -143,7 +163,7 @@ export type SftpBatchOperationItemResult = {
   targetPath?: string;
   status: SftpBatchOperationItemStatus;
   message?: string;
-};
+} & SftpOperationFailureMetadata;
 
 /**
  * Normalized batch operation input used by the SFTP session service.
@@ -173,10 +193,10 @@ export type CreateSftpSessionResult =
       algorithm: 'sha256';
       fingerprint: string;
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
-    };
+    } & SftpOperationFailureMetadata);
 
 export type ListSftpDirectoryResult =
   | {
@@ -189,10 +209,10 @@ export type ListSftpDirectoryResult =
   | {
       type: 'not-found';
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
-    };
+    } & SftpOperationFailureMetadata);
 
 /**
  * Result envelope for fetching detailed metadata for selected SFTP entries.
@@ -220,11 +240,11 @@ export type SftpOperationResult =
   | {
       type: 'not-found';
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
       reason?: 'remote-conflict';
-    };
+    } & SftpOperationFailureMetadata);
 
 export type SftpBatchOperationResult =
   | {
@@ -241,10 +261,10 @@ export type SftpBatchOperationResult =
   | {
       type: 'not-found';
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
-    };
+    } & SftpOperationFailureMetadata);
 
 export type ReadSftpFileResult =
   | {
@@ -258,10 +278,10 @@ export type ReadSftpFileResult =
   | {
       type: 'not-found';
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
-    };
+    } & SftpOperationFailureMetadata);
 
 export type DownloadSftpFileResult =
   | {
@@ -274,10 +294,10 @@ export type DownloadSftpFileResult =
   | {
       type: 'not-found';
     }
-  | {
+  | ({
       type: 'failed';
       message: string;
-    };
+    } & SftpOperationFailureMetadata);
 
 export type SftpTransferDirection = 'download' | 'upload';
 
@@ -396,6 +416,8 @@ type SftpOpenSshExtensions = {
     callback: (error?: Error | null | undefined) => void,
   ): void;
 };
+
+type SftpOperationCallback<T> = (error: Error | undefined | null, value?: T) => void;
 
 const POSIX_PATH = path.posix;
 
@@ -725,22 +747,48 @@ export class SftpSessionService {
 
   private readonly sftpTemporaryRootPath: string;
 
+  private readonly sftpOperationIdleTimeoutMs: number;
+
+  private readonly sftpOperationAbsoluteTimeoutMs: number;
+
   private readonly archiveService: SftpArchiveService;
 
   private readonly sessions = new Map<string, SftpLiveSession>();
 
   private readonly transfers = new Map<string, SftpTransferRecord>();
 
+  private readonly sessionOperationControllers = new WeakMap<SftpLiveSession, AbortController>();
+
+  /**
+   * Creates the backend-owned SFTP session service.
+   *
+   * @param options Database, audit, credential, temporary-path, and operation-lifecycle dependencies.
+   */
   constructor(options: {
     getDbClient: GetDbClient;
     auditEventService: AuditEventService;
     credentialEncryptionKey: Buffer;
     sftpTemporaryRootPath?: string;
+    sftpOperationIdleTimeoutMs?: number;
+    sftpOperationAbsoluteTimeoutMs?: number;
   }) {
+    const configuredOperationIdleTimeoutMs =
+      options.sftpOperationIdleTimeoutMs ?? DEFAULT_SFTP_OPERATION_IDLE_TIMEOUT_MS;
+    const configuredOperationAbsoluteTimeoutMs =
+      options.sftpOperationAbsoluteTimeoutMs ?? DEFAULT_SFTP_OPERATION_ABSOLUTE_TIMEOUT_MS;
+    if (!Number.isFinite(configuredOperationIdleTimeoutMs) || configuredOperationIdleTimeoutMs <= 0) {
+      throw new RangeError('SFTP operation idle timeout must be a positive finite number.');
+    }
+    if (!Number.isFinite(configuredOperationAbsoluteTimeoutMs) || configuredOperationAbsoluteTimeoutMs <= 0) {
+      throw new RangeError('SFTP operation absolute timeout must be a positive finite number.');
+    }
+
     this.getDbClient = options.getDbClient;
     this.auditEventService = options.auditEventService;
     this.archiveService = new SftpArchiveService({ auditEventService: options.auditEventService });
     this.credentialEncryptionKey = options.credentialEncryptionKey;
+    this.sftpOperationIdleTimeoutMs = configuredOperationIdleTimeoutMs;
+    this.sftpOperationAbsoluteTimeoutMs = configuredOperationAbsoluteTimeoutMs;
     this.sftpTemporaryRootPath = validateConfiguredSftpTemporaryRootPath(
       options.sftpTemporaryRootPath ?? process.env[SFTP_TEMP_ROOT_ENV_NAME],
     );
@@ -862,7 +910,17 @@ export class SftpSessionService {
     this.sessions.set(sessionId, session);
     this.watchSessionTransport(session);
 
-    const resolvedInitialPath = await this.resolveRealPath(session, initialPath);
+    let resolvedInitialPath: string | null;
+    try {
+      resolvedInitialPath = await this.resolveRealPath(session, initialPath);
+    } catch (error: unknown) {
+      await this.closeSession(sessionId);
+      return {
+        type: 'failed',
+        message: this.resolveErrorMessage(error, i18n.t('errors.sftp.directoryListFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
+      };
+    }
 
     if (!resolvedInitialPath) {
       await this.closeSession(sessionId);
@@ -915,15 +973,15 @@ export class SftpSessionService {
     }
 
     const normalizedPath = normalizeSftpPathInput(requestedPath);
-    const resolvedPath = await this.resolveRealPath(session, normalizedPath);
-    if (!resolvedPath) {
-      return {
-        type: 'failed',
-        message: session.t('errors.sftp.directoryListFailedNoReason'),
-      };
-    }
-
     try {
+      const resolvedPath = await this.resolveRealPath(session, normalizedPath);
+      if (!resolvedPath) {
+        return {
+          type: 'failed',
+          message: session.t('errors.sftp.directoryListFailedNoReason'),
+        };
+      }
+
       const entries = await this.readdir(session, resolvedPath);
       const mappedEntries = await Promise.all(
         entries
@@ -955,6 +1013,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.directoryListFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1056,6 +1115,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.fileReadFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1144,6 +1204,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileWriteFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1206,9 +1267,12 @@ export class SftpSessionService {
     } catch (error: unknown) {
       const message = this.resolveErrorMessage(error, session.t('errors.sftp.fileDownloadFailedNoReason'));
       this.failTransfer(transferId, message);
-      if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
-        await this.closeSession(sessionId);
-        return { type: 'not-found' };
+      if (isSftpOperationFailure(error)) {
+        return {
+          type: 'failed',
+          message,
+          ...this.resolveOperationFailureMetadata(error),
+        };
       }
 
       return {
@@ -1360,16 +1424,19 @@ export class SftpSessionService {
     } catch (error: unknown) {
       const message = this.resolveUploadErrorMessage(error, session.t('errors.sftp.fileUploadFailedNoReason'));
       this.failTransfer(options.transferId, message);
-      if (session.isClosed || !this.sessions.has(sessionId) || this.isSftpTransportFailure(error)) {
-        await this.closeSession(sessionId);
-        return { type: 'not-found' };
-      }
-
       if (error instanceof SftpRemoteConflictError) {
         return {
           type: 'failed',
           message: error.message,
           reason: 'remote-conflict',
+        };
+      }
+
+      if (isSftpOperationFailure(error)) {
+        return {
+          type: 'failed',
+          message,
+          ...this.resolveOperationFailureMetadata(error),
         };
       }
 
@@ -1439,6 +1506,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.fileCreateFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1475,6 +1543,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.directoryCreateFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1536,6 +1605,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryRenameFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1589,6 +1659,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryCopyFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1638,6 +1709,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryLinkFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1683,6 +1755,7 @@ export class SftpSessionService {
       return {
         type: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.entryDeleteFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -1763,6 +1836,12 @@ export class SftpSessionService {
         type: entry.type,
         status: 'failed',
         message,
+        ...(result.type === 'failed' && result.operationErrorCode
+          ? {
+              operationErrorCode: result.operationErrorCode,
+              ...(result.outcomeUnknown ? { outcomeUnknown: true } : {}),
+            }
+          : {}),
       });
       stoppedOnFailure = true;
 
@@ -1872,8 +1951,7 @@ export class SftpSessionService {
       return false;
     }
 
-    this.sessions.delete(sessionId);
-    session.isClosed = true;
+    this.markSessionUnavailable(session);
     await this.archiveService.closeSession(sessionId);
     try {
       session.client.end();
@@ -1944,13 +2022,12 @@ export class SftpSessionService {
         return;
       }
 
-      session.isClosed = true;
-      if (this.sessions.get(session.sessionId) === session) {
-        this.sessions.delete(session.sessionId);
-      }
+      this.markSessionUnavailable(session);
       this.archiveService.handleTransportClosed(session.sessionId);
+      this.closeUnusableTransport(session);
     };
 
+    this.getSessionOperationController(session);
     session.client.once('close', markClosed);
     session.client.once('end', markClosed);
     session.client.once('error', markClosed);
@@ -1959,19 +2036,163 @@ export class SftpSessionService {
     session.sftp.once('error', markClosed);
   }
 
-  private async resolveRealPath(session: SftpLiveSession, inputPath: string): Promise<string | null> {
+  /**
+   * Returns the controller shared by ordinary operations using one SFTP channel.
+   *
+   * @param session Live or recently closed SFTP session.
+   * @returns Session-level operation controller.
+   */
+  private getSessionOperationController(session: SftpLiveSession): AbortController {
+    const existingController = this.sessionOperationControllers.get(session);
+    if (existingController) {
+      return existingController;
+    }
+
+    const controller = new AbortController();
+    if (session.isClosed) {
+      controller.abort();
+    }
+    this.sessionOperationControllers.set(session, controller);
+    return controller;
+  }
+
+  /**
+   * Evicts one session and immediately settles all guarded ordinary operations.
+   *
+   * @param session Session that can no longer accept ordinary SFTP requests.
+   * @returns Whether this call transitioned an open session to closed.
+   */
+  private markSessionUnavailable(session: SftpLiveSession): boolean {
+    const wasOpen = !session.isClosed;
+    session.isClosed = true;
+    if (this.sessions.get(session.sessionId) === session) {
+      this.sessions.delete(session.sessionId);
+    }
+
+    const operationController = this.getSessionOperationController(session);
+    if (!operationController.signal.aborted) {
+      operationController.abort();
+    }
+    return wasOpen;
+  }
+
+  /**
+   * Invalidates a shared SFTP channel after a timeout or transport-level failure.
+   *
+   * An interrupted mutation may have reached the server, so the channel is never reused and all
+   * sibling operations are aborted before the SSH client begins best-effort shutdown.
+   *
+   * @param session Session that owns the failed request.
+   * @returns void.
+   */
+  private poisonUnusableSession(session: SftpLiveSession): void {
+    const wasOpen = this.markSessionUnavailable(session);
+    if (!wasOpen) {
+      return;
+    }
+
+    this.archiveService.handleTransportClosed(session.sessionId);
+    this.closeUnusableTransport(session);
+  }
+
+  /**
+   * Destroys an unusable SFTP channel and closes its owning SSH client.
+   *
+   * @param session Session whose transport cannot be reused.
+   * @returns void.
+   */
+  private closeUnusableTransport(session: SftpLiveSession): void {
     try {
-      return await new Promise<string>((resolve, reject) => {
-        session.sftp.realpath(inputPath, (error, resolvedPath) => {
+      session.sftp.destroy();
+    } catch (destroyError: unknown) {
+      console.warn('[sftp] Failed to destroy an unusable SFTP channel.', destroyError);
+    }
+
+    try {
+      session.client.destroy();
+    } catch (closeError: unknown) {
+      console.warn('[sftp] Failed to destroy the SSH client after an SFTP transport failure.', closeError);
+    }
+  }
+
+  /**
+   * Runs one ordinary SFTP request with the shared session lifecycle boundary.
+   *
+   * @template T Operation result type.
+   * @param session Session that owns the request.
+   * @param operation Stable diagnostic operation name.
+   * @param impact Whether the request may mutate remote state.
+   * @param start Callback or stream operation factory.
+   * @returns Operation result before the idle, absolute, or transport deadline.
+   */
+  private async runSftpOperation<T>(
+    session: SftpLiveSession,
+    operation: string,
+    impact: SftpOperationImpact,
+    start: (context: SftpOperationGuardContext) => Promise<T>,
+  ): Promise<T> {
+    const operationController = this.getSessionOperationController(session);
+    try {
+      return await runGuardedSftpOperation({
+        operation,
+        impact,
+        idleTimeoutMs: this.sftpOperationIdleTimeoutMs,
+        absoluteTimeoutMs: this.sftpOperationAbsoluteTimeoutMs,
+        transportSignal: operationController.signal,
+        start,
+        onTimeout: () => this.poisonUnusableSession(session),
+      });
+    } catch (error: unknown) {
+      if (isSftpOperationFailure(error) || !this.isSftpTransportFailure(error)) {
+        throw error;
+      }
+
+      const transportError = new SftpOperationFailure(SFTP_TRANSPORT_CLOSED_CODE, operation, impact);
+      this.poisonUnusableSession(session);
+      throw transportError;
+    }
+  }
+
+  /**
+   * Adapts one ssh2 callback request to the common guarded operation lifecycle.
+   *
+   * @template T Callback result type.
+   * @param session Session that owns the request.
+   * @param operation Stable diagnostic operation name.
+   * @param impact Whether the request may mutate remote state.
+   * @param start Starts the ssh2 callback request.
+   * @returns Callback result before the idle, absolute, or transport deadline.
+   */
+  private async runSftpCallbackOperation<T>(
+    session: SftpLiveSession,
+    operation: string,
+    impact: SftpOperationImpact,
+    start: (callback: SftpOperationCallback<T>) => void,
+  ): Promise<T> {
+    return await this.runSftpOperation(session, operation, impact, async () => {
+      return await new Promise<T>((resolve, reject) => {
+        start((error, value) => {
           if (error) {
             reject(error);
             return;
           }
 
-          resolve(resolvedPath);
+          resolve(value as T);
         });
       });
-    } catch {
+    });
+  }
+
+  private async resolveRealPath(session: SftpLiveSession, inputPath: string): Promise<string | null> {
+    try {
+      return await this.runSftpCallbackOperation(session, 'realpath', 'read', (callback) => {
+        session.sftp.realpath(inputPath, callback);
+      });
+    } catch (error: unknown) {
+      if (isSftpOperationFailure(error)) {
+        throw error;
+      }
+
       return null;
     }
   }
@@ -2005,6 +2226,7 @@ export class SftpSessionService {
         path: targetPath,
         status: 'failed',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
+        ...this.resolveOperationFailureMetadata(error),
       };
     }
   }
@@ -2076,6 +2298,10 @@ export class SftpSessionService {
           accessedAt: this.formatStatsTimestamp(targetStats.atime),
         };
       } catch (error: unknown) {
+        if (isSftpOperationFailure(error)) {
+          throw error;
+        }
+
         return {
           ...baseTarget,
           status: this.resolveSymlinkTargetStatus(error),
@@ -2083,6 +2309,10 @@ export class SftpSessionService {
         };
       }
     } catch (error: unknown) {
+      if (isSftpOperationFailure(error)) {
+        throw error;
+      }
+
       return {
         status: 'unknown',
         message: this.resolveErrorMessage(error, session.t('errors.sftp.operationFailedNoReason')),
@@ -2166,29 +2396,33 @@ export class SftpSessionService {
     return parentPath === inputPath ? undefined : parentPath || '/';
   }
 
+  /**
+   * Reads one remote directory through a bounded SFTP callback.
+   *
+   * @param session Live SFTP session.
+   * @param directoryPath Remote directory path.
+   * @returns Directory entries returned by the server.
+   */
   private async readdir(session: SftpLiveSession, directoryPath: string): Promise<SftpDirectoryEntry[]> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'readdir', 'read', (callback) => {
       session.sftp.readdir(directoryPath, (error, entries) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(entries);
+        callback(error, entries);
       });
     });
   }
 
+  /**
+   * Reads one remote symbolic-link target through a bounded SFTP callback.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote symbolic-link path.
+   * @returns Raw link target returned by the server.
+   */
   private async readlink(session: SftpLiveSession, targetPath: string): Promise<string> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'readlink', 'read', (callback) => {
       const sftp = session.sftp as SftpReadlinkWrapper;
       sftp.readlink(targetPath, (error, linkString) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(linkString);
+        callback(error, linkString);
       });
     });
   }
@@ -2202,67 +2436,71 @@ export class SftpSessionService {
    * @returns Nothing.
    */
   private async symlink(session: SftpLiveSession, targetPath: string, linkPath: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'symlink', 'mutation', (callback) => {
       const sftp = session.sftp as SftpSymlinkWrapper;
       sftp.symlink(targetPath, linkPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
 
+  /**
+   * Follows one remote path and returns bounded metadata.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote path.
+   * @returns Remote path metadata.
+   */
   private async stat(session: SftpLiveSession, targetPath: string): Promise<Stats> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'stat', 'read', (callback) => {
       session.sftp.stat(targetPath, (error, stats) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(stats);
+        callback(error, stats);
       });
     });
   }
 
+  /**
+   * Reads one remote path without following symbolic links.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote path.
+   * @returns Remote path metadata.
+   */
   private async lstat(session: SftpLiveSession, targetPath: string): Promise<Stats> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'lstat', 'read', (callback) => {
       session.sftp.lstat(targetPath, (error, stats) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(stats);
+        callback(error, stats);
       });
     });
   }
 
+  /**
+   * Opens one remote file handle with bounded callback completion.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote file path.
+   * @param mode Read or write mode.
+   * @returns Opaque SFTP file handle.
+   */
   private async open(session: SftpLiveSession, targetPath: string, mode: 'r' | 'w'): Promise<Buffer> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'open', mode === 'w' ? 'mutation' : 'read', (callback) => {
       session.sftp.open(targetPath, mode, (error, handle) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(handle);
+        callback(error, handle);
       });
     });
   }
 
+  /**
+   * Closes one remote file handle without allowing cleanup to stall indefinitely.
+   *
+   * @param session Live SFTP session.
+   * @param handle Opaque SFTP file handle.
+   * @returns Nothing.
+   */
   private async closeHandle(session: SftpLiveSession, handle: Buffer): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'close-handle', 'read', (callback) => {
       session.sftp.close(handle, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
@@ -2315,79 +2553,88 @@ export class SftpSessionService {
     length: number,
     position: number,
   ): Promise<number> {
-    return await new Promise((resolve, reject) => {
+    return await this.runSftpCallbackOperation(session, 'read', 'read', (callback) => {
       session.sftp.read(handle, buffer, offset, length, position, (error, bytesRead) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve(bytesRead);
+        callback(error, bytesRead);
       });
     });
   }
 
+  /**
+   * Creates one new remote file from an in-memory buffer.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath New remote file path.
+   * @param data File content.
+   * @param mode Remote permission bits.
+   * @returns Nothing.
+   */
   private async writeFile(session: SftpLiveSession, targetPath: string, data: Buffer, mode: number): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'write-file', 'mutation', (callback) => {
       session.sftp.writeFile(targetPath, data, { mode, flag: 'wx' }, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
 
+  /**
+   * Creates one remote directory through a bounded mutation callback.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath New remote directory path.
+   * @param mode Remote permission bits.
+   * @returns Nothing.
+   */
   private async mkdir(session: SftpLiveSession, targetPath: string, mode: number): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'mkdir', 'mutation', (callback) => {
       session.sftp.mkdir(targetPath, { mode }, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
 
+  /**
+   * Removes one remote file or symbolic link through a bounded mutation callback.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote entry path.
+   * @returns Nothing.
+   */
   private async unlink(session: SftpLiveSession, targetPath: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'unlink', 'mutation', (callback) => {
       session.sftp.unlink(targetPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
 
+  /**
+   * Removes one empty remote directory through a bounded mutation callback.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote directory path.
+   * @returns Nothing.
+   */
   private async rmdir(session: SftpLiveSession, targetPath: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'rmdir', 'mutation', (callback) => {
       session.sftp.rmdir(targetPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
 
+  /**
+   * Renames one remote entry through a bounded mutation callback.
+   *
+   * @param session Live SFTP session.
+   * @param sourcePath Existing remote path.
+   * @param targetPath Desired remote path.
+   * @returns Nothing.
+   */
   private async rename(session: SftpLiveSession, sourcePath: string, targetPath: string): Promise<void> {
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'rename', 'mutation', (callback) => {
       session.sftp.rename(sourcePath, targetPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
   }
@@ -2410,14 +2657,9 @@ export class SftpSessionService {
       return false;
     }
 
-    await new Promise<void>((resolve, reject) => {
+    await this.runSftpCallbackOperation<void>(session, 'posix-rename', 'mutation', (callback) => {
       posixRename.call(session.sftp, sourcePath, targetPath, (error) => {
-        if (error) {
-          reject(error);
-          return;
-        }
-
-        resolve();
+        callback(error);
       });
     });
 
@@ -2462,7 +2704,11 @@ export class SftpSessionService {
       if (await this.tryOpenSshPosixRename(session, temporaryPath, targetPath)) {
         return;
       }
-    } catch {
+    } catch (error: unknown) {
+      if (isSftpOperationFailure(error)) {
+        throw error;
+      }
+
       // Fall through to portable replacement; not every server accepts the OpenSSH extension for all paths.
     }
 
@@ -2494,15 +2740,42 @@ export class SftpSessionService {
    * @returns Nothing.
    */
   private async unlinkRemoteTempFile(session: SftpLiveSession, targetPath: string): Promise<void> {
-    await this.unlink(session, targetPath).catch(() => undefined);
+    try {
+      await this.unlink(session, targetPath);
+    } catch (error: unknown) {
+      const diagnostic = isSftpOperationFailure(error)
+        ? {
+            code: error.code,
+            operation: error.operation,
+            outcomeUnknown: error.outcomeUnknown,
+          }
+        : {
+            name: error instanceof Error ? error.name : 'UnknownError',
+          };
+      console.warn(
+        '[sftp] Failed to remove a remote upload temporary file; preserving the primary upload failure.',
+        diagnostic,
+      );
+    }
   }
 
+  /**
+   * Detects path existence without hiding transport or timeout failures.
+   *
+   * @param session Live SFTP session.
+   * @param targetPath Remote path to inspect.
+   * @returns Whether the remote path exists.
+   */
   private async pathExists(session: SftpLiveSession, targetPath: string): Promise<boolean> {
     try {
       await this.stat(session, targetPath);
       return true;
-    } catch {
-      return false;
+    } catch (error: unknown) {
+      if (this.isNoSuchFileError(error)) {
+        return false;
+      }
+
+      throw error;
     }
   }
 
@@ -2553,9 +2826,14 @@ export class SftpSessionService {
     targetPath: string,
     sourceStats: Stats,
   ): Promise<void> {
-    const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
-    const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode: sourceStats.mode & 0o777 });
-    await pipeline(readStream, writeStream);
+    await this.runSftpOperation(session, 'copy-stream', 'mutation', async ({ signal, markProgress }) => {
+      const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
+      const writeStream = session.sftp.createWriteStream(targetPath, {
+        flags: 'wx',
+        mode: sourceStats.mode & 0o777,
+      });
+      await pipeline(readStream, this.createTransferCountingStream(undefined, markProgress), writeStream, { signal });
+    });
   }
 
   /**
@@ -2610,13 +2888,20 @@ export class SftpSessionService {
     await fs.mkdir(localDirectory, { recursive: true });
 
     try {
-      const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
-      const shouldHardenTemporaryFile = isLocalPathInsideDirectory(path.resolve(localPath), this.sftpTemporaryRootPath);
-      const writeStream = createWriteStream(temporaryPath, {
-        flags: 'wx',
-        ...(shouldHardenTemporaryFile ? { mode: 0o600 } : {}),
+      await this.runSftpOperation(session, 'download-stream', 'read', async ({ signal, markProgress }) => {
+        const readStream = session.sftp.createReadStream(sourcePath, { flags: 'r' });
+        const shouldHardenTemporaryFile = isLocalPathInsideDirectory(
+          path.resolve(localPath),
+          this.sftpTemporaryRootPath,
+        );
+        const writeStream = createWriteStream(temporaryPath, {
+          flags: 'wx',
+          ...(shouldHardenTemporaryFile ? { mode: 0o600 } : {}),
+        });
+        await pipeline(readStream, this.createTransferCountingStream(transferId, markProgress), writeStream, {
+          signal,
+        });
       });
-      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
       await fs.rename(temporaryPath, localPath);
     } catch (error: unknown) {
       await fs.unlink(temporaryPath).catch(() => undefined);
@@ -2648,9 +2933,13 @@ export class SftpSessionService {
     );
 
     try {
-      const readStream = createReadStream(localPath, { flags: 'r' });
-      const writeStream = session.sftp.createWriteStream(temporaryPath, { flags: 'wx', mode });
-      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
+      await this.runSftpOperation(session, 'upload-stream', 'mutation', async ({ signal, markProgress }) => {
+        const readStream = createReadStream(localPath, { flags: 'r' });
+        const writeStream = session.sftp.createWriteStream(temporaryPath, { flags: 'wx', mode });
+        await pipeline(readStream, this.createTransferCountingStream(transferId, markProgress), writeStream, {
+          signal,
+        });
+      });
       await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
     } catch (error: unknown) {
       await this.unlinkRemoteTempFile(session, temporaryPath);
@@ -2677,12 +2966,16 @@ export class SftpSessionService {
     let didOpenTarget = false;
 
     try {
-      const readStream = createReadStream(localPath, { flags: 'r' });
-      const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode });
-      writeStream.once('open', () => {
-        didOpenTarget = true;
+      await this.runSftpOperation(session, 'upload-stream', 'mutation', async ({ signal, markProgress }) => {
+        const readStream = createReadStream(localPath, { flags: 'r' });
+        const writeStream = session.sftp.createWriteStream(targetPath, { flags: 'wx', mode });
+        writeStream.once('open', () => {
+          didOpenTarget = true;
+        });
+        await pipeline(readStream, this.createTransferCountingStream(transferId, markProgress), writeStream, {
+          signal,
+        });
       });
-      await pipeline(readStream, this.createTransferCountingStream(transferId), writeStream);
     } catch (error: unknown) {
       if (this.isFileAlreadyExistsError(error)) {
         throw new SftpRemoteConflictError(session.t('errors.sftp.fileUploadTargetExists'));
@@ -2728,11 +3021,13 @@ export class SftpSessionService {
    * Creates a binary pass-through stream that updates progress without buffering file contents.
    *
    * @param transferId Optional renderer-generated identifier.
+   * @param markProgress Optional operation-idle deadline refresh callback.
    * @returns Transform stream suitable for Node pipeline composition.
    */
-  private createTransferCountingStream(transferId: string | undefined): Transform {
+  private createTransferCountingStream(transferId: string | undefined, markProgress?: () => void): Transform {
     return new Transform({
       transform: (chunk: Buffer, _encoding, callback): void => {
+        markProgress?.();
         this.recordTransferredBytes(transferId, chunk.byteLength);
         callback(null, chunk);
       },
@@ -2865,16 +3160,7 @@ export class SftpSessionService {
     );
 
     try {
-      await new Promise<void>((resolve, reject) => {
-        session.sftp.writeFile(temporaryPath, data, { mode, flag: 'wx' }, (error) => {
-          if (error) {
-            reject(error);
-            return;
-          }
-
-          resolve();
-        });
-      });
+      await this.writeFile(session, temporaryPath, data, mode);
       await this.replaceRemoteFileFromTemp(session, temporaryPath, targetPath, options);
     } catch (error: unknown) {
       await this.unlinkRemoteTempFile(session, temporaryPath);
@@ -3036,8 +3322,11 @@ export class SftpSessionService {
     return (
       message.includes('connection lost') ||
       message.includes('connection closed') ||
+      message.includes('channel closed') ||
       message.includes('client is not connected') ||
-      message.includes('no sftp connection')
+      message.includes('no response from server') ||
+      message.includes('no sftp connection') ||
+      message.includes('socket closed')
     );
   }
 
@@ -3109,6 +3398,30 @@ export class SftpSessionService {
     return this.resolveErrorMessage(error, fallback);
   }
 
+  /**
+   * Extracts machine-readable lifecycle metadata from a guarded operation failure.
+   *
+   * @param error Unknown caught value.
+   * @returns Stable internal metadata, or an empty object for ordinary remote failures.
+   */
+  private resolveOperationFailureMetadata(error: unknown): SftpOperationFailureMetadata {
+    if (!isSftpOperationFailure(error)) {
+      return {};
+    }
+
+    return {
+      operationErrorCode: error.code,
+      ...(error.outcomeUnknown ? { outcomeUnknown: true } : {}),
+    };
+  }
+
+  /**
+   * Resolves the most specific non-empty error message available.
+   *
+   * @param error Unknown caught value.
+   * @param fallback Localized fallback message.
+   * @returns Error message suitable for the current backend response.
+   */
   private resolveErrorMessage(error: unknown, fallback: string): string {
     if (error instanceof Error && error.message.trim().length > 0) {
       return error.message;
@@ -3210,6 +3523,7 @@ export class SftpSessionService {
 
     return await new Promise<OpenSftpResult>((resolve) => {
       let settled = false;
+      let sftpOpenTimer: NodeJS.Timeout | undefined;
 
       const settle = (result: OpenSftpResult): void => {
         if (settled) {
@@ -3217,11 +3531,37 @@ export class SftpSessionService {
         }
 
         settled = true;
+        if (sftpOpenTimer) {
+          clearTimeout(sftpOpenTimer);
+          sftpOpenTimer = undefined;
+        }
         resolve(result);
       };
 
       client.once('ready', () => {
+        const subsystemTimeoutMs = Math.max(1, options.connectTimeoutSec * 1000);
+        sftpOpenTimer = setTimeout(() => {
+          settle({
+            type: 'failed',
+            message: new SftpOperationFailure(SFTP_OPERATION_TIMEOUT_CODE, 'open-sftp', 'read', subsystemTimeoutMs)
+              .message,
+            proxyMetadata: proxyTransport.metadata,
+          });
+          client.destroy();
+        }, subsystemTimeoutMs);
+
         client.sftp((error, sftp) => {
+          if (settled) {
+            if (sftp) {
+              try {
+                sftp.destroy();
+              } catch (destroyError: unknown) {
+                console.warn('[sftp] Failed to destroy a late SFTP subsystem channel.', destroyError);
+              }
+            }
+            return;
+          }
+
           if (error) {
             client.end();
             settle({

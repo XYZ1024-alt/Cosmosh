@@ -52,28 +52,28 @@ flowchart LR
 
 所有调用端必须使用 `@cosmosh/api-contract` 生成导出，尤其是 `API_PATHS` 与生成的请求/响应 payload 类型。
 
-| Method   | Path                                                           | Purpose                                                                               |
-| -------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `POST`   | `/api/v1/sftp/sessions`                                        | 为一个 SSH server 创建 SFTP 文件系统会话。                                            |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/entries?path=...`           | 为活动 SFTP 会话列出一个远程目录。                                                    |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/details`            | 获取已选远程条目的非递归元数据，包括 `lstat` 字段和符号链接目标元数据。               |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...` | 为一个远程文件读取有上限的 UTF-8 预览。                                               |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/file`                       | 经过 size/mtime 冲突检查后，将可编辑 UTF-8 预览内容保存回一个远程普通文件。           |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/download`                   | 将一个远程普通文件流式保存到 main/preload 选定的本地目标。                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/upload`                     | 将一个受控本地临时文件流式写入新的远程路径，或在快照/显式覆盖确认后替换既有普通文件。 |
-| `GET`    | `/api/v1/sftp/transfers/{transferId}`                           | 读取一个活动或近期完成的单文件传输的字节进度、滚动速度、状态与可选失败原因。          |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/files`                      | 创建一个远程空文件。                                                                  |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/directories`                | 创建一个远程目录。                                                                    |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/rename`                     | 重命名或移动一个远程条目。                                                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                       | 复制一个远程文件或目录树。                                                            |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`             | 删除一个远程文件、符号链接或目录树。                                                  |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                      | 对多个远程条目执行一次有序批量复制、移动、创建链接或删除操作。                        |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`       | 探测并缓存当前会话的远端 POSIX 归档工具。                                          |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`         | 启动一个结构化异步压缩或解压任务。                                                  |
-| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}` | 轮询归档状态、阶段、冲突、结果或稳定错误。                                    |
-| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution` | 对全部待处理冲突应用一次覆盖、保留两者或取消决定。                  |
-| `DELETE` | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}` | 请求有界取消与清理。                                                           |
-| `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                            | 关闭 SFTP 会话并释放 SSH 连接。                                                       |
+| Method   | Path                                                                                     | Purpose                                                                               |
+| -------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `POST`   | `/api/v1/sftp/sessions`                                                                  | 为一个 SSH server 创建 SFTP 文件系统会话。                                            |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/entries?path=...`                                     | 为活动 SFTP 会话列出一个远程目录。                                                    |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/details`                                      | 获取已选远程条目的非递归元数据，包括 `lstat` 字段和符号链接目标元数据。               |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/file?path=...&maxBytes=...`                           | 为一个远程文件读取有上限的 UTF-8 预览。                                               |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/file`                                                 | 经过 size/mtime 冲突检查后，将可编辑 UTF-8 预览内容保存回一个远程普通文件。           |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/download`                                             | 将一个远程普通文件流式保存到 main/preload 选定的本地目标。                            |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/upload`                                               | 将一个受控本地临时文件流式写入新的远程路径，或在快照/显式覆盖确认后替换既有普通文件。 |
+| `GET`    | `/api/v1/sftp/transfers/{transferId}`                                                    | 读取一个活动或近期完成的单文件传输的字节进度、滚动速度、状态与可选失败原因。          |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/files`                                                | 创建一个远程空文件。                                                                  |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/directories`                                          | 创建一个远程目录。                                                                    |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/rename`                                               | 重命名或移动一个远程条目。                                                            |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/copy`                                                 | 复制一个远程文件或目录树。                                                            |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/entries/delete`                                       | 删除一个远程文件、符号链接或目录树。                                                  |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/batch`                                                | 对多个远程条目执行一次有序批量复制、移动、创建链接或删除操作。                        |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-capabilities`                                 | 探测并缓存当前会话的远端 POSIX 归档工具。                                             |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations`                                   | 启动一个结构化异步压缩或解压任务。                                                    |
+| `GET`    | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 轮询归档状态、阶段、冲突、结果或稳定错误。                                            |
+| `POST`   | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}/conflict-resolution` | 对全部待处理冲突应用一次覆盖、保留两者或取消决定。                                    |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}/archive-operations/{operationId}`                     | 请求有界取消与清理。                                                                  |
+| `DELETE` | `/api/v1/sftp/sessions/{sessionId}`                                                      | 关闭 SFTP 会话并释放 SSH 连接。                                                       |
 
 成功码：
 
@@ -139,7 +139,8 @@ sequenceDiagram
 - 隐藏的 SFTP 标签页保持挂载，并继续持有会话。
 - 关闭标签页或变更连接意图时，会先在有界等待内取消并清理活动归档任务，再关闭旧 SFTP SSH 连接。
 - `SftpSessionService` 会监听底层 `ssh2` client 与 SFTP stream 的 `close`、`end` 和 `error`。一旦任一传输不可用，会话会从注册表中移除，使后续请求快速返回 `SFTP_SESSION_NOT_FOUND`，避免卡在已断开的 socket 后面。
-- `sftpReconnectMode` 默认值为 `passive`。被动模式下，renderer SFTP 请求收到 `SFTP_SESSION_NOT_FOUND` 后，会创建一个替代会话、更新标签页 `sessionId`，并对原请求重试一次。
+- 每个普通 SFTP callback 都有 60 秒 idle deadline。流操作只有在确认字节进度后才会刷新该期限；每个单独的底层 callback 或流操作还同时受 24 小时绝对上限约束。期限到达后会中止同会话的其他操作、移除会话、销毁 SFTP channel 与 SSH client；mutation 会按远端结果可能未知的情况保守报告。
+- `sftpReconnectMode` 默认值为 `passive`。被动模式下，只读 renderer 请求收到 `SFTP_SESSION_NOT_FOUND` 后，会创建一个替代会话、更新标签页 `sessionId`，并对该读取重放一次。mutation 永远不会自动重放；它可以为后续工作启动同一个共享会话修复，但会保留原失败，因为远端副作用可能已经发生。
 - 显式下载任务会将 Main 签发的精确本地路径授权绑定到同一 renderer 与 `transferId`，最多供一次重连重试使用。该重试只会在收到 `SFTP_SESSION_NOT_FOUND` 后开放，60 秒后过期；任意其他终态响应都会立即撤销它。
 - `active` 当前作为用户可选设置落地：当页面已经知道当前会话过期时，使用同一套重连流程。它不会新增 backend 推送事件或轮询。
 - `off` 会禁用 renderer 重试。Backend 仍会移除已关闭会话，因此操作会快速以 session-not-found 信息失败，而不是保持 pending。
@@ -202,7 +203,7 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 - 本地上传选择由 main 通过原生多文件对话框负责；外部文件拖放只在 preload 内解析为本地路径，再交给 main 暂存。每个选中或拖入的普通文件都会先复制到 Cosmosh SFTP 临时根目录下的隔离目录，再把描述信息交给 renderer；本机源路径不会暴露给 backend HTTP，也不会由 renderer 保留。拖入目录与非普通文件会作为 rejected entries 返回，v1 不会递归遍历。
 - 每个上传暂存文件会成为一个 FIFO 上传任务。远程目标不存在时使用独占写语义创建；既有普通文件目标会返回 `SFTP_UPLOAD_CONFLICT`，除非请求携带原始打开快照，或 renderer 在显式确认后使用 `overwrite: true` 重试。
 - 上传任务结束后会删除对应暂存文件；连接重置与标签页卸载也会请求尽力清理尚未开始的排队暂存路径。
-- 被动重连会作为普通 `重连` 任务展示在同一个任务菜单中。多个 SFTP 操作遇到同一个过期会话时共享一个正在进行的 reconnect promise，随后各自使用新 session id 对原操作重试一次。如果重连成功但原操作仍失败，renderer 会报告该操作失败，并且不会开启第二轮重连循环。
+- 被动重连会作为普通 `重连` 任务展示在同一个任务菜单中。多个 SFTP 操作遇到同一个过期会话时共享一个正在进行的 reconnect promise。只读操作会使用替代 session id 重放一次；mutation 保留原结果且不会重放。如果重放后的读取仍失败，renderer 会报告该失败，并且不会开启第二轮重连循环。
 - 重连创建替代会话时优先使用标签页当前路径（`currentPathRef.current`），失败时回退到原始连接意图路径；没有初始路径时回退到 `.`。
 - 多条目剪切、复制、创建链接、删除、粘贴与内部拖拽会对当前 SFTP 会话发起一次 backend 批量 API 请求。Service 按顺序执行条目，遇到第一个失败后停止，返回每个条目的 `success`/`failed`/`skipped` 结果，且不会回滚已经完成的条目。`粘贴为链接` 使用当前 SFTP 剪贴板快照作为源条目列表，在所选目标目录中创建绝对符号链接，且不会消费剪贴板。重命名、打开、打开方式、本地保存、空文件创建与目录创建仍是单条目任务。新标签打开仍是即时动作，因为它不会修改当前会话。
 - 本地保存仍是单条目动作，仅支持普通文件。`保存到“下载”` 会向 main 请求授权系统下载目录下的一个精确文件，`保存到...` 会请求 main 授权原生保存对话框选中的路径。两种能力都绑定 renderer 所有者且只能使用一次；backend 代理会先拒绝 renderer 任意指定的目标，再通过当前 SFTP 会话将远程文件流式写入本地临时文件，成功后替换最终目标。

@@ -7,6 +7,7 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import test, { after } from 'node:test';
 
+import { SFTP_OPERATION_TIMEOUT_CODE, SFTP_TRANSPORT_CLOSED_CODE } from './operation-guard.js';
 import {
   escapeSftpShellPath,
   formatSftpPermissionOctal,
@@ -19,6 +20,7 @@ import {
 } from './session-service.js';
 
 type TestSftpClient = EventEmitter & {
+  destroy(): void;
   end(): void;
 };
 
@@ -64,6 +66,7 @@ type TestUploadSftp = EventEmitter & {
 };
 
 type TestDownloadSftp = EventEmitter & {
+  destroy?(): void;
   stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
   createReadStream(targetPath: string, options: { flags: string }): Readable;
 };
@@ -76,6 +79,12 @@ type TestLinkSftp = EventEmitter & {
 type TestRenameSftp = EventEmitter & {
   lstat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
   rename(sourcePath: string, targetPath: string, callback: (error?: Error | null) => void): void;
+};
+
+type TestDeleteSftp = EventEmitter & {
+  destroy(): void;
+  lstat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  unlink(targetPath: string, callback: (error?: Error | null) => void): void;
 };
 
 type TestSftpSessionServiceInternals = {
@@ -93,24 +102,34 @@ after(async () => {
   await fs.rm(TEST_SFTP_TEMP_ROOT_PATH, { force: true, recursive: true });
 });
 
-const createTestSftpSessionService = (): SftpSessionService => {
+/**
+ * Creates a session service with optional short operation deadlines for deterministic lifecycle tests.
+ *
+ * @param sftpOperationIdleTimeoutMs Optional idle deadline override.
+ * @returns Isolated SFTP session service.
+ */
+const createTestSftpSessionService = (sftpOperationIdleTimeoutMs?: number): SftpSessionService => {
   return new SftpSessionService({
     getDbClient: () => ({}) as never,
     auditEventService: { logEvent: async () => null } as never,
     credentialEncryptionKey: Buffer.alloc(32),
     sftpTemporaryRootPath: TEST_SFTP_TEMP_ROOT_PATH,
+    ...(sftpOperationIdleTimeoutMs !== undefined ? { sftpOperationIdleTimeoutMs } : {}),
   });
 };
 
 const createTestSftpSession = (): TestSftpSession => {
   const client = new EventEmitter() as TestSftpClient;
+  const sftp = new EventEmitter() as EventEmitter & { destroy(): void };
+  client.destroy = (): void => undefined;
   client.end = (): void => undefined;
+  sftp.destroy = (): void => undefined;
 
   return {
     sessionId: 'test-session',
     serverId: 'test-server',
     client,
-    sftp: new EventEmitter(),
+    sftp,
     isClosed: false,
     t: (key) => key,
   };
@@ -229,6 +248,7 @@ const createListSftpMock = (
  */
 const createDownloadSftpMock = (remotePath: string, content: Buffer): TestDownloadSftp => {
   const sftp = new EventEmitter() as TestDownloadSftp;
+  sftp.destroy = (): void => undefined;
   sftp.stat = (targetPath, callback): void => {
     if (targetPath !== remotePath) {
       const error = new Error('No such file') as Error & { code: number };
@@ -555,6 +575,102 @@ test('SftpSessionService closeSession remains idempotent for evicted sessions', 
   assert.equal(endCallCount, 1);
 });
 
+test('SftpSessionService times out a stalled mutation, poisons the session, and ignores its late callback', async () => {
+  const service = createTestSftpSessionService(25);
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let sftpDestroyCallCount = 0;
+  let clientDestroyCallCount = 0;
+  let lateUnlinkCallback: ((error?: Error | null) => void) | undefined;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (_targetPath, callback): void => {
+    lateUnlinkCallback = callback;
+  };
+  sftp.destroy = (): void => {
+    sftpDestroyCallCount += 1;
+  };
+  session.client.destroy = (): void => {
+    clientDestroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const result = await service.deleteEntry(session.sessionId, '/tmp/stalled.txt', false);
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_OPERATION_TIMEOUT_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.match(result.type === 'failed' ? result.message : '', /^SFTP_OPERATION_TIMEOUT:/);
+  assert.equal(session.isClosed, true);
+  assert.equal(getTestInternals(service).sessions.has(session.sessionId), false);
+  assert.equal(sftpDestroyCallCount, 1);
+  assert.equal(clientDestroyCallCount, 1);
+
+  lateUnlinkCallback?.(null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(sftpDestroyCallCount, 1);
+  assert.equal(clientDestroyCallCount, 1);
+});
+
+test('SftpSessionService settles a pending mutation when the transport closes', async () => {
+  const service = createTestSftpSessionService(1_000);
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let unlinkStarted = false;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (): void => {
+    unlinkStarted = true;
+  };
+  sftp.destroy = (): void => undefined;
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const resultPromise = service.deleteEntry(session.sessionId, '/tmp/disconnected.txt', false);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(unlinkStarted, true);
+
+  session.client.emit('close');
+  const result = await resultPromise;
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.match(result.type === 'failed' ? result.message : '', /^SFTP_TRANSPORT_CLOSED:/);
+});
+
+test('SftpSessionService normalizes a raw transport callback failure without returning not-found', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let destroyCallCount = 0;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (_targetPath, callback): void => {
+    callback(new Error('No response from server'));
+  };
+  sftp.destroy = (): void => {
+    destroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const result = await service.deleteEntry(session.sessionId, '/tmp/no-response.txt', false);
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.equal(destroyCallCount, 1);
+  assert.equal(session.isClosed, true);
+});
+
 test('SftpSessionService listDirectory includes symlink target metadata', async () => {
   const service = createTestSftpSessionService();
   const session = createTestSftpSession();
@@ -787,7 +903,9 @@ test('SftpSessionService downloadFile reports closed transports and removes part
   try {
     const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
 
-    assert.deepEqual(result, { type: 'not-found' });
+    assert.equal(result.type, 'failed');
+    assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+    assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, undefined);
     assert.equal(session.isClosed, true);
     assert.equal(
       await fs
@@ -799,7 +917,43 @@ test('SftpSessionService downloadFile reports closed transports and removes part
     assert.deepEqual(await fs.readdir(localDirectory), []);
     const progress = service.getTransferProgress(transferId);
     assert.equal(progress?.status, 'failed');
-    assert.equal(progress?.errorMessage, 'connection lost');
+    assert.match(progress?.errorMessage ?? '', /^SFTP_TRANSPORT_CLOSED:/);
+  } finally {
+    await fs.rm(localDirectory, { force: true, recursive: true });
+  }
+});
+
+test('SftpSessionService times out a stalled download stream and removes its partial local file', async () => {
+  const service = createTestSftpSessionService(25);
+  const session = createTestSftpSession();
+  const remotePath = '/srv/stalled.bin';
+  const transferId = '00616254-0809-44a0-996c-944954d65f5f';
+  const localDirectory = await fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'download-stall-'));
+  const localPath = path.join(localDirectory, 'stalled.bin');
+  const sftp = createDownloadSftpMock(remotePath, Buffer.alloc(128));
+  const stalledReadStream = new Readable({
+    read(): void {
+      // Intentionally never emits data or EOF.
+    },
+  });
+  let destroyCallCount = 0;
+  sftp.createReadStream = (): Readable => stalledReadStream;
+  sftp.destroy = (): void => {
+    destroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  try {
+    const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
+
+    assert.equal(result.type, 'failed');
+    assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_OPERATION_TIMEOUT_CODE);
+    assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, undefined);
+    assert.equal(destroyCallCount, 1);
+    assert.equal(stalledReadStream.destroyed, true);
+    assert.deepEqual(await fs.readdir(localDirectory), []);
+    assert.equal(service.getTransferProgress(transferId)?.status, 'failed');
   } finally {
     await fs.rm(localDirectory, { force: true, recursive: true });
   }
