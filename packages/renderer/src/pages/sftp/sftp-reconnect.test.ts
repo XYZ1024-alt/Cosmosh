@@ -3,12 +3,36 @@ import test from 'node:test';
 
 import {
   ensureSharedSftpReconnect,
+  isSftpSessionNotFoundError,
   runSftpOperationWithReconnect,
   type SftpOperationImpact,
   type SftpReconnectPromiseRef,
 } from './sftp-reconnect';
 
 const STALE_SESSION_ERROR = new Error('stale session');
+
+test('session-not-found detection accepts both admission and terminal task failures', () => {
+  const apiError = Object.assign(new Error('Session not found.'), {
+    name: 'BackendApiError',
+    code: 'SFTP_SESSION_NOT_FOUND',
+  });
+  const taskError = Object.assign(new Error('Session not found.'), {
+    name: 'BackendSftpTaskError',
+    code: 'SFTP_SESSION_NOT_FOUND',
+  });
+
+  assert.equal(isSftpSessionNotFoundError(apiError), true);
+  assert.equal(isSftpSessionNotFoundError(taskError), true);
+  assert.equal(
+    isSftpSessionNotFoundError(
+      Object.assign(new Error('Operation failed.'), {
+        name: 'BackendSftpTaskError',
+        code: 'SFTP_OPERATION_FAILED',
+      }),
+    ),
+    false,
+  );
+});
 
 /**
  * Creates the common runner inputs used by reconnect policy tests.

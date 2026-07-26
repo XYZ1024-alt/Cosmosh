@@ -30,6 +30,16 @@ export type RunSftpOperationWithReconnectOptions<TResult> = {
 };
 
 /**
+ * Detects missing-session failures from task admission or retained task completion.
+ *
+ * @param error Renderer backend error.
+ * @returns Whether passive reconnect may repair the stale session.
+ */
+export const isSftpSessionNotFoundError = (error: unknown): boolean => {
+  return error instanceof Error && 'code' in error && error.code === 'SFTP_SESSION_NOT_FOUND';
+};
+
+/**
  * Shares one reconnect promise across all callers observing the same stale session.
  *
  * @param reconnectPromiseRef Mutable holder for the current reconnect.

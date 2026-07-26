@@ -262,6 +262,10 @@ test('legacy write reserves its path, rejects queued archive admission, and forg
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.deepEqual(getTestInternals(service).taskSchedulers.get(session.sessionId)?.listTasks(), []);
 
+  await service.closeSession(session.sessionId);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(getTestInternals(service).taskSchedulers.has(session.sessionId), false);
+
   await service.stop();
 });
 

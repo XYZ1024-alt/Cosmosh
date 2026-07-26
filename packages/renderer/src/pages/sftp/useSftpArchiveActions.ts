@@ -25,6 +25,7 @@ import {
   getSftpArchiveTaskStageKey,
   suggestAvailableSftpArchiveName,
 } from './sftp-archive';
+import { loadSftpArchiveCapabilitiesWithRetry } from './sftp-archive-capabilities';
 import type { SftpTaskContext, SftpTaskOptions } from './sftp-types';
 import { SftpTaskCancelledError } from './useSftpTaskQueue';
 
@@ -59,6 +60,7 @@ export type SftpArchiveConflictPrompt = {
 };
 
 type UseSftpArchiveActionsParams = {
+  canProbeCapabilities: boolean;
   currentPath: string;
   directoryEntries: ApiSftpEntry[];
   notifyError: (message: string) => void;
@@ -80,6 +82,7 @@ type StartCompressionInput = {
  * @returns Archive action state and handlers consumed by menus and dialogs.
  */
 export const useSftpArchiveActions = ({
+  canProbeCapabilities,
   currentPath,
   directoryEntries,
   notifyError,
@@ -103,25 +106,38 @@ export const useSftpArchiveActions = ({
   }, []);
 
   React.useEffect(() => {
-    let cancelled = false;
     setCapabilities(null);
     setCompressionPrompt(null);
     setConflictPrompt(null);
     setDestinationPrompt(null);
-    if (!sessionId) return () => undefined;
-    void getSftpArchiveCapabilities(sessionId)
+  }, [sessionId]);
+
+  React.useEffect(() => {
+    if (!sessionId || !canProbeCapabilities || capabilities?.sessionId === sessionId) {
+      return () => undefined;
+    }
+
+    const controller = new AbortController();
+    void loadSftpArchiveCapabilitiesWithRetry(
+      sessionId,
+      controller.signal,
+      async (activeSessionId) => (await getSftpArchiveCapabilities(activeSessionId)).data,
+    )
       .then((response) => {
-        if (!cancelled) setCapabilities(response.data);
+        if (response && !controller.signal.aborted) {
+          setCapabilities(response);
+        }
       })
       .catch(() => {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setCapabilities({ sessionId, canExec: false, createFormats: [], extractFormats: [] });
         }
       });
+
     return () => {
-      cancelled = true;
+      controller.abort();
     };
-  }, [sessionId]);
+  }, [canProbeCapabilities, capabilities?.sessionId, sessionId]);
 
   /** Polls one backend archive operation until its retained terminal state is observed. */
   const pollOperation = React.useCallback(

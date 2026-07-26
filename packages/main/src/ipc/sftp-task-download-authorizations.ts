@@ -79,5 +79,10 @@ export const observeSftpTaskForDownloadAuthorization = (
     return;
   }
 
+  if (task.errorCode === 'SFTP_SESSION_NOT_FOUND') {
+    registry.allowTransferRetry(ownerWebContentsId, task.transferId);
+    return;
+  }
+
   registry.completeTransfer(ownerWebContentsId, task.transferId);
 };

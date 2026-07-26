@@ -153,7 +153,7 @@ sequenceDiagram
 - `SftpSessionService` 会监听底层 `ssh2` client 与 SFTP stream 的 `close`、`end` 和 `error`。一旦任一传输不可用，会话会从注册表中移除，使后续请求快速返回 `SFTP_SESSION_NOT_FOUND`，避免卡在已断开的 socket 后面。
 - 每个普通 SFTP callback 都有 60 秒 idle deadline。流操作只有在确认字节进度后才会刷新该期限；每个单独的底层 callback 或流操作还同时受 24 小时绝对上限约束。期限到达后会中止同会话的其他操作、移除会话、销毁 SFTP channel 与 SSH client；mutation 会按远端结果可能未知的情况保守报告。
 - `sftpReconnectMode` 默认值为 `passive`。被动模式下，只读 renderer 请求收到 `SFTP_SESSION_NOT_FOUND` 后，会创建一个替代会话、更新标签页 `sessionId`，并对该读取重放一次。mutation 永远不会自动重放；它可以为后续工作启动同一个共享会话修复，但会保留原失败，因为远端副作用可能已经发生。
-- 显式下载任务会将 Main 签发的精确本地路径授权绑定到同一 renderer 与 `transferId`，最多供一次重连重试使用。该重试只会在收到 `SFTP_SESSION_NOT_FOUND` 后开放，60 秒后过期；任意其他终态响应都会立即撤销它。
+- 显式下载任务会将 Main 签发的精确本地路径授权绑定到同一 renderer 与 `transferId`，最多供一次重连重试使用。该重试只会在任务接纳或保留的任务终态快照返回 `SFTP_SESSION_NOT_FOUND` 后开放，60 秒后过期；任意其他终态响应都会立即撤销它。
 - `active` 当前作为用户可选设置落地：当页面已经知道当前会话过期时，使用同一套重连流程。它不会新增 backend 推送事件或轮询。
 - `off` 会禁用 renderer 重试。Backend 仍会移除已关闭会话，因此操作会快速以 session-not-found 信息失败，而不是保持 pending。
 - Backend 关闭时会关闭所有已注册的 SFTP 会话。
@@ -168,8 +168,8 @@ sequenceDiagram
 - 公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。通过 `POST /api/v1/sftp/sessions/{sessionId}/file` 执行的预览文本写入因内容内联而保留同步 HTTP 契约，但会作为不创建公共任务记录的隐藏 mutation 进入调度器。既有列表/读取/mutation route 也使用同一隐藏协调边界，因此无法绕过 task claim 或归档独占。
 - 每个任务声明规范化 POSIX path claim。相等路径以及祖先/后代路径会串行，互不相交的兄弟路径可以并发。较早排队任务会保留重叠 claim，不相关工作可以绕过它。归档能力探测会持有会话独占 claim，直到探测结束；归档启动会取得同一 claim，并持有到终态清理结束，因此普通任务不会与任一生命周期重叠。
 - 一个绝对 deadline 同时覆盖排队等待与 runner 执行。排队期间超时的任务直接失败且不会调用 runner。运行中任务在 deadline 到达时会立即发布带 `SFTP_TASK_DEADLINE_EXCEEDED` 的 `failed`，但容量 slot 与 path claim 会继续保留，直到其底层 runner 真正结束。超时 mutation 会包含 `outcomeUnknown: true`，因为远端副作用可能已经发生。
-- 公共任务快照仅存在于 backend 内存中，在近期会话关闭后仍可查询，并在 runner 释放后最多保留七天。每个会话最多保留 512 条记录；达到压力上限时会先淘汰最早已释放的终态快照，无法腾出空间时才拒绝更多任务，backend 停止时清除剩余记录。Renderer 任务状态独立负责更短的用户注意生命周期。任务集合没有公共取消或续传 route，也没有持久化；归档专用取消继续使用独立的 archive API。
-- SFTP 工作台会通过 Main/preload 提交`create-file`、`create-directory`、`rename`、`upload`、`download`与`batch`descriptor，然后始终使用任务接纳响应中的`sessionId`轮询，即使被动重连改变了标签页当前 session。无关任务会并发启动，实际执行顺序由 backend admission 与 path claim 决定。
+- 公共任务快照仅存在于 backend 内存中，在近期会话关闭后仍可查询，并在 runner 释放后最多保留七天。每个会话最多保留 512 条记录；达到压力上限时会先淘汰最早已释放的终态快照，无法腾出空间时才拒绝更多任务，backend 停止时清除剩余记录。关闭会话的最后一条保留记录和隐藏任务释放后，其空闲 scheduler 与空记录容器也会被移除。Renderer 任务状态独立负责更短的用户注意生命周期。任务集合没有公共取消或续传 route，也没有持久化；归档专用取消继续使用独立的 archive API。
+- SFTP 工作台会通过 Main/preload 提交`create-file`、`create-directory`、`rename`、`upload`、`download`与`batch`descriptor，然后始终使用任务接纳响应中的`sessionId`轮询，即使被动重连改变了标签页当前 session。无关任务会并发启动，实际执行顺序由 backend admission 与 path claim 决定。失败的 batch 会保留按条目的结构化结果，使 renderer 能够同步已成功的 mutation、刷新受影响目录，然后再展示部分失败。
 
 ## 5. 目录列表与文件操作
 
@@ -249,7 +249,7 @@ Renderer 会保留完整的筛选/排序条目数组和扁平化展开树顺序�
 
 运行规则：
 
-1. 归档能力探测会取得 backend 调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持续持有到终态清理结束。探测与启动只接受可立即取得的独占权；无法立即取得时返回 `SFTP_ARCHIVE_BUSY`，不会让 HTTP 请求留在队列中等待。归档请求还会经过 renderer 串行通道，因此多归档按选择顺序解压。
+1. 归档能力探测会取得 backend 调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持续持有到终态清理结束。探测与启动只接受可立即取得的独占权；无法立即取得时返回 `SFTP_ARCHIVE_BUSY`，不会让 HTTP 请求留在队列中等待。Renderer 只会在首个目录进入就绪状态且没有活动 renderer 任务后开始能力探测，并针对未纳入任务计数的后台读取，以生命周期可取消的有界退避重试这一瞬时忙碌响应；已确认的 exec/探测失败仍保持 fail-closed。归档请求还会经过 renderer 串行通道，因此多归档按选择顺序解压。
 2. 压缩只接受同一源目录中的非空结构化路径、basename 归档名、规范格式与 `store`/`fast`/`standard`/`maximum`。拒绝写入 `/` 或 `.`。Backend 先写入随机 `.cosmosh-*` 同级文件，复检目标不存在后再重命名为最终归档。
 3. 解压接受当前 SFTP 会话中的单个普通归档文件与远端绝对目标目录；缺失的目标路径层级会在逐级确认均为目录后创建，但仍拒绝远端根目录。任务创建的目录在提交前属于临时状态，失败或取消时只会在仍为空的情况下删除。归档和目标可以位于不同目录。Backend 结合复合扩展名、有限文件头与工具 list/test 命令校验。完整成员清单必须能容纳在校验输出上限内；一旦发生截断，会在解压前拒绝任务。绝对/穿越成员，以及暂存区内逃逸随机 `0700` 解压目录的符号链接，会在提交前被拒绝。
 4. 智能解压会把单个顶层项直接提交到当前目录；空归档或多个顶层项会重命名为归档同名目录，冲突时使用 `name (2)`、`name (3)`等。显式当前目录/归档同名目录模式遇到冲突时暂停。自定义目标会在所选远端目录内复用当前目录模式的提交和冲突语义，并在需要时创建该目录。

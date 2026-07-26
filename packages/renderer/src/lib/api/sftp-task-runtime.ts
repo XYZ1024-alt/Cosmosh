@@ -1,4 +1,4 @@
-import type { ApiSftpGetTaskResponse, ApiSftpTaskData } from '@cosmosh/api-contract';
+import type { ApiSftpGetTaskResponse, ApiSftpTaskData, ApiSftpTaskResult } from '@cosmosh/api-contract';
 
 const TERMINAL_SFTP_TASK_STATES = new Set<ApiSftpTaskData['state']>(['succeeded', 'failed', 'cancelled']);
 
@@ -21,6 +21,24 @@ type WaitForSftpTaskOptions = {
  */
 export const isTerminalSftpTask = (task: ApiSftpTaskData): boolean => {
   return TERMINAL_SFTP_TASK_STATES.has(task.state);
+};
+
+/**
+ * Returns the structured result that one operation wrapper may safely consume.
+ *
+ * Failed batch tasks retain per-entry results so the renderer can reconcile successful
+ * mutations before surfacing the partial failure. Other failed tasks remain errors.
+ *
+ * @param task Terminal backend task snapshot.
+ * @param allowFailedResult Whether a failed task's retained result may be consumed.
+ * @returns Structured task result, or null when the caller must surface a task error.
+ */
+export const resolveSftpTaskResult = (task: ApiSftpTaskData, allowFailedResult = false): ApiSftpTaskResult | null => {
+  if (!task.result) {
+    return null;
+  }
+
+  return task.state === 'succeeded' || (allowFailedResult && task.state === 'failed') ? task.result : null;
 };
 
 /**

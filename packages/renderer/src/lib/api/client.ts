@@ -83,7 +83,7 @@ import type {
   ApiTestPingResponse,
 } from '@cosmosh/api-contract';
 
-import { waitForSftpTask } from './sftp-task-runtime';
+import { resolveSftpTaskResult, waitForSftpTask } from './sftp-task-runtime';
 import {
   createApiTransport,
   LocalTerminalCreateSessionRequest,
@@ -289,13 +289,14 @@ export const createBackendClient = (): BackendClient => {
         unwrapApiResponse(await transport.getSftpTask(acceptedSessionId, taskId)),
     });
 
-    if (terminalTask.state !== 'succeeded' || !terminalTask.result) {
+    const result = resolveSftpTaskResult(terminalTask, request.operation === 'batch');
+    if (!result) {
       throw new BackendSftpTaskError(terminalTask);
     }
 
     return {
       accepted,
-      result: terminalTask.result,
+      result,
     };
   };
 

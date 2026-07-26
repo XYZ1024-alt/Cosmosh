@@ -2441,6 +2441,7 @@ export class SftpSessionService {
     });
     void scheduled.released.then(() => {
       scheduler.forgetTask(scheduled.taskId);
+      this.deleteClosedTaskSchedulerIfUnused(sessionId);
     });
     if (scheduled.getSnapshot().state === 'queued') {
       admissionController.abort();
@@ -2558,6 +2559,7 @@ export class SftpSessionService {
     });
     void scheduled.released.then(() => {
       scheduler.forgetTask(scheduled.taskId);
+      this.deleteClosedTaskSchedulerIfUnused(sessionId);
     });
     if (scheduled.getSnapshot().state === 'queued') {
       admissionController.abort();
@@ -2634,6 +2636,31 @@ export class SftpSessionService {
   }
 
   /**
+   * Releases an idle scheduler after its closed session no longer owns retained task records.
+   *
+   * @param sessionId Closed session whose scheduler may no longer be observable.
+   * @returns void.
+   */
+  private deleteClosedTaskSchedulerIfUnused(sessionId: string): void {
+    if (this.sessions.has(sessionId)) {
+      return;
+    }
+
+    const publicRecords = this.publicTaskRecords.get(sessionId);
+    if (publicRecords && publicRecords.size > 0) {
+      return;
+    }
+
+    const scheduler = this.taskSchedulers.get(sessionId);
+    if (scheduler && scheduler.listTasks().length > 0) {
+      return;
+    }
+
+    this.publicTaskRecords.delete(sessionId);
+    this.taskSchedulers.delete(sessionId);
+  }
+
+  /**
    * Runs one legacy request through the same scheduler used by asynchronous tasks.
    *
    * The runner returns the existing result union as data so validation and remote failures retain
@@ -2691,6 +2718,7 @@ export class SftpSessionService {
     const snapshot = await handle.completion;
     void handle.released.then(() => {
       scheduler.forgetTask(handle.taskId);
+      this.deleteClosedTaskSchedulerIfUnused(session.sessionId);
     });
 
     if (snapshot.state === 'succeeded' && snapshot.result !== undefined) {
@@ -2801,6 +2829,7 @@ export class SftpSessionService {
     if (records.size === 0 && !this.getOpenSession(sessionId)) {
       this.publicTaskRecords.delete(sessionId);
     }
+    this.deleteClosedTaskSchedulerIfUnused(sessionId);
   }
 
   /**
@@ -3189,6 +3218,7 @@ export class SftpSessionService {
     } catch (error: unknown) {
       console.warn('[sftp] Failed to close SSH client.', error);
     }
+    this.deleteClosedTaskSchedulerIfUnused(sessionId);
 
     return true;
   }
@@ -3313,6 +3343,7 @@ export class SftpSessionService {
     if (!operationController.signal.aborted) {
       operationController.abort();
     }
+    this.deleteClosedTaskSchedulerIfUnused(session.sessionId);
     return wasOpen;
   }
 

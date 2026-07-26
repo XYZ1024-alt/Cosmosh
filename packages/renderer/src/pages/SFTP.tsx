@@ -45,6 +45,7 @@ import {
 } from './sftp/sftp-page-utils';
 import {
   ensureSharedSftpReconnect,
+  isSftpSessionNotFoundError,
   runSftpOperationWithReconnect,
   type SftpOperationImpact,
 } from './sftp/sftp-reconnect';
@@ -568,16 +569,6 @@ const SFTP: React.FC<SFTPProps> = ({
   }, [clipboardState]);
 
   /**
-   * Detects the stale-session error that should trigger SFTP reconnect.
-   *
-   * @param error Error thrown by the renderer backend client.
-   * @returns Whether this failure represents a missing or closed SFTP session.
-   */
-  const isSftpSessionNotFoundError = React.useCallback((error: unknown): boolean => {
-    return isBackendApiError(error) && error.code === 'SFTP_SESSION_NOT_FOUND';
-  }, []);
-
-  /**
    * Detects opened-file upload conflicts that should ask for explicit overwrite confirmation.
    *
    * @param error Error thrown by the renderer backend client.
@@ -696,7 +687,7 @@ const SFTP: React.FC<SFTPProps> = ({
         operation,
       });
     },
-    [ensureSftpSessionForOperation, isSftpSessionNotFoundError, sftpReconnectMode],
+    [ensureSftpSessionForOperation, sftpReconnectMode],
   );
 
   const setTreeNodeLoading = React.useCallback((directoryPath: string, isLoading: boolean): void => {
@@ -2546,6 +2537,7 @@ const SFTP: React.FC<SFTPProps> = ({
     startCustomExtraction,
     startCompression,
   } = useSftpArchiveActions({
+    canProbeCapabilities: canUseFileActions && activeTaskCount === 0,
     currentPath,
     directoryEntries: entries,
     notifyError,

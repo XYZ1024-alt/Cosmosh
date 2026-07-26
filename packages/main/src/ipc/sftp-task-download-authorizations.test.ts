@@ -23,16 +23,23 @@ const createDownloadTaskRequest = (
   },
 });
 
-const createDownloadTask = (transferId: string, state: ApiSftpTaskData['state']): ApiSftpTaskData => ({
-  sessionId: 'session-1',
-  taskId: '1ee18f90-ccbc-4ff1-b073-cd44d12353bf',
-  operation: 'download',
-  state,
-  remotePaths: ['/remote/report.csv'],
-  transferId,
-  createdAt: new Date(0).toISOString(),
-  deadlineAt: new Date(60_000).toISOString(),
-});
+const createDownloadTask = (
+  transferId: string,
+  state: ApiSftpTaskData['state'],
+  errorCode?: ApiSftpTaskData['errorCode'],
+): ApiSftpTaskData => {
+  return {
+    sessionId: 'session-1',
+    taskId: '1ee18f90-ccbc-4ff1-b073-cd44d12353bf',
+    operation: 'download',
+    state,
+    remotePaths: ['/remote/report.csv'],
+    transferId,
+    createdAt: new Date(0).toISOString(),
+    deadlineAt: new Date(60_000).toISOString(),
+    ...(errorCode ? { errorCode } : {}),
+  };
+};
 
 test('asynchronous download task admission rejects the wrong owner, path, and transfer id', () => {
   const registry = new SftpDownloadTargetAuthorizationRegistry();
@@ -83,6 +90,28 @@ test('missing-session admission preserves one exact retry and terminal observati
   authorizeSftpTaskStartRequest(registry, ownerWebContentsId, request);
   observeSftpTaskForDownloadAuthorization(registry, ownerWebContentsId, createDownloadTask(transferId, 'running'));
   observeSftpTaskForDownloadAuthorization(registry, ownerWebContentsId, createDownloadTask(transferId, 'failed'));
+
+  assert.throws(() => authorizeSftpTaskStartRequest(registry, ownerWebContentsId, request), /not authorized/);
+});
+
+test('accepted download task preserves one exact retry after terminal session loss', () => {
+  const registry = new SftpDownloadTargetAuthorizationRegistry();
+  const ownerWebContentsId = 44;
+  const transferId = '47fc8d9a-cda8-4f38-a01d-a633d88f0a69';
+  const localPath = registry.authorize(ownerWebContentsId, path.join('downloads', 'queued.bin'), {
+    reusable: false,
+  });
+  const request = createDownloadTaskRequest(localPath, transferId);
+
+  authorizeSftpTaskStartRequest(registry, ownerWebContentsId, request);
+  observeSftpTaskForDownloadAuthorization(
+    registry,
+    ownerWebContentsId,
+    createDownloadTask(transferId, 'failed', 'SFTP_SESSION_NOT_FOUND'),
+  );
+
+  authorizeSftpTaskStartRequest(registry, ownerWebContentsId, request);
+  observeSftpTaskForDownloadAuthorization(registry, ownerWebContentsId, createDownloadTask(transferId, 'succeeded'));
 
   assert.throws(() => authorizeSftpTaskStartRequest(registry, ownerWebContentsId, request), /not authorized/);
 });
