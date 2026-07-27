@@ -153,6 +153,12 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Favorite changes for keychains must use metadata-only updates. Context-menu actions must never fetch, copy, or resubmit passwords, private keys, or private-key passphrases.
 - Keychain deletion requires explicit confirmation. A rejected delete keeps the keychain visible and reports the backend error without closing the confirmation surface.
 
+### 7.4.2 Home Organization Controls
+
+- SSH and Keychains Home modes expose folder grouping only while the sidebar scope is All, Favorites, or Recents. A concrete folder or Local Terminals scope suppresses the folder option and renders a stored folder-group preference as ungrouped for that scope.
+- Folder groups follow folder-name order, preserve the active per-mode item sort inside each group, and place entities without a folder in a final localized group.
+- SSH, Keychains, and Port Forwarding retain independent sort/group preferences. Folder grouping is not available in Port Forwarding.
+
 ## 7.5 Plain Text Selection Context Menu
 
 - Non-editable DOM text selections should expose a minimal fallback context menu with Copy only.
