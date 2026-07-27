@@ -1,6 +1,7 @@
 import { normalizeSettingsValuesStrict, type SettingValidationError } from '@cosmosh/api-contract';
 import {
   Cloud,
+  Copy,
   Folder,
   Info,
   Link2,
@@ -693,6 +694,24 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
     }));
   }, []);
 
+  /**
+   * Copies the stable registry key for the setting selected in the item action menu.
+   *
+   * @param settingKey Registry key to copy.
+   * @returns Nothing.
+   */
+  const copySettingId = React.useCallback(
+    async (settingKey: SettingKey): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(settingKey);
+        notifySuccess(t('settings.itemActions.copyIdSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('settings.itemActions.copyIdFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
+
   const persistSettings = React.useCallback(
     async (targetFormState: SettingsFormState, options?: { silent?: boolean }): Promise<boolean> => {
       const parsed = parseFormState(targetFormState);
@@ -1081,6 +1100,14 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                                   </button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent>
+                                  <DropdownMenuItem
+                                    icon={Copy}
+                                    onSelect={() => {
+                                      void copySettingId(item.key);
+                                    }}
+                                  >
+                                    {t('settings.itemActions.copyId')}
+                                  </DropdownMenuItem>
                                   <DropdownMenuItem
                                     icon={RotateCcw}
                                     onSelect={() => resetSettingToDefault(item)}

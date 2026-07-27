@@ -71,7 +71,12 @@ Implementation principles:
 - Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
 
-### 6.1 Entity Visual Picker Virtualization
+### 6.1 Settings Item Actions
+
+- Each registry-driven setting label exposes the existing gear action menu on hover or keyboard focus.
+- The menu must offer `Copy Setting ID`, copying the stable registry key to the clipboard and reporting localized success or failure feedback. Existing reset and settings-editor actions remain unchanged.
+
+### 6.2 Entity Visual Picker Virtualization
 
 - `EntityVisualPicker` uses `@tanstack/react-virtual` to keep the full Lucide icon catalog searchable while mounting only visible fixed-grid rows plus a small overscan window.
 - The virtual grid preserves the established eight-column, 32 px icon-button rhythm and 4 px gap; virtualization must not resize or shift the picker while scrolling.
@@ -79,7 +84,7 @@ Implementation principles:
 - Arrow-key and forward-Tab navigation must call the virtualizer to reveal an offscreen target row before moving focus. Search updates keep the selected icon, or the first filtered icon when the selection is absent, as the active grid item.
 - Virtualization reduces mounted DOM only. Changes to icon-module loading or bundle composition remain a separate concern.
 
-### 6.2 SFTP Collection Virtualization
+### 6.3 SFTP Collection Virtualization
 
 - The SFTP directory tree and center file list use `@tanstack/react-virtual` with stable remote-path keys, fixed 30 px tree rows, fixed 34 px directory rows, and a small overscan window. The 30 px sticky directory header remains outside the logical row collection.
 - Virtualization changes mounted DOM only. `SFTP.tsx` continues to own the complete filtered/sorted entry collection, expanded tree order, selection model, keyboard navigation order, and drag/drop contracts.

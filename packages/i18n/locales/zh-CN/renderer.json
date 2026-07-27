@@ -455,6 +455,9 @@
     "disabled": "已禁用",
     "enabled": "已启用",
     "itemActions": {
+      "copyId": "拷贝设置项 ID",
+      "copyIdFailed": "拷贝设置项 ID 失败。",
+      "copyIdSuccess": "设置项 ID 已拷贝。",
       "editInSettingsEditor": "在设置编辑器中编辑",
       "openMenu": "打开设置项操作菜单",
       "resetToDefault": "重置为默认"
