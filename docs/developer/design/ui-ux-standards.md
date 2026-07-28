@@ -29,6 +29,8 @@ Rules:
 - Keep typography compact, readable, and consistent across controls and content areas.
 - Preserve a stable body/control baseline and avoid arbitrary size jumps between adjacent components.
 - Use clear hierarchy for titles, labels, helper text, and status messages.
+- Shared form labels use the semantic `color.form.text.label` tier between primary form text and `color.form.text.muted`; helper and description text stay muted.
+- Second-level headings inside form sections use the shared `FormSectionHeading` primitive (`formStyles.sectionHeading`): 15 px, semibold, and the primary `color.text` token. Settings, SSH server, and SSH keychain editors must consume this primitive instead of restyling section headings locally.
 
 ## 4. Radius Logic
 
@@ -68,6 +70,7 @@ Implementation principles:
 
 - Keep layout dense but breathable, prioritizing efficient scanning and frequent actions.
 - Maintain consistent control rhythm and spacing within each feature surface.
+- Registry-driven Settings sections use 12 px between the heading and item list, 20 px between adjacent setting items, and 32 px between sections. Section headings use the same primary text color as page titles with semibold weight; helper text remains below its control.
 - Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
 

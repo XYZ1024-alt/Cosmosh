@@ -36,7 +36,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { FormField } from '../components/ui/form';
+import { FormField, FormSectionHeading } from '../components/ui/form';
 import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -1029,7 +1029,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           header={
             <div className="mx-auto flex min-h-[46px] max-w-4xl items-center justify-between gap-4 pb-1">
               <div className="grid gap-1">
-                <h1 className="text-home-text ps-2 text-[24px] font-semibold">
+                <h1 className="ps-2 text-[24px] font-semibold text-text">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
                 </h1>
               </div>
@@ -1072,64 +1072,66 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               ) : null}
 
               {!isLoading && (activeCategoryId !== 'about' || isSearchMode) && sections.length > 0 ? (
-                <div className="grid gap-5 pb-4">
+                <div className="grid gap-8 pb-4">
                   {sections.map((section) => (
                     <section
                       key={section.title}
                       className="grid gap-3"
                     >
-                      <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
-                      {section.items.map((item) => {
-                        const controlId = `settings-control-${item.key}`;
+                      <FormSectionHeading>{section.title}</FormSectionHeading>
+                      <div className="grid gap-5">
+                        {section.items.map((item) => {
+                          const controlId = `settings-control-${item.key}`;
 
-                        return (
-                          <FormField
-                            key={item.path}
-                            className="group/setting"
-                          >
-                            <div className="flex items-center">
-                              <Label htmlFor={controlId}>{t(item.nameI18nKey)}</Label>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <button
-                                    type="button"
-                                    aria-label={t('settings.itemActions.openMenu')}
-                                    className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
-                                  >
-                                    <SettingsIcon className="h-3.5 w-3.5" />
-                                  </button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent>
-                                  <DropdownMenuItem
-                                    icon={Copy}
-                                    onSelect={() => {
-                                      void copySettingId(item.key);
-                                    }}
-                                  >
-                                    {t('settings.itemActions.copyId')}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    icon={RotateCcw}
-                                    onSelect={() => resetSettingToDefault(item)}
-                                  >
-                                    {t('settings.itemActions.resetToDefault')}
-                                  </DropdownMenuItem>
-                                  {item.control !== 'json' ? (
-                                    <DropdownMenuItem
-                                      icon={Settings2}
-                                      onSelect={() => onOpenSettingInEditor?.(item.key)}
+                          return (
+                            <FormField
+                              key={item.path}
+                              className="group/setting"
+                            >
+                              <div className="flex items-center">
+                                <Label htmlFor={controlId}>{t(item.nameI18nKey)}</Label>
+                                <DropdownMenu>
+                                  <DropdownMenuTrigger asChild>
+                                    <button
+                                      type="button"
+                                      aria-label={t('settings.itemActions.openMenu')}
+                                      className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
                                     >
-                                      {t('settings.itemActions.editInSettingsEditor')}
+                                      <SettingsIcon className="h-3.5 w-3.5" />
+                                    </button>
+                                  </DropdownMenuTrigger>
+                                  <DropdownMenuContent>
+                                    <DropdownMenuItem
+                                      icon={Copy}
+                                      onSelect={() => {
+                                        void copySettingId(item.key);
+                                      }}
+                                    >
+                                      {t('settings.itemActions.copyId')}
                                     </DropdownMenuItem>
-                                  ) : null}
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                            {renderControl(item, controlId)}
-                            <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
-                          </FormField>
-                        );
-                      })}
+                                    <DropdownMenuItem
+                                      icon={RotateCcw}
+                                      onSelect={() => resetSettingToDefault(item)}
+                                    >
+                                      {t('settings.itemActions.resetToDefault')}
+                                    </DropdownMenuItem>
+                                    {item.control !== 'json' ? (
+                                      <DropdownMenuItem
+                                        icon={Settings2}
+                                        onSelect={() => onOpenSettingInEditor?.(item.key)}
+                                      >
+                                        {t('settings.itemActions.editInSettingsEditor')}
+                                      </DropdownMenuItem>
+                                    ) : null}
+                                  </DropdownMenuContent>
+                                </DropdownMenu>
+                              </div>
+                              {renderControl(item, controlId)}
+                              <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
+                            </FormField>
+                          );
+                        })}
+                      </div>
                     </section>
                   ))}
                 </div>
