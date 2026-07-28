@@ -1,4 +1,5 @@
 import { normalizeSettingsValuesStrict, type SettingValidationError } from '@cosmosh/api-contract';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import {
   Cloud,
   Copy,
@@ -94,6 +95,49 @@ const FALLBACK_TIME_ZONE_OPTIONS = [
 ] as const;
 
 type SettingKey = keyof AppSettingsValues;
+
+/** Estimated height of one section heading row before dynamic measurement. */
+const SETTINGS_HEADING_ROW_ESTIMATE_PX = 40;
+
+/** Estimated height of one settings field row before dynamic measurement. */
+const SETTINGS_FIELD_ROW_ESTIMATE_PX = 128;
+
+/** Extra virtual rows mounted before and after the settings list viewport. */
+const SETTINGS_VIRTUAL_OVERSCAN_ROWS = 6;
+
+/** Vertical gap below a section heading row (mirrors the former `gap-3` grid spacing). */
+const SETTINGS_HEADING_GAP_PX = 12;
+
+/** Vertical gap between two field rows in one section (mirrors the former `gap-5` grid spacing). */
+const SETTINGS_FIELD_GAP_PX = 20;
+
+/** Vertical gap between two sections (mirrors the former `gap-8` grid spacing). */
+const SETTINGS_SECTION_GAP_PX = 32;
+
+/** Trailing padding after the last row (mirrors the former `pb-4` list padding). */
+const SETTINGS_LIST_TRAILING_GAP_PX = 16;
+
+/**
+ * One flattened row of the virtualized settings list.
+ *
+ * Section headings and their fields are flattened into a single sequence so the
+ * whole list participates in windowing. `paddingBottom` reproduces the vertical
+ * rhythm of the former nested grid gaps, because absolutely positioned virtual
+ * rows cannot rely on CSS grid gap.
+ */
+type SettingsListRow =
+  | {
+      kind: 'heading';
+      key: string;
+      paddingBottom: number;
+      title: string;
+    }
+  | {
+      item: SettingDefinition;
+      key: string;
+      kind: 'item';
+      paddingBottom: number;
+    };
 
 type DatabaseSecurityInfo = {
   runtimeMode: 'development' | 'production';
@@ -398,6 +442,7 @@ type SettingsProps = {
 const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQuery, onOpenSettingInEditor }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const contentStartRef = React.useRef<HTMLDivElement | null>(null);
+  const settingsScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [, setLocaleTick] = React.useState<number>(0);
   const [activeCategoryId, setActiveCategoryId] = React.useState<SettingsCategoryId>(() => {
     return initialCategoryId === 'about' ? 'about' : 'general';
@@ -678,6 +723,48 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
 
     return [...grouped.entries()].map(([title, items]) => ({ title, items }));
   }, [isSearchMode, renderedSettings]);
+
+  const settingsListRows = React.useMemo<SettingsListRow[]>(() => {
+    // Flatten sections into heading/item rows so a single virtualizer windows
+    // the whole list; per-row padding reproduces the former grid gaps.
+    const rows: SettingsListRow[] = [];
+
+    sections.forEach((section, sectionIndex) => {
+      rows.push({
+        key: `heading:${section.title}`,
+        kind: 'heading',
+        paddingBottom: SETTINGS_HEADING_GAP_PX,
+        title: section.title,
+      });
+
+      section.items.forEach((item, itemIndex) => {
+        const isLastItemInSection = itemIndex === section.items.length - 1;
+        const isLastSection = sectionIndex === sections.length - 1;
+
+        rows.push({
+          item,
+          key: `item:${item.path}`,
+          kind: 'item',
+          paddingBottom: isLastItemInSection
+            ? isLastSection
+              ? SETTINGS_LIST_TRAILING_GAP_PX
+              : SETTINGS_SECTION_GAP_PX
+            : SETTINGS_FIELD_GAP_PX,
+        });
+      });
+    });
+
+    return rows;
+  }, [sections]);
+
+  const settingsVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: settingsListRows.length,
+    estimateSize: (index) =>
+      settingsListRows[index]?.kind === 'heading' ? SETTINGS_HEADING_ROW_ESTIMATE_PX : SETTINGS_FIELD_ROW_ESTIMATE_PX,
+    getItemKey: (index) => settingsListRows[index]?.key ?? index,
+    getScrollElement: () => settingsScrollRef.current,
+    overscan: SETTINGS_VIRTUAL_OVERSCAN_ROWS,
+  });
 
   const updateField = React.useCallback(<K extends SettingKey>(key: K, value: SettingsFormState[K]) => {
     setFormState((previous) => ({
@@ -1026,6 +1113,7 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
       }
       main={
         <SplitWorkbenchMainPanel
+          bodyRef={settingsScrollRef}
           header={
             <div className="mx-auto flex min-h-[46px] max-w-4xl items-center justify-between gap-4 pb-1">
               <div className="grid gap-1">
@@ -1072,68 +1160,73 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               ) : null}
 
               {!isLoading && (activeCategoryId !== 'about' || isSearchMode) && sections.length > 0 ? (
-                <div className="grid gap-8 pb-4">
-                  {sections.map((section) => (
-                    <section
-                      key={section.title}
-                      className="grid gap-3"
-                    >
-                      <FormSectionHeading>{section.title}</FormSectionHeading>
-                      <div className="grid gap-5">
-                        {section.items.map((item) => {
-                          const controlId = `settings-control-${item.key}`;
+                <div
+                  className="relative w-full"
+                  style={{ height: settingsVirtualizer.getTotalSize() }}
+                >
+                  {settingsVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = settingsListRows[virtualRow.index];
 
-                          return (
-                            <FormField
-                              key={item.path}
-                              className="group/setting"
-                            >
-                              <div className="flex items-center">
-                                <Label htmlFor={controlId}>{t(item.nameI18nKey)}</Label>
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button
-                                      type="button"
-                                      aria-label={t('settings.itemActions.openMenu')}
-                                      className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
-                                    >
-                                      <SettingsIcon className="h-3.5 w-3.5" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent>
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        ref={settingsVirtualizer.measureElement}
+                        className="absolute left-0 top-0 w-full"
+                        data-index={virtualRow.index}
+                        style={{
+                          paddingBottom: row.paddingBottom,
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {row.kind === 'heading' ? (
+                          <FormSectionHeading>{row.title}</FormSectionHeading>
+                        ) : (
+                          <FormField className="group/setting">
+                            <div className="flex items-center">
+                              <Label htmlFor={`settings-control-${row.item.key}`}>{t(row.item.nameI18nKey)}</Label>
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label={t('settings.itemActions.openMenu')}
+                                    className="flex h-5 w-5 items-center justify-center rounded-md text-home-text-subtle opacity-0 outline-none transition-opacity focus-visible:opacity-100 focus-visible:ring-1 focus-visible:ring-outline group-focus-within/setting:opacity-100 group-hover/setting:opacity-100"
+                                  >
+                                    <SettingsIcon className="h-3.5 w-3.5" />
+                                  </button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent>
+                                  <DropdownMenuItem
+                                    icon={Copy}
+                                    onSelect={() => {
+                                      void copySettingId(row.item.key);
+                                    }}
+                                  >
+                                    {t('settings.itemActions.copyId')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
+                                    icon={RotateCcw}
+                                    onSelect={() => resetSettingToDefault(row.item)}
+                                  >
+                                    {t('settings.itemActions.resetToDefault')}
+                                  </DropdownMenuItem>
+                                  {row.item.control !== 'json' ? (
                                     <DropdownMenuItem
-                                      icon={Copy}
-                                      onSelect={() => {
-                                        void copySettingId(item.key);
-                                      }}
+                                      icon={Settings2}
+                                      onSelect={() => onOpenSettingInEditor?.(row.item.key)}
                                     >
-                                      {t('settings.itemActions.copyId')}
+                                      {t('settings.itemActions.editInSettingsEditor')}
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem
-                                      icon={RotateCcw}
-                                      onSelect={() => resetSettingToDefault(item)}
-                                    >
-                                      {t('settings.itemActions.resetToDefault')}
-                                    </DropdownMenuItem>
-                                    {item.control !== 'json' ? (
-                                      <DropdownMenuItem
-                                        icon={Settings2}
-                                        onSelect={() => onOpenSettingInEditor?.(item.key)}
-                                      >
-                                        {t('settings.itemActions.editInSettingsEditor')}
-                                      </DropdownMenuItem>
-                                    ) : null}
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
-                              </div>
-                              {renderControl(item, controlId)}
-                              <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
-                            </FormField>
-                          );
-                        })}
+                                  ) : null}
+                                </DropdownMenuContent>
+                              </DropdownMenu>
+                            </div>
+                            {renderControl(row.item, `settings-control-${row.item.key}`)}
+                            <div className={formStyles.helperText}>{t(row.item.descriptionI18nKey)}</div>
+                          </FormField>
+                        )}
                       </div>
-                    </section>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : null}
 
