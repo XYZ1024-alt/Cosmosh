@@ -95,6 +95,11 @@ Implementation principles:
 - Current-directory tree positioning uses flattened logical row geometry and preserves the existing upper-third target when the parent/current/expanded-child context does not fit in the viewport.
 - Directory marquee selection resolves intersections from the complete fixed-row model, including unmounted rows reached through edge auto-scroll. Virtualization must not weaken blank-area selection, modifier extension, drag/drop targeting, inline editing, or dirty-preview protection.
 
+### 6.4 Settings Category Navigation
+
+- The Settings page category list uses the shared `SidebarNav` component (`src/components/ui/sidebar-nav.tsx`): a labelled `nav` landmark of full-width buttons whose active entry exposes `aria-current="page"`.
+- The list uses roving focus: `Tab` enters the list once at the active category, `ArrowUp`/`ArrowDown` move focus between categories via the shared directional-navigation hook, and `Enter`/`Space` activate the focused category through native button semantics.
+
 ## 7. Orbit Bar Standard
 
 Terminal text selection interactions in SSH pages must follow these rules:

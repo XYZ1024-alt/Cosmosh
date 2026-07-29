@@ -425,6 +425,7 @@
       "terminal": "Terminal",
       "theme": "Theme"
     },
+    "categoryNavLabel": "Settings categories",
     "databaseSecurity": {
       "close": "Close",
       "description": "Read-only diagnostics for current database encryption bootstrap state.",

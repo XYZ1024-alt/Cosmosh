@@ -43,6 +43,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Menubar } from '../components/ui/menubar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { SidebarNav, type SidebarNavItem } from '../components/ui/sidebar-nav';
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import type { LocalTerminalProfile } from '../lib/api/transport';
@@ -1090,24 +1091,20 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           </div>
 
           <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
-            <div className="">
-              {SETTINGS_CATEGORY_IDS.map((categoryId) => {
-                const category = SETTINGS_CATEGORIES[categoryId];
+            <SidebarNav
+              activeId={activeCategoryId}
+              ariaLabel={t('settings.categoryNavLabel')}
+              items={SETTINGS_CATEGORY_IDS.map((categoryId): SidebarNavItem<SettingsCategoryId> => {
                 const Icon = categoryIconMap[categoryId];
 
-                return (
-                  <Button
-                    key={categoryId}
-                    variant={activeCategoryId === categoryId ? 'default' : 'ghost'}
-                    className="w-full !justify-start"
-                    onClick={() => setActiveCategoryId(categoryId)}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{t(category.labelI18nKey)}</span>
-                  </Button>
-                );
+                return {
+                  icon: <Icon className="h-4 w-4" />,
+                  id: categoryId,
+                  label: t(SETTINGS_CATEGORIES[categoryId].labelI18nKey),
+                };
               })}
-            </div>
+              onSelect={setActiveCategoryId}
+            />
           </div>
         </>
       }

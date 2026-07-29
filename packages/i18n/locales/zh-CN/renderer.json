@@ -425,6 +425,7 @@
       "terminal": "终端",
       "theme": "主题"
     },
+    "categoryNavLabel": "设置分类",
     "databaseSecurity": {
       "close": "关闭",
       "description": "当前数据库加密引导状态的只读诊断信息。",
