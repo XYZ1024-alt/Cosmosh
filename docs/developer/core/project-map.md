@@ -54,6 +54,7 @@ flowchart TB
   - `src/security/database-encryption.ts`: DB path/key handling helpers, including development profile database overrides.
   - `src/dev/dev-profile.ts`: development-only profile activation that maps selected profiles to Electron `userData`, SQLite, and backend secret storage paths before startup.
   - `src/dev/backend-runtime.ts`: validation boundary for the system Node executable used by Main's development backend child.
+  - `src/dev/react-devtools.ts`: non-fatal development-only React DevTools installer, loaded lazily before the renderer page.
   - `resources/installer.nsh`: Windows NSIS installer extensions, including assisted option pages, shell/terminal registration hooks, uninstall data cleanup, and installer DPI manifest settings.
   - `resources/helpers`: packaged OS helpers, including the macOS NSWorkspace SFTP Open With helper source/binary.
   - `resources/remote-bootstrap/manifest-url.json`: git-ignored CI packaging resource that records the default Remote Enhancements manifest URL for packaged backend startup when a release or `main` build provides one.
@@ -62,7 +63,7 @@ flowchart TB
   - `scripts/dev-preflight.cjs`: incremental development build check for API contract and i18n outputs.
   - `scripts/ensure-sqlcipher-native.cjs`: target-aware SQLCipher native ABI probe and rebuild path for system Node development and Electron packaging.
   - `scripts/write-remote-bootstrap-manifest-url.cjs`: CI packaging helper that writes the packaged Remote Enhancements manifest URL resource when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is set, and removes any stale ignored resource when it is not set.
-  - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded by Main in development runs; it reads the renderer mirror cache and does not alter backend transport.
+  - `devtools/request-trace-panel`: unpacked development-only DevTools extension loaded alongside React DevTools by Main; it reads the renderer mirror cache and does not alter backend transport.
 
 ### `packages/renderer`
 
