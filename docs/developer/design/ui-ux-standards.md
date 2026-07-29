@@ -29,7 +29,7 @@ Rules:
 - Keep typography compact, readable, and consistent across controls and content areas.
 - Preserve a stable body/control baseline and avoid arbitrary size jumps between adjacent components.
 - Use clear hierarchy for titles, labels, helper text, and status messages.
-- Shared form labels use the semantic `color.form.text.label` tier between primary form text and `color.form.text.muted`; helper and description text stay muted.
+- Shared form labels use the semantic `font.size.form.label` size (`0.8rem`) and the `color.form.text.label` tier between primary form text and `color.form.text.muted`. Registry-driven Settings descriptions use `color.form.text.muted` at 80% opacity so they stay subordinate to the compact labels; other helper text stays muted.
 - Second-level headings inside form sections use the shared `FormSectionHeading` primitive (`formStyles.sectionHeading`): 15 px, semibold, and the primary `color.text` token. Settings, SSH server, and SSH keychain editors must consume this primitive instead of restyling section headings locally.
 
 ## 4. Radius Logic

@@ -29,7 +29,7 @@ flowchart LR
 - 字体应保持紧凑、可读，并在各类控件和内容区间保持一致。
 - 正文与控件字号基线应稳定，避免相邻组件出现突兀跳变。
 - 标题、标签、辅助文案、状态信息需要明确层级。
-- 共享表单标签使用位于主表单文本与 `color.form.text.muted` 之间的语义色阶 `color.form.text.label`，辅助说明与描述文本继续使用弱化色。
+- 共享表单标签使用语义字号 `font.size.form.label`（`0.8rem`），并使用位于主表单文本与 `color.form.text.muted` 之间的语义色阶 `color.form.text.label`。注册表驱动的 Settings 描述使用 80% 不透明度的 `color.form.text.muted`，以保持低于紧凑标签的视觉层级；其他辅助说明继续使用弱化色。
 - 表单分组内的二级标题使用共享 `FormSectionHeading` 原语（`formStyles.sectionHeading`）：15 px、半粗字重和主文本 `color.text` token。Settings、SSH 服务器与 SSH Keychain 编辑器必须复用该原语，不得在页面内重复定义分组标题样式。
 
 ## 4. 圆角逻辑
