@@ -232,6 +232,12 @@ flowchart LR
 - 重试严格绑定到当前 tab 最近一次成功解析的目标快照，不会重新读取全局“当前选择”。
 - 若首次连接在快照落库前失败，手动重试会回退到该 tab 的最新 intent 重新解析。
 - 每次连接都有 attempt identity（`attemptId`），并带有过期结果丢弃与可取消的连接前异步流程。
+- Pane 在重连时保留原 xterm 实例、已加载 addon、renderer、尺寸与事件监听器，但替换 backend PTY 会形成明确的 terminal-emulator session 边界。Renderer 会先让旧 attempt 失效，关闭旧 WebSocket/backend session，排空旧会话排队 write，再通过带有 `excludeAltBuffer` 与 `excludeModes` 的 `SerializeAddon` 捕获 normal buffer，然后才创建下一条 backend session。
+- 有序边界会确认当前 attempt 仍拥有 pane，清理 pane reducer 状态、命令 marker/时间线与自动补全 bookkeeping，再用一个本地 xterm 输出 chunk 依次写入 CAN + RIS、安全 normal-buffer snapshot、SGR reset 与分隔换行。之所以不直接调用同步的 `Terminal.reset()`，是因为 xterm 6 的该 JavaScript API 不会清除排队 write，也不会清除未完成的 parser 序列。Reset 字节与 snapshot 绝不会进入 `onData`、WebSocket 或 backend PTY。
+- Session-boundary reset 会让 xterm 回到 normal buffer，在不恢复 alternate buffer 的前提下重建保留的文本/样式 scrollback，清除选区/decoration，重置 parser 状态以及 application cursor keys、mouse tracking、bracketed paste、insert、origin 等 session-local VT mode；terminal options、行列尺寸、addon、WebGL attachment 以及已注册的事件/parser handler 保持不变。Inline image、命令 marker/时间线、选区与 alternate-buffer 内容明确属于旧 session，不会恢复。
+- 如果 normal-buffer 序列化失败，renderer 会记录失败并继续执行干净 reset，而不会阻塞重连；历史保留采用 best-effort 语义，PTY 恢复仍保持可用。
+- Cosmosh 替换本地终端 PTY 时采用相同边界：SSH 与本地 PTY 都是独立会话，即使它们共享 renderer controller。首次连接使用新建的 xterm，不执行 reset。
+- Primary 与 secondary pane 都用各自的 attempt identity 约束 reset 与新 session 创建。Reset 与历史回放共用同一个有序 xterm write，因此 capture 后才被替代的 attempt 不会让后继 attempt 看到空白或只恢复一部分的 buffer。过期 attempt 不能接入延迟返回的 WebSocket/session；延迟结果会被显式关闭。
 - 隐藏 tab 不会触发新的连接副作用，只有 active tab 允许发起连接。
 - 启用 `sshReconnectOnFocus` 后，重新激活标签页会重连所有没有 connecting/open socket 的失败 pane。延迟创建标签页第一次激活时始终启动 primary pane，不受该偏好开关影响。
 - 当前尚未实现自动指数退避重连。

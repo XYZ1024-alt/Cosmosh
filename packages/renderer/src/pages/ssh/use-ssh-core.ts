@@ -806,6 +806,7 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
     autocompleteMenuRef,
     acceptAutocompleteAtIndex,
     applyAutocompleteInputData,
+    resetAutocompletePaneState,
     notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     scheduleAutocompleteRequestRef,
@@ -864,9 +865,10 @@ export const useSshCore = (params: UseSshCoreParams): UseSshCoreResult => {
       if (paneRuntime) {
         clearTerminalCommandMarkers(paneRuntime);
       }
+      resetAutocompletePaneState(paneId);
       dispatchPaneState({ type: 'reset-pane', paneId });
     },
-    [dispatchPaneState, paneRuntimeMapRef],
+    [dispatchPaneState, paneRuntimeMapRef, resetAutocompletePaneState],
   );
 
   /**

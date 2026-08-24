@@ -1,3 +1,4 @@
+import type { SerializeAddon } from '@xterm/addon-serialize';
 import type { ITerminalOptions, Terminal } from '@xterm/xterm';
 
 import type { ClientOutboundMessage, TerminalPaneRuntime, TerminalSelectionSettings } from './ssh-types';
@@ -23,6 +24,14 @@ const TERMINAL_MULTILINE_PATTERN = /\r\n|\n|\r/;
 const TERMINAL_ESCAPE_CODE_POINT = 0x1b;
 /** ASCII bell byte used by OSC terminators and audible/visual alerts. */
 const TERMINAL_BELL_CODE_POINT = 0x07;
+/** CAN exits any incomplete VT parser sequence without producing terminal input. */
+const TERMINAL_CANCEL_SEQUENCE = '\x18';
+/** RIS asks xterm to reset its parser, buffers, modes, selection, and decorations in input order. */
+const TERMINAL_FULL_RESET_SEQUENCE = '\x1bc';
+/** SGR 0 prevents the restored display snapshot from styling output from the replacement PTY. */
+const TERMINAL_GRAPHIC_RENDITION_RESET_SEQUENCE = '\x1b[0m';
+/** Keeps replacement PTY output visually separate from the restored previous-session cursor. */
+const TERMINAL_HISTORY_REPLAY_SEPARATOR = '\r\n';
 
 export type TerminalPasteWarningReason = 'multiLine' | 'largeText' | 'controlCharacters';
 
@@ -88,6 +97,59 @@ export const shouldReconnectTerminalPaneOnActivation = (input: TerminalPaneActiv
   }
 
   return input.reconnectOnFocus && input.connectionState === 'failed';
+};
+
+/**
+ * Resets xterm at a backend PTY session boundary while restoring safe normal-buffer history.
+ *
+ * xterm's JavaScript `reset()` API is synchronous and intentionally leaves queued input and
+ * parser state intact. Writing CAN followed by RIS through the emulator's output path first
+ * cancels an incomplete OSC/DCS/CSI sequence, then performs the full reset in parser order. The
+ * normal buffer is serialized without alternate-buffer content or terminal modes and replayed in
+ * the same ordered write so a superseding attempt cannot observe a partially restored display.
+ * These bytes and the display snapshot are written only to the local xterm emulator and never
+ * reach the backend PTY.
+ *
+ * @param terminal Public xterm surface required for ordered output and scrollback configuration.
+ * @param serializeAddon Existing pane-local addon used to capture bounded normal-buffer history.
+ * @param isCurrentAttempt Returns whether the reconnect attempt still owns the pane.
+ * @param releaseSessionState Clears pane-local state after old write callbacks have drained.
+ * @returns Whether this attempt applied the session-boundary reset.
+ */
+export const resetTerminalForNewPtySession = async (
+  terminal: Pick<Terminal, 'options' | 'write'>,
+  serializeAddon: Pick<SerializeAddon, 'serialize'>,
+  isCurrentAttempt: () => boolean,
+  releaseSessionState: () => void,
+): Promise<boolean> => {
+  await new Promise<void>((resolve) => {
+    terminal.write('', resolve);
+  });
+
+  if (!isCurrentAttempt()) {
+    return false;
+  }
+
+  let normalBufferHistory = '';
+  try {
+    normalBufferHistory = serializeAddon.serialize({
+      excludeAltBuffer: true,
+      excludeModes: true,
+      scrollback: terminal.options.scrollback,
+    });
+  } catch (error: unknown) {
+    console.warn('[terminal][session-boundary] Failed to preserve normal-buffer history.', error);
+  }
+
+  releaseSessionState();
+  const historyReplay = normalBufferHistory
+    ? `${normalBufferHistory}${TERMINAL_GRAPHIC_RENDITION_RESET_SEQUENCE}${TERMINAL_HISTORY_REPLAY_SEPARATOR}`
+    : '';
+  await new Promise<void>((resolve) => {
+    terminal.write(`${TERMINAL_CANCEL_SEQUENCE}${TERMINAL_FULL_RESET_SEQUENCE}${historyReplay}`, resolve);
+  });
+
+  return isCurrentAttempt();
 };
 
 /**

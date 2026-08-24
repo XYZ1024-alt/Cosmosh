@@ -7,7 +7,12 @@ import { t } from '../../lib/i18n';
 import { clearTerminalCommandMarkers } from './ssh-command-markers';
 import { openTerminalSessionSocket } from './ssh-session-connectors';
 import type { ResolvedTerminalTarget, ServerInboundMessage, TerminalPaneRuntime } from './ssh-types';
-import { applyTerminalRuntimeOptions, reconcileSecondaryPaneRuntimes, sendClientMessage } from './ssh-utils';
+import {
+  applyTerminalRuntimeOptions,
+  reconcileSecondaryPaneRuntimes,
+  resetTerminalForNewPtySession,
+  sendClientMessage,
+} from './ssh-utils';
 import {
   createTerminalInstance,
   loadTerminalAddons,
@@ -197,6 +202,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
       refreshCommandTimeline();
       let disposed = false;
       let connectAttemptId = 0;
+      let hasCreatedPtySession = false;
 
       /**
        * Refreshes declarative timeline geometry only while this pane owns markers.
@@ -354,11 +360,24 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
 
         connectAttemptId += 1;
         const attemptId = connectAttemptId;
+        const shouldResetTerminal = hasCreatedPtySession;
         closeRuntimeSession();
         resetPaneState(paneId);
         setPaneTransportState(paneId, 'connecting');
 
         try {
+          if (shouldResetTerminal) {
+            const didResetTerminal = await resetTerminalForNewPtySession(
+              terminal,
+              serializeAddon,
+              () => !disposed && attemptId === connectAttemptId,
+              () => resetPaneState(paneId),
+            );
+            if (!didResetTerminal || disposed || attemptId !== connectAttemptId) {
+              return;
+            }
+          }
+
           const target = resolvedTerminalTargetRef.current;
           if (!target) {
             setPaneTransportState(paneId, 'failed', t('ssh.sessionInitFailed'));
@@ -397,6 +416,7 @@ export const useSshMirrorPanes = (params: UseSshMirrorPanesParams): void => {
             return;
           }
 
+          hasCreatedPtySession = true;
           runtime.sessionType = openedSession.sessionType;
           runtime.sessionId = openedSession.sessionId;
           const socket = openedSession.socket;
