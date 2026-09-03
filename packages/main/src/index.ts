@@ -42,6 +42,7 @@ import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-tar
 import {
   cleanupSftpTemporaryRoot,
   createPrivateSftpTemporaryRoot,
+  ensurePrivateSftpTemporaryRoot,
   SFTP_TEMP_ROOT_ENV_NAME,
 } from './ipc/sftp-temporary-root';
 import { RendererCloseConfirmationBroker } from './renderer-close-confirmation';
@@ -644,6 +645,7 @@ const stopBackendService = async (origin: string): Promise<void> => {
  */
 const resolveSftpTemporaryRootPath = async (): Promise<string> => {
   if (sftpTemporaryRootPath) {
+    sftpTemporaryRootPath = await ensurePrivateSftpTemporaryRoot(sftpTemporaryRootPath);
     return sftpTemporaryRootPath;
   }
 

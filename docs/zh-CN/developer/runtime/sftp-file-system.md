@@ -285,7 +285,7 @@ SFTP 使用与 SSH 相同的服务器、钥匙链、凭据解密与 host fingerp
 - 普通 SFTP 路径通过结构化 API payload 传递，不通过 shell 命令执行。远端归档是窄范围例外：仅 backend 代码把已校验结构化路径转换为固定 POSIX 模板；renderer/preload 契约不传递任何 shell 字符串或 flag。
 - 内部拖拽 payload 是 renderer 本地结构化数据，并包含源 SFTP `sessionId`；目录 drop target 只接受与当前标签页会话匹配的 payload。
 - 本地保存目标由 main/preload 选择或解析，并作为显式路径传给 backend；renderer 不接收文件系统写入能力。
-- Main 在 Electron 临时目录下用 `mkdtemp` 创建每次运行独有的 SFTP 临时根目录。Main 通过 `lstat` 和 `realpath` 校验根目录，拒绝符号链接根目录，在 POSIX 平台上为根目录、子临时目录和暂存文件使用私有权限位，然后通过 `COSMOSH_SFTP_TEMP_ROOT` 把 canonical root 传给 backend。Backend 在 POSIX 平台上遇到缺失、符号链接、非目录或非私有权限的 root 时会拒绝启动。
+- Main 在 Electron 临时目录下用 `mkdtemp` 创建每次运行独有的 SFTP 临时根目录。Main 通过 `lstat` 和 `realpath` 校验根目录，拒绝符号链接根目录，在 POSIX 平台上为根目录、子临时目录和暂存文件使用私有权限位，然后通过 `COSMOSH_SFTP_TEMP_ROOT` 把 canonical root 传给 backend。Main 会在创建每个隔离上传/下载目录前重新校验根目录；如果操作系统或外部临时文件清理器删除了它，Main 会在同一 canonical 路径恢复目录并重试一次，从而保留 Backend 已持有的路径，并让并发恢复保持幂等。若该路径已被替换为非目录、符号链接、会改变 canonical 路径的目录或非私有目录，则继续作为硬错误处理，绝不删除或复用。Backend 重启会执行同样的重新校验；Backend 在 POSIX 平台上遇到缺失、符号链接、非目录或非私有权限的 root 时会拒绝启动。
 - 本地系统打开动作仅允许 canonical Main-owned SFTP 临时根目录下的路径。Main 会归一化候选路径，确认其仍位于该根目录内，通过 `lstat` 拒绝符号链接，确认 canonical `realpath` 仍位于根目录内，并在调用 `shell.openPath`、Windows `openas` 或 macOS helper 前检查它是已存在的文件。
 - 打开方式的子进程命令必须在 spawn 前完成绝对路径解析与校验。Windows 主路径与 fallback 系统命令/库会分别通过内核所有的 SystemRoot 命名空间锚定，必须保持在 canonical System32 内，并在不含命令搜索环境变量的环境中运行；可信 PowerShell 查询可用时，Shell handler 路径变量来自 Windows known-folder API 而不是继承的环境值，但 fallback 是否可达不依赖这次查询。macOS 打包态不会查询 `__dirname`、`process.cwd()`、仓库源码或 Swift 解释器；打包 helper 缺失或非法时会明确失败，而不会回退到开发路径。
 - SFTP 临时文件监听使用同一套临时根目录校验，并归属于发起监听的 renderer webContents。标签页运行时重置、renderer 销毁或 renderer 显式停止监听时，watcher 会被关闭。

@@ -35,6 +35,7 @@ flowchart LR
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
+- 持有与 Backend 共享的 canonical 每次运行 SFTP 临时根目录。Main 会在创建每个隔离传输目录前以及重启 Backend 前重新校验该根目录；如果外部临时文件清理删除了它，Main 会以私有权限在同一 canonical 路径恢复目录，使 Backend 环境契约继续有效。若该路径被替换为非目录、符号链接或非私有目录，仍会 fail closed。
 - 持有窗口/应用关闭守卫。Main 会阻止首次关闭，查询 backend 持有的 SSH/SFTP 注册表，将确认界面委托给 renderer，并且仅在不存在活动连接或用户明确确认中断后继续关闭。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
