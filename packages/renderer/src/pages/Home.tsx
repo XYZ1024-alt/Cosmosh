@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
+import EditorCloseConfirmationDialog from '../components/EditorCloseConfirmationDialog';
 import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
 import EntityIcon from '../components/home/EntityIcon';
@@ -109,6 +110,7 @@ import {
   updateSshKeychain,
   updateSshServer,
 } from '../lib/backend';
+import { hasUnsavedEditorChanges } from '../lib/editor-draft';
 import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } from '../lib/entity-visuals';
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
 import { groupHomeItemsByFolder } from '../lib/home-grouping';
@@ -137,6 +139,7 @@ import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
+import { useEditorCloseGuard } from '../lib/use-editor-close-guard';
 import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
 import type { HomeState, TabIconKey } from '../types/tabs';
@@ -1192,20 +1195,32 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   onFormStateChange,
   onSubmit,
 }) => {
+  const initialFormStateRef = React.useRef<PortForwardRuleFormState>(formState);
+  const dirtyFieldKeysRef = React.useRef<Set<keyof PortForwardRuleFormState>>(new Set());
+
   const updateField = React.useCallback(
     <Key extends keyof PortForwardRuleFormState>(key: Key, value: PortForwardRuleFormState[Key]) => {
+      dirtyFieldKeysRef.current.add(key);
       onFormStateChange({ ...formState, [key]: value });
     },
     [formState, onFormStateChange],
   );
   const shouldShowLocalRiskWarning = formState.type !== 'remote' && !isTrustedLocalBindHost(formState.localBindHost);
+  const hasUnsavedChanges = hasUnsavedEditorChanges(initialFormStateRef.current, formState, dirtyFieldKeysRef.current);
+  const closeGuard = useEditorCloseGuard({
+    open,
+    hasUnsavedChanges,
+    isSubmitting,
+    onOpenChange,
+  });
 
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={closeGuard.requestOpenChange}
     >
       <DialogContent
+        showCloseButton={!isSubmitting}
         className="max-w-[640px]"
         onExitComplete={onExitComplete}
       >
@@ -1358,7 +1373,12 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <DialogSecondaryButton onClick={() => onOpenChange(false)}>{t('home.actionCancel')}</DialogSecondaryButton>
+          <DialogSecondaryButton
+            disabled={isSubmitting}
+            onClick={() => closeGuard.requestOpenChange(false)}
+          >
+            {t('home.actionCancel')}
+          </DialogSecondaryButton>
           <DialogPrimaryButton
             disabled={isSubmitting || servers.length === 0}
             onClick={() => onSubmit()}
@@ -1367,6 +1387,11 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
           </DialogPrimaryButton>
         </DialogFooter>
       </DialogContent>
+      <EditorCloseConfirmationDialog
+        open={closeGuard.isConfirmationOpen}
+        onOpenChange={closeGuard.onConfirmationOpenChange}
+        onConfirm={closeGuard.confirmClose}
+      />
     </Dialog>
   );
 };
@@ -1425,6 +1450,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
+  const portForwardRuleEditorSessionRef = React.useRef<number>(0);
   const pendingInitialPortForwardRuleIdRef = React.useRef<string | null>(
     initialState?.initialPortForwardRuleId ?? null,
   );
@@ -2588,6 +2614,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   }, [activeFolderId, notifyError, notifySuccess, openCreateKeychainDialog, quickFilter]);
 
   const openCreatePortForwardRuleDialog = React.useCallback(() => {
+    portForwardRuleEditorSessionRef.current += 1;
     setActivePortForwardRuleDraft(null);
     setPortForwardRuleDialogMode('create');
     setPortForwardRuleFormState(createDefaultPortForwardRuleFormState(servers));
@@ -2601,6 +2628,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         return;
       }
 
+      portForwardRuleEditorSessionRef.current += 1;
       setActivePortForwardRuleDraft(rule);
       setPortForwardRuleDialogMode('edit');
       setPortForwardRuleFormState(createPortForwardRuleFormStateFromRule(rule));
@@ -3522,6 +3550,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       />
 
       <PortForwardRuleDialog
+        key={portForwardRuleEditorSessionRef.current}
         open={isPortForwardRuleDialogOpen}
         mode={portForwardRuleDialogMode}
         formState={portForwardRuleFormState}

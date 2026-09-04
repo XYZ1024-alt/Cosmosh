@@ -136,6 +136,12 @@
   "common": {
     "click": "点击"
   },
+  "editorCloseConfirmation": {
+    "cancel": "取消",
+    "confirm": "退出",
+    "description": "退出后当前未保存的设置将丢失。",
+    "title": "退出编辑"
+  },
   "header": {
     "about": "关于",
     "avatarAlt": "用户头像",

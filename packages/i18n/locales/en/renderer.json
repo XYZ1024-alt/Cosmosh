@@ -136,6 +136,12 @@
   "common": {
     "click": "Click"
   },
+  "editorCloseConfirmation": {
+    "cancel": "Cancel",
+    "confirm": "Exit",
+    "description": "Your current unsaved settings will be lost after you exit.",
+    "title": "Exit editing"
+  },
   "header": {
     "about": "About",
     "avatarAlt": "User Avatar",

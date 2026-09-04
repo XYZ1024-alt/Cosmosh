@@ -3,6 +3,7 @@ import { FileUp, RefreshCcw } from 'lucide-react';
 import React from 'react';
 
 import { listSshKeychains, listSshTags } from '../../lib/backend';
+import { hasUnsavedEditorChanges } from '../../lib/editor-draft';
 import { t } from '../../lib/i18n';
 import { mergeKeychainListItems, upsertKeychainListItem } from '../../lib/ssh-keychain-editor-shared';
 import { createPrivateKeyImportContextMenuItems, importPrivateKeyFromFile } from '../../lib/ssh-private-key-import';
@@ -22,8 +23,10 @@ import {
 } from '../../lib/ssh-server-editor-shared';
 import { useToast } from '../../lib/toast-context';
 import { useCreateFolderDialog } from '../../lib/use-create-folder-dialog';
+import { useEditorCloseGuard } from '../../lib/use-editor-close-guard';
 import { useKeychainEditorDialogState } from '../../lib/use-keychain-editor-dialog-state';
 import { useKeychainCredentials, useServerCredentialsRefresh } from '../../lib/use-server-credentials';
+import EditorCloseConfirmationDialog from '../EditorCloseConfirmationDialog';
 import CreateFolderDialog from '../home/CreateFolderDialog';
 import {
   Dialog,
@@ -78,6 +81,8 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
   const stableServerIdRef = React.useRef<string | null>(serverId);
   const initializedEditorTargetRef = React.useRef<string | null | undefined>(undefined);
   const formStateRef = React.useRef<ServerEditorFormState>(formState);
+  const initialFormStateRef = React.useRef<ServerEditorFormState>(formState);
+  const dirtyFieldKeysRef = React.useRef<Set<keyof ServerEditorFormState>>(new Set());
   const credentialsCacheRef = React.useRef<Record<string, ServerCredentialCache>>({});
   const savedKeychainsRef = React.useRef<SshKeychainListItem[]>([]);
   const displayServerId = open ? serverId : stableServerIdRef.current;
@@ -106,6 +111,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     if (!open) {
       initializedEditorTargetRef.current = undefined;
       savedKeychainsRef.current = [];
+      dirtyFieldKeysRef.current = new Set();
       return;
     }
 
@@ -129,10 +135,13 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
         return;
       }
 
-      setFormState({
+      const nextFormState = {
         ...mapServerToFormState(targetServer),
         ...(credentialsCacheRef.current[serverId] ?? {}),
-      });
+      };
+      initialFormStateRef.current = nextFormState;
+      dirtyFieldKeysRef.current = new Set();
+      setFormState(nextFormState);
       return;
     }
 
@@ -140,6 +149,8 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     if (initialFolderId) {
       nextFormState.folderId = initialFolderId;
     }
+    initialFormStateRef.current = nextFormState;
+    dirtyFieldKeysRef.current = new Set();
     setFormState(nextFormState);
   }, [defaultServerNoteTemplate, folders, initialFolderId, notifyWarning, onOpenChange, open, serverId, servers]);
 
@@ -182,6 +193,10 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
       }
 
       credentialsCacheRef.current[serverId] = nextCredentials;
+      initialFormStateRef.current = {
+        ...initialFormStateRef.current,
+        ...nextCredentials,
+      };
       setFormState((previous) => ({
         ...previous,
         ...nextCredentials,
@@ -251,6 +266,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
 
   const onChangeForm = React.useCallback(
     <K extends keyof ServerEditorFormState>(key: K, value: ServerEditorFormState[K]) => {
+      dirtyFieldKeysRef.current.add(key);
       setFormState((previous) => ({
         ...previous,
         [key]: value,
@@ -397,17 +413,19 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
     ],
   );
 
+  const hasUnsavedChanges = hasUnsavedEditorChanges(initialFormStateRef.current, formState, dirtyFieldKeysRef.current);
+  const closeGuard = useEditorCloseGuard({
+    open,
+    hasUnsavedChanges,
+    isSubmitting,
+    onOpenChange,
+  });
+
   return (
     <>
       <Dialog
         open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen && isSubmitting) {
-            return;
-          }
-
-          onOpenChange(nextOpen);
-        }}
+        onOpenChange={closeGuard.requestOpenChange}
       >
         <DialogContent
           showCloseButton={!isSubmitting}
@@ -457,7 +475,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           <DialogFooter className="border-t border-dialog-border">
             <DialogSecondaryButton
               disabled={isSubmitting}
-              onClick={() => onOpenChange(false)}
+              onClick={() => closeGuard.requestOpenChange(false)}
             >
               {t('home.actionCancel')}
             </DialogSecondaryButton>
@@ -477,6 +495,12 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EditorCloseConfirmationDialog
+        open={closeGuard.isConfirmationOpen}
+        onOpenChange={closeGuard.onConfirmationOpenChange}
+        onConfirm={closeGuard.confirmClose}
+      />
 
       <SSHKeychainEditorDialog
         open={isKeychainEditorDialogOpen}

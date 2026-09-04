@@ -101,6 +101,7 @@ Implementation principles:
 - The list uses roving focus: `Tab` enters the list once at the active category, `ArrowUp`/`ArrowDown` move focus between categories via the shared directional-navigation hook, and `Enter`/`Space` activate the focused category through native button semantics.
 - The SSH server editor reuses `SplitWorkbenchLayout`, `SplitWorkbenchMainPanel`, and `SidebarNav` for its Information, Connection, Enhancements, and Advanced surfaces. Category changes reset the right content pane to the top without replacing the current form draft.
 - Information contains identity and classification controls. Connection contains host details and authentication, with username and keychain controls on separate rows. Classification also places folder and tag controls on separate rows. Enhancements contains terminal enhancements and clipboard permissions. Advanced contains proxy, host-key verification, character-width compatibility, and transport compression. The compact editor omits a duplicate current-category heading above the content pane and uses a 175 px navigation sidebar. The dialog title aligns with the leading edge of the sidebar item icons.
+- Server, port-forwarding, and keychain create/edit dialogs must guard every user-triggered close path when the current draft differs from its opening state. The shared warning keeps the editor open until the user cancels or explicitly confirms that the unsaved settings may be discarded; a successful save closes directly without showing the warning.
 
 ## 7. Orbit Bar Standard
 

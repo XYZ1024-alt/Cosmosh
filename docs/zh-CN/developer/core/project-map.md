@@ -73,11 +73,11 @@ flowchart TB
   - `src/pages/ssh`：SSH 终端 controller 与纯运行时 helper。`use-ssh-core.ts` 编排 pane 路由；primary/secondary hook 分别持有独立 session 资源；`ssh-pane-state.ts` 归并全部 pane 级 transport/helper 消息；`ssh-command-markers.ts` 负责待确认/已确认 xterm marker 生命周期与 pane-local 命令时间线模型；`TerminalCommandTimeline.tsx` 渲染可信的右侧命令轨道。
   - `src/pages/sftp`：SFTP 页面子模块。`SFTP.tsx` 保持为 tab 级编排入口；该目录负责浏览器式 UI 编排、动作/拖拽菜单、目录/树/详情面板、归档 Dialog 与归档任务轮询、固定行虚拟化辅助函数与测试，以及 prompt、偏好设置、选择模型、键盘快捷键、拖拽、预览动作、renderer 并发/串行任务通道、失败注意状态、字节进度展示等 controller hooks 和共享 SFTP 辅助函数。`src/lib/api/sftp-task-runtime.ts`负责 typed client wrapper 使用的固定接纳 session 任务轮询。
   - `src/pages/settings-editor`：基于 CodeMirror 的设置 JSON 编辑器模块，包含 schema 诊断、补全、悬浮详情与编辑器生命周期封装。
-  - `src/components/CloseWindowConfirmationDialog.tsx`：为 Main 持有的活动会话关闭决策提供共享 Renderer `Dialog` 界面。
+  - `src/components/CloseWindowConfirmationDialog.tsx`与`src/components/EditorCloseConfirmationDialog.tsx`：分别为 Main 持有的活动会话关闭决策与未保存编辑草稿提供共享 Renderer 确认界面。
   - `src/components/ui`：基于 Radix 的原子组件封装、可复用侧边栏导航（`SidebarNav`）、可复用查找/替换面板、CodeMirror 文本右键菜单与样式契约。
   - `src/components/home`：Home/SSH 共享实体模块（卡片/图标渲染、基于 TanStack Virtual 的视觉编辑器、可复用的创建文件夹弹窗）。
   - `src/components/terminal`：终端交互复合组件（右键菜单、选区工具条、自动补全面板）。
-  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与查找/替换 adapter，以及工具抽象（含共享实体视觉工具、Home 文件夹分组与创建文件夹 Hook）。
+  - `src/lib`：后端传输、i18n、设置启动应用（`app-settings.ts`）、renderer 请求 trace 镜像启动逻辑（`backend-request-trace-mirror.ts`）、共享时间显示格式化工具（`date-time-format.ts`）、共享 CodeMirror 语法高亮与查找/替换 adapter，以及工具抽象（含编辑草稿/关闭守卫、共享实体视觉工具、Home 文件夹分组与创建文件夹 Hook）。
   - `theme`：生成 CSS Variables 的令牌源。
 
 ### `packages/backend`
