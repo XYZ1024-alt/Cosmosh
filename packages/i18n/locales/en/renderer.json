@@ -136,6 +136,12 @@
   "common": {
     "click": "Click"
   },
+  "editorCloseConfirmation": {
+    "cancel": "Cancel",
+    "confirm": "Exit",
+    "description": "Your current unsaved settings will be lost after you exit.",
+    "title": "Exit editing"
+  },
   "header": {
     "about": "About",
     "avatarAlt": "User Avatar",
@@ -209,11 +215,13 @@
     "groupFolders": "Folders",
     "groupLocalTerminals": "Local Terminals",
     "groupModeAction": "Group By",
+    "groupModeFolder": "Folder",
     "groupModeForwardingType": "Forwarding Type",
     "groupModeLastUsed": "Last Used Time",
     "groupModeNone": "Ungrouped",
     "groupModeStatus": "Status",
     "groupModeTag": "Tag",
+    "groupNoFolder": "No Folder",
     "groupRecentConnections": "Recent Connections",
     "groupRecentlyUpdatedKeychains": "Recently Updated",
     "groupUntitled": "Group Name",
@@ -308,6 +316,64 @@
     "selectAll": "Select All",
     "undo": "Undo"
   },
+  "oobe": {
+    "actions": {
+      "back": "Back",
+      "next": "Next",
+      "start": "Start Using Cosmosh"
+    },
+    "dialogDescription": "Set up the essential Cosmosh preferences before opening the workspace.",
+    "dialogTitle": "Welcome to Cosmosh",
+    "errors": {
+      "openResourceFailed": "The selected resource could not be opened.",
+      "persistCompletionFailed": "Cosmosh could not record that setup is complete. Check app storage access and try again.",
+      "saveFailed": "Cosmosh could not save your setup. Try again."
+    },
+    "languageMenu": {
+      "label": "Choose language"
+    },
+    "personalize": {
+      "description": "Choose the defaults that shape your terminal workspace. You can change every option later.",
+      "settingsHint": "You can change these options later in Settings.",
+      "title": "Customize Your Cosmosh Experience"
+    },
+    "ready": {
+      "description": "Your workspace is ready. These resources can help you take the next step.",
+      "resources": {
+        "guide": {
+          "description": "Learn the core server, terminal, and file workflows.",
+          "title": "User Guide"
+        },
+        "openSource": {
+          "description": "Explore the source, report issues, and contribute on GitHub.",
+          "title": "Cosmosh Is Open Source"
+        },
+        "website": {
+          "description": "Visit the official Cosmosh website for project updates.",
+          "title": "Official Website"
+        }
+      },
+      "title": "Setup Complete"
+    },
+    "welcome": {
+      "features": {
+        "performance": {
+          "description": "A high-performance, professional-grade SSH and terminal client built for daily work.",
+          "title": "Fast, Focused Terminal Work"
+        },
+        "workflow": {
+          "description": "Move naturally between SSH sessions and integrated SFTP file workflows.",
+          "title": "SSH and SFTP Together"
+        },
+        "workspace": {
+          "description": "Organize servers, long-running tabs, and power-user tools in one precise workspace.",
+          "title": "A Workspace for Power Users"
+        }
+      },
+      "subtitle": "A professional SSH and SFTP workspace built for focused remote work.",
+      "title": "Welcome to Cosmosh"
+    }
+  },
   "searchReplace": {
     "close": "Close",
     "currentMatch": "{current} of {total}",
@@ -365,6 +431,7 @@
       "terminal": "Terminal",
       "theme": "Theme"
     },
+    "categoryNavLabel": "Settings categories",
     "databaseSecurity": {
       "close": "Close",
       "description": "Read-only diagnostics for current database encryption bootstrap state.",
@@ -397,6 +464,9 @@
     "disabled": "Disabled",
     "enabled": "Enabled",
     "itemActions": {
+      "copyId": "Copy Setting ID",
+      "copyIdFailed": "Failed to copy setting ID.",
+      "copyIdSuccess": "Setting ID copied.",
       "editInSettingsEditor": "Edit in Settings Editor",
       "openMenu": "Open setting actions",
       "resetToDefault": "Reset to Default"
@@ -1466,9 +1536,13 @@
     "saveServerFailed": "Failed to save server.",
     "saving": "Saving...",
     "sectionAuthentication": "Authentication",
-    "sectionBasicConnection": "Basic Connection",
+    "sectionClipboardPermissions": "Clipboard Permissions",
+    "sectionCompatibility": "Compatibility",
+    "sectionProxy": "Proxy",
     "sectionSecurity": "Security",
-    "sectionSettings": "Settings",
+    "sectionSettings": "Classification",
+    "sectionTerminalEnhancements": "Terminal Enhancements",
+    "sectionTransport": "Transport",
     "selectionBarAskAiComingSoon": "Ask AI is coming soon.",
     "selectionBarAskAiLabel": "Ask AI",
     "selectionBarClose": "Close Orbit Bar",
@@ -1488,6 +1562,13 @@
     "selectionBarSearch": "Search selected text online",
     "selectionBarSearchFailed": "Failed to open browser search.",
     "serverCreatedSuccessfully": "Server created.",
+    "serverEditorCategories": {
+      "advanced": "Advanced",
+      "connection": "Connection",
+      "enhancements": "Enhancements",
+      "information": "Information"
+    },
+    "serverEditorCategoryNavLabel": "Server editor categories",
     "serverEditorDialogDescription": "Create or edit an SSH server connection profile.",
     "serverNamePlaceholder": "Server name",
     "serverUpdatedSuccessfully": "Server updated.",

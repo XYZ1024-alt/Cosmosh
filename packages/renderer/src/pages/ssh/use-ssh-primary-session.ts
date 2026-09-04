@@ -16,7 +16,7 @@ import {
   toResolvedTargetSnapshot,
 } from './ssh-target';
 import type { ResolvedTerminalTarget, ServerInboundMessage, TerminalPaneRuntime } from './ssh-types';
-import { sendClientMessage } from './ssh-utils';
+import { resetTerminalForNewPtySession, sendClientMessage } from './ssh-utils';
 import {
   applyTerminalCharacterWidthCompatibilityMode,
   createTerminalInstance,
@@ -249,6 +249,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
     let sessionType: 'ssh-server' | 'local-terminal' | null = null;
     let connectAttemptId = 0;
     let connectAbortController: AbortController | null = null;
+    let hasCreatedPtySession = false;
     let lastSyncedCols: number | null = null;
     let lastSyncedRows: number | null = null;
     let fitFrameId: number | null = null;
@@ -359,6 +360,49 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
       }
     };
 
+    /**
+     * Ends the current backend PTY transport while preserving the pane's xterm runtime.
+     *
+     * @returns Nothing.
+     */
+    const closeRuntimeSession = (): void => {
+      const previousSocket = socket;
+      const previousSessionId = sessionId;
+      const previousSessionType = sessionType;
+
+      socket = null;
+      sessionId = null;
+      sessionType = null;
+      paneRuntime.socket = null;
+      paneRuntime.sessionId = null;
+      paneRuntime.sessionType = null;
+      if (primarySocketRef.current === previousSocket) {
+        primarySocketRef.current = null;
+      }
+      if (socketRef.current === previousSocket) {
+        socketRef.current = null;
+      }
+
+      if (previousSocket) {
+        try {
+          if (previousSocket.readyState === WebSocket.OPEN) {
+            sendClientMessage(previousSocket, { type: 'close' });
+          }
+          if (previousSocket.readyState === WebSocket.CONNECTING || previousSocket.readyState === WebSocket.OPEN) {
+            previousSocket.close();
+          }
+        } catch {
+          // Ignore websocket close races during retry and pane disposal.
+        }
+      }
+
+      if (previousSessionId && previousSessionType === 'local-terminal') {
+        void closeLocalTerminalSession(previousSessionId).catch(() => undefined);
+      } else if (previousSessionId && previousSessionType === 'ssh-server') {
+        void closeSshSession(previousSessionId).catch(() => undefined);
+      }
+    };
+
     const connectSession = async (mode: 'initial' | 'retry'): Promise<void> => {
       try {
         if (!isActiveRef.current) {
@@ -369,10 +413,24 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         connectAbortController = new AbortController();
         connectAttemptId += 1;
         const attemptId = connectAttemptId;
+        const shouldResetTerminal = hasCreatedPtySession;
+        closeRuntimeSession();
 
         resetPaneState(paneId);
         setPaneTransportState(paneId, 'connecting');
         setSessionTargetReady(false);
+
+        if (shouldResetTerminal) {
+          const didResetTerminal = await resetTerminalForNewPtySession(
+            terminal,
+            serializeAddon,
+            () => !isStaleAttempt(attemptId),
+            () => resetPaneState(paneId),
+          );
+          if (!didResetTerminal || isStaleAttempt(attemptId)) {
+            return;
+          }
+        }
 
         const activeIntent = connectionIntentRef.current;
         if (mode === 'retry' && !activeIntent.lastResolvedSnapshot) {
@@ -431,20 +489,23 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           } else {
             void closeSshSession(openedSession.sessionId).catch(() => undefined);
           }
+          openedSession.socket.close();
           return;
         }
 
+        hasCreatedPtySession = true;
         sessionType = openedSession.sessionType;
         sessionId = openedSession.sessionId;
-        socket = openedSession.socket;
+        const openedSocket = openedSession.socket;
+        socket = openedSocket;
         paneRuntime.sessionType = sessionType;
         paneRuntime.sessionId = sessionId;
-        paneRuntime.socket = socket;
-        primarySocketRef.current = socket;
+        paneRuntime.socket = openedSocket;
+        primarySocketRef.current = openedSocket;
         if (activePaneIdRef.current === paneId) {
-          socketRef.current = socket;
+          socketRef.current = openedSocket;
         }
-        socket.addEventListener('message', (event) => {
+        openedSocket.addEventListener('message', (event) => {
           if (isStaleAttempt(attemptId)) {
             return;
           }
@@ -452,7 +513,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           handleSocketMessage(event);
         });
 
-        socket.addEventListener('open', () => {
+        openedSocket.addEventListener('open', () => {
           if (isStaleAttempt(attemptId)) {
             return;
           }
@@ -462,28 +523,38 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
           scheduleFitAndResizeSync();
         });
 
-        socket.addEventListener('close', () => {
+        openedSocket.addEventListener('close', () => {
           if (isStaleAttempt(attemptId)) {
             return;
           }
 
-          primarySocketRef.current = null;
+          if (socket === openedSocket) {
+            socket = null;
+          }
+          if (primarySocketRef.current === openedSocket) {
+            primarySocketRef.current = null;
+          }
           paneRuntime.socket = null;
-          if (activePaneIdRef.current === paneId) {
+          if (socketRef.current === openedSocket) {
             socketRef.current = null;
           }
 
           setPaneTransportState(paneId, 'failed', t('ssh.websocketClosed'));
         });
 
-        socket.addEventListener('error', () => {
+        openedSocket.addEventListener('error', () => {
           if (isStaleAttempt(attemptId)) {
             return;
           }
 
-          primarySocketRef.current = null;
+          if (socket === openedSocket) {
+            socket = null;
+          }
+          if (primarySocketRef.current === openedSocket) {
+            primarySocketRef.current = null;
+          }
           paneRuntime.socket = null;
-          if (activePaneIdRef.current === paneId) {
+          if (socketRef.current === openedSocket) {
             socketRef.current = null;
           }
 
@@ -593,29 +664,7 @@ export const useSshPrimarySession = (params: UseSshPrimarySessionParams): void =
         fitFrameId = null;
       }
 
-      try {
-        if (socket && socket.readyState === WebSocket.OPEN) {
-          sendClientMessage(socket, { type: 'close' });
-          socket.close();
-        }
-      } catch {
-        // Ignore websocket close race conditions.
-      }
-
-      if (primarySocketRef.current === socket) {
-        primarySocketRef.current = null;
-      }
-      if (activePaneIdRef.current === paneId && socketRef.current === socket) {
-        socketRef.current = null;
-      }
-
-      if (sessionId) {
-        if (sessionType === 'local-terminal') {
-          void closeLocalTerminalSession(sessionId).catch(() => undefined);
-        } else {
-          void closeSshSession(sessionId).catch(() => undefined);
-        }
-      }
+      closeRuntimeSession();
 
       scheduleFitAndResizeSyncRef.current = null;
       if (primaryTerminalRef.current === terminal) {

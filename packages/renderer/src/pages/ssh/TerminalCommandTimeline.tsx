@@ -9,6 +9,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../../components/ui/tooltip';
 import { t } from '../../lib/i18n';
 import type { TerminalCommandTimelineItem, TerminalCommandTimelineModel } from './ssh-types';
 import {
@@ -781,21 +782,33 @@ export const TerminalCommandTimeline: React.FC<TerminalCommandTimelineProps> = (
                     className="terminal-command-timeline-menu-items"
                     onContextMenuCapture={handleCommandContextMenuCapture}
                   >
-                    {menuItems.map((item) => {
-                      const isActive = item.commandId === model.activeCommandId;
-                      return (
-                        <DropdownMenuItem
-                          key={item.commandId}
-                          data-command-id={item.commandId}
-                          aria-current={isActive ? 'true' : undefined}
-                          aria-label={t('ssh.commandTimelineJumpToCommand', { command: item.command })}
-                          className={classNames(isActive && 'bg-menu-control-hover')}
-                          onSelect={() => handleSelectCommand(item.commandId)}
-                        >
-                          <span className="min-w-0 flex-1 truncate">{item.command}</span>
-                        </DropdownMenuItem>
-                      );
-                    })}
+                    <TooltipProvider delayDuration={180}>
+                      {menuItems.map((item) => {
+                        const isActive = item.commandId === model.activeCommandId;
+                        return (
+                          <Tooltip key={item.commandId}>
+                            <TooltipTrigger asChild>
+                              <DropdownMenuItem
+                                data-command-id={item.commandId}
+                                aria-current={isActive ? 'true' : undefined}
+                                aria-label={t('ssh.commandTimelineJumpToCommand', { command: item.command })}
+                                className={classNames(isActive && 'bg-menu-control-hover')}
+                                onSelect={() => handleSelectCommand(item.commandId)}
+                              >
+                                <span className="min-w-0 flex-1 truncate">{item.command}</span>
+                              </DropdownMenuItem>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="left"
+                              align="start"
+                              className="pointer-events-none max-w-[420px] whitespace-pre-wrap break-words"
+                            >
+                              {item.command}
+                            </TooltipContent>
+                          </Tooltip>
+                        );
+                      })}
+                    </TooltipProvider>
                   </div>
                 </ContextMenuTrigger>
               </DropdownMenuContent>

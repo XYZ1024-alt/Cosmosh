@@ -27,6 +27,11 @@ type UseSftpConfirmationPromptsResult = {
   cancelUploadConflictConfirmationPrompt: () => void;
 };
 
+type QueuedUploadConflictConfirmation = {
+  prompt: SftpUploadConflictConfirmationPrompt;
+  resolve: (accepted: boolean) => void;
+};
+
 /**
  * Owns SFTP confirmation dialogs and the promise resolvers that unblock operations.
  *
@@ -45,6 +50,7 @@ export const useSftpConfirmationPrompts = (): UseSftpConfirmationPromptsResult =
   const pendingPromptResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const pendingDeleteConfirmationResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
   const pendingUploadConflictResolverRef = React.useRef<((accepted: boolean) => void) | null>(null);
+  const pendingUploadConflictQueueRef = React.useRef<QueuedUploadConflictConfirmation[]>([]);
 
   const requestHostFingerprintTrust = React.useCallback((prompt: HostFingerprintPrompt): Promise<boolean> => {
     return new Promise((resolve) => {
@@ -75,26 +81,45 @@ export const useSftpConfirmationPrompts = (): UseSftpConfirmationPromptsResult =
     setDeleteConfirmationPrompt(null);
   }, []);
 
+  const activateNextUploadConflictPrompt = React.useCallback((): void => {
+    if (pendingUploadConflictResolverRef.current) {
+      return;
+    }
+
+    const next = pendingUploadConflictQueueRef.current.shift();
+    if (!next) {
+      setUploadConflictConfirmationPrompt(null);
+      return;
+    }
+
+    pendingUploadConflictResolverRef.current = next.resolve;
+    setUploadConflictConfirmationPrompt(next.prompt);
+  }, []);
+
   const requestUploadConflictConfirmation = React.useCallback(
     (prompt: SftpUploadConflictConfirmationPrompt): Promise<boolean> => {
-      pendingUploadConflictResolverRef.current?.(false);
       return new Promise((resolve) => {
-        pendingUploadConflictResolverRef.current = resolve;
-        setUploadConflictConfirmationPrompt(prompt);
+        pendingUploadConflictQueueRef.current.push({ prompt, resolve });
+        activateNextUploadConflictPrompt();
       });
     },
-    [],
+    [activateNextUploadConflictPrompt],
   );
 
-  const resolveUploadConflictConfirmationPrompt = React.useCallback((accepted: boolean): void => {
-    pendingUploadConflictResolverRef.current?.(accepted);
-    pendingUploadConflictResolverRef.current = null;
-    setUploadConflictConfirmationPrompt(null);
-  }, []);
+  const resolveUploadConflictConfirmationPrompt = React.useCallback(
+    (accepted: boolean): void => {
+      pendingUploadConflictResolverRef.current?.(accepted);
+      pendingUploadConflictResolverRef.current = null;
+      activateNextUploadConflictPrompt();
+    },
+    [activateNextUploadConflictPrompt],
+  );
 
   const cancelUploadConflictConfirmationPrompt = React.useCallback((): void => {
     pendingUploadConflictResolverRef.current?.(false);
     pendingUploadConflictResolverRef.current = null;
+    pendingUploadConflictQueueRef.current.forEach(({ resolve }) => resolve(false));
+    pendingUploadConflictQueueRef.current = [];
     setUploadConflictConfirmationPrompt(null);
   }, []);
 

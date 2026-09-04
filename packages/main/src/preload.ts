@@ -41,12 +41,16 @@ import type {
   ApiSftpDownloadFileResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -673,6 +677,15 @@ contextBridge.exposeInMainWorld('electron', {
       sessionId,
       payload,
     );
+  },
+  backendSftpStartTask: (sessionId: string, payload: ApiSftpStartTaskRequest) => {
+    return invokeIpc<ApiSftpStartTaskResponse | ApiErrorResponse>('backend:sftp-start-task', sessionId, payload);
+  },
+  backendSftpListTasks: (sessionId: string) => {
+    return invokeIpc<ApiSftpListTasksResponse | ApiErrorResponse>('backend:sftp-list-tasks', sessionId);
+  },
+  backendSftpGetTask: (sessionId: string, taskId: string) => {
+    return invokeIpc<ApiSftpGetTaskResponse | ApiErrorResponse>('backend:sftp-get-task', sessionId, taskId);
   },
   backendSftpGetArchiveCapabilities: (sessionId: string) => {
     return invokeIpc<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>(

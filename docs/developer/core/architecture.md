@@ -35,6 +35,7 @@ flowchart LR
 - Production packaging does not rely on the app asar to resolve backend packages. Main prebuild copies built backend/api-contract/i18n artifacts plus curated recursive third-party runtime dependencies into `packages/main/resources-runtime/node_modules`, then validates every non-workspace `@cosmosh/backend` production dependency resolves there. Any new backend production dependency must be covered by `packages/main/scripts/sync-backend-runtime.cjs`, otherwise installer builds fail before launch instead of shipping a missing module.
 - CI packaging can also write `resources/remote-bootstrap/manifest-url.json` when `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` is provided. Packaged main reads this resource only as a fallback after the environment variable, preserving local override behavior while allowing tagged release installers and `main` build artifacts to discover their intended bootstrap manifest automatically. Unpackaged development runs fall back once more to the rolling `remote-bootstrap-dev` manifest URL, so local Remote Enhancements testing does not require per-shell setup.
 - Owns app-level capabilities: locale persistence (in-memory), window/devtools/file-manager actions.
+- Owns the canonical per-run SFTP temp root shared with Backend. Before creating each isolated transfer directory and before restarting Backend, Main revalidates that root; if external temp cleanup removed it, Main recreates the same canonical path with private permissions so the Backend environment contract remains valid. Non-directory, symlink, and non-private replacements still fail closed.
 - Owns the window/app close guard. Main prevents the initial close, queries backend-owned SSH/SFTP registries, delegates confirmation presentation to the renderer, and closes only after no activity is present or the user explicitly confirms interruption.
 - Proxies renderer requests to backend endpoints with:
   - `COSMOSH_INTERNAL_TOKEN` as internal auth header.
@@ -73,6 +74,7 @@ Development and packaging intentionally use different native targets. The Main a
 - Development StrictMode is opt-in via `VITE_ENABLE_STRICT_MODE=true` to reduce duplicate effect execution during local performance profiling.
 - SSH page uses tab-scoped connection intent snapshots and pane-scoped runtimes. Every primary/secondary pane owns its xterm, WebSocket/session, transport state, telemetry, completion state, Remote Enhancements state, debug history, and trusted command timeline markers; all inbound messages use one pane-aware reducer. Complete timeline command text is reconstructed from rendered xterm input and remains only in that pane runtime's memory.
 - Hidden tabs cannot start new SSH connect side effects. On reactivation, the optional reconnect-on-focus path evaluates every failed pane independently, while the first activation always starts a deferred primary pane. Retrying or reconnecting one pane preserves all sibling pane runtimes.
+- Replacing an SSH or local-terminal backend PTY preserves the pane's xterm object and addons but creates a strict emulator session boundary. After the old transport is invalidated and closed, renderer serializes only normal-buffer history without alternate-buffer content or modes, then performs an attempt-guarded, parser-ordered local xterm reset and safe history replay before opening the replacement session. Selection, markers, autocomplete bookkeeping, parser state, and VT modes are discarded while text/style scrollback, terminal dimensions, options, addons, WebGL, and listeners remain attached.
 - Renderer consumes backend `bootstrap-status`, `remote-enhancement-runtime-status`, and trusted protocol-v2 `remote-shell-event` messages per pane. Debug visibility is controlled by `remoteEnhancementsDebugEnabled`, and the overlay always reflects its source/active pane.
 
 ## 3. IPC Lifecycle (Current)
@@ -159,7 +161,7 @@ sequenceDiagram
 - The Vite renderer development server also binds explicitly to `127.0.0.1`. Electron's development load URL, renderer popup trust origin, renderer CSP, and Backend CORS must use that exact origin and the shared `COSMOSH_RENDERER_DEV_PORT`; `localhost` is not an interchangeable development origin.
 - Electron-main mode additionally guards `/api/v1/*` with an internal runtime token (`COSMOSH_INTERNAL_TOKEN`). Standalone mode remains loopback-only even though it does not require that token.
 - Main process injects headers and never exposes internal token to renderer.
-- Development request mirror: in unpackaged development runs, Main records sanitized mirrors of backend proxy requests into an in-memory ring buffer and exposes them to the custom DevTools panel through debug IPC. This does not change the real request path (`renderer -> preload IPC -> main -> backend`), does not issue mirror fetches, and does not add fake rows to the native Network tab. The mirror redacts internal auth headers, secret-like payload keys, and local absolute paths before renderer/DevTools visibility. Production packages do not collect traces or load the extension. If the `Cosmosh Requests` panel is missing in development, check the main-process terminal for the `[debug]` extension load/skip log first.
+- Development DevTools extensions: before the renderer page loads in unpackaged runs, Main loads React DevTools and the custom backend request panel into Electron's default session. React DevTools is obtained through `electron-devtools-installer`; the first development launch may download it into Electron's development `userData`, while later launches reuse the cached files. Download or load failures are logged as non-fatal warnings so offline development can still start. Main records sanitized mirrors of backend proxy requests into an in-memory ring buffer and exposes them to the custom panel through debug IPC. This does not change the real request path (`renderer -> preload IPC -> main -> backend`), does not issue mirror fetches, and does not add fake rows to the native Network tab. The mirror redacts internal auth headers, secret-like payload keys, and local absolute paths before renderer/DevTools visibility. Production packages do not collect traces, resolve the React DevTools dependency, or load either extension. If a development panel is missing, check the main-process terminal for the `[debug]` extension load/skip/failure log first.
 - Main also capability-gates local SFTP download destinations. App utility IPC authorizes an exact normalized path for the requesting renderer webContents, and the backend proxy rejects any download path without that owner-bound authorization. Temporary preview/open paths are reusable; Downloads and save-dialog paths are consumed after one request.
 - Credential encryption key is derived from `COSMOSH_SECRET_KEY`/internal token hash in backend bootstrap.
 - HTTP i18n is request-scoped: backend middleware resolves locale from `x-cosmosh-locale` (fallback `accept-language`), then injects a per-request translator used by all route response messages.
@@ -316,21 +318,53 @@ sequenceDiagram
 
 - File bytes stay on the existing backend stream path; only bounded progress metadata crosses HTTP and IPC.
 - Backend samples speed at most every 250 ms and retains terminal records in memory for 60 seconds. Renderer polling stops with the final transfer request.
-- This is progress observation for the existing tab-local FIFO queue, not a backend scheduler, cancellation protocol, resume protocol, or persisted transfer history.
+- Renderer transfer progress is attached to concurrently started backend tasks. The task is polled with the session id captured at acceptance, while byte progress remains keyed by `transferId`; neither path provides generalized cancellation, resume, or persisted history.
 
-### 6.4 SFTP Remote Archive Data Flow
+### 6.4 SFTP Backend Task Scheduling Data Flow
 
 ```mermaid
 sequenceDiagram
-  participant UI as Renderer FIFO Task
+  participant C as Task API Consumer
+  participant API as Backend SFTP Routes
+  participant SCH as Session Task Scheduler
+  participant SVC as SFTP/Archive Runner
+  participant RH as Remote Host
+
+  C->>API: POST /sessions/{sessionId}/tasks(descriptor)
+  API->>SCH: enqueue with resources, claims, and absolute deadline
+  SCH-->>C: 202 accepted task snapshot
+  SCH->>SCH: admit by total/heavy/mutation limits and path claims
+  SCH->>SVC: run with AbortSignal and remaining deadline
+  SVC->>RH: bounded remote operation
+  loop list or detail polling
+    C->>API: GET task list/detail
+    API-->>C: retained in-memory snapshot
+  end
+  SVC-->>SCH: result or terminal cleanup settlement
+  SCH->>SCH: release capacity and claims
+```
+
+- Each SFTP session has independent fixed limits: `total=3`, `heavy=2`, and `mutation=1`. Equal and ancestor/descendant POSIX path claims serialize, while disjoint sibling claims may run concurrently.
+- Supported public task descriptors are `create-file`, `create-directory`, `rename`, `upload`, `download`, and `batch`. Preview `write-file` retains its synchronous HTTP contract but executes as hidden scheduler work; all legacy SFTP operation routes use that same coordinated service boundary.
+- The absolute deadline includes queue wait. Deadline expiry publishes `failed` immediately; a running task continues to own capacity and claims until its runner settles, and timed-out mutations publish `outcomeUnknown: true`.
+- Task records are memory-only, remain readable after a recent session close, and are bounded to 512 records per session with a seven-day post-release TTL. Backend stop clears all records. The task API exposes start, list, and detail only: there is no public task cancel, resume, or persistence contract.
+- Renderer routes all six supported descriptors through Main/preload into this API. It starts unrelated tasks concurrently and retains a separate serial lane only for synchronous preview writes and stateful archive orchestration.
+
+### 6.5 SFTP Remote Archive Data Flow
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer Serial Archive Lane
   participant MP as Main/Preload Proxy
   participant API as Backend Archive Routes
+  participant SCH as Session Task Scheduler
   participant AS as SftpArchiveService
   participant RH as Remote POSIX Host
 
   UI->>MP: structured compress/extract request
   MP->>API: POST archive-operations
-  API->>AS: start one session-scoped job
+  API->>SCH: acquire exclusive session claim
+  SCH->>AS: start one session-scoped job
   AS->>RH: fixed exec template on the SFTP tab SSH client
   loop every 750 ms
     UI->>API: GET operation status
@@ -341,13 +375,15 @@ sequenceDiagram
     API->>AS: resume staged commit
   end
   AS->>RH: commit and clean known temporary paths
+  AS-->>SCH: terminal cleanup settled
+  SCH->>SCH: release exclusive claim
 ```
 
 - The remote command, tool output, and random staging paths are backend-private. Public contracts carry paths, format, level, destination mode, phase, conflict summaries, and stable errors only.
-- One archive job may run per SFTP session. Renderer archive requests still enter the tab-local FIFO so multi-archive extraction remains ordered with existing file operations.
+- Archive capability probing acquires the scheduler's exclusive session claim until the probe settles. Archive startup acquires the same claim and retains it through terminal cleanup. Both use immediate-only admission and report `SFTP_ARCHIVE_BUSY` instead of waiting without a pollable identifier. Renderer archive requests enter their serial lane, so multiple archive operations preserve selection order without globally serializing ordinary backend tasks.
 - Closing a session first requests archive cancellation and bounded cleanup, then disconnects SSH. Bulk session close waits for sessions in parallel and preserves the existing active-connection count contract.
 
-### 6.5 Failure Boundary Model
+### 6.6 Failure Boundary Model
 
 - **Renderer boundary**: visual state and user interaction; failures should stay recoverable via UI retry.
 - **Main boundary**: capability routing and internal auth injection; failures should never leak privileged tokens.

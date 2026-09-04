@@ -6,6 +6,17 @@ const PRIVATE_DIRECTORY_MODE = 0o700;
 const PRIVATE_FILE_MODE = 0o600;
 
 /**
+ * Checks whether an unknown failure is a Node file-system error with the expected code.
+ *
+ * @param error Unknown failure from a file-system operation.
+ * @param code Expected Node error code.
+ * @returns True when the failure carries the expected code.
+ */
+const isFileSystemErrorWithCode = (error: unknown, code: string): boolean => {
+  return error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === code;
+};
+
+/**
  * Environment variable used to pass the Main-owned SFTP temp root into Backend.
  */
 export const SFTP_TEMP_ROOT_ENV_NAME = 'COSMOSH_SFTP_TEMP_ROOT';
@@ -104,6 +115,57 @@ export const createPrivateSftpTemporaryRoot = async (parentTempPath: string): Pr
 };
 
 /**
+ * Revalidates a Main-owned SFTP temp root and restores the same path if an external cleanup removed it.
+ *
+ * The exact path must remain stable because Backend receives it once through its startup environment.
+ * Existing unsafe replacements are rejected instead of being removed or reused.
+ *
+ * @param rootPath Canonical per-run SFTP temp root path.
+ * @returns Canonical realpath for the existing or restored temp root.
+ */
+export const ensurePrivateSftpTemporaryRoot = async (rootPath: string): Promise<string> => {
+  const trimmedRootPath = rootPath.trim();
+  if (!trimmedRootPath) {
+    throw new Error('SFTP temporary root is required.');
+  }
+
+  const normalizedRootPath = path.resolve(trimmedRootPath);
+  let canonicalRootPath: string | null = null;
+
+  try {
+    canonicalRootPath = await validateSftpTemporaryRootPath(normalizedRootPath);
+  } catch (error: unknown) {
+    if (!isFileSystemErrorWithCode(error, 'ENOENT')) {
+      throw error;
+    }
+  }
+
+  if (!canonicalRootPath) {
+    let createdRoot = false;
+    try {
+      await fs.mkdir(normalizedRootPath, { mode: PRIVATE_DIRECTORY_MODE });
+      createdRoot = true;
+    } catch (error: unknown) {
+      if (!isFileSystemErrorWithCode(error, 'EEXIST')) {
+        throw error;
+      }
+    }
+
+    if (createdRoot) {
+      await applyPrivateSftpTemporaryDirectoryMode(normalizedRootPath);
+    }
+
+    canonicalRootPath = await validateSftpTemporaryRootPath(normalizedRootPath);
+  }
+
+  if (path.relative(normalizedRootPath, canonicalRootPath) !== '') {
+    throw new Error('SFTP temporary root canonical path changed unexpectedly.');
+  }
+
+  return canonicalRootPath;
+};
+
+/**
  * Best-effort cleanup for the per-run SFTP temp root.
  *
  * @param rootPath Canonical temp root path.
@@ -171,12 +233,23 @@ export const resolveStagedSftpTemporaryFilePath = async (
  * @returns Canonical realpath for the new private directory.
  */
 export const createPrivateSftpTemporaryDirectory = async (rootPath: string): Promise<string> => {
-  const temporaryDirectoryPath = await fs.mkdtemp(path.join(rootPath, 'file-'));
-  await applyPrivateSftpTemporaryDirectoryMode(temporaryDirectoryPath);
-  const canonicalDirectoryPath = await fs.realpath(temporaryDirectoryPath);
-  if (!isPathInsideDirectory(canonicalDirectoryPath, rootPath)) {
-    throw new Error('Invalid SFTP temporary directory.');
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const canonicalRootPath = await ensurePrivateSftpTemporaryRoot(rootPath);
+      const temporaryDirectoryPath = await fs.mkdtemp(path.join(canonicalRootPath, 'file-'));
+      await applyPrivateSftpTemporaryDirectoryMode(temporaryDirectoryPath);
+      const canonicalDirectoryPath = await fs.realpath(temporaryDirectoryPath);
+      if (!isPathInsideDirectory(canonicalDirectoryPath, canonicalRootPath)) {
+        throw new Error('Invalid SFTP temporary directory.');
+      }
+
+      return canonicalDirectoryPath;
+    } catch (error: unknown) {
+      if (attempt > 0 || !isFileSystemErrorWithCode(error, 'ENOENT')) {
+        throw error;
+      }
+    }
   }
 
-  return canonicalDirectoryPath;
+  throw new Error('Failed to create an SFTP temporary directory.');
 };

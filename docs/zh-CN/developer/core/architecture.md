@@ -35,6 +35,7 @@ flowchart LR
 - 生产打包不依赖 app asar 解析 backend package。Main prebuild 会将已构建的 backend/api-contract/i18n 产物，以及经过筛选并递归同步的第三方运行时依赖复制到 `packages/main/resources-runtime/node_modules`，然后校验每个非 workspace 的 `@cosmosh/backend` 生产依赖都能从该目录解析。任何新增 backend 生产依赖都必须覆盖到 `packages/main/scripts/sync-backend-runtime.cjs`，否则安装包构建会在发布前失败，而不是发出启动后才缺模块的产物。
 - 当 CI 提供 `COSMOSH_REMOTE_BOOTSTRAP_MANIFEST_URL` 时，打包流程还可以写入 `resources/remote-bootstrap/manifest-url.json`。Packaged main 只在环境变量之后把该资源作为 fallback 读取，因此仍保留本地 override 行为，同时让正式 tag release 安装包和 `main` 构建产物可以自动发现各自应使用的 bootstrap manifest。未打包的开发运行会再回退到滚动的 `remote-bootstrap-dev` manifest URL，因此本地测试远端增强无需每次设置 shell 环境变量。
 - 持有应用级能力：语言持久化（内存）、窗口/开发者工具/文件管理器操作。
+- 持有与 Backend 共享的 canonical 每次运行 SFTP 临时根目录。Main 会在创建每个隔离传输目录前以及重启 Backend 前重新校验该根目录；如果外部临时文件清理删除了它，Main 会以私有权限在同一 canonical 路径恢复目录，使 Backend 环境契约继续有效。若该路径被替换为非目录、符号链接或非私有目录，仍会 fail closed。
 - 持有窗口/应用关闭守卫。Main 会阻止首次关闭，查询 backend 持有的 SSH/SFTP 注册表，将确认界面委托给 renderer，并且仅在不存在活动连接或用户明确确认中断后继续关闭。
 - 将渲染层请求代理到后端端点，并注入：
   - 作为内部鉴权头的 `COSMOSH_INTERNAL_TOKEN`。
@@ -73,6 +74,7 @@ flowchart LR
 - 开发态 StrictMode 改为通过 `VITE_ENABLE_STRICT_MODE=true` 显式开启，降低本地性能排查时重复 effect 执行带来的干扰。
 - SSH 页面使用 tab 作用域的连接意图快照与 pane 作用域的运行时。每个 primary/secondary pane 独立持有 xterm、WebSocket/session、transport 状态、telemetry、补全状态、远端增强状态、调试历史与可信命令时间线 marker；所有 inbound message 统一经过 pane-aware reducer。时间线中的完整命令从 xterm 已渲染输入重建，并且只保存在对应 pane runtime 的内存中。
 - 隐藏 tab 不会启动新的 SSH 连接副作用。重新激活时，可选的切回重连路径会分别检查每个失败 pane；第一次激活始终启动延迟创建的 primary pane。重试或重连任一 pane 时，所有同级 pane runtime 都会保持存活。
+- 替换 SSH 或本地终端 backend PTY 时，pane 会保留原 xterm 对象与 addon，但建立严格的 emulator session 边界。旧 transport 失效并关闭后，renderer 只序列化不含 alternate-buffer 内容与 mode 的 normal-buffer 历史，再在打开替代 session 前执行受 attempt identity 保护、按 parser 顺序完成的本地 xterm reset 与安全历史回放。选区、marker、自动补全 bookkeeping、parser 状态与 VT mode 会被丢弃，而文本/样式 scrollback、终端尺寸、options、addon、WebGL 与 listener 继续保持挂载。
 - Renderer 按 pane 消费 backend 的 `bootstrap-status`、`remote-enhancement-runtime-status` 与可信协议 v2 `remote-shell-event`。调试入口由 `remoteEnhancementsDebugEnabled` 控制，浮层始终展示其来源/活动 pane。
 
 ## 3. IPC 生命周期（当前）
@@ -159,7 +161,7 @@ sequenceDiagram
 - Vite renderer 开发服务器同样显式绑定 `127.0.0.1`。Electron 开发加载 URL、renderer 弹窗可信 origin、renderer CSP 与 Backend CORS 必须使用这一精确 origin 和共享的 `COSMOSH_RENDERER_DEV_PORT`；`localhost` 不能作为可互换的开发 origin。
 - electron-main 模式还会使用内部运行时 token（`COSMOSH_INTERNAL_TOKEN`）保护 `/api/v1/*`。standalone 模式即使不要求该 token，也必须保持仅 loopback 可访问。
 - Main 进程注入头信息，不向 renderer 暴露内部 token。
-- 开发态请求镜像：在未打包的开发运行中，Main 会把已经发生的 backend proxy 请求记录为脱敏后的内存 ring buffer，并通过 debug IPC 暴露给自定义 DevTools 面板。它不改变真实请求链路（`renderer -> preload IPC -> main -> backend`），不发送 mirror fetch，也不会在原生 Network tab 里增加伪造请求行。镜像数据在进入 renderer/DevTools 前会移除内部鉴权头、secret-like payload key 与本地绝对路径。生产包不会采集 trace，也不会加载 extension。如果开发态没有看到 `Cosmosh Requests` 面板，先查看 main 进程终端里的 `[debug]` extension load/skip 日志。
+- 开发态 DevTools extension：在未打包运行中、renderer 页面加载前，Main 会把 React DevTools 和自定义 backend 请求面板加载到 Electron default session。React DevTools 通过 `electron-devtools-installer` 获取；首次开发启动可能会把它下载到 Electron 开发态 `userData`，后续启动复用缓存文件。下载或加载失败只记录非致命 warning，离线开发仍可正常启动。Main 会把已经发生的 backend proxy 请求记录为脱敏后的内存 ring buffer，并通过 debug IPC 暴露给自定义面板。它不改变真实请求链路（`renderer -> preload IPC -> main -> backend`），不发送 mirror fetch，也不会在原生 Network tab 里增加伪造请求行。镜像数据在进入 renderer/DevTools 前会移除内部鉴权头、secret-like payload key 与本地绝对路径。生产包不会采集 trace、解析 React DevTools 依赖或加载任一 extension。如果开发态缺少面板，先查看 main 进程终端里的 `[debug]` extension load/skip/failure 日志。
 - Main 还会对本地 SFTP 下载目标实施能力授权。应用工具 IPC 为发起请求的 renderer webContents 授权一个精确的规范化路径；backend 代理会拒绝没有该所有者授权的下载路径。临时预览/打开路径可复用，Downloads 与保存对话框路径在一次请求后即被消费。
 - 凭据加密 key 由 `COSMOSH_SECRET_KEY` / 内部 token 哈希在后端启动时推导。
 - HTTP i18n 采用请求级作用域：后端中间件优先从 `x-cosmosh-locale`（回退 `accept-language`）解析语言，并为每个请求注入翻译函数供路由统一生成响应消息。
@@ -316,21 +318,53 @@ sequenceDiagram
 
 - 文件字节继续沿既有 backend 流路径传输；HTTP 与 IPC 只传递有界进度元数据。
 - Backend 最多每 250 ms 采样一次速度，并在内存中保留终态记录 60 秒。Renderer 轮询会随最终传输请求结束。
-- 该能力只是对现有标签页本地 FIFO 队列进行进度观测，不是 backend 调度器、取消协议、续传协议或持久化传输历史。
+- Renderer 传输进度附着在并发启动的 backend 任务上。任务始终使用接纳时捕获的 session id 轮询，字节进度仍以`transferId`为键；两条路径都不提供通用取消、续传或持久化历史。
 
-### 6.4 SFTP 远端归档数据流
+### 6.4 SFTP Backend 任务调度数据流
 
 ```mermaid
 sequenceDiagram
-  participant UI as Renderer FIFO 任务
+  participant C as Task API Consumer
+  participant API as Backend SFTP Routes
+  participant SCH as 会话任务调度器
+  participant SVC as SFTP/Archive Runner
+  participant RH as 远端主机
+
+  C->>API: POST /sessions/{sessionId}/tasks(descriptor)
+  API->>SCH: 携带资源、claim 与绝对 deadline 入队
+  SCH-->>C: 202 accepted 任务快照
+  SCH->>SCH: 按 total/heavy/mutation 上限与 path claim admission
+  SCH->>SVC: 携带 AbortSignal 与剩余 deadline 运行
+  SVC->>RH: 执行有界远端操作
+  loop 轮询列表或详情
+    C->>API: GET 任务列表/详情
+    API-->>C: 保留在内存中的快照
+  end
+  SVC-->>SCH: 结果或终态清理结束
+  SCH->>SCH: 释放容量与 claim
+```
+
+- 每个 SFTP 会话拥有独立固定上限：`total=3`、`heavy=2` 与 `mutation=1`。相等以及祖先/后代 POSIX path claim 会串行，互不相交的兄弟 claim 可以并发。
+- 支持的公共任务 descriptor 为 `create-file`、`create-directory`、`rename`、`upload`、`download` 与 `batch`。预览 `write-file` 保留同步 HTTP 契约，但会作为隐藏任务进入调度器；所有既有 SFTP operation route 都使用同一 service 协调边界。
+- 绝对 deadline 包含排队等待。期限到达会立即发布 `failed`；运行中任务会继续持有容量与 claim，直到 runner 真正结束，超时 mutation 会发布 `outcomeUnknown: true`。
+- 任务记录仅存在于内存中，在近期会话关闭后仍可读取；每个会话最多保留 512 条，并在 runner 释放七天后过期。Backend 停止时会清理全部记录。Task API 只暴露启动、列表与详情：没有公共任务取消、续传或持久化契约。
+- Renderer 会把六种受支持 descriptor 全部通过 Main/preload 发送到该 API。无关任务并发启动；只有同步预览写入和持有独立状态的归档编排保留单独串行通道。
+
+### 6.5 SFTP 远端归档数据流
+
+```mermaid
+sequenceDiagram
+  participant UI as Renderer 归档串行通道
   participant MP as Main/Preload 代理
   participant API as Backend 归档路由
+  participant SCH as 会话任务调度器
   participant AS as SftpArchiveService
   participant RH as 远端 POSIX 主机
 
   UI->>MP: 结构化压缩/解压请求
   MP->>API: POST archive-operations
-  API->>AS: 启动会话级单任务
+  API->>SCH: 获取会话独占 claim
+  SCH->>AS: 启动会话级单任务
   AS->>RH: 在 SFTP 标签页 SSH client 上执行固定模板
   loop 每 750 ms
     UI->>API: GET 任务状态
@@ -341,13 +375,15 @@ sequenceDiagram
     API->>AS: 恢复暂存提交
   end
   AS->>RH: 提交并清理已知临时路径
+  AS-->>SCH: 终态清理结束
+  SCH->>SCH: 释放独占 claim
 ```
 
 - 远端命令、工具输出与随机暂存路径只存在于 backend。公共契约仅传递路径、格式、级别、目标模式、阶段、冲突摘要与稳定错误。
-- 每个 SFTP 会话最多运行一个归档任务。Renderer 归档请求仍进入标签页本地 FIFO，因此多归档解压与既有文件操作保持有序。
+- 归档能力探测会取得调度器的会话独占 claim，直到探测结束。归档启动会取得同一 claim，并持有到终态清理结束。两者都只接受可立即取得的独占权，无法取得时返回 `SFTP_ARCHIVE_BUSY`，不会在没有可轮询标识的情况下等待。Renderer 归档请求进入自身串行通道，因此多个归档操作保持选择顺序，而普通 backend 任务不会被全局串行化。
 - 关闭会话时先请求取消归档任务并进行有界清理，再断开 SSH。批量关闭会并行等待各会话，并保持既有活动连接计数契约。
 
-### 6.5 失败边界模型
+### 6.6 失败边界模型
 
 - **Renderer 边界**：负责视图状态与用户交互；失败应可通过 UI 重试恢复。
 - **Main 边界**：负责能力路由与内部鉴权注入；失败不应泄露任何特权 token。

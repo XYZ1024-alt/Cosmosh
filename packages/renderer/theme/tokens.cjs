@@ -5,6 +5,11 @@ const base = {
   font: {
     sans: '"Space Grotesk", "IBM Plex Sans", system-ui, sans-serif',
     mono: '"JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace',
+    size: {
+      form: {
+        label: '0.8rem',
+      },
+    },
   },
   radius: {
     xs: '2px',
@@ -183,6 +188,7 @@ const base = {
       },
       text: {
         DEFAULT: standardTextColorDefault,
+        label: '#cdd3dc',
         muted: standardTextColorMuted,
       },
       switch: {
@@ -394,6 +400,7 @@ const light = {
       },
       text: {
         DEFAULT: '#111827',
+        label: '#39424e',
         muted: '#6e6e73',
       },
       switch: {

@@ -232,6 +232,12 @@ flowchart LR
 - 重试严格绑定到当前 tab 最近一次成功解析的目标快照，不会重新读取全局“当前选择”。
 - 若首次连接在快照落库前失败，手动重试会回退到该 tab 的最新 intent 重新解析。
 - 每次连接都有 attempt identity（`attemptId`），并带有过期结果丢弃与可取消的连接前异步流程。
+- Pane 在重连时保留原 xterm 实例、已加载 addon、renderer、尺寸与事件监听器，但替换 backend PTY 会形成明确的 terminal-emulator session 边界。Renderer 会先让旧 attempt 失效，关闭旧 WebSocket/backend session，排空旧会话排队 write，再通过带有 `excludeAltBuffer` 与 `excludeModes` 的 `SerializeAddon` 捕获 normal buffer，然后才创建下一条 backend session。
+- 有序边界会确认当前 attempt 仍拥有 pane，清理 pane reducer 状态、命令 marker/时间线与自动补全 bookkeeping，再用一个本地 xterm 输出 chunk 依次写入 CAN + RIS、安全 normal-buffer snapshot、SGR reset 与分隔换行。之所以不直接调用同步的 `Terminal.reset()`，是因为 xterm 6 的该 JavaScript API 不会清除排队 write，也不会清除未完成的 parser 序列。Reset 字节与 snapshot 绝不会进入 `onData`、WebSocket 或 backend PTY。
+- Session-boundary reset 会让 xterm 回到 normal buffer，在不恢复 alternate buffer 的前提下重建保留的文本/样式 scrollback，清除选区/decoration，重置 parser 状态以及 application cursor keys、mouse tracking、bracketed paste、insert、origin 等 session-local VT mode；terminal options、行列尺寸、addon、WebGL attachment 以及已注册的事件/parser handler 保持不变。Inline image、命令 marker/时间线、选区与 alternate-buffer 内容明确属于旧 session，不会恢复。
+- 如果 normal-buffer 序列化失败，renderer 会记录失败并继续执行干净 reset，而不会阻塞重连；历史保留采用 best-effort 语义，PTY 恢复仍保持可用。
+- Cosmosh 替换本地终端 PTY 时采用相同边界：SSH 与本地 PTY 都是独立会话，即使它们共享 renderer controller。首次连接使用新建的 xterm，不执行 reset。
+- Primary 与 secondary pane 都用各自的 attempt identity 约束 reset 与新 session 创建。Reset 与历史回放共用同一个有序 xterm write，因此 capture 后才被替代的 attempt 不会让后继 attempt 看到空白或只恢复一部分的 buffer。过期 attempt 不能接入延迟返回的 WebSocket/session；延迟结果会被显式关闭。
 - 隐藏 tab 不会触发新的连接副作用，只有 active tab 允许发起连接。
 - 启用 `sshReconnectOnFocus` 后，重新激活标签页会重连所有没有 connecting/open socket 的失败 pane。延迟创建标签页第一次激活时始终启动 primary pane，不受该偏好开关影响。
 - 当前尚未实现自动指数退避重连。
@@ -337,7 +343,7 @@ flowchart LR
 - 只有 normal buffer 内容超过两个可见屏幕且保留的可信命令超过三条后，才启用最近命令入口。该阈值不会改变固定轨道的预留状态，因此入口满足条件时不会改变终端列数。在 normal buffer 中，终端内的鼠标移动会显示符合条件的入口，连续五秒无鼠标移动后隐藏。来自 xterm 内的键盘/IME 输入或粘贴会立即关闭各层菜单并隐藏入口。闲置状态会对可见与键盘用户隐藏线条，但仅保留其紧凑鼠标命中区域，使命中区域上的鼠标移动无需等待新的 `pointerenter` 即可恢复悬浮。命令列表或命令行操作菜单打开期间，入口保持可见，除非被 xterm 输入主动收起。运行 alternate-screen 程序时隐藏并禁用入口，但继续保留固定轨道。
 - 居中的入口最多呈现最新八条统一线条，每条宽 12 px、高 2 px，间距 10 px，以约 60% 透明度使用 `color.text`。这些线共同构成一个菜单入口，不再编码输出量，也不提供逐线的上一条/下一条导航。
 - 鼠标悬浮时，整组线条会 morph 为一个受视口边界约束、固定 256 px 宽的共享菜单卡片。靠近滚动条的一侧保持固定，卡片覆盖轨道并向左展开。正常挂载的 Portal 配合 CSS `@starting-style` 完成 180 ms transform/opacity 入场，只有鼠标离开的退场会保留 Portal 以执行 140 ms 反向过渡。`relatedTarget` 判断与统一的 80 ms 离开宽限覆盖入口、命令卡片与 portaled 命令行操作菜单之间的跨越，快速重新进入会从当前过渡状态继续，而不是重新开始。命令行操作菜单会阻止仅由悬浮打开的父菜单恢复 xterm 焦点所导致的 focus-out 关闭，同时保留鼠标离开、外部交互、Escape 与选择动作的正常关闭路径。由于无需点击、悬浮即会打开卡片，紧凑命中区域使用默认箭头光标。键盘打开保持即时，`prefers-reduced-motion` 仅保留短暂透明度过渡。
-- 卡片展示来源 pane 中仍有效的全部 marker，并按从旧到新的顺序排列。菜单打开或内容更新时自动滚动到底部。选择命令行会对其输入 marker 调用 `scrollToLine` 并恢复 xterm 焦点；右键菜单可复制内存中的命令，或将命令插入同一 pane 且不附加 Enter。鼠标离开或按 Escape 会关闭各层菜单。
+- 卡片展示来源 pane 中仍有效的全部 marker，并按从旧到新的顺序排列。菜单打开或内容更新时自动滚动到底部。长命令行保持单行截断；悬浮或聚焦命令行时，通过共享且可换行的 Tooltip 显示内存中的完整命令。选择命令行会对其输入 marker 调用 `scrollToLine` 并恢复 xterm 焦点；右键菜单可复制内存中的命令，或将命令插入同一 pane 且不附加 Enter。鼠标离开或按 Escape 会关闭各层菜单。
 - 完整命令字符串只保存在 renderer 内存中，绝不持久化、记录日志、发送、加入 telemetry，也不复制到远端增强调试记录。信任丢失、重连/重置、pane 释放或 xterm scrollback 回收都会同时释放 marker 与命令文本，因此条目只属于当前 pane、当前连接与 normal buffer 仍保留的 scrollback。
 - Primary 与 secondary runtime 都会在 write 解析完成、滚动、调整尺寸、buffer 切换和 marker 释放后刷新模型。由于后代 xterm 的内边距变化本身不会调整稳定 host 的尺寸，轨道预留状态变化会显式进入现有 pane fit/resize 流程。Xterm host 与固定轨道在信任、活动、菜单和 alternate-screen 状态变化期间保持稳定 DOM 祖先，确保 TUI 进出与闲置显隐既不会重建运行时，也不会让 PTY 列数失步。
 

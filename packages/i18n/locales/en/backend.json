@@ -94,6 +94,8 @@
       "sessionIdRequired": "Session ID was not provided.",
       "sessionNotFound": "SFTP session was not found or has expired.",
       "sourceTargetRequired": "Source path and target path were not provided.",
+      "taskNotFound": "SFTP task was not found or has expired.",
+      "taskQueueFull": "This SFTP session already retains {limit} tasks. Review completed failures or wait for active work to finish.",
       "transferNotFound": "SFTP transfer progress was not found or has expired."
     },
     "ssh": {
@@ -193,6 +195,9 @@
       "fileUploaded": "File uploaded.",
       "fileWritten": "File saved.",
       "sessionCreated": "Session created.",
+      "taskAccepted": "SFTP task accepted.",
+      "taskListLoaded": "SFTP tasks loaded.",
+      "taskStatusLoaded": "SFTP task status loaded.",
       "transferProgressRead": "Transfer progress loaded."
     },
     "ssh": {

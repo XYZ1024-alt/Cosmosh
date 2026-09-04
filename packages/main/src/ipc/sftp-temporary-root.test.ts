@@ -7,6 +7,7 @@ import test from 'node:test';
 import {
   createPrivateSftpTemporaryDirectory,
   createPrivateSftpTemporaryRoot,
+  ensurePrivateSftpTemporaryRoot,
   resolveExistingSftpTemporaryFilePath,
   validateSftpTemporaryRootPath,
 } from './sftp-temporary-root';
@@ -42,6 +43,48 @@ test('SFTP temporary root helpers resolve only existing files inside the canonic
 
     assert.equal(await resolveExistingSftpTemporaryFilePath(rootPath, filePath), await fs.realpath(filePath));
     await assert.rejects(() => resolveExistingSftpTemporaryFilePath(rootPath, outsidePath), /Invalid file path/);
+  } finally {
+    await fs.rm(parentPath, { force: true, recursive: true });
+  }
+});
+
+test('SFTP temporary root helpers restore an externally removed root at the same path', async () => {
+  const parentPath = await fs.mkdtemp(path.join(os.tmpdir(), 'cosmosh-sftp-root-parent-'));
+
+  try {
+    const rootPath = await createPrivateSftpTemporaryRoot(parentPath);
+    await fs.rm(rootPath, { force: true, recursive: true });
+
+    const directoryPaths = await Promise.all(
+      Array.from({ length: 4 }, () => createPrivateSftpTemporaryDirectory(rootPath)),
+    );
+
+    assert.equal(await ensurePrivateSftpTemporaryRoot(rootPath), rootPath);
+    assert.equal(new Set(directoryPaths).size, directoryPaths.length);
+    for (const directoryPath of directoryPaths) {
+      assert.equal(path.dirname(directoryPath), rootPath);
+      assert.equal((await fs.lstat(directoryPath)).isDirectory(), true);
+    }
+  } finally {
+    await fs.rm(parentPath, { force: true, recursive: true });
+  }
+});
+
+test('SFTP temporary root recovery rejects an empty root path', async () => {
+  await assert.rejects(() => ensurePrivateSftpTemporaryRoot('  '), /required/);
+});
+
+test('SFTP temporary root helpers reject an unsafe replacement instead of overwriting it', async () => {
+  const parentPath = await fs.mkdtemp(path.join(os.tmpdir(), 'cosmosh-sftp-root-parent-'));
+
+  try {
+    const rootPath = await createPrivateSftpTemporaryRoot(parentPath);
+    await fs.rm(rootPath, { force: true, recursive: true });
+    await fs.writeFile(rootPath, 'unsafe replacement', 'utf8');
+
+    await assert.rejects(() => ensurePrivateSftpTemporaryRoot(rootPath), /real directory/);
+    await assert.rejects(() => createPrivateSftpTemporaryDirectory(rootPath), /real directory/);
+    assert.equal(await fs.readFile(rootPath, 'utf8'), 'unsafe replacement');
   } finally {
     await fs.rm(parentPath, { force: true, recursive: true });
   }

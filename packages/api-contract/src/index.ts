@@ -308,6 +308,30 @@ export type ApiSftpBatchOperationRequest =
 export type ApiSftpBatchOperationResponse =
   paths['/api/v1/sftp/sessions/{sessionId}/batch']['post']['responses']['200']['content']['application/json'];
 export type ApiSftpBatchOperationItem = components['schemas']['SftpBatchOperationItemResult'];
+export type ApiSftpTaskOperationType = components['schemas']['SftpTaskOperationType'];
+export type ApiSftpTaskState = components['schemas']['SftpTaskState'];
+export type ApiSftpTaskErrorCode = components['schemas']['SftpTaskErrorCode'];
+export type ApiSftpTaskTransferReference = components['schemas']['SftpTaskTransferReference'];
+export type ApiSftpTaskCreateFileDescriptor = components['schemas']['SftpTaskCreateFileDescriptor'];
+export type ApiSftpTaskCreateDirectoryDescriptor = components['schemas']['SftpTaskCreateDirectoryDescriptor'];
+export type ApiSftpTaskRenameDescriptor = components['schemas']['SftpTaskRenameDescriptor'];
+export type ApiSftpTaskUploadDescriptor = components['schemas']['SftpTaskUploadDescriptor'];
+export type ApiSftpTaskDownloadDescriptor = components['schemas']['SftpTaskDownloadDescriptor'];
+export type ApiSftpTaskBatchDescriptor = components['schemas']['SftpTaskBatchDescriptor'];
+export type ApiSftpTaskOperationResult = components['schemas']['SftpTaskOperationResult'];
+export type ApiSftpTaskDownloadResult = components['schemas']['SftpTaskDownloadResult'];
+export type ApiSftpTaskBatchResult = components['schemas']['SftpTaskBatchResult'];
+export type ApiSftpTaskResult = components['schemas']['SftpTaskResult'];
+export type ApiSftpTaskData = components['schemas']['SftpTaskData'];
+export type ApiSftpTaskListData = components['schemas']['SftpTaskListData'];
+export type ApiSftpStartTaskRequest =
+  paths['/api/v1/sftp/sessions/{sessionId}/tasks']['post']['requestBody']['content']['application/json'];
+export type ApiSftpStartTaskResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/tasks']['post']['responses']['202']['content']['application/json'];
+export type ApiSftpListTasksResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/tasks']['get']['responses']['200']['content']['application/json'];
+export type ApiSftpGetTaskResponse =
+  paths['/api/v1/sftp/sessions/{sessionId}/tasks/{taskId}']['get']['responses']['200']['content']['application/json'];
 export type ApiSftpArchiveFormat = components['schemas']['SftpArchiveFormat'];
 export type ApiSftpArchiveCompressionLevel = components['schemas']['SftpArchiveCompressionLevel'];
 export type ApiSftpArchiveDestinationMode = components['schemas']['SftpArchiveDestinationMode'];

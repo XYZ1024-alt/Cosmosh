@@ -1523,6 +1523,125 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/tasks:
+    post:
+      tags:
+        - sftp
+      summary: Submit one asynchronous SFTP file-system task.
+      operationId: sftpStartTask
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SftpTaskStartRequest'
+      responses:
+        '202':
+          description: Task accepted for bounded asynchronous execution.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpTaskAcceptedSuccess'
+        '400':
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+    get:
+      tags:
+        - sftp
+      summary: List retained asynchronous tasks for one SFTP session.
+      operationId: sftpListTasks
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Retained tasks returned in creation order.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpTaskListSuccess'
+        '404':
+          description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+  /api/v1/sftp/sessions/{sessionId}/tasks/{taskId}:
+    get:
+      tags:
+        - sftp
+      summary: Read one retained asynchronous SFTP task.
+      operationId: sftpGetTask
+      parameters:
+        - $ref: '#/components/parameters/LocaleHeader'
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task status returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SftpTaskStatusSuccess'
+        '400':
+          description: Task identifier validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '404':
+          description: Session or task not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          description: Authentication failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
   /api/v1/sftp/sessions/{sessionId}/archive-capabilities:
     get:
       tags:
@@ -1545,6 +1664,12 @@ paths:
                 $ref: '#/components/schemas/SftpArchiveCapabilitiesSuccess'
         '404':
           description: Session not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          description: The session scheduler cannot grant immediate exclusive probe ownership.
           content:
             application/json:
               schema:
@@ -2144,6 +2269,7 @@ components:
                   'SSH_KEYCHAIN_IN_USE',
                   'SFTP_SESSION_NOT_FOUND',
                   'SFTP_TRANSFER_NOT_FOUND',
+                  'SFTP_TASK_NOT_FOUND',
                   'SFTP_VALIDATION_FAILED',
                   'SFTP_OPERATION_FAILED',
                   'SFTP_UPLOAD_CONFLICT',
@@ -3321,6 +3447,120 @@ components:
           type: string
           minLength: 1
           description: Required when operation is copy, move, or link.
+    SftpTaskOperationType:
+      type: string
+      enum: ['create-file', 'create-directory', 'rename', 'upload', 'download', 'batch']
+    SftpTaskState:
+      type: string
+      enum: ['queued', 'running', 'succeeded', 'failed', 'cancelled']
+    SftpTaskErrorCode:
+      type: string
+      enum:
+        [
+          'SFTP_TASK_DEADLINE_EXCEEDED',
+          'SFTP_OPERATION_TIMEOUT',
+          'SFTP_TRANSPORT_CLOSED',
+          'SFTP_SESSION_NOT_FOUND',
+          'SFTP_OPERATION_FAILED',
+          'SFTP_UPLOAD_CONFLICT',
+          'SFTP_VALIDATION_FAILED',
+        ]
+    SftpTaskTransferReference:
+      type: object
+      required:
+        - transferId
+      properties:
+        transferId:
+          type: string
+          format: uuid
+    SftpTaskCreateFileDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['create-file']
+        payload:
+          $ref: '#/components/schemas/SftpCreateFileRequest'
+    SftpTaskCreateDirectoryDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['create-directory']
+        payload:
+          $ref: '#/components/schemas/SftpCreateDirectoryRequest'
+    SftpTaskRenameDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['rename']
+        payload:
+          $ref: '#/components/schemas/SftpRenameRequest'
+    SftpTaskUploadDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['upload']
+        payload:
+          allOf:
+            - $ref: '#/components/schemas/SftpUploadFileRequest'
+            - $ref: '#/components/schemas/SftpTaskTransferReference'
+    SftpTaskDownloadDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['download']
+        payload:
+          allOf:
+            - $ref: '#/components/schemas/SftpDownloadFileRequest'
+            - $ref: '#/components/schemas/SftpTaskTransferReference'
+    SftpTaskBatchDescriptor:
+      type: object
+      required:
+        - operation
+        - payload
+      properties:
+        operation:
+          type: string
+          enum: ['batch']
+        payload:
+          $ref: '#/components/schemas/SftpBatchOperationRequest'
+    SftpTaskStartRequest:
+      description: Write-file is intentionally excluded because asynchronous task records accept references and paths, not inline file content.
+      oneOf:
+        - $ref: '#/components/schemas/SftpTaskCreateFileDescriptor'
+        - $ref: '#/components/schemas/SftpTaskCreateDirectoryDescriptor'
+        - $ref: '#/components/schemas/SftpTaskRenameDescriptor'
+        - $ref: '#/components/schemas/SftpTaskUploadDescriptor'
+        - $ref: '#/components/schemas/SftpTaskDownloadDescriptor'
+        - $ref: '#/components/schemas/SftpTaskBatchDescriptor'
+      discriminator:
+        propertyName: operation
+        mapping:
+          create-file: '#/components/schemas/SftpTaskCreateFileDescriptor'
+          create-directory: '#/components/schemas/SftpTaskCreateDirectoryDescriptor'
+          rename: '#/components/schemas/SftpTaskRenameDescriptor'
+          upload: '#/components/schemas/SftpTaskUploadDescriptor'
+          download: '#/components/schemas/SftpTaskDownloadDescriptor'
+          batch: '#/components/schemas/SftpTaskBatchDescriptor'
     SftpBatchOperationItemStatus:
       type: string
       enum: ['success', 'failed', 'skipped']
@@ -3361,7 +3601,17 @@ components:
       enum: ['running', 'awaiting-conflict', 'succeeded', 'failed', 'cancelled']
     SftpArchiveOperationStage:
       type: string
-      enum: ['preparing', 'compressing', 'extracting', 'verifying', 'awaiting-conflict', 'committing', 'cleaning', 'completed']
+      enum:
+        [
+          'preparing',
+          'compressing',
+          'extracting',
+          'verifying',
+          'awaiting-conflict',
+          'committing',
+          'cleaning',
+          'completed',
+        ]
     SftpArchiveErrorCode:
       type: string
       enum:
@@ -3779,6 +4029,111 @@ components:
         size:
           type: integer
           format: int64
+    SftpTaskOperationResult:
+      type: object
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          enum: ['operation']
+        data:
+          $ref: '#/components/schemas/SftpOperationData'
+    SftpTaskDownloadResult:
+      type: object
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          enum: ['download']
+        data:
+          $ref: '#/components/schemas/SftpDownloadFileData'
+    SftpTaskBatchResult:
+      type: object
+      required:
+        - type
+        - data
+      properties:
+        type:
+          type: string
+          enum: ['batch']
+        data:
+          $ref: '#/components/schemas/SftpBatchOperationData'
+    SftpTaskResult:
+      oneOf:
+        - $ref: '#/components/schemas/SftpTaskOperationResult'
+        - $ref: '#/components/schemas/SftpTaskDownloadResult'
+        - $ref: '#/components/schemas/SftpTaskBatchResult'
+      discriminator:
+        propertyName: type
+        mapping:
+          operation: '#/components/schemas/SftpTaskOperationResult'
+          download: '#/components/schemas/SftpTaskDownloadResult'
+          batch: '#/components/schemas/SftpTaskBatchResult'
+    SftpTaskData:
+      type: object
+      required:
+        - sessionId
+        - taskId
+        - operation
+        - state
+        - remotePaths
+        - createdAt
+        - deadlineAt
+      properties:
+        sessionId:
+          type: string
+        taskId:
+          type: string
+          format: uuid
+        operation:
+          $ref: '#/components/schemas/SftpTaskOperationType'
+        state:
+          $ref: '#/components/schemas/SftpTaskState'
+        remotePaths:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            minLength: 1
+        transferId:
+          type: string
+          format: uuid
+        createdAt:
+          type: string
+          format: date-time
+        deadlineAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: string
+          format: date-time
+        result:
+          $ref: '#/components/schemas/SftpTaskResult'
+        errorCode:
+          $ref: '#/components/schemas/SftpTaskErrorCode'
+        errorMessage:
+          type: string
+        outcomeUnknown:
+          type: boolean
+    SftpTaskListData:
+      type: object
+      required:
+        - sessionId
+        - items
+      properties:
+        sessionId:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SftpTaskData'
     SftpTransferProgressData:
       type: object
       required:
@@ -4421,6 +4776,57 @@ components:
               enum: [true]
             data:
               $ref: '#/components/schemas/SftpBatchOperationData'
+    SftpTaskAcceptedSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_TASK_ACCEPTED']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpTaskData'
+    SftpTaskStatusSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_TASK_STATUS_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpTaskData'
+    SftpTaskListSuccess:
+      allOf:
+        - $ref: '#/components/schemas/ApiMeta'
+        - type: object
+          required:
+            - success
+            - data
+            - code
+          properties:
+            code:
+              type: string
+              enum: ['SFTP_TASK_LIST_OK']
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: '#/components/schemas/SftpTaskListData'
     SftpArchiveCapabilitiesSuccess:
       allOf:
         - $ref: '#/components/schemas/ApiMeta'

@@ -33,6 +33,7 @@ import path from 'path';
 
 import { DEVELOPMENT_NODE_EXECUTABLE_ENV_NAME, resolveDevelopmentBackendNodeExecutable } from './dev/backend-runtime';
 import { applyDevelopmentProfileToElectronApp } from './dev/dev-profile';
+import { loadReactDevToolsExtension } from './dev/react-devtools';
 import { BackendRequestTraceStore } from './ipc/backend-request-trace-store';
 import { registerAppUtilityIpcHandlers } from './ipc/register-app-utility-ipc';
 import { registerBackendIpcHandlers } from './ipc/register-backend-ipc';
@@ -41,6 +42,7 @@ import { SftpDownloadTargetAuthorizationRegistry } from './ipc/sftp-download-tar
 import {
   cleanupSftpTemporaryRoot,
   createPrivateSftpTemporaryRoot,
+  ensurePrivateSftpTemporaryRoot,
   SFTP_TEMP_ROOT_ENV_NAME,
 } from './ipc/sftp-temporary-root';
 import { RendererCloseConfirmationBroker } from './renderer-close-confirmation';
@@ -643,6 +645,7 @@ const stopBackendService = async (origin: string): Promise<void> => {
  */
 const resolveSftpTemporaryRootPath = async (): Promise<string> => {
   if (sftpTemporaryRootPath) {
+    sftpTemporaryRootPath = await ensurePrivateSftpTemporaryRoot(sftpTemporaryRootPath);
     return sftpTemporaryRootPath;
   }
 
@@ -1613,7 +1616,7 @@ if (!hasSingleInstanceLock) {
       setPendingLaunchWorkingDirectory(await resolveWorkingDirectoryFromArgv(process.argv));
 
       if (!app.isPackaged) {
-        await loadBackendRequestTraceDevToolsExtension();
+        await Promise.all([loadBackendRequestTraceDevToolsExtension(), loadReactDevToolsExtension()]);
         disableI18nHotReload = await enableI18nDevHotReload({
           localeRootDir: path.join(resolveWorkspaceRoot(), 'packages', 'i18n', 'locales'),
           resources: mainProcessMessages,

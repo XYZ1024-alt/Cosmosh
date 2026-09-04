@@ -7,6 +7,7 @@
 :root {
   --font-sans: "Space Grotesk", "IBM Plex Sans", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --font-size-form-label: 0.8rem;
   --radius-xs: 2px;
   --radius-xs-2: 4px;
   --radius-sm: 6px;
@@ -115,6 +116,7 @@
   --color-form-control: #191919d9;
   --color-form-control-hover: #292929cc;
   --color-form-text: #eeeeee;
+  --color-form-text-label: #cdd3dc;
   --color-form-text-muted: #a7b0bd;
   --color-form-switch-track-off: #303030;
   --color-form-switch-track-on: #1e90ff;
@@ -239,6 +241,7 @@
   --color-form-control: #ffffff;
   --color-form-control-hover: #f1f1f5;
   --color-form-text: #111827;
+  --color-form-text-label: #39424e;
   --color-form-text-muted: #6e6e73;
   --color-form-switch-track-off: #d1d1d8;
   --color-form-switch-track-on: #0a84ff;
@@ -362,6 +365,7 @@
     --color-form-control: #ffffff;
     --color-form-control-hover: #f1f1f5;
     --color-form-text: #111827;
+    --color-form-text-label: #39424e;
     --color-form-text-muted: #6e6e73;
     --color-form-switch-track-off: #d1d1d8;
     --color-form-switch-track-on: #0a84ff;
@@ -431,6 +435,26 @@ body {
 
   user-select: none;
   -moz-user-select: none;
+}
+
+/* OOBE-only theme cross-fade: custom properties do not transition, so the
+   first-run root opts into discrete property transitions for the token
+   variables that the theme switch repaints. */
+.oobe-theme-transition,
+.oobe-theme-transition * {
+  transition:
+    background-color 500ms ease,
+    border-color 500ms ease,
+    color 500ms ease,
+    fill 500ms ease,
+    stroke 500ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .oobe-theme-transition,
+  .oobe-theme-transition * {
+    transition: none;
+  }
 }
 
 .terminal-command-timeline .xterm-decoration-overview-ruler {

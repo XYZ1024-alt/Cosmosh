@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import React from 'react';
 
+import EditorCloseConfirmationDialog from '../components/EditorCloseConfirmationDialog';
 import CreateFolderDialog from '../components/home/CreateFolderDialog';
 import EntityCard from '../components/home/EntityCard';
 import EntityIcon from '../components/home/EntityIcon';
@@ -109,8 +110,10 @@ import {
   updateSshKeychain,
   updateSshServer,
 } from '../lib/backend';
+import { hasUnsavedEditorChanges } from '../lib/editor-draft';
 import { createEntityIconNode, EntityColorKey, hashString, isEntityColorKey } from '../lib/entity-visuals';
 import { normalizeFolderName, removeFolder, renameFolder } from '../lib/folder-actions';
+import { groupHomeItemsByFolder } from '../lib/home-grouping';
 import { consumeOpenLocalTerminalListRequest } from '../lib/home-target';
 import { getLocale, t } from '../lib/i18n';
 import {
@@ -136,6 +139,7 @@ import { toLocalTerminalTargetId } from '../lib/ssh-target';
 import { useToast } from '../lib/toast-context';
 import { useCreateFolderDialog } from '../lib/use-create-folder-dialog';
 import { useDirectionalNavigation } from '../lib/use-directional-navigation';
+import { useEditorCloseGuard } from '../lib/use-editor-close-guard';
 import { useKeychainEditorDialogState } from '../lib/use-keychain-editor-dialog-state';
 import { useServerEditorDialogState } from '../lib/use-server-editor-dialog-state';
 import type { HomeState, TabIconKey } from '../types/tabs';
@@ -160,7 +164,7 @@ type SshFolder = components['schemas']['SshFolder'];
 type SshTag = components['schemas']['SshTag'];
 type HomeMode = 'ssh' | 'keychains' | 'portForwarding';
 type QuickFilter = 'none' | 'recent' | 'favorite';
-type GroupMode = 'none' | 'lastUsed' | 'tag';
+type GroupMode = 'none' | 'folder' | 'lastUsed' | 'tag';
 type SortMode = 'nameAsc' | 'nameDesc' | 'lastUsed' | 'createdAt';
 type HomeEntityKind = 'server' | 'keychain' | 'portForwarding';
 type HomeViewPreference = {
@@ -447,6 +451,10 @@ const resolvePortForwardTypeLabel = (type: PortForwardRuleType): string => {
 const resolveGroupModeLabel = (homeMode: HomeMode, mode: GroupMode): string => {
   if (mode === 'none') {
     return t('home.groupModeNone');
+  }
+
+  if (mode === 'folder') {
+    return t('home.groupModeFolder');
   }
 
   if (homeMode === 'portForwarding') {
@@ -1187,20 +1195,32 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
   onFormStateChange,
   onSubmit,
 }) => {
+  const initialFormStateRef = React.useRef<PortForwardRuleFormState>(formState);
+  const dirtyFieldKeysRef = React.useRef<Set<keyof PortForwardRuleFormState>>(new Set());
+
   const updateField = React.useCallback(
     <Key extends keyof PortForwardRuleFormState>(key: Key, value: PortForwardRuleFormState[Key]) => {
+      dirtyFieldKeysRef.current.add(key);
       onFormStateChange({ ...formState, [key]: value });
     },
     [formState, onFormStateChange],
   );
   const shouldShowLocalRiskWarning = formState.type !== 'remote' && !isTrustedLocalBindHost(formState.localBindHost);
+  const hasUnsavedChanges = hasUnsavedEditorChanges(initialFormStateRef.current, formState, dirtyFieldKeysRef.current);
+  const closeGuard = useEditorCloseGuard({
+    open,
+    hasUnsavedChanges,
+    isSubmitting,
+    onOpenChange,
+  });
 
   return (
     <Dialog
       open={open}
-      onOpenChange={onOpenChange}
+      onOpenChange={closeGuard.requestOpenChange}
     >
       <DialogContent
+        showCloseButton={!isSubmitting}
         className="max-w-[640px]"
         onExitComplete={onExitComplete}
       >
@@ -1353,7 +1373,12 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
         </div>
 
         <DialogFooter>
-          <DialogSecondaryButton onClick={() => onOpenChange(false)}>{t('home.actionCancel')}</DialogSecondaryButton>
+          <DialogSecondaryButton
+            disabled={isSubmitting}
+            onClick={() => closeGuard.requestOpenChange(false)}
+          >
+            {t('home.actionCancel')}
+          </DialogSecondaryButton>
           <DialogPrimaryButton
             disabled={isSubmitting || servers.length === 0}
             onClick={() => onSubmit()}
@@ -1362,6 +1387,11 @@ const PortForwardRuleDialog: React.FC<PortForwardRuleDialogProps> = ({
           </DialogPrimaryButton>
         </DialogFooter>
       </DialogContent>
+      <EditorCloseConfirmationDialog
+        open={closeGuard.isConfirmationOpen}
+        onOpenChange={closeGuard.onConfirmationOpenChange}
+        onConfirm={closeGuard.confirmClose}
+      />
     </Dialog>
   );
 };
@@ -1420,6 +1450,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const [draggingServerId, setDraggingServerId] = React.useState<string | null>(null);
   const [dragOverFolderId, setDragOverFolderId] = React.useState<string | null>(null);
   const previousIsActiveRef = React.useRef<boolean>(isActive);
+  const portForwardRuleEditorSessionRef = React.useRef<number>(0);
   const pendingInitialPortForwardRuleIdRef = React.useRef<string | null>(
     initialState?.initialPortForwardRuleId ?? null,
   );
@@ -1427,7 +1458,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   const keychainViewPreference = viewPreferences.keychains;
   const portForwardingViewPreference = viewPreferences.portForwarding;
   const activeViewPreference = viewPreferences[activeHomeMode];
-  const { groupMode, sortMode } = activeViewPreference;
+  const canGroupByFolder = activeHomeMode !== 'portForwarding' && activeFolderId === 'all';
+  const groupMode =
+    activeViewPreference.groupMode === 'folder' && !canGroupByFolder ? 'none' : activeViewPreference.groupMode;
+  const { sortMode } = activeViewPreference;
 
   const updateActiveViewPreference = React.useCallback(
     (nextPreference: Partial<HomeViewPreference>) => {
@@ -1842,7 +1876,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   );
 
   const groupedServers = React.useMemo<ServerGroup[]>(() => {
-    if (sshViewPreference.groupMode === 'none') {
+    const effectiveGroupMode =
+      sshViewPreference.groupMode === 'folder' && activeFolderId !== 'all' ? 'none' : sshViewPreference.groupMode;
+
+    if (effectiveGroupMode === 'none') {
       return [
         {
           key: 'ungrouped:all',
@@ -1852,7 +1889,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       ];
     }
 
-    if (sshViewPreference.groupMode === 'tag') {
+    if (effectiveGroupMode === 'folder') {
+      return groupHomeItemsByFolder(filteredServers, {
+        keyPrefix: 'server',
+        noFolderTitle: t('home.groupNoFolder'),
+        sortItems: sortServers,
+      });
+    }
+
+    if (effectiveGroupMode === 'tag') {
       const tagNameSet = new Set<string>();
       filteredServers.forEach((server) => {
         (server.tags ?? []).forEach((tag) => {
@@ -1953,7 +1998,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         items: otherItems,
       },
     ].filter((group) => group.items.length > 0);
-  }, [filteredServers, sortServers, sshViewPreference.groupMode]);
+  }, [activeFolderId, filteredServers, sortServers, sshViewPreference.groupMode]);
 
   const sortKeychains = React.useCallback(
     (items: SshKeychainListItem[]): SshKeychainListItem[] => {
@@ -1977,7 +2022,12 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   );
 
   const groupedKeychains = React.useMemo<KeychainGroup[]>(() => {
-    if (keychainViewPreference.groupMode === 'none') {
+    const effectiveGroupMode =
+      keychainViewPreference.groupMode === 'folder' && activeFolderId !== 'all'
+        ? 'none'
+        : keychainViewPreference.groupMode;
+
+    if (effectiveGroupMode === 'none') {
       return [
         {
           key: 'keychain:ungrouped:all',
@@ -1987,7 +2037,15 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       ];
     }
 
-    if (keychainViewPreference.groupMode === 'tag') {
+    if (effectiveGroupMode === 'folder') {
+      return groupHomeItemsByFolder(filteredKeychains, {
+        keyPrefix: 'keychain',
+        noFolderTitle: t('home.groupNoFolder'),
+        sortItems: sortKeychains,
+      });
+    }
+
+    if (effectiveGroupMode === 'tag') {
       const tagNameSet = new Set<string>();
       filteredKeychains.forEach((keychain) => {
         (keychain.tags ?? []).forEach((tag) => {
@@ -2037,7 +2095,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         items: sortKeychains(filteredKeychains),
       },
     ].filter((group) => group.items.length > 0);
-  }, [filteredKeychains, keychainViewPreference.groupMode, sortKeychains]);
+  }, [activeFolderId, filteredKeychains, keychainViewPreference.groupMode, sortKeychains]);
 
   const sortPortForwardRules = React.useCallback(
     (items: PortForwardRuleListItem[]): PortForwardRuleListItem[] => {
@@ -2421,6 +2479,10 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   }, [portForwardRuleFormState.serverId, servers]);
 
   const groupModeIcon = React.useMemo(() => {
+    if (groupMode === 'folder') {
+      return FolderOpen;
+    }
+
     if (groupMode === 'tag') {
       return Tags;
     }
@@ -2433,11 +2495,13 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   }, [groupMode]);
 
   const groupModeOptions = React.useMemo<Array<{ value: GroupMode; label: string }>>(() => {
-    return (['none', 'lastUsed', 'tag'] as const).map((value) => ({
+    const values: GroupMode[] = canGroupByFolder ? ['none', 'folder', 'lastUsed', 'tag'] : ['none', 'lastUsed', 'tag'];
+
+    return values.map((value) => ({
       value,
       label: resolveGroupModeLabel(activeHomeMode, value),
     }));
-  }, [activeHomeMode]);
+  }, [activeHomeMode, canGroupByFolder]);
 
   const setActiveGroupMode = React.useCallback(
     (nextGroupMode: GroupMode) => {
@@ -2550,6 +2614,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
   }, [activeFolderId, notifyError, notifySuccess, openCreateKeychainDialog, quickFilter]);
 
   const openCreatePortForwardRuleDialog = React.useCallback(() => {
+    portForwardRuleEditorSessionRef.current += 1;
     setActivePortForwardRuleDraft(null);
     setPortForwardRuleDialogMode('create');
     setPortForwardRuleFormState(createDefaultPortForwardRuleFormState(servers));
@@ -2563,6 +2628,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
         return;
       }
 
+      portForwardRuleEditorSessionRef.current += 1;
       setActivePortForwardRuleDraft(rule);
       setPortForwardRuleDialogMode('edit');
       setPortForwardRuleFormState(createPortForwardRuleFormStateFromRule(rule));
@@ -3484,6 +3550,7 @@ const Home: React.FC<HomeProps> = ({ onOpenSSH, onOpenSFTP, tabId, onTabVisualCh
       />
 
       <PortForwardRuleDialog
+        key={portForwardRuleEditorSessionRef.current}
         open={isPortForwardRuleDialogOpen}
         mode={portForwardRuleDialogMode}
         formState={portForwardRuleFormState}

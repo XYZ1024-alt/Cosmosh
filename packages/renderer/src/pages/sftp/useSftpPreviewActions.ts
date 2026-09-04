@@ -10,6 +10,7 @@ import React from 'react';
 import { readSftpFile, writeSftpFile } from '../../lib/backend';
 import { t } from '../../lib/i18n';
 import { isDirtySftpTextPreviewState, measureUtf8ByteLength, resolvePreviewStatePath } from './sftp-page-utils';
+import type { SftpOperationImpact } from './sftp-reconnect';
 import type {
   SftpLargePreviewPrompt,
   SftpPreviewState,
@@ -50,7 +51,10 @@ type UseSftpPreviewActionsParams = {
     modifiedAt: string;
   }) => Promise<boolean>;
   runSftpOperation: (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>) => void;
-  runWithSftpReconnect: <TResult>(operation: (activeSessionId: string) => Promise<TResult>) => Promise<TResult>;
+  runWithSftpReconnect: <TResult>(
+    impact: SftpOperationImpact,
+    operation: (activeSessionId: string) => Promise<TResult>,
+  ) => Promise<TResult>;
   selectedCount: number;
   selectedEntry: ApiSftpEntry | null;
   setPreviewState: React.Dispatch<React.SetStateAction<SftpPreviewState | null>>;
@@ -132,7 +136,7 @@ export const useSftpPreviewActions = ({
         setPreviewState({ status: 'loading', entry, previewType: 'text' });
         try {
           const maxBytes = Math.max(1024, Math.min(MAX_SFTP_TEXT_PREVIEW_WARNING_THRESHOLD_BYTES, entry.size || 1024));
-          const response = await runWithSftpReconnect((activeSessionId) =>
+          const response = await runWithSftpReconnect('read', (activeSessionId) =>
             readSftpFile(activeSessionId, {
               path: entry.path,
               maxBytes,
@@ -297,6 +301,7 @@ export const useSftpPreviewActions = ({
         label: t('sftp.tasks.save'),
         detail: preview.entry.name,
         progress: { completed: 0, total: 1 },
+        executionLane: 'serial',
       },
       async ({ isCurrent, update }) => {
         try {
@@ -308,7 +313,9 @@ export const useSftpPreviewActions = ({
           };
           let response: ApiSftpWriteFileResponse;
           try {
-            response = await runWithSftpReconnect((activeSessionId) => writeSftpFile(activeSessionId, payload));
+            response = await runWithSftpReconnect('mutation', (activeSessionId) =>
+              writeSftpFile(activeSessionId, payload),
+            );
           } catch (error: unknown) {
             if (!isSftpUploadConflictError(error) || !isCurrent()) {
               throw error;
@@ -327,7 +334,7 @@ export const useSftpPreviewActions = ({
               return;
             }
 
-            response = await runWithSftpReconnect((activeSessionId) =>
+            response = await runWithSftpReconnect('mutation', (activeSessionId) =>
               writeSftpFile(activeSessionId, {
                 ...payload,
                 overwrite: true,

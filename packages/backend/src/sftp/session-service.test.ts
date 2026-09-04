@@ -7,6 +7,10 @@ import path from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import test, { after } from 'node:test';
 
+import { API_CODES, type ApiSftpTaskData } from '@cosmosh/api-contract';
+
+import { SftpArchiveError } from './archive-service.js';
+import { SFTP_OPERATION_TIMEOUT_CODE, SFTP_TRANSPORT_CLOSED_CODE } from './operation-guard.js';
 import {
   escapeSftpShellPath,
   formatSftpPermissionOctal,
@@ -19,6 +23,7 @@ import {
 } from './session-service.js';
 
 type TestSftpClient = EventEmitter & {
+  destroy(): void;
   end(): void;
 };
 
@@ -64,6 +69,7 @@ type TestUploadSftp = EventEmitter & {
 };
 
 type TestDownloadSftp = EventEmitter & {
+  destroy?(): void;
   stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
   createReadStream(targetPath: string, options: { flags: string }): Readable;
 };
@@ -78,8 +84,20 @@ type TestRenameSftp = EventEmitter & {
   rename(sourcePath: string, targetPath: string, callback: (error?: Error | null) => void): void;
 };
 
+type TestDeleteSftp = EventEmitter & {
+  destroy(): void;
+  lstat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  unlink(targetPath: string, callback: (error?: Error | null) => void): void;
+};
+
 type TestSftpSessionServiceInternals = {
   sessions: Map<string, TestSftpSession>;
+  taskSchedulers: Map<
+    string,
+    {
+      listTasks(): unknown[];
+    }
+  >;
   watchSessionTransport(session: TestSftpSession): void;
 };
 
@@ -93,24 +111,34 @@ after(async () => {
   await fs.rm(TEST_SFTP_TEMP_ROOT_PATH, { force: true, recursive: true });
 });
 
-const createTestSftpSessionService = (): SftpSessionService => {
+/**
+ * Creates a session service with optional short operation deadlines for deterministic lifecycle tests.
+ *
+ * @param sftpOperationIdleTimeoutMs Optional idle deadline override.
+ * @returns Isolated SFTP session service.
+ */
+const createTestSftpSessionService = (sftpOperationIdleTimeoutMs?: number): SftpSessionService => {
   return new SftpSessionService({
     getDbClient: () => ({}) as never,
     auditEventService: { logEvent: async () => null } as never,
     credentialEncryptionKey: Buffer.alloc(32),
     sftpTemporaryRootPath: TEST_SFTP_TEMP_ROOT_PATH,
+    ...(sftpOperationIdleTimeoutMs !== undefined ? { sftpOperationIdleTimeoutMs } : {}),
   });
 };
 
 const createTestSftpSession = (): TestSftpSession => {
   const client = new EventEmitter() as TestSftpClient;
+  const sftp = new EventEmitter() as EventEmitter & { destroy(): void };
+  client.destroy = (): void => undefined;
   client.end = (): void => undefined;
+  sftp.destroy = (): void => undefined;
 
   return {
     sessionId: 'test-session',
     serverId: 'test-server',
     client,
-    sftp: new EventEmitter(),
+    sftp,
     isClosed: false,
     t: (key) => key,
   };
@@ -124,6 +152,30 @@ const registerTestSession = (service: SftpSessionService, session: TestSftpSessi
   const internals = getTestInternals(service);
   internals.sessions.set(session.sessionId, session);
   internals.watchSessionTransport(session);
+};
+
+/**
+ * Waits for one asynchronous task to reach a terminal state in focused service tests.
+ *
+ * @param service Session service under test.
+ * @param sessionId Owning session id.
+ * @param taskId Accepted task id.
+ * @returns Terminal task snapshot.
+ */
+const waitForTerminalTask = async (
+  service: SftpSessionService,
+  sessionId: string,
+  taskId: string,
+): Promise<ApiSftpTaskData> => {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const task = service.getTask(sessionId, taskId);
+    if (task && task.state !== 'queued' && task.state !== 'running') {
+      return task;
+    }
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+
+  throw new Error(`Task did not reach a terminal state: ${taskId}`);
 };
 
 test('active session count tracks bulk SFTP session close operations', async () => {
@@ -142,6 +194,162 @@ test('active session count tracks bulk SFTP session close operations', async () 
   assert.equal(firstSession.isClosed, true);
   assert.equal(secondSession.isClosed, true);
   assert.equal(await service.closeAllSessions(), 0);
+
+  await service.stop();
+});
+
+test('legacy write reserves its path, rejects queued archive admission, and forgets hidden tasks', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const pendingStats: Array<(error: Error | null, stats?: TestSftpStats) => void> = [];
+  const statPaths: string[] = [];
+  const sftp = new EventEmitter() as EventEmitter & {
+    destroy(): void;
+    stat(targetPath: string, callback: (error: Error | null, stats?: TestSftpStats) => void): void;
+  };
+  sftp.destroy = (): void => undefined;
+  sftp.stat = (targetPath, callback): void => {
+    statPaths.push(targetPath);
+    pendingStats.push(callback);
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const targetPath = '/srv/shared.txt';
+  const write = service.writeTextFile(
+    session.sessionId,
+    targetPath,
+    'updated',
+    {
+      size: 7,
+      modifiedAt: new Date(1_710_000_000 * 1000).toISOString(),
+    },
+    {},
+  );
+  for (let attempt = 0; attempt < 100 && pendingStats.length === 0; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(statPaths, [targetPath]);
+
+  const read = service.readFilePreview(session.sessionId, targetPath);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(statPaths, [targetPath]);
+  await assert.rejects(
+    service.getArchiveCapabilities(session.sessionId),
+    (error: unknown) => error instanceof SftpArchiveError && error.code === API_CODES.sftpArchiveBusy,
+  );
+  await assert.rejects(
+    service.startArchiveOperation(session.sessionId, {
+      type: 'compress',
+      sourcePaths: [targetPath],
+      targetDirectoryPath: '/srv',
+      archiveName: 'shared.tar',
+      format: 'tar',
+      compressionLevel: 'store',
+    }),
+    (error: unknown) => error instanceof SftpArchiveError && error.code === API_CODES.sftpArchiveBusy,
+  );
+
+  pendingStats.shift()?.(null, createTestSftpStats({ entryType: 'directory', mtime: 1_710_000_000, size: 0 }));
+  assert.equal((await write).type, 'failed');
+  for (let attempt = 0; attempt < 100 && pendingStats.length === 0; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.deepEqual(statPaths, [targetPath, targetPath]);
+
+  pendingStats.shift()?.(null, createTestSftpStats({ entryType: 'directory', mtime: 1_710_000_000, size: 0 }));
+  assert.equal((await read).type, 'failed');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(getTestInternals(service).taskSchedulers.get(session.sessionId)?.listTasks(), []);
+
+  await service.closeSession(session.sessionId);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(getTestInternals(service).taskSchedulers.has(session.sessionId), false);
+
+  await service.stop();
+});
+
+test('SftpSessionService retains a successful asynchronous rename task', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const renameSftp = createRenameSftpMock({
+    '/srv/old.txt': createTestSftpStats({ size: 12, mtime: 1_710_000_000 }),
+  });
+  session.sftp = renameSftp.sftp;
+  registerTestSession(service, session);
+
+  const accepted = service.startTask(session.sessionId, {
+    operation: 'rename',
+    payload: {
+      sourcePath: '/srv/old.txt',
+      targetPath: '/srv/new.txt',
+    },
+  });
+
+  assert.equal(accepted.type, 'success');
+  if (accepted.type !== 'success') {
+    return;
+  }
+
+  const terminal = await waitForTerminalTask(service, session.sessionId, accepted.task.taskId);
+  assert.equal(terminal.state, 'succeeded');
+  assert.deepEqual(terminal.remotePaths, ['/srv/new.txt', '/srv/old.txt']);
+  assert.deepEqual(terminal.result, {
+    type: 'operation',
+    data: {
+      sessionId: session.sessionId,
+      path: '/srv/old.txt',
+      targetPath: '/srv/new.txt',
+    },
+  });
+  assert.deepEqual(renameSftp.renames, [{ sourcePath: '/srv/old.txt', targetPath: '/srv/new.txt' }]);
+  assert.deepEqual(service.listTasks(session.sessionId), [terminal]);
+
+  await service.stop();
+});
+
+test('SftpSessionService retains transport failure metadata after session eviction and ignores a late mutation callback', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const pendingRenameCallbacks: Array<(error?: Error | null) => void> = [];
+  const renameSftp = new EventEmitter() as TestRenameSftp & { destroy(): void };
+  renameSftp.destroy = (): void => undefined;
+  renameSftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 12, mtime: 1_710_000_000 }));
+  };
+  renameSftp.rename = (_sourcePath, _targetPath, callback): void => {
+    pendingRenameCallbacks.push(callback);
+  };
+  session.sftp = renameSftp;
+  registerTestSession(service, session);
+
+  const accepted = service.startTask(session.sessionId, {
+    operation: 'rename',
+    payload: {
+      sourcePath: '/srv/old.txt',
+      targetPath: '/srv/new.txt',
+    },
+  });
+  assert.equal(accepted.type, 'success');
+  if (accepted.type !== 'success') {
+    return;
+  }
+
+  for (let attempt = 0; attempt < 100 && pendingRenameCallbacks.length === 0; attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+  assert.equal(pendingRenameCallbacks.length, 1);
+
+  session.client.emit('close');
+  const terminal = await waitForTerminalTask(service, session.sessionId, accepted.task.taskId);
+  assert.equal(terminal.state, 'failed');
+  assert.equal(terminal.errorCode, API_CODES.sftpTransportClosed);
+  assert.equal(terminal.outcomeUnknown, true);
+  assert.equal(service.getActiveSessionCount(), 0);
+
+  pendingRenameCallbacks[0]?.(null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.deepEqual(service.getTask(session.sessionId, accepted.task.taskId), terminal);
 
   await service.stop();
 });
@@ -229,6 +437,7 @@ const createListSftpMock = (
  */
 const createDownloadSftpMock = (remotePath: string, content: Buffer): TestDownloadSftp => {
   const sftp = new EventEmitter() as TestDownloadSftp;
+  sftp.destroy = (): void => undefined;
   sftp.stat = (targetPath, callback): void => {
     if (targetPath !== remotePath) {
       const error = new Error('No such file') as Error & { code: number };
@@ -555,6 +764,102 @@ test('SftpSessionService closeSession remains idempotent for evicted sessions', 
   assert.equal(endCallCount, 1);
 });
 
+test('SftpSessionService times out a stalled mutation, poisons the session, and ignores its late callback', async () => {
+  const service = createTestSftpSessionService(25);
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let sftpDestroyCallCount = 0;
+  let clientDestroyCallCount = 0;
+  let lateUnlinkCallback: ((error?: Error | null) => void) | undefined;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (_targetPath, callback): void => {
+    lateUnlinkCallback = callback;
+  };
+  sftp.destroy = (): void => {
+    sftpDestroyCallCount += 1;
+  };
+  session.client.destroy = (): void => {
+    clientDestroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const result = await service.deleteEntry(session.sessionId, '/tmp/stalled.txt', false);
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_OPERATION_TIMEOUT_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.match(result.type === 'failed' ? result.message : '', /^SFTP_OPERATION_TIMEOUT:/);
+  assert.equal(session.isClosed, true);
+  assert.equal(getTestInternals(service).sessions.has(session.sessionId), false);
+  assert.equal(sftpDestroyCallCount, 1);
+  assert.equal(clientDestroyCallCount, 1);
+
+  lateUnlinkCallback?.(null);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(sftpDestroyCallCount, 1);
+  assert.equal(clientDestroyCallCount, 1);
+});
+
+test('SftpSessionService settles a pending mutation when the transport closes', async () => {
+  const service = createTestSftpSessionService(1_000);
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let unlinkStarted = false;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (): void => {
+    unlinkStarted = true;
+  };
+  sftp.destroy = (): void => undefined;
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const resultPromise = service.deleteEntry(session.sessionId, '/tmp/disconnected.txt', false);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(unlinkStarted, true);
+
+  session.client.emit('close');
+  const result = await resultPromise;
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.match(result.type === 'failed' ? result.message : '', /^SFTP_TRANSPORT_CLOSED:/);
+});
+
+test('SftpSessionService normalizes a raw transport callback failure without returning not-found', async () => {
+  const service = createTestSftpSessionService();
+  const session = createTestSftpSession();
+  const sftp = new EventEmitter() as TestDeleteSftp;
+  let destroyCallCount = 0;
+
+  sftp.lstat = (_targetPath, callback): void => {
+    callback(null, createTestSftpStats({ size: 8, mtime: 1_710_000_000 }));
+  };
+  sftp.unlink = (_targetPath, callback): void => {
+    callback(new Error('No response from server'));
+  };
+  sftp.destroy = (): void => {
+    destroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  const result = await service.deleteEntry(session.sessionId, '/tmp/no-response.txt', false);
+
+  assert.equal(result.type, 'failed');
+  assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+  assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, true);
+  assert.equal(destroyCallCount, 1);
+  assert.equal(session.isClosed, true);
+});
+
 test('SftpSessionService listDirectory includes symlink target metadata', async () => {
   const service = createTestSftpSessionService();
   const session = createTestSftpSession();
@@ -787,7 +1092,9 @@ test('SftpSessionService downloadFile reports closed transports and removes part
   try {
     const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
 
-    assert.deepEqual(result, { type: 'not-found' });
+    assert.equal(result.type, 'failed');
+    assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_TRANSPORT_CLOSED_CODE);
+    assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, undefined);
     assert.equal(session.isClosed, true);
     assert.equal(
       await fs
@@ -799,7 +1106,43 @@ test('SftpSessionService downloadFile reports closed transports and removes part
     assert.deepEqual(await fs.readdir(localDirectory), []);
     const progress = service.getTransferProgress(transferId);
     assert.equal(progress?.status, 'failed');
-    assert.equal(progress?.errorMessage, 'connection lost');
+    assert.match(progress?.errorMessage ?? '', /^SFTP_TRANSPORT_CLOSED:/);
+  } finally {
+    await fs.rm(localDirectory, { force: true, recursive: true });
+  }
+});
+
+test('SftpSessionService times out a stalled download stream and removes its partial local file', async () => {
+  const service = createTestSftpSessionService(25);
+  const session = createTestSftpSession();
+  const remotePath = '/srv/stalled.bin';
+  const transferId = '00616254-0809-44a0-996c-944954d65f5f';
+  const localDirectory = await fs.mkdtemp(path.join(TEST_SFTP_TEMP_ROOT_PATH, 'download-stall-'));
+  const localPath = path.join(localDirectory, 'stalled.bin');
+  const sftp = createDownloadSftpMock(remotePath, Buffer.alloc(128));
+  const stalledReadStream = new Readable({
+    read(): void {
+      // Intentionally never emits data or EOF.
+    },
+  });
+  let destroyCallCount = 0;
+  sftp.createReadStream = (): Readable => stalledReadStream;
+  sftp.destroy = (): void => {
+    destroyCallCount += 1;
+  };
+  session.sftp = sftp;
+  registerTestSession(service, session);
+
+  try {
+    const result = await service.downloadFile(session.sessionId, remotePath, localPath, transferId);
+
+    assert.equal(result.type, 'failed');
+    assert.equal(result.type === 'failed' ? result.operationErrorCode : undefined, SFTP_OPERATION_TIMEOUT_CODE);
+    assert.equal(result.type === 'failed' ? result.outcomeUnknown : undefined, undefined);
+    assert.equal(destroyCallCount, 1);
+    assert.equal(stalledReadStream.destroyed, true);
+    assert.deepEqual(await fs.readdir(localDirectory), []);
+    assert.equal(service.getTransferProgress(transferId)?.status, 'failed');
   } finally {
     await fs.rm(localDirectory, { force: true, recursive: true });
   }

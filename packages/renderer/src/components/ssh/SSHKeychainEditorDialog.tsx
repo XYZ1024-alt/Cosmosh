@@ -3,6 +3,7 @@ import { FileUp, RefreshCcw } from 'lucide-react';
 import React from 'react';
 
 import { listSshFolders, listSshKeychains, listSshTags } from '../../lib/backend';
+import { hasUnsavedEditorChanges } from '../../lib/editor-draft';
 import { t } from '../../lib/i18n';
 import { createKeychainEditorTag, saveKeychainFromEditor } from '../../lib/ssh-keychain-editor-actions';
 import {
@@ -21,7 +22,9 @@ import {
 import { createPrivateKeyImportContextMenuItems, importPrivateKeyFromFile } from '../../lib/ssh-private-key-import';
 import { useToast } from '../../lib/toast-context';
 import { useCreateFolderDialog } from '../../lib/use-create-folder-dialog';
+import { useEditorCloseGuard } from '../../lib/use-editor-close-guard';
 import { useKeychainCredentialsRefresh } from '../../lib/use-server-credentials';
+import EditorCloseConfirmationDialog from '../EditorCloseConfirmationDialog';
 import CreateFolderDialog from '../home/CreateFolderDialog';
 import {
   Dialog,
@@ -33,6 +36,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../ui/dialog';
+import { dialogStyles } from '../ui/dialog-styles';
 import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import SSHKeychainEditorForm from './SSHKeychainEditorForm';
 
@@ -65,6 +69,7 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
   );
 
   const initialFormStateRef = React.useRef<KeychainEditorInitialFormState | undefined>(initialFormState);
+  const editorBaselineRef = React.useRef<KeychainFormState>(formState);
   const stableKeychainIdRef = React.useRef<string | null>(keychainId);
   const initializedEditorTargetRef = React.useRef<string | undefined>(undefined);
   const dirtyFieldKeysRef = React.useRef<Set<keyof KeychainFormState>>(new Set());
@@ -138,16 +143,20 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
             return;
           }
 
-          resetDirtyFieldKeys();
-          setFormState({
+          const nextFormState = {
             ...mapKeychainToFormState(targetKeychain),
             ...(credentialsCacheRef.current[keychainId] ?? {}),
-          });
+          };
+          editorBaselineRef.current = nextFormState;
+          resetDirtyFieldKeys();
+          setFormState(nextFormState);
           return;
         }
 
+        const nextFormState = applyInitialKeychainEditorFormState(initialFormStateRef.current);
+        editorBaselineRef.current = nextFormState;
         resetDirtyFieldKeys();
-        setFormState(applyInitialKeychainEditorFormState(initialFormStateRef.current));
+        setFormState(nextFormState);
       } catch (error: unknown) {
         if (!cancelled) {
           notifyError(error instanceof Error ? error.message : t('sshKeychain.loadFailed'));
@@ -175,6 +184,10 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
       }
 
       credentialsCacheRef.current[displayKeychainId] = nextCredentials;
+      editorBaselineRef.current = {
+        ...editorBaselineRef.current,
+        ...nextCredentials,
+      };
       setFormState((previous) => {
         if (stableKeychainIdRef.current !== displayKeychainId) {
           return previous;
@@ -336,29 +349,30 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
   );
 
   const isFormDisabled = isLoading || isSubmitting;
+  const hasUnsavedChanges = hasUnsavedEditorChanges(editorBaselineRef.current, formState, dirtyFieldKeysRef.current);
+  const closeGuard = useEditorCloseGuard({
+    open,
+    hasUnsavedChanges,
+    isSubmitting,
+    onOpenChange,
+  });
 
   return (
     <>
       <Dialog
         open={open}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen && isSubmitting) {
-            return;
-          }
-
-          onOpenChange(nextOpen);
-        }}
+        onOpenChange={closeGuard.requestOpenChange}
       >
         <DialogContent
           showCloseButton={!isSubmitting}
-          className="max-h-[92vh] !max-w-4xl gap-0 p-0"
+          className={`${dialogStyles.tallEditorContent} !max-w-4xl gap-0 p-0`}
         >
           <DialogHeader className="px-2.5">
             <DialogTitle>{displayKeychainId ? t('home.contextEdit') : t('sshKeychain.newKeychain')}</DialogTitle>
             <DialogDescription className="sr-only">{t('sshKeychain.editorDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[calc(92vh-136px)] overflow-auto">
+          <div className={dialogStyles.tallEditorScrollableBody}>
             <SSHKeychainEditorForm
               formId="home-ssh-keychain-form"
               formState={formState}
@@ -383,7 +397,7 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
           <DialogFooter className="border-t border-dialog-border">
             <DialogSecondaryButton
               disabled={isFormDisabled}
-              onClick={() => onOpenChange(false)}
+              onClick={() => closeGuard.requestOpenChange(false)}
             >
               {t('home.actionCancel')}
             </DialogSecondaryButton>
@@ -403,6 +417,12 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <EditorCloseConfirmationDialog
+        open={closeGuard.isConfirmationOpen}
+        onOpenChange={closeGuard.onConfirmationOpenChange}
+        onConfirm={closeGuard.confirmClose}
+      />
 
       <CreateFolderDialog
         open={createFolderDialog.isOpen}

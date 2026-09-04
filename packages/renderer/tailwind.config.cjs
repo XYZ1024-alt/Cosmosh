@@ -14,7 +14,7 @@ const mapVars = (obj, prefix, pathParts = []) => {
       }
 
       return [key, toVar(prefix, [...pathParts, key])];
-    })
+    }),
   );
 };
 
@@ -33,6 +33,9 @@ module.exports = {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
       },
+      fontSize: {
+        'form-label': 'var(--font-size-form-label)',
+      },
       borderRadius: {
         ...themeRadius,
       },
@@ -41,6 +44,10 @@ module.exports = {
         menu: '0 8px 30px var(--shadow-menu)',
         'menu-content': '0 8px 30px var(--shadow-menu-content)',
         glow: '0 0 40px var(--color-accent-glow)',
+      },
+      transitionTimingFunction: {
+        // iOS-style deceleration curve for full-screen slide transitions (OOBE step paging).
+        slide: 'cubic-bezier(0.32, 0.72, 0, 1)',
       },
       spacing: {
         18: '4.5rem',

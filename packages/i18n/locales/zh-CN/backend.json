@@ -94,6 +94,8 @@
       "sessionIdRequired": "未提供会话编号。",
       "sessionNotFound": "未找到 SFTP 会话，或该会话已过期。",
       "sourceTargetRequired": "未提供源路径和目标路径。",
+      "taskNotFound": "未找到 SFTP 任务，或该任务已过期。",
+      "taskQueueFull": "当前 SFTP 会话已保留 {limit} 个任务。请先查看已完成的失败任务，或等待活动任务结束。",
       "transferNotFound": "未找到 SFTP 传输进度，或该记录已过期。"
     },
     "ssh": {
@@ -193,6 +195,9 @@
       "fileUploaded": "文件已上传。",
       "fileWritten": "文件已保存。",
       "sessionCreated": "会话已创建。",
+      "taskAccepted": "SFTP 任务已接受。",
+      "taskListLoaded": "SFTP 任务列表已加载。",
+      "taskStatusLoaded": "SFTP 任务状态已加载。",
       "transferProgressRead": "已读取传输进度。"
     },
     "ssh": {

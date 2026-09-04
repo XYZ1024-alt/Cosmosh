@@ -25,6 +25,7 @@ import {
 } from './sftp-drag-drop';
 import type { SftpImagePreviewTempFileCacheEntry } from './sftp-page-utils';
 import { resolvePreviewStatePath } from './sftp-page-utils';
+import type { SftpOperationImpact } from './sftp-reconnect';
 import type {
   ClipboardState,
   SftpOpenWithApplication,
@@ -54,7 +55,10 @@ type UseSftpDragDropControllerParams = {
   onUploadDroppedLocalFiles: (files: File[], targetDirectoryPath: string) => Promise<void>;
   refreshCurrentDirectoryAfterOperation: (affectedDirectoryPaths?: readonly string[]) => Promise<void>;
   runSftpOperation: (options: SftpTaskOptions, operation: (context: SftpTaskContext) => Promise<void>) => void;
-  runWithSftpReconnect: <TResult>(operation: (activeSessionId: string) => Promise<TResult>) => Promise<TResult>;
+  runWithSftpReconnect: <TResult>(
+    impact: SftpOperationImpact,
+    operation: (activeSessionId: string) => Promise<TResult>,
+  ) => Promise<TResult>;
   selectedEntries: ApiSftpEntry[];
   selectedPathSet: Set<string>;
   sessionId: string;
@@ -231,7 +235,7 @@ export const useSftpDragDropController = ({
           progress: { completed: 0, total: draggedEntries.length },
         },
         async ({ isCurrent, update }) => {
-          const response = await runWithSftpReconnect((activeSessionId) =>
+          const response = await runWithSftpReconnect('mutation', (activeSessionId) =>
             runSftpBatchOperation(activeSessionId, {
               operation,
               targetDirectoryPath,
@@ -246,9 +250,9 @@ export const useSftpDragDropController = ({
             return;
           }
 
-          if (response.data.failedCount > 0) {
-            notifyError(formatBatchPartialFailureFeedback(response.data));
-          } else {
+          const partialFailureMessage =
+            response.data.failedCount > 0 ? formatBatchPartialFailureFeedback(response.data) : null;
+          if (!partialFailureMessage) {
             const feedbackKeys =
               operation === 'copy'
                 ? (['sftp.feedback.copied', 'sftp.feedback.copiedMany'] as const)
@@ -282,6 +286,9 @@ export const useSftpDragDropController = ({
             ...draggedEntries.map((entry) => entry.parentPath ?? resolveEntryParentPath(entry.path)),
             targetDirectoryPath,
           ]);
+          if (partialFailureMessage) {
+            throw new Error(partialFailureMessage);
+          }
         },
       );
     },

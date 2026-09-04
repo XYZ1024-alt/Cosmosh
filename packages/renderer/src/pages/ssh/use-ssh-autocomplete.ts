@@ -48,6 +48,7 @@ type UseSshAutocompleteResult = {
   autocompleteMenuRef: React.RefObject<TerminalAutocompleteMenuHandle | null>;
   acceptAutocompleteAtIndex: (index: number) => void;
   applyAutocompleteInputData: (paneId: string, data: string) => { shouldRequest: boolean; shouldClose: boolean };
+  resetAutocompletePaneState: (paneId: string) => void;
   notifyAutocompleteOutputEchoRef: React.RefObject<(paneId: string) => void>;
   closeAutocompleteRef: React.RefObject<() => void>;
   resolveAutocompleteAnchorRef: React.RefObject<
@@ -175,6 +176,25 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
     latestAutocompleteRequestIdRef.current = '';
     latestAutocompleteRequestKeyRef.current = '';
   }, [clearScheduledAutocompleteRequest]);
+
+  /**
+   * Releases command-prefix and request state that belongs to one ending PTY session.
+   *
+   * @param paneId Pane whose backend session is being replaced.
+   * @returns Nothing.
+   */
+  const resetAutocompletePaneState = React.useCallback(
+    (paneId: string): void => {
+      localAutocompleteCommandPrefixByPaneRef.current.delete(paneId);
+      localAutocompletePrefixNeedsRenderedContextByPaneRef.current.delete(paneId);
+      pendingTypingRequestPaneSetRef.current.delete(paneId);
+
+      if (latestAutocompletePaneIdRef.current === paneId) {
+        closeAutocomplete();
+      }
+    },
+    [closeAutocomplete],
+  );
 
   /**
    * Resolves popup placement for autocomplete panel from cursor and terminal geometry.
@@ -703,6 +723,7 @@ export const useSshAutocomplete = (params: UseSshAutocompleteParams): UseSshAuto
     autocompleteMenuRef,
     acceptAutocompleteAtIndex,
     applyAutocompleteInputData,
+    resetAutocompletePaneState,
     notifyAutocompleteOutputEchoRef,
     closeAutocompleteRef,
     resolveAutocompleteAnchorRef,

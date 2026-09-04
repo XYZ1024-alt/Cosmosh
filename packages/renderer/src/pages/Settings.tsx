@@ -1,6 +1,14 @@
 import { normalizeSettingsValuesStrict, type SettingValidationError } from '@cosmosh/api-contract';
 import {
+  measureElement as measureVirtualElement,
+  observeElementRect as observeVirtualElementRect,
+  type Rect,
+  useVirtualizer,
+  type Virtualizer,
+} from '@tanstack/react-virtual';
+import {
   Cloud,
+  Copy,
   Folder,
   Info,
   Link2,
@@ -35,12 +43,13 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../components/ui/dropdown-menu';
-import { FormField } from '../components/ui/form';
+import { FormField, FormSectionHeading } from '../components/ui/form';
 import { formStyles } from '../components/ui/form-styles';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Menubar } from '../components/ui/menubar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { SidebarNav, type SidebarNavItem } from '../components/ui/sidebar-nav';
 import { Switch } from '../components/ui/switch';
 import { Textarea } from '../components/ui/textarea';
 import type { LocalTerminalProfile } from '../lib/api/transport';
@@ -93,6 +102,49 @@ const FALLBACK_TIME_ZONE_OPTIONS = [
 ] as const;
 
 type SettingKey = keyof AppSettingsValues;
+
+/** Estimated height of one section heading row before dynamic measurement. */
+const SETTINGS_HEADING_ROW_ESTIMATE_PX = 40;
+
+/** Estimated height of one settings field row before dynamic measurement. */
+const SETTINGS_FIELD_ROW_ESTIMATE_PX = 128;
+
+/** Extra virtual rows mounted before and after the settings list viewport. */
+const SETTINGS_VIRTUAL_OVERSCAN_ROWS = 6;
+
+/** Vertical gap below a section heading row (mirrors the former `gap-3` grid spacing). */
+const SETTINGS_HEADING_GAP_PX = 12;
+
+/** Vertical gap between two field rows in one section (mirrors the former `gap-5` grid spacing). */
+const SETTINGS_FIELD_GAP_PX = 20;
+
+/** Vertical gap between two sections (mirrors the former `gap-8` grid spacing). */
+const SETTINGS_SECTION_GAP_PX = 32;
+
+/** Trailing padding after the last row (mirrors the former `pb-4` list padding). */
+const SETTINGS_LIST_TRAILING_GAP_PX = 16;
+
+/**
+ * One flattened row of the virtualized settings list.
+ *
+ * Section headings and their fields are flattened into a single sequence so the
+ * whole list participates in windowing. `paddingBottom` reproduces the vertical
+ * rhythm of the former nested grid gaps, because absolutely positioned virtual
+ * rows cannot rely on CSS grid gap.
+ */
+type SettingsListRow =
+  | {
+      kind: 'heading';
+      key: string;
+      paddingBottom: number;
+      title: string;
+    }
+  | {
+      item: SettingDefinition;
+      key: string;
+      kind: 'item';
+      paddingBottom: number;
+    };
 
 type DatabaseSecurityInfo = {
   runtimeMode: 'development' | 'production';
@@ -397,6 +449,7 @@ type SettingsProps = {
 const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQuery, onOpenSettingInEditor }) => {
   const { error: notifyError, success: notifySuccess, warning: notifyWarning } = useToast();
   const contentStartRef = React.useRef<HTMLDivElement | null>(null);
+  const settingsScrollRef = React.useRef<HTMLDivElement | null>(null);
   const [, setLocaleTick] = React.useState<number>(0);
   const [activeCategoryId, setActiveCategoryId] = React.useState<SettingsCategoryId>(() => {
     return initialCategoryId === 'about' ? 'about' : 'general';
@@ -678,6 +731,140 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
     return [...grouped.entries()].map(([title, items]) => ({ title, items }));
   }, [isSearchMode, renderedSettings]);
 
+  const settingsListRows = React.useMemo<SettingsListRow[]>(() => {
+    // Flatten sections into heading/item rows so a single virtualizer windows
+    // the whole list; per-row padding reproduces the former grid gaps.
+    const rows: SettingsListRow[] = [];
+
+    sections.forEach((section, sectionIndex) => {
+      rows.push({
+        key: `heading:${section.title}`,
+        kind: 'heading',
+        paddingBottom: SETTINGS_HEADING_GAP_PX,
+        title: section.title,
+      });
+
+      section.items.forEach((item, itemIndex) => {
+        const isLastItemInSection = itemIndex === section.items.length - 1;
+        const isLastSection = sectionIndex === sections.length - 1;
+
+        rows.push({
+          item,
+          key: `item:${item.path}`,
+          kind: 'item',
+          paddingBottom: isLastItemInSection
+            ? isLastSection
+              ? SETTINGS_LIST_TRAILING_GAP_PX
+              : SETTINGS_SECTION_GAP_PX
+            : SETTINGS_FIELD_GAP_PX,
+        });
+      });
+    });
+
+    return rows;
+  }, [sections]);
+
+  const settingsRowHeightsRef = React.useRef(new Map<unknown, number>());
+
+  /**
+   * Measures one virtual row, keeping the last real height while the tab is hidden.
+   *
+   * Inactive tabs stay mounted under `display: none`, where ResizeObserver
+   * reports zero-sized boxes. Accepting those zeros would collapse every row
+   * offset to 0, so on the next frame all rows render stacked on top of each
+   * other and the collapsed total size lets the browser clamp the scroll offset.
+   *
+   * @param element Row element being measured.
+   * @param entry ResizeObserver entry provided by the virtualizer.
+   * @param instance Virtualizer instance requesting the measurement.
+   * @returns Measured row height, or the last known height while hidden.
+   */
+  const measureSettingsRow = React.useCallback(
+    (
+      element: HTMLDivElement,
+      entry: ResizeObserverEntry | undefined,
+      instance: Virtualizer<HTMLDivElement, HTMLDivElement>,
+    ): number => {
+      const measured = measureVirtualElement(element, entry, instance);
+      const itemIndex = instance.indexFromElement(element);
+      const itemKey = instance.options.getItemKey ? instance.options.getItemKey(itemIndex) : itemIndex;
+
+      if (measured > 0) {
+        settingsRowHeightsRef.current.set(itemKey, measured);
+        return measured;
+      }
+
+      return settingsRowHeightsRef.current.get(itemKey) ?? measured;
+    },
+    [],
+  );
+
+  /**
+   * Observes the scroll viewport, ignoring the zero rect reported while hidden.
+   *
+   * Without this guard the virtualizer would treat a `display: none` tab as a
+   * zero-height viewport, unmount every row, and flash a blank list on the
+   * first frame after the tab becomes visible again.
+   *
+   * @param instance Virtualizer instance observing the scroll element.
+   * @param cb Callback receiving non-zero viewport rects.
+   * @returns Cleanup function returned by the underlying observer.
+   */
+  const observeSettingsScrollRect = React.useCallback(
+    (instance: Virtualizer<HTMLDivElement, HTMLDivElement>, cb: (rect: Rect) => void) => {
+      return observeVirtualElementRect(instance, (rect) => {
+        if (rect.width === 0 && rect.height === 0) {
+          return;
+        }
+
+        cb(rect);
+      });
+    },
+    [],
+  );
+
+  const settingsVirtualizer = useVirtualizer<HTMLDivElement, HTMLDivElement>({
+    count: settingsListRows.length,
+    estimateSize: (index) =>
+      settingsListRows[index]?.kind === 'heading' ? SETTINGS_HEADING_ROW_ESTIMATE_PX : SETTINGS_FIELD_ROW_ESTIMATE_PX,
+    getItemKey: (index) => settingsListRows[index]?.key ?? index,
+    getScrollElement: () => settingsScrollRef.current,
+    measureElement: measureSettingsRow,
+    observeElementRect: observeSettingsScrollRect,
+    overscan: SETTINGS_VIRTUAL_OVERSCAN_ROWS,
+  });
+
+  const lastVisibleScrollTopRef = React.useRef<number>(0);
+
+  React.useEffect(() => {
+    // Restore the scroll offset after a display:none tab switch in case the
+    // browser reset scrollTop while the settings list was hidden.
+    const scrollElement = settingsScrollRef.current;
+    if (!scrollElement) {
+      return;
+    }
+
+    const handleScroll = () => {
+      if (scrollElement.clientHeight > 0) {
+        lastVisibleScrollTopRef.current = scrollElement.scrollTop;
+      }
+    };
+
+    const observer = new ResizeObserver(() => {
+      if (scrollElement.clientHeight > 0 && scrollElement.scrollTop !== lastVisibleScrollTopRef.current) {
+        scrollElement.scrollTop = lastVisibleScrollTopRef.current;
+      }
+    });
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    observer.observe(scrollElement);
+
+    return () => {
+      scrollElement.removeEventListener('scroll', handleScroll);
+      observer.disconnect();
+    };
+  }, []);
+
   const updateField = React.useCallback(<K extends SettingKey>(key: K, value: SettingsFormState[K]) => {
     setFormState((previous) => ({
       ...previous,
@@ -692,6 +879,24 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
       [item.key]: defaultValue,
     }));
   }, []);
+
+  /**
+   * Copies the stable registry key for the setting selected in the item action menu.
+   *
+   * @param settingKey Registry key to copy.
+   * @returns Nothing.
+   */
+  const copySettingId = React.useCallback(
+    async (settingKey: SettingKey): Promise<void> => {
+      try {
+        await navigator.clipboard.writeText(settingKey);
+        notifySuccess(t('settings.itemActions.copyIdSuccess'));
+      } catch (error: unknown) {
+        notifyError(error instanceof Error ? error.message : t('settings.itemActions.copyIdFailed'));
+      }
+    },
+    [notifyError, notifySuccess],
+  );
 
   const persistSettings = React.useCallback(
     async (targetFormState: SettingsFormState, options?: { silent?: boolean }): Promise<boolean> => {
@@ -984,33 +1189,30 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
           </div>
 
           <div className="gutter-box-y min-h-0 flex-1 overflow-auto pb-2">
-            <div className="">
-              {SETTINGS_CATEGORY_IDS.map((categoryId) => {
-                const category = SETTINGS_CATEGORIES[categoryId];
+            <SidebarNav
+              activeId={activeCategoryId}
+              ariaLabel={t('settings.categoryNavLabel')}
+              items={SETTINGS_CATEGORY_IDS.map((categoryId): SidebarNavItem<SettingsCategoryId> => {
                 const Icon = categoryIconMap[categoryId];
 
-                return (
-                  <Button
-                    key={categoryId}
-                    variant={activeCategoryId === categoryId ? 'default' : 'ghost'}
-                    className="w-full !justify-start"
-                    onClick={() => setActiveCategoryId(categoryId)}
-                  >
-                    <Icon className="h-4 w-4" />
-                    <span>{t(category.labelI18nKey)}</span>
-                  </Button>
-                );
+                return {
+                  icon: <Icon className="h-4 w-4" />,
+                  id: categoryId,
+                  label: t(SETTINGS_CATEGORIES[categoryId].labelI18nKey),
+                };
               })}
-            </div>
+              onSelect={setActiveCategoryId}
+            />
           </div>
         </>
       }
       main={
         <SplitWorkbenchMainPanel
+          bodyRef={settingsScrollRef}
           header={
             <div className="mx-auto flex min-h-[46px] max-w-4xl items-center justify-between gap-4 pb-1">
               <div className="grid gap-1">
-                <h1 className="text-home-text ps-2 text-[24px] font-semibold">
+                <h1 className="ps-2 text-[24px] font-semibold text-text">
                   {isSearchMode ? t('settings.searchResults') : t(activeCategory.labelI18nKey)}
                 </h1>
               </div>
@@ -1053,23 +1255,30 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
               ) : null}
 
               {!isLoading && (activeCategoryId !== 'about' || isSearchMode) && sections.length > 0 ? (
-                <div className="grid gap-5 pb-4">
-                  {sections.map((section) => (
-                    <section
-                      key={section.title}
-                      className="grid gap-3"
-                    >
-                      <div className="px-2.5 pb-1 text-[15px] font-medium text-home-text-subtle">{section.title}</div>
-                      {section.items.map((item) => {
-                        const controlId = `settings-control-${item.key}`;
+                <div
+                  className="relative w-full"
+                  style={{ height: settingsVirtualizer.getTotalSize() }}
+                >
+                  {settingsVirtualizer.getVirtualItems().map((virtualRow) => {
+                    const row = settingsListRows[virtualRow.index];
 
-                        return (
-                          <FormField
-                            key={item.path}
-                            className="group/setting"
-                          >
+                    return (
+                      <div
+                        key={virtualRow.key}
+                        ref={settingsVirtualizer.measureElement}
+                        className="absolute left-0 top-0 w-full"
+                        data-index={virtualRow.index}
+                        style={{
+                          paddingBottom: row.paddingBottom,
+                          transform: `translateY(${virtualRow.start}px)`,
+                        }}
+                      >
+                        {row.kind === 'heading' ? (
+                          <FormSectionHeading>{row.title}</FormSectionHeading>
+                        ) : (
+                          <FormField className="group/setting">
                             <div className="flex items-center">
-                              <Label htmlFor={controlId}>{t(item.nameI18nKey)}</Label>
+                              <Label htmlFor={`settings-control-${row.item.key}`}>{t(row.item.nameI18nKey)}</Label>
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
                                   <button
@@ -1082,15 +1291,23 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent>
                                   <DropdownMenuItem
+                                    icon={Copy}
+                                    onSelect={() => {
+                                      void copySettingId(row.item.key);
+                                    }}
+                                  >
+                                    {t('settings.itemActions.copyId')}
+                                  </DropdownMenuItem>
+                                  <DropdownMenuItem
                                     icon={RotateCcw}
-                                    onSelect={() => resetSettingToDefault(item)}
+                                    onSelect={() => resetSettingToDefault(row.item)}
                                   >
                                     {t('settings.itemActions.resetToDefault')}
                                   </DropdownMenuItem>
-                                  {item.control !== 'json' ? (
+                                  {row.item.control !== 'json' ? (
                                     <DropdownMenuItem
                                       icon={Settings2}
-                                      onSelect={() => onOpenSettingInEditor?.(item.key)}
+                                      onSelect={() => onOpenSettingInEditor?.(row.item.key)}
                                     >
                                       {t('settings.itemActions.editInSettingsEditor')}
                                     </DropdownMenuItem>
@@ -1098,13 +1315,13 @@ const Settings: React.FC<SettingsProps> = ({ initialCategoryId, initialSearchQue
                                 </DropdownMenuContent>
                               </DropdownMenu>
                             </div>
-                            {renderControl(item, controlId)}
-                            <div className={formStyles.helperText}>{t(item.descriptionI18nKey)}</div>
+                            {renderControl(row.item, `settings-control-${row.item.key}`)}
+                            <div className={formStyles.helperText}>{t(row.item.descriptionI18nKey)}</div>
                           </FormField>
-                        );
-                      })}
-                    </section>
-                  ))}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ) : null}
 

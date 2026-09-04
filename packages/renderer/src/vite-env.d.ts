@@ -39,12 +39,16 @@ import type {
   ApiSftpDeleteResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -297,6 +301,12 @@ declare global {
         sessionId: string,
         payload: ApiSftpBatchOperationRequest,
       ) => Promise<ApiSftpBatchOperationResponse | ApiErrorResponse>;
+      backendSftpStartTask: (
+        sessionId: string,
+        payload: ApiSftpStartTaskRequest,
+      ) => Promise<ApiSftpStartTaskResponse | ApiErrorResponse>;
+      backendSftpListTasks: (sessionId: string) => Promise<ApiSftpListTasksResponse | ApiErrorResponse>;
+      backendSftpGetTask: (sessionId: string, taskId: string) => Promise<ApiSftpGetTaskResponse | ApiErrorResponse>;
       backendSftpGetArchiveCapabilities: (
         sessionId: string,
       ) => Promise<ApiSftpArchiveCapabilitiesResponse | ApiErrorResponse>;

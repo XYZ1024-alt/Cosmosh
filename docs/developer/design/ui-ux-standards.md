@@ -29,6 +29,8 @@ Rules:
 - Keep typography compact, readable, and consistent across controls and content areas.
 - Preserve a stable body/control baseline and avoid arbitrary size jumps between adjacent components.
 - Use clear hierarchy for titles, labels, helper text, and status messages.
+- Shared form labels use the semantic `font.size.form.label` size (`0.8rem`) and the `color.form.text.label` tier between primary form text and `color.form.text.muted`. Registry-driven Settings descriptions use `color.form.text.muted` at 80% opacity so they stay subordinate to the compact labels; other helper text stays muted.
+- Second-level headings inside form sections use the shared `FormSectionHeading` primitive (`formStyles.sectionHeading`): 15 px, semibold, and the primary `color.text` token. Settings, SSH server, and SSH keychain editors must consume this primitive instead of restyling section headings locally.
 
 ## 4. Radius Logic
 
@@ -54,7 +56,7 @@ Implementation principles:
 - Scroll affordances inside menu wrappers must stay outside normal item flow; showing or hiding up/down indicators must not reserve blank rows, resize the active viewport, or shift the current scroll position. Overlay affordances must carry a tokenized surface background and backdrop blur so translucent menus do not reveal items underneath.
 - Menu single-choice/radio items must use the shared leading checkmark indicator, matching checkbox/menu selection affordances instead of dot markers.
 - Third-party editor overlays that cannot use Radix wrappers, such as CodeMirror autocomplete and info tooltips, must still use the shared menu/tooltip token rhythm: `bg-bg-subtle`, `shadow-menu-content` or `shadow-soft`, 4px panel gutters, 6px/10px item padding, `rounded-lg` panels, `rounded-md` items, and `bg-menu-control-hover` for hover/selection.
-- Reusable search/replace panels must use `SearchReplacePanel` from `packages/renderer/src/components/ui`. The panel is controlled by its caller, supports hidden/readonly/editable replacement modes, configurable filter toggles, match-count display, compact density, and action-level disabled/hidden states. Surface-specific adapters own search algorithms and map their state into this generic panel instead of forking the UI.
+- Reusable search/replace panels must use `SearchReplacePanel` from `packages/renderer/src/components/ui`. The panel is controlled by its caller, supports hidden/readonly/editable replacement modes, configurable filter toggles, match-count display, compact density, and action-level disabled/hidden states. Surface-specific adapters own search algorithms and map their state into this generic panel instead of forking the UI. The panel renders as a floating viewport-sized card by default; hosts that embed it in their layout flow (such as the CodeMirror `docked-bottom` placement) set `docked` so it becomes a full-width bar without the floating card chrome. Narrow editor panes must prefer the docked placement so controls never clip and content is pushed aside instead of covered by an overlay. Below 480px of available width the panel automatically switches to a stacked layout — search input with the close button, replace input with its actions, then a find-options row — instead of letting controls wrap into arbitrary positions.
 - CodeMirror editor syntax uses a VS Code-inspired default palette through semantic tokens; editor chrome, autocomplete, diagnostics, search/replace panels, and context menus still follow Cosmosh surface/menu tokens.
 
 ### 5.1 Dialog Exit-State Lifecycle
@@ -63,15 +65,23 @@ Implementation principles:
 - Shared dialog exit behavior lives in `packages/renderer/src/components/ui/dialog-lifecycle.ts`. `DialogContent` and `AlertDialogContent` expose `onExitComplete`, which runs only after the content element's own `data-state="closed"` animation finishes.
 - Prompt-driven dialogs whose owners clear nullable payloads immediately must render through `useDialogExitSnapshot` and release that snapshot from `onExitComplete`.
 - Form and draft state should be reset from `onExitComplete`, or initialized immediately before the next open operation when retaining closed state is acceptable. Do not synchronize cleanup with hard-coded animation-duration timers.
+- Shared workbench dialogs offset their center downward by half of the 34 px tab-strip height rather than centering across the complete window. Full-window flows that render without the Header, such as OOBE, remain centered in the complete viewport.
+- Tall editor dialogs retain their viewport height cap so the centered surface stays clear of both the Header and bottom window edge. Their header and footer remain fixed while the middle body row owns vertical overflow, so window controls and dialog actions stay reachable at the minimum supported window height.
 
 ## 6. Interaction Density Rules
 
 - Keep layout dense but breathable, prioritizing efficient scanning and frequent actions.
 - Maintain consistent control rhythm and spacing within each feature surface.
+- Registry-driven Settings sections use 12 px between the heading and item list, 20 px between adjacent setting items, and 32 px between sections. Section headings use the same primary text color as page titles with semibold weight; helper text remains below its control.
 - Scrollable category or navigation changes, including Settings page categories, should reset the content pane to the top of the newly selected surface.
 - Avoid decorative patterns that reduce clarity or compete with task-focused content.
 
-### 6.1 Entity Visual Picker Virtualization
+### 6.1 Settings Item Actions
+
+- Each registry-driven setting label exposes the existing gear action menu on hover or keyboard focus.
+- The menu must offer `Copy Setting ID`, copying the stable registry key to the clipboard and reporting localized success or failure feedback. Existing reset and settings-editor actions remain unchanged.
+
+### 6.2 Entity Visual Picker Virtualization
 
 - `EntityVisualPicker` uses `@tanstack/react-virtual` to keep the full Lucide icon catalog searchable while mounting only visible fixed-grid rows plus a small overscan window.
 - The virtual grid preserves the established eight-column, 32 px icon-button rhythm and 4 px gap; virtualization must not resize or shift the picker while scrolling.
@@ -79,13 +89,21 @@ Implementation principles:
 - Arrow-key and forward-Tab navigation must call the virtualizer to reveal an offscreen target row before moving focus. Search updates keep the selected icon, or the first filtered icon when the selection is absent, as the active grid item.
 - Virtualization reduces mounted DOM only. Changes to icon-module loading or bundle composition remain a separate concern.
 
-### 6.2 SFTP Collection Virtualization
+### 6.3 SFTP Collection Virtualization
 
 - The SFTP directory tree and center file list use `@tanstack/react-virtual` with stable remote-path keys, fixed 30 px tree rows, fixed 34 px directory rows, and a small overscan window. The 30 px sticky directory header remains outside the logical row collection.
 - Virtualization changes mounted DOM only. `SFTP.tsx` continues to own the complete filtered/sorted entry collection, expanded tree order, selection model, keyboard navigation order, and drag/drop contracts.
 - The active roving-focus row and rows that own inline editing, an open context menu, or the native drag source stay mounted when necessary. Keyboard movement to an offscreen row must reveal it through the virtualizer before focus moves, and virtualized options/tree items must expose their logical position, collection size, and tree hierarchy to assistive technology.
 - Current-directory tree positioning uses flattened logical row geometry and preserves the existing upper-third target when the parent/current/expanded-child context does not fit in the viewport.
 - Directory marquee selection resolves intersections from the complete fixed-row model, including unmounted rows reached through edge auto-scroll. Virtualization must not weaken blank-area selection, modifier extension, drag/drop targeting, inline editing, or dirty-preview protection.
+
+### 6.4 Settings Category Navigation
+
+- The Settings page category list uses the shared `SidebarNav` component (`src/components/ui/sidebar-nav.tsx`): a labelled `nav` landmark of full-width buttons whose active entry exposes `aria-current="page"`.
+- The list uses roving focus: `Tab` enters the list once at the active category, `ArrowUp`/`ArrowDown` move focus between categories via the shared directional-navigation hook, and `Enter`/`Space` activate the focused category through native button semantics.
+- The SSH server editor reuses `SplitWorkbenchLayout`, `SplitWorkbenchMainPanel`, and `SidebarNav` for its Information, Connection, Enhancements, and Advanced surfaces. Category changes reset the right content pane to the top without replacing the current form draft.
+- Information contains identity and classification controls. Connection contains host details and authentication, with username and keychain controls on separate rows. Classification also places folder and tag controls on separate rows. Enhancements contains terminal enhancements and clipboard permissions. Advanced contains proxy, host-key verification, character-width compatibility, and transport compression. The compact editor omits a duplicate current-category heading above the content pane and uses a 175 px navigation sidebar. The dialog title aligns with the leading edge of the sidebar item icons.
+- Server, port-forwarding, and keychain create/edit dialogs must guard every user-triggered close path when the current draft differs from its opening state. The shared warning keeps the editor open until the user cancels or explicitly confirms that the unsaved settings may be discarded; a successful save closes directly without showing the warning.
 
 ## 7. Orbit Bar Standard
 
@@ -111,7 +129,7 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - The entry is a vertically centered group containing at most the newest eight decorative lines. Every line is 12 px wide, 2 px high, separated by 10 px, centered horizontally in the rail, and rendered with `color.text` at approximately 60% opacity. Lines are a single list affordance and do not encode command output size or act as independent navigation targets.
 - Pointer hit testing is limited to the line group's visual height plus 8 px of padding above and below. The rest of the 34 px rail must remain pointer-transparent, and both the adjacent scrollbar track and thumb must remain directly draggable.
 - Pointer hover morphs the complete line group into one fixed 256 px shared-menu card that stays anchored to the scrollbar edge and expands left over the rail. The card mounts normally and uses CSS `@starting-style` with transform/opacity for a 180 ms entry; only a pointer-leave exit retains the portal for its 140 ms transform/opacity transition, allowing rapid reversal without leaving a hidden menu in the focus or Escape handling chain. Trigger, command-card, and row-action-menu `relatedTarget` checks plus one shared 80 ms portal-crossing grace window prevent intermittent hover loss, including pointer movement after opening a row context menu. The row action menu must ignore the hover-open parent's deliberate xterm focus restoration as a focus-out dismissal; pointer departure, outside interaction, Escape, and item selection remain valid close paths. The compact hit target keeps the default arrow cursor because hover opens the menu without a click. Neither the compact hit target nor the menu surface draws an outer focus outline; keyboard focus raises the compact lines to full opacity and retains highlighted menu-item treatment. The transition keeps the scrollbar exposed and crossfades the tokenized lines into command rows; keyboard opening remains immediate, and reduced-motion mode keeps only a short opacity transition.
-- The card projects only the newest 100 retained commands through the shared menu wrappers, or the full retained collection when fewer than 100 exist. The bounded projection preserves oldest-to-newest order and initially scrolls to the bottom. Rows use the standard UI typeface and show only reconstructed user input, excluding virtual-environment, user, host, working-directory, and prompt text. Selecting a command reveals its pane-local xterm input marker. Right-clicking a row exposes `Copy Command` and `Insert into Terminal`; insertion writes text without Enter. Leaving the entry/menu or pressing Escape closes the surface.
+- The card projects only the newest 100 retained commands through the shared menu wrappers, or the full retained collection when fewer than 100 exist. The bounded projection preserves oldest-to-newest order and initially scrolls to the bottom. Rows use the standard UI typeface and show only reconstructed user input, excluding virtual-environment, user, host, working-directory, and prompt text. Long rows remain single-line and truncated in the card; hovering or focusing one exposes the full command in the shared, wrapping tooltip without changing row geometry. Selecting a command reveals its pane-local xterm input marker. Right-clicking a row exposes `Copy Command` and `Insert into Terminal`; insertion writes text without Enter. Leaving the entry/menu or pressing Escape closes the surface.
 - `Remote Enhancements Debug` is shown only when `remoteEnhancementsDebugEnabled` is enabled and must display the source/active pane's data rather than primary-pane fallback data.
 
 ## 7.2 Tab Reorder Runtime Continuity
@@ -144,6 +162,12 @@ Terminal text selection interactions in SSH pages must follow these rules:
 - Keychain card menus expose favorite/unfavorite, copy name, edit, and delete in that order, with separators between action groups.
 - Favorite changes for keychains must use metadata-only updates. Context-menu actions must never fetch, copy, or resubmit passwords, private keys, or private-key passphrases.
 - Keychain deletion requires explicit confirmation. A rejected delete keeps the keychain visible and reports the backend error without closing the confirmation surface.
+
+### 7.4.2 Home Organization Controls
+
+- SSH and Keychains Home modes expose folder grouping only while the sidebar scope is All, Favorites, or Recents. A concrete folder or Local Terminals scope suppresses the folder option and renders a stored folder-group preference as ungrouped for that scope.
+- Folder groups follow folder-name order, preserve the active per-mode item sort inside each group, and place entities without a folder in a final localized group.
+- SSH, Keychains, and Port Forwarding retain independent sort/group preferences. Folder grouping is not available in Port Forwarding.
 
 ## 7.5 Plain Text Selection Context Menu
 
@@ -182,9 +206,22 @@ Terminal text selection interactions in SSH pages must follow these rules:
 ## 7.9 SFTP Transfer Task Feedback
 
 - Reuse the existing tab-local toolbar task menu for upload/download progress; do not introduce a floating transfer window, page banner, or modal for routine progress.
+- Supported backend tasks may run concurrently, but the compact menu keeps one stable creation-time identity per operation and sorts active states before recent terminal states. Preview writes and archive orchestration remain serialized without changing the visual surface.
 - Running byte transfers show a stable progress bar, percentage, transferred/total size, and current speed. Polling updates should be throttled so stream chunks do not directly drive React renders.
 - Failed tasks keep the original operation label and file detail, add a localized backend reason in the semantic error color, and raise the shared error toast. Error text must wrap within the dense task surface without resizing the toolbar trigger.
-- Recent terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
+- A failed task remains in renderer state while its attention is `unseen`. Opening the task menu marks visible failures `viewed`; a visible document whose window has focus marks them `focus-exposed`. Only then may the normal short inspection retention remove them.
+- Successful, cancelled, viewed, and focus-exposed terminal tasks may remain briefly for inspection, but this surface is not persisted transfer history and must not imply cancellation or resume controls that are not implemented.
+
+## 7.10 First-Run Experience
+
+- The first main-window render presents a non-dismissible OOBE dialog before the workbench mounts. Standalone renderer documents, including SFTP entry properties windows, bypass OOBE.
+- The dialog shell is capped at 800 × 800 px and keeps at least `calc(100% - 5rem)` of window-edge breathing room on every axis; OOBE must not force tighter edge margins.
+- The window margins around the OOBE dialog behave like the hidden title bar (drag to move, double-click to maximize/restore) through a dedicated full-screen drag layer; the dialog surface opts out with an explicit `no-drag` region because Chromium computes drag regions as union/subtraction rather than topmost hit-testing.
+- The welcome, personalization, and completion screens share one stable dialog shell. Only the content viewport slides horizontally (500 ms with the `ease-slide` timing-function token); footer hints and navigation actions remain fixed.
+- Personalization edits the existing Settings contract for language, theme, remote enhancements, terminal auto-complete, and Orbit Bar, reusing canonical Settings labels and descriptions. OOBE must merge those choices into the latest canonical settings snapshot instead of maintaining a second settings model. Theme choices preview immediately through the shared `applyThemeSetting` path, and only the OOBE root opts into the 500 ms color cross-fade (`.oobe-theme-transition`); the rest of the app shell must not inherit this transition.
+- Theme cards render fixed-color miniature skeleton previews (dark-dominant, light-dominant, and a clip-path diagonal half-dark/half-light split for system) that intentionally bypass theme tokens; the split must use clip-path, not gradients, to avoid anti-aliased seams along the diagonal. Cards stay compact, borderless, and background-free, and selection is expressed through an outline-like accent ring inside an accessible radio-group contract, with no check badges. Setting rows keep label-left/control-right geometry, connect labels to controls, and reuse the canonical Settings descriptions in helper tooltips only for non-obvious options; self-explanatory items such as theme and language render without helper tooltips.
+- The workbench must not render behind OOBE. Completion saves settings, persists the versioned renderer completion marker, plays the shared dialog exit animation, and only then reloads the WebView (with a timed fallback if the animation event never fires) so language/theme-sensitive surfaces initialize consistently without a background-content flash.
+- The final resource cards open only approved HTTPS destinations through the preload bridge. Opening or persistence failures remain visible in the fixed footer and must not silently dismiss OOBE.
 
 ## 8. Compliance Checklist
 

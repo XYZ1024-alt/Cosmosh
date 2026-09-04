@@ -41,12 +41,16 @@ import type {
   ApiSftpDownloadFileResponse,
   ApiSftpEntryDetailsRequest,
   ApiSftpEntryDetailsResponse,
+  ApiSftpGetTaskResponse,
   ApiSftpListDirectoryQuery,
   ApiSftpListDirectoryResponse,
+  ApiSftpListTasksResponse,
   ApiSftpReadFileQuery,
   ApiSftpReadFileResponse,
   ApiSftpRenameRequest,
   ApiSftpRenameResponse,
+  ApiSftpStartTaskRequest,
+  ApiSftpStartTaskResponse,
   ApiSftpTransferProgressResponse,
   ApiSftpUploadFileRequest,
   ApiSftpUploadFileResponse,
@@ -83,6 +87,11 @@ import { API_CODES, API_PATHS, appendApiQueryParams, replaceApiPathToken } from 
 import { ipcMain } from 'electron';
 
 import type { SftpDownloadTargetAuthorizationRegistry } from './sftp-download-target-authorizations';
+import {
+  authorizeSftpTaskStartRequest,
+  observeSftpTaskForDownloadAuthorization,
+  settleRejectedSftpTaskStart,
+} from './sftp-task-download-authorizations';
 
 /**
  * Runtime dependencies required by backend IPC registration.
@@ -587,6 +596,78 @@ const registerBackendSshAndSettingsHandlers = (options: RegisterBackendIpcHandle
         method: 'POST',
         body: payload,
       });
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-start-task',
+    async (
+      event,
+      sessionId: string,
+      payload: ApiSftpStartTaskRequest,
+    ): Promise<ApiSftpStartTaskResponse | ApiErrorResponse> => {
+      const ownerWebContentsId = event.sender.id;
+      const authorizedPayload = authorizeSftpTaskStartRequest(
+        options.sftpDownloadTargetAuthorizations,
+        ownerWebContentsId,
+        payload,
+      );
+      const path = replaceApiPathToken(API_PATHS.sftpStartTask, 'sessionId', sessionId);
+
+      try {
+        const response = await options.requestBackend<ApiSftpStartTaskResponse>(path, {
+          method: 'POST',
+          body: authorizedPayload,
+        });
+        if (!response.success) {
+          settleRejectedSftpTaskStart(
+            options.sftpDownloadTargetAuthorizations,
+            ownerWebContentsId,
+            authorizedPayload,
+            response,
+          );
+        }
+        return response;
+      } catch (error: unknown) {
+        if (authorizedPayload.operation === 'download') {
+          options.sftpDownloadTargetAuthorizations.completeTransfer(
+            ownerWebContentsId,
+            authorizedPayload.payload.transferId,
+          );
+        }
+        throw error;
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-list-tasks',
+    async (event, sessionId: string): Promise<ApiSftpListTasksResponse | ApiErrorResponse> => {
+      const path = replaceApiPathToken(API_PATHS.sftpListTasks, 'sessionId', sessionId);
+      const response = await options.requestBackend<ApiSftpListTasksResponse>(path, { method: 'GET' });
+      if (response.success) {
+        response.data.items.forEach((task) => {
+          observeSftpTaskForDownloadAuthorization(options.sftpDownloadTargetAuthorizations, event.sender.id, task);
+        });
+      }
+      return response;
+    },
+  );
+
+  ipcMain.handle(
+    'backend:sftp-get-task',
+    async (event, sessionId: string, taskId: string): Promise<ApiSftpGetTaskResponse | ApiErrorResponse> => {
+      const sessionPath = replaceApiPathToken(API_PATHS.sftpGetTask, 'sessionId', sessionId);
+      const path = replaceApiPathToken(sessionPath, 'taskId', taskId);
+      const response = await options.requestBackend<ApiSftpGetTaskResponse>(path, { method: 'GET' });
+      if (response.success) {
+        observeSftpTaskForDownloadAuthorization(
+          options.sftpDownloadTargetAuthorizations,
+          event.sender.id,
+          response.data,
+        );
+      }
+      return response;
     },
   );
 
