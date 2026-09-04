@@ -65,6 +65,8 @@ flowchart TD
 - 共享对话框退场行为归属于 `packages/renderer/src/components/ui/dialog-lifecycle.ts`。`DialogContent` 与 `AlertDialogContent` 提供 `onExitComplete`，它仅在内容元素自身的 `data-state="closed"` 动画结束后执行。
 - 当 prompt 驱动的对话框 owner 会立即清空 nullable payload 时，展示内容必须通过 `useDialogExitSnapshot` 读取，并在 `onExitComplete` 中释放快照。
 - 表单与草稿状态应在 `onExitComplete` 中重置；若允许关闭期间保留状态，也可在下一次打开前初始化。不得使用写死动画时长的 timer 同步清理时机。
+- 共享工作台对话框相对完整窗口中心向下偏移 34 px Tab 栏高度的一半。OOBE 等不渲染 Header 的全窗口流程继续相对完整视口居中。
+- 高尺寸编辑器对话框继续保留视口高度上限，使居中表面同时避开 Header 与窗口底边。Header 与 Footer 保持固定，中间正文行独立承担纵向滚动，确保在最小支持窗口高度下，系统窗口控件与对话框操作始终可用。
 
 ## 6. 交互密度规则
 

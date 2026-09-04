@@ -38,6 +38,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../ui/dialog';
+import { dialogStyles } from '../ui/dialog-styles';
 import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import SSHKeychainEditorDialog from './SSHKeychainEditorDialog';
 import SSHServerEditorForm, {
@@ -429,7 +430,7 @@ const SSHServerEditorDialog: React.FC<SSHServerEditorDialogProps> = ({
       >
         <DialogContent
           showCloseButton={!isSubmitting}
-          className="h-[min(760px,92vh)] !max-w-5xl grid-rows-[auto,minmax(0,1fr),auto] gap-0 p-0"
+          className={`${dialogStyles.tallEditorContent} h-[min(760px,calc(100vh-100px))] !max-w-5xl gap-0 p-0`}
         >
           <DialogHeader className="px-6">
             <DialogTitle>{displayServerId ? t('home.contextEdit') : t('home.quickAddServer')}</DialogTitle>

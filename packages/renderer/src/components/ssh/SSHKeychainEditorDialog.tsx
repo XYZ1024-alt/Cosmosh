@@ -36,6 +36,7 @@ import {
   DialogSecondaryButton,
   DialogTitle,
 } from '../ui/dialog';
+import { dialogStyles } from '../ui/dialog-styles';
 import type { InputContextMenuItem } from '../ui/input-context-menu-registry';
 import SSHKeychainEditorForm from './SSHKeychainEditorForm';
 
@@ -364,14 +365,14 @@ const SSHKeychainEditorDialog: React.FC<SSHKeychainEditorDialogProps> = ({
       >
         <DialogContent
           showCloseButton={!isSubmitting}
-          className="max-h-[92vh] !max-w-4xl gap-0 p-0"
+          className={`${dialogStyles.tallEditorContent} !max-w-4xl gap-0 p-0`}
         >
           <DialogHeader className="px-2.5">
             <DialogTitle>{displayKeychainId ? t('home.contextEdit') : t('sshKeychain.newKeychain')}</DialogTitle>
             <DialogDescription className="sr-only">{t('sshKeychain.editorDialogDescription')}</DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[calc(92vh-136px)] overflow-auto">
+          <div className={dialogStyles.tallEditorScrollableBody}>
             <SSHKeychainEditorForm
               formId="home-ssh-keychain-form"
               formState={formState}

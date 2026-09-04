@@ -383,7 +383,7 @@ const FirstRunExperience: React.FC = () => {
         <Dialog open={!isClosing}>
           <DialogContent
             showCloseButton={false}
-            className="h-[calc(100vh-5rem)] max-h-[800px] !w-[calc(100%-5rem)] !max-w-[800px] grid-rows-[minmax(0,1fr)_auto] !gap-0 overflow-hidden !p-0 [-webkit-app-region:no-drag]"
+            className="!top-1/2 h-[calc(100vh-5rem)] max-h-[800px] !w-[calc(100%-5rem)] !max-w-[800px] grid-rows-[minmax(0,1fr)_auto] !gap-0 overflow-hidden !p-0 [-webkit-app-region:no-drag]"
             onEscapeKeyDown={(event) => event.preventDefault()}
             onPointerDownOutside={(event) => event.preventDefault()}
             onInteractOutside={(event) => event.preventDefault()}

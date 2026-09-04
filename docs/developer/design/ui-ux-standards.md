@@ -65,6 +65,8 @@ Implementation principles:
 - Shared dialog exit behavior lives in `packages/renderer/src/components/ui/dialog-lifecycle.ts`. `DialogContent` and `AlertDialogContent` expose `onExitComplete`, which runs only after the content element's own `data-state="closed"` animation finishes.
 - Prompt-driven dialogs whose owners clear nullable payloads immediately must render through `useDialogExitSnapshot` and release that snapshot from `onExitComplete`.
 - Form and draft state should be reset from `onExitComplete`, or initialized immediately before the next open operation when retaining closed state is acceptable. Do not synchronize cleanup with hard-coded animation-duration timers.
+- Shared workbench dialogs offset their center downward by half of the 34 px tab-strip height rather than centering across the complete window. Full-window flows that render without the Header, such as OOBE, remain centered in the complete viewport.
+- Tall editor dialogs retain their viewport height cap so the centered surface stays clear of both the Header and bottom window edge. Their header and footer remain fixed while the middle body row owns vertical overflow, so window controls and dialog actions stay reachable at the minimum supported window height.
 
 ## 6. Interaction Density Rules
 
